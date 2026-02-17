@@ -12,6 +12,10 @@ import { FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/comp
 import { Input } from "@/components/ui/input"
 import { authClient } from "@/lib/auth-client"
 import { toast } from "sonner"
+<<<<<<< HEAD
+=======
+import Image from "next/image"
+>>>>>>> b9c9985 (Restore project after zip download and fixes)
 
 
 const loginSchema = z.object({
@@ -72,6 +76,14 @@ export function LoginForm() {
                                         className="w-full"
                                         type="button"
                                         disabled={isPending}>
+<<<<<<< HEAD
+=======
+                                        <Image src="/logos/github.svg"
+                                            alt="Github"
+                                            width={20}
+                                            height={20}
+                                        />
+>>>>>>> b9c9985 (Restore project after zip download and fixes)
                                         Continue with GitHub
                                     </Button>
                                     <Button
@@ -79,6 +91,14 @@ export function LoginForm() {
                                         className="w-full"
                                         type="button"
                                         disabled={isPending}>
+<<<<<<< HEAD
+=======
+                                        <Image src="/logos/google.svg"
+                                            alt="Google"
+                                            width={20}
+                                            height={20}
+                                        />
+>>>>>>> b9c9985 (Restore project after zip download and fixes)
                                         Continue with Google
                                     </Button>
                                 </div>
