@@ -14,6 +14,7 @@ export const AuthLayout = ({ children }: { children: React.ReactNode }) => {
                         />
                         RJbase
                     </Link>
+                    {children}
                 </div>
             </div>
         </>

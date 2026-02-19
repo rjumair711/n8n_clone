@@ -6,13 +6,9 @@ const Register = async () => {
     await requireUnauth()
 
     return (
-<<<<<<< HEAD
         <div>
             <RegisterForm />
         </div>
-=======
-        <RegisterForm />
->>>>>>> b9c9985 (Restore project after zip download and fixes)
     )
 }
 
