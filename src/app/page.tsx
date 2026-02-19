@@ -1,21 +1,7 @@
-import { requireAuth } from "@/lib/auth-utils";
-import { caller } from "@/trpc/server";
-import { LogoutButton } from "./logout";
+import { requireAuth } from "@/lib/auth-utils"
+import HomeClient from "./HomeClient"
 
-const Page = async () => {
-
-  await requireAuth();
-
-  const data = await caller.getUsers()
-
-  return (
-    <>
-      <div className="text-black min-h-screen flex items-center">
-        Protected server component
-      <LogoutButton />
-      </div>
-    </>
-  )
+export default async function Page() {
+  await requireAuth()
+  return <HomeClient />
 }
-
-export default Page;
