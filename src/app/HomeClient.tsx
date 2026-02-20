@@ -10,6 +10,12 @@ export default function HomeClient() {
   const trpc = useTRPC()
 
   const { data } = useQuery(trpc.getWorkflows.queryOptions())
+  
+  const testAi = useMutation(trpc.testAi.mutationOptions({
+    onSuccess: () => {
+      toast.success("Job queued")
+    },
+  }))
 
   const create = useMutation(
     trpc.createWorkflow.mutationOptions({
@@ -23,7 +29,9 @@ export default function HomeClient() {
     <div className="min-w-screen justify-center flex-col text-black min-h-screen flex items-center gap-y-6">
       Protected server component
       <pre className="text-xs">{JSON.stringify(data)}</pre>
-
+      <Button disabled={testAi.isPending} onClick={() => testAi.mutate()}>
+        Test AI
+      </Button>
       <Button disabled={create.isPending} onClick={() => create.mutate()}>
         Create Workflow
       </Button>
