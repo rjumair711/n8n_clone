@@ -1,4 +1,4 @@
-import { helloWorld } from '@/inngest/functions';
+import { execute } from '@/inngest/functions';
 import { serve } from "inngest/next";
 import { inngest } from "@/inngest/client";
 
@@ -6,6 +6,6 @@ import { inngest } from "@/inngest/client";
 export const { GET, POST, PUT } = serve({
   client: inngest,
   functions: [
-    helloWorld,
+    execute,
   ],
 });

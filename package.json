@@ -12,12 +12,16 @@
     "dev:all": "npm-run-all -p dev inngest:dev"
   },
   "dependencies": {
+    "@ai-sdk/anthropic": "^3.0.46",
+    "@ai-sdk/google": "^3.0.30",
+    "@ai-sdk/openai": "^3.0.30",
     "@hookform/resolvers": "^5.2.2",
     "@prisma/client": "^6.19.2",
     "@tanstack/react-query": "^5.90.21",
     "@trpc/client": "^11.10.0",
     "@trpc/server": "^11.10.0",
     "@trpc/tanstack-react-query": "^11.10.0",
+    "ai": "^6.0.94",
     "better-auth": "^1.4.18",
     "class-variance-authority": "^0.7.1",
     "client-only": "^0.0.1",
