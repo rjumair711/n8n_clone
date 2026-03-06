@@ -23,8 +23,8 @@ const Page = async ({ params }: PageProps) => {
 
     return (
         <HydrateClient>
-            <ErrorBoundary fallback={<p><EditorError /></p>}>
-                <Suspense fallback={<p><EditorLoading /></p>}>
+            <ErrorBoundary fallback={<EditorError />}>
+                <Suspense fallback={<EditorLoading />}>
                     <EditorHeader workflowId={workflowId} />
                     <main className="flex-1">
                         <Editor workflowId={workflowId} />
