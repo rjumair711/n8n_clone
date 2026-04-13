@@ -2,7 +2,6 @@
 
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import z from "zod";
-import { zodResolver } from "@hookform/resolvers/zod";
 import { useForm } from "react-hook-form"
 import { Form, FormControl, FormDescription, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -21,7 +20,7 @@ const formSchema = z.object({
         .regex(/^[A-Za-z_$][A-Za-z0-9_$]*$/, {
             message: "Variable name must start with a letter or underscore and container only letters, numbers, and underscores"
         }),
-    endpoint: z.string().url({ message: "Please enter a valid URL" }),
+    endpoint: z.string().min(1, { message: "Please enter a valid URL" }),
     method: z.enum(["GET", "POST", "PATCH", "DELETE", "PUT"]),
     body: z.string().optional()
 })
