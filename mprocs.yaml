@@ -4,3 +4,6 @@ procs:
 
   inngest:
     cmd: ["npm", "run", "inngest:dev"]
+
+  ngrok:
+    cmd: ["npm", "run", "ngrok:dev"] 
