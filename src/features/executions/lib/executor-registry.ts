@@ -1,3 +1,4 @@
+import { stripeTriggerExecutor } from './../../triggers/components/stripe-trigger/executor';
 import { NodeType } from "@prisma/client";
 import { NodeExecutor } from "../types";
 import { manualTriggerExecutor } from "@/features/triggers/components/manual-trigger/executor";
@@ -11,6 +12,7 @@ export const executorRegistry: Record<NodeType, NodeExecutor> = {
     [NodeType.INITIAL]: manualTriggerExecutor,
     [NodeType.HTTP_REQUEST]: httpRequestExecutor,
     [NodeType.GOOGLE_FORM_TRIGGER]: googleFormTriggerExecutor,
+    [NodeType.STRIPE_TRIGGER]: stripeTriggerExecutor,
 }
 
 export const getExecutor = (type: NodeType): NodeExecutor => {
