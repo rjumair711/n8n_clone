@@ -1,3 +1,4 @@
+import { geminiChannel } from './channels/gemini';
 import { includes } from "zod";
 import { inngest } from "./client";
 import { NonRetriableError } from "inngest";
@@ -9,6 +10,8 @@ import { httpRequestChannel } from "./channels/http-request";
 import { manualTriggerChannel } from "./channels/manual-trigger";
 import { googleFormTriggerChannel } from "./channels/google-form-trigger";
 import { stripeTriggerChannel } from "./channels/stripe-trigger";
+import { openaiChannel } from './channels/openai';
+import { anthropicChannel } from './channels/anthropic';
 
 
 export const executeWorkflow = inngest.createFunction(
@@ -22,7 +25,10 @@ export const executeWorkflow = inngest.createFunction(
       httpRequestChannel(),
       manualTriggerChannel(),
       googleFormTriggerChannel(),
-      stripeTriggerChannel()
+      stripeTriggerChannel(),
+      geminiChannel(),
+      openaiChannel(),
+      anthropicChannel(),
     ],
   },
   async ({ event, step, publish }) => {
