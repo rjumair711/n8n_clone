@@ -5,6 +5,7 @@ import Handlebars from "handlebars"
 import { generateText } from 'ai'
 import { openaiChannel } from "@/inngest/channels/openai";
 import { anthropicChannel } from "@/inngest/channels/anthropic";
+import prisma from "@/lib/db";
 
 
 Handlebars.registerHelper("json", (context) => {
@@ -17,6 +18,7 @@ Handlebars.registerHelper("json", (context) => {
 type AnthropicData = {
     variableName?: string;
     model?: string;
+    credentialId?: string;
     systemPrompt?: string;
     userPrompt?: string
 }
@@ -45,6 +47,16 @@ export const AnthropicExecutor: NodeExecutor<AnthropicData> = async ({
         throw new NonRetriableError("Anthropic node: Variable name is missing")
     }
 
+    if (!data.credentialId) {
+        await publish(
+            anthropicChannel().status({
+                nodeId,
+                status: "error",
+            })
+        )
+        throw new NonRetriableError("Anthropic node: Credential ID is required")
+    }
+
 
     if (!data.userPrompt) {
         await publish(
@@ -61,10 +73,20 @@ export const AnthropicExecutor: NodeExecutor<AnthropicData> = async ({
 
     const userPrompt = Handlebars.compile(data.userPrompt)(context)
 
-    const credentialValue = process.env.ANTHROPIC_API_KEY!;
+    const credential = await step.run("get-credential", () => {
+        return prisma.credential.findUnique({
+            where: {
+                id: data.credentialId
+            }
+        })
+    })
+
+    if (!credential) {
+        throw new NonRetriableError("Gemini node: Credential not found")
+    }
 
     const anthropic = createAnthropic({
-        apiKey: credentialValue,
+        apiKey: credential.value,
     })
 
     try {

@@ -10,6 +10,7 @@ import { OpenAIDialog, OpenAIFormValues } from "./dialog";
 
 type OpenAINodeData = {
     variableName?: string;
+    credentialId?: string;
     systemPrompt?: string;
     userPrompt?: string;
 }
