@@ -65,11 +65,23 @@ const executionNodes: NodeTypeOption[] = [
         description: "Uses OpenAI to generate text",
         icon: "/logos/openai.svg"
     },
-        {
+    {
         type: NodeType.ANTHROPIC,
         label: "Anthropic",
         description: "Uses Anthropic to generate text",
         icon: "/logos/anthropic.svg"
+    },
+    {
+        type: NodeType.DISCORD,
+        label: "Discord",
+        description: "Send a message to Discord",
+        icon: "/logos/discord.svg"
+    },
+    {
+        type: NodeType.SLACK,
+        label: "Slack",
+        description: "Send a message to Slack",
+        icon: "/logos/slack.svg"
     }
 ]
 
