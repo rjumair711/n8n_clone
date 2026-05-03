@@ -13,6 +13,7 @@ import { anthropicChannel } from './channels/anthropic';
 import { discordChannel } from './channels/discord';
 import { slackChannel } from './channels/slack';
 import prisma from '@/lib/db';
+import { PLAN_LIMITS } from '@/config/plans';
 
 
 export const executeWorkflow = inngest.createFunction(
@@ -86,6 +87,29 @@ export const executeWorkflow = inngest.createFunction(
 
       return workflow.userId
     })
+
+    await step.run("check-monthly-execution-limit", async () => {
+      const startOfMonth = new Date();
+      startOfMonth.setDate(1);
+      startOfMonth.setHours(0, 0, 0, 0);
+
+      const executionsThisMonth = await prisma.execution.count({
+        where: {
+          workflow: {
+            userId,
+          },
+          createdAt: {
+            gte: startOfMonth,
+          },
+        },
+      });
+
+      if (executionsThisMonth >= PLAN_LIMITS.PRO.monthlyExecutions) {
+        throw new NonRetriableError(
+          `Monthly execution limit reached. Your Pro plan includes ${PLAN_LIMITS.PRO.monthlyExecutions} executions per month.`
+        );
+      }
+    });
 
     // Initialize the context with any initial data from the trigger 
     let context = event.data.InitialData || {}
