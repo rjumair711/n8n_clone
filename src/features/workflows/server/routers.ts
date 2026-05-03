@@ -31,7 +31,7 @@ export const workflowsRouter = createTRPCRouter({
                     workflow: {
                         userId: ctx.auth.user.id,
                     },
-                    createdAt: {
+                    startedAt: {
                         gte: startOfMonth,
                     },
                 },

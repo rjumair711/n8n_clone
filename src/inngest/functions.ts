@@ -98,7 +98,7 @@ export const executeWorkflow = inngest.createFunction(
           workflow: {
             userId,
           },
-          createdAt: {
+          startedAt: {
             gte: startOfMonth,
           },
         },
