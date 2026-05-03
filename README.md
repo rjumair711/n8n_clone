@@ -1,36 +1,91 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# RJBase – AI Workflow Automation Platform
 
-## Getting Started
+RJBase is a low-cost AI workflow automation platform inspired by tools like n8n. It allows users to create, manage, and execute automated workflows using a visual drag-and-drop builder.
 
-First, run the development server:
+The platform supports trigger nodes, AI integrations, messaging nodes, HTTP requests, background job execution, authentication, subscriptions, and execution history.
 
-```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
-```
+---
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+## 🚀 Features
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+- Visual drag-and-drop workflow builder
+- Manual trigger node
+- Webhook trigger node
+- Google Form trigger node
+- Stripe trigger node
+- HTTP request node
+- AI integrations:
+  - OpenAI
+  - Claude / Anthropic
+  - Gemini
+- Messaging integrations:
+  - Discord
+  - Slack
+- Background workflow execution
+- Execution history and status tracking
+- Secure credentials management
+- User authentication
+- Subscription-based access
+- Error tracking and monitoring
+- Type-safe API layer
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+---
 
-## Learn More
+## 🛠️ Technologies Used
 
-To learn more about Next.js, take a look at the following resources:
+### Frontend
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+- Next.js App Router
+- React
+- TypeScript
+- React Flow
+- Tailwind CSS
+- Shadcn UI
+- TanStack React Query
+- Sonner Toasts
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+### Backend
 
-## Deploy on Vercel
+- Next.js API Routes
+- tRPC
+- Prisma ORM
+- Neon PostgreSQL
+- Inngest for background jobs
+- Better Auth for authentication
+- Polar for payments and subscriptions
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+### AI Integrations
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+- OpenAI API
+- Google Gemini API
+- Anthropic Claude API
+
+### Monitoring and Developer Tools
+
+- Sentry for error tracking
+- CodeRabbit for AI-powered code reviews
+- GitHub for version control
+- Vercel for deployment
+
+---
+
+## 🧠 Project Architecture
+
+```text
+Frontend UI
+   ↓
+Next.js App Router
+   ↓
+tRPC API Layer
+   ↓
+Prisma ORM
+   ↓
+Neon PostgreSQL
+
+Workflow Execution
+   ↓
+Inngest Background Jobs
+   ↓
+Node Executors
+   ↓
+External APIs / AI Providers / Messaging Services
