@@ -79,7 +79,7 @@ export const AnthropicDialog = ({
 
     return (
         <Dialog open={open} onOpenChange={onOpenChange}>
-            <DialogContent>
+            <DialogContent className="max-h-[90vh] overflow-y-auto">
                 <DialogHeader>
                     <DialogTitle>Anthropic Configuration</DialogTitle>
                     <DialogDescription>
@@ -89,7 +89,7 @@ export const AnthropicDialog = ({
                 <Form {...form}>
                     <form
                         onSubmit={form.handleSubmit(handleSubmit)}
-                        className="space-y-8 mt-4"
+                        className="space-y-8 mt-4 pb-2"
                     >
                         <FormField
                             control={form.control}

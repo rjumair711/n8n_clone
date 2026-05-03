@@ -11,7 +11,7 @@ export const auth = betterAuth({
 
   trustedOrigins: [
   "http://localhost:3000",
-  "https://rjbase.vercel.app",
+  "https://n8n-clone-nine.vercel.app",
   "https://cringe-overhaul-marsupial.ngrok-free.dev",
 ],
 
