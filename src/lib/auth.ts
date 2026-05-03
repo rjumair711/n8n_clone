@@ -10,9 +10,10 @@ export const auth = betterAuth({
   }),
 
   trustedOrigins: [
-    "http://localhost:3000",
-    "https://cringe-overhaul-marsupial.ngrok-free.dev",
-  ],
+  "http://localhost:3000",
+  "https://rjbase.vercel.app",
+  "https://cringe-overhaul-marsupial.ngrok-free.dev",
+],
 
   emailAndPassword: {
     enabled: true,
