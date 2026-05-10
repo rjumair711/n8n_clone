@@ -67,7 +67,7 @@ export const GeminiNode = memo((props: NodeProps<GeminiNodeType>) => {
                 status={nodeStatus}
                 description={description}
                 onSettings={handleOpenSettings}
-                onDoubleClick={() => { handleOpenSettings }}
+                onDoubleClick={() => handleOpenSettings()}
             />
         </>
     )

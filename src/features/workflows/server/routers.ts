@@ -119,6 +119,7 @@ export const workflowsRouter = createTRPCRouter({
                         x: z.number(), y: z.number(),
                     }),
                     data: z.record(z.string(), z.any()).optional(),
+                    credentialId: z.string().nullish(),
                 }),
             ),
             edges: z.array(
@@ -156,6 +157,7 @@ export const workflowsRouter = createTRPCRouter({
                         type: node.type as NodeType,
                         position: node.position,
                         data: node.data || {},
+                        credentialId: node.credentialId,
                     }))
                 })
 
@@ -193,6 +195,7 @@ export const workflowsRouter = createTRPCRouter({
                 type: node.type,
                 position: node.position as { x: number; y: number },
                 data: (node.data as Record<string, unknown>) || {},
+                credentialId: node.credentialId,
             }))
 
             // Transform server connections to react-flow compatible edges

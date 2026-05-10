@@ -13,7 +13,7 @@ import {
 } from "./ui/sheet"
 import { NodeType } from "@prisma/client"
 import { Separator } from "./ui/separator"
-import { GlobeIcon, MousePointerIcon } from "lucide-react"
+import { Clock, Database, FilterIcon, GlobeIcon, Mail, MousePointerIcon, Send, VariableIcon } from "lucide-react"
 import { toast } from "sonner"
 
 
@@ -47,6 +47,12 @@ const triggerNodes: NodeTypeOption[] = [
 ]
 
 const executionNodes: NodeTypeOption[] = [
+    {
+        type: NodeType.FILTER,
+        label: "Filter",
+        description: "Continue only if a condition is true",
+        icon: FilterIcon
+    },
     {
         type: NodeType.HTTP_REQUEST,
         label: "HTTP Request",
@@ -82,6 +88,36 @@ const executionNodes: NodeTypeOption[] = [
         label: "Slack",
         description: "Send a message to Slack",
         icon: "/logos/slack.svg"
+    },
+    {
+        type: NodeType.SET_VARIABLE,
+        label: "Set Variable",
+        description: "Set a workflow variable",
+        icon: VariableIcon
+    },
+    {
+        type: NodeType.DELAY,
+        label: "Delay",
+        description: "Pause workflow for a specific duration",
+        icon: Clock,  // Use the Clock icon here
+    },
+    {
+        type: NodeType.WEBHOOK_RESPONSE,
+        label: "Webhook Response",
+        description: "Send a response to a webhook",
+        icon: Send // Specify the path to your icon
+    },
+    {
+        type: NodeType.EMAIL_SEND,
+        label: "Email",
+        description: "Send a email to a webhook",
+        icon: Mail
+    },
+    {
+        type: NodeType.GOOGLE_SHEETS,
+        label: "Google Sheets",
+        description: "Add data to a Google Sheet",
+        icon: Database  
     }
 ]
 

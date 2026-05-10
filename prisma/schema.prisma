@@ -87,7 +87,7 @@ model Verification {
 model Credential {
   id        String         @id @default(cuid())
   name      String
-  value     String
+  value     String  // This will store the SMTP settings as a JSON string
   type      CredentialType
   createdAt DateTime       @default(now())
   updatedAt DateTime       @updatedAt
@@ -102,6 +102,7 @@ enum CredentialType {
   OPENAI
   ANTHROPIC
   GEMINI
+  SMTP
 }
 
 model Workflow {
@@ -130,6 +131,12 @@ enum NodeType {
   OPENAI
   DISCORD
   SLACK
+  FILTER
+  SET_VARIABLE
+  DELAY
+  WEBHOOK_RESPONSE
+  EMAIL_SEND
+  GOOGLE_SHEETS
 }
 
 model Node {
@@ -141,6 +148,14 @@ model Node {
   type     NodeType
   position Json
   data     Json     @default("{}")
+
+  // New fields for Delay Node
+  delayAmount Int? // For Delay Node
+  delayUnit   String? // For Delay Node
+
+  // New fields for Webhook Response Node
+  responseMessage String? // For Webhook Response Node
+  responseStatus  String? // For Webhook Response Node (success/error)
 
   credentialId String?
   credential   Credential? @relation(fields: [credentialId], references: [id])

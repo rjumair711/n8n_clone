@@ -5,6 +5,7 @@ import z from "zod";
 import { CredentialType } from "@prisma/client"
 import { encrypt } from "@/lib/encryption";
 
+
 export const credentialsRouter = createTRPCRouter({
 
     // CREATE CREDENTIAL
@@ -147,3 +148,15 @@ export const credentialsRouter = createTRPCRouter({
             return credentials;
         }),
 });
+
+export async function getSmtpCredentials() {
+    return await prisma.credential.findMany({
+        where: {
+            type: CredentialType.SMTP
+        },
+        select: {
+            id: true,
+            name: true,
+        }
+    });
+}

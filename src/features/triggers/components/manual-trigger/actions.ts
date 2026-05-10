@@ -1,7 +1,6 @@
 "use server"
 
 import { getSubscriptionToken, type Realtime } from "@inngest/realtime"
-import { httpRequestChannel } from "@/inngest/channels/http-request"
 import { inngest } from "@/inngest/client"
 import { manualTriggerChannel } from "@/inngest/channels/manual-trigger"
 

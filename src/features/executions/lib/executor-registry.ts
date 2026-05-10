@@ -9,28 +9,36 @@ import { OpenAIExecutor } from '../components/openai/executor';
 import { AnthropicExecutor } from '../components/anthropic/executor';
 import { discordExecutor } from '../components/discord/executor';
 import { slackExecutor } from '../components/slack/executor';
+import { filterExecutor } from '../components/filter/executor';
+import { setVariableExecutor } from '../components/set-variable/executor';
+import { delayExecutor } from '../components/delay/executor';
+import { webhookResponseExecutor } from '../components/webhook/executor';
+import { emailExecutor } from '../components/email/executor';
+import { googleSheetsExecutor } from '../components/googleSheet/executor';
 
-
-
-export const executorRegistry: Record<NodeType, NodeExecutor> = {
-  
-    [NodeType.MANUAL_TRIGGER]: manualTriggerExecutor,
-    [NodeType.INITIAL]: manualTriggerExecutor,
-    [NodeType.HTTP_REQUEST]: httpRequestExecutor,
-    [NodeType.GOOGLE_FORM_TRIGGER]: googleFormTriggerExecutor,
-    [NodeType.STRIPE_TRIGGER]: stripeTriggerExecutor,
-    [NodeType.GEMINI]: geminiExecutor,
-    [NodeType.ANTHROPIC]: AnthropicExecutor,
-    [NodeType.OPENAI]: OpenAIExecutor,
-    [NodeType.DISCORD]: discordExecutor,
-    [NodeType.SLACK]: slackExecutor,
+export const executorRegistry: Record<NodeType, NodeExecutor<any>> = {
+  [NodeType.MANUAL_TRIGGER]: manualTriggerExecutor,
+  [NodeType.INITIAL]: manualTriggerExecutor,
+  [NodeType.HTTP_REQUEST]: httpRequestExecutor,
+  [NodeType.GOOGLE_FORM_TRIGGER]: googleFormTriggerExecutor,
+  [NodeType.STRIPE_TRIGGER]: stripeTriggerExecutor,
+  [NodeType.GEMINI]: geminiExecutor,
+  [NodeType.ANTHROPIC]: AnthropicExecutor,
+  [NodeType.OPENAI]: OpenAIExecutor,
+  [NodeType.DISCORD]: discordExecutor,
+  [NodeType.SLACK]: slackExecutor,
+  [NodeType.FILTER]: filterExecutor,
+  [NodeType.SET_VARIABLE]: setVariableExecutor,
+  [NodeType.DELAY]: delayExecutor,
+  [NodeType.WEBHOOK_RESPONSE]: webhookResponseExecutor,
+  [NodeType.GOOGLE_SHEETS]: googleSheetsExecutor,
+  [NodeType.EMAIL_SEND]: emailExecutor,
 }
 
-export const getExecutor = (type: NodeType): NodeExecutor => {
-    const executor = executorRegistry[type]
-    if (!executor) {
-        throw new Error(`No executor found for node type: ${type}`)
-    }
-
-    return executor
-}
+export const getExecutor = (type: NodeType): NodeExecutor<any> => {
+  const executor = executorRegistry[type];
+  if (!executor) {
+    throw new Error(`No executor found for node type: ${type}`);
+  }
+  return executor;
+};

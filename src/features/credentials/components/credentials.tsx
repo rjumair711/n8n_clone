@@ -116,7 +116,8 @@ export const CredentialEmpty = () => {
 const credentialLogos: Record<CredentialType, string> = {
     [CredentialType.OPENAI]: "/logos/openai.svg",
     [CredentialType.ANTHROPIC]: "/logos/anthropic.svg",
-    [CredentialType.GEMINI]: "/logos/gemini.svg"
+    [CredentialType.GEMINI]: "/logos/gemini.svg",
+    [CredentialType.SMTP]: "/logos/smtp.jfif"
 }
 
 export const CredentialItem = ({
