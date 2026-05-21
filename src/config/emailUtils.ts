@@ -35,6 +35,5 @@ export const sendEmail = async (smtpData: SmtpCredentials, recipient: string, su
     return info;
   } catch (error) {
     console.error("Error sending email:", error);
-    throw new Error("Error sending email: " + error.message);
   }
 };

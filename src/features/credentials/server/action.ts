@@ -1,10 +1,16 @@
-// src/features/credentials/server/actions.ts
 'use server'
 
+import prisma from "@/lib/db";
+import { CredentialType } from "@prisma/client";
 
-export const getSmtpCredentials = async () => {
-   // Perform the logic here directly using the DB
-   // Do NOT import from your tRPC router file here
-   const credentials = await db.credential.findMany({ ... });
-   return credentials;
+export async function getSmtpCredentials() {
+   return await prisma.credential.findMany({
+      where: {
+         type: CredentialType.SMTP,
+      },
+      select: {
+         id: true,
+         name: true,
+      },
+   });
 }

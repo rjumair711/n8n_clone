@@ -14,10 +14,12 @@ import { WebhookResponseNode } from "@/features/executions/components/webhook/no
 import { GoogleFormTrigger } from "@/features/triggers/components/google-form-trigger/node";
 import { ManualTriggerNode } from "@/features/triggers/components/manual-trigger/node";
 import { StripeTriggerNode } from "@/features/triggers/components/stripe-trigger/node";
-import { NodeType } from "@prisma/client";
-import { NodeProps } from "@xyflow/react";
 
-export const nodeComponents: Record<NodeType, React.ComponentType<NodeProps<any>>> = {
+import { NodeType } from "@prisma/client";
+
+import type { NodeTypes } from "@xyflow/react";
+
+export const nodeComponents: NodeTypes = {
     [NodeType.INITIAL]: InitialNode,
     [NodeType.HTTP_REQUEST]: HttpRequestNode,
     [NodeType.MANUAL_TRIGGER]: ManualTriggerNode,
@@ -34,7 +36,6 @@ export const nodeComponents: Record<NodeType, React.ComponentType<NodeProps<any>
     [NodeType.WEBHOOK_RESPONSE]: WebhookResponseNode,
     [NodeType.EMAIL_SEND]: EmailSendNode,
     [NodeType.GOOGLE_SHEETS]: GoogleSheetsNode,
-}
+};
 
-export type RegisteredNodeType = keyof typeof nodeComponents
-
+export type RegisteredNodeType = keyof typeof nodeComponents;

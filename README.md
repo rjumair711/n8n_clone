@@ -38,6 +38,9 @@ The platform supports trigger nodes, AI integrations, messaging nodes, HTTP requ
 - **Discord** — send messages to Discord channels
 - **Slack** — send messages to Slack channels
 
+### Productivity Integrations
+- **Google Sheets** — append workflow data directly into spreadsheets using Google Service Accounts
+
 ### Platform Features
 - Secure credentials management with AES encryption at rest
 - Subscription-based access control (Pro plan with execution and workflow limits)
@@ -185,7 +188,7 @@ External APIs / AI Providers / Messaging Services / SMTP
 2. **Topological Sort** — nodes are sorted by dependency order before execution begins
 3. **Plan Limit Check** — the user's monthly execution count is verified against their Pro plan limit
 4. **Node Execution** — each node runs sequentially, receiving and returning a shared `context` object
-5. **Context Passing** — every executor receives the full context and returns an updated version; `{{variables}}` in prompts, email bodies, and other fields are resolved via Handlebars at runtime
+5. **Context Passing** — every executor receives the full workflow context and returns an updated version. Dynamic `{{variables}}` are resolved at runtime using Handlebars in prompts, HTTP requests, emails, Google Sheets row values, and other node configurations.
 6. **Real-Time Updates** — each node publishes status events (`loading`, `success`, `error`) to its Inngest realtime channel so the UI updates live during execution
 7. **Filter Short-Circuit** — if a Filter node fails its condition, execution stops immediately for downstream nodes
 8. **Completion** — the execution record is updated to `SUCCESS` or `FAILED` in the database with output and error details
@@ -204,6 +207,7 @@ Supported credential types:
 | `ANTHROPIC` | Anthropic node |
 | `GEMINI` | Gemini node |
 | `SMTP` | Email Send node |
+| `GOOGLE_SHEETS` | Google Sheets node |
 
 SMTP credentials store a JSON object containing `host`, `port`, `user`, `pass`, and optional `fromName`, encrypted at rest.
 

@@ -17,7 +17,6 @@ import {
     MiniMap,
     Panel
 } from '@xyflow/react';
-import '@xyflow/react/dist/style.css';
 import { nodeComponents } from "@/config/node-components";
 import { AddNodeButton } from "./add-node-button";
 import { useSetAtom } from "jotai";

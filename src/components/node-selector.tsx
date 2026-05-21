@@ -117,7 +117,7 @@ const executionNodes: NodeTypeOption[] = [
         type: NodeType.GOOGLE_SHEETS,
         label: "Google Sheets",
         description: "Add data to a Google Sheet",
-        icon: Database  
+        icon: "/logos/googleSheet.png"  
     }
 ]
 
