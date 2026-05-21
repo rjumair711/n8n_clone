@@ -103,6 +103,7 @@ enum CredentialType {
   ANTHROPIC
   GEMINI
   SMTP
+  GOOGLE_SHEETS
 }
 
 model Workflow {

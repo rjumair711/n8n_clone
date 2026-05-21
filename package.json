@@ -7,7 +7,7 @@
     "build": "next build",
     "start": "next start",
     "lint": "biome check",
-    "ngrok:dev": "dotenv -- cmd /c C:\\ngrok\\ngrok.exe http 3000",
+    "ngrok:dev": "dotenv -- cmd /c C:\\ngrok\\ngrok.exe http --url=%NGROK_URL% 3000",
     "format": "biome format --write",
     "inngest:dev": "inngest-cli dev",
     "dev:all": "npm-run-all -p dev inngest:dev ngrok:dev"
@@ -38,6 +38,7 @@
     "cryptr": "^6.4.0",
     "date-fns": "^4.1.0",
     "embla-carousel-react": "^8.6.0",
+    "googleapis": "^171.4.0",
     "handlebars": "^4.7.8",
     "html-entities": "^2.6.0",
     "inngest": "3.54.0",

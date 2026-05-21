@@ -10,7 +10,7 @@ export const googleSheetsChannel = channel(SHEETS_CHANNEL_NAME)
         topic("status").type<{
             nodeId: string;
             status: "loading" | "success" | "error";
-            message: string;
+            message?: string;
         }>()
     )
     .addTopic(

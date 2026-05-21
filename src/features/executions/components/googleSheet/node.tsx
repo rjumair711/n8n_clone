@@ -9,8 +9,11 @@ import { fetchGoogleSheetsRealtimeToken } from "./action";
 
 // Define the data type for Google Sheets Node
 type GoogleSheetsNodeData = {
+  credentialId?: string;
   sheetId?: string;
-  rowData?: string[];
+  sheetName?: string;
+  rowData?: string;
+  variableName?: string;
 };
 
 type GoogleSheetsNodeType = Node<GoogleSheetsNodeData>;
