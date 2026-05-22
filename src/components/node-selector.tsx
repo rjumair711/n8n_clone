@@ -13,7 +13,7 @@ import {
 } from "./ui/sheet"
 import { NodeType } from "@prisma/client"
 import { Separator } from "./ui/separator"
-import { Clock, Database, FilterIcon, GlobeIcon, Mail, MousePointerIcon, Send, VariableIcon } from "lucide-react"
+import { Clock, FilterIcon, GlobeIcon, Mail, MousePointerIcon, Send, VariableIcon } from "lucide-react"
 import { toast } from "sonner"
 
 

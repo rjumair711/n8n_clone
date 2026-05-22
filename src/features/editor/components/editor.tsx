@@ -1,4 +1,5 @@
 "use client"
+import '@xyflow/react/dist/style.css';
 import { ErrorView, LoadingView } from "@/components/entity-components"
 import { useSuspenseWorkflow } from "@/features/workflows/hooks/use-workflows"
 import { useState, useCallback, useMemo } from 'react';
