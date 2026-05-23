@@ -8,7 +8,7 @@ import { EmailDialog, EmailFormValues } from "./dialog";
 import { Mail } from "lucide-react";
 import { useNodeStatus } from "../../hooks/use-node-status";
 import { EMAIL_CHANNEL_NAME } from "@/inngest/channels/email";
-import { fetchEmailRealtimeToken } from "./action";
+
 
 export const EmailSendNode = memo((props: NodeProps<Node>) => {
   const [dialogOpen, setDialogOpen] = useState(false);
@@ -18,7 +18,12 @@ export const EmailSendNode = memo((props: NodeProps<Node>) => {
     nodeId: props.id,
     channel: EMAIL_CHANNEL_NAME,
     topic: "status",
-    refreshToken: fetchEmailRealtimeToken,
+    refreshToken: async () => {
+      const response = await fetch(
+        `/api/realtime-token/${EMAIL_CHANNEL_NAME}`
+      );
+      return response.json();
+    },
   });
 
   const handleOpenSettings = () => setDialogOpen(true);

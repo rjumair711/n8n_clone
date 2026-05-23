@@ -4,7 +4,6 @@ import { BaseTriggerNode } from "../base-trigger-node"
 import { StripeTriggerDialog } from "./dialog"
 import { useNodeStatus } from "@/features/executions/hooks/use-node-status"
 import { STRIPE_TRIGGER_CHANNEL_NAME } from "@/inngest/channels/stripe-trigger"
-import { fetchStripeTriggerRealtimeToken } from "./actions"
 
 
 export const StripeTriggerNode = memo((props: NodeProps) => {
@@ -15,7 +14,12 @@ export const StripeTriggerNode = memo((props: NodeProps) => {
         nodeId: props.id,
         channel: STRIPE_TRIGGER_CHANNEL_NAME,
         topic: "status",
-        refreshToken: fetchStripeTriggerRealtimeToken,
+        refreshToken: async () => {
+            const response = await fetch(
+                `/api/realtime-token/${STRIPE_TRIGGER_CHANNEL_NAME}`
+            );
+            return response.json();
+        },
     })
 
 

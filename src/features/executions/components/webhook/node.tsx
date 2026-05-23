@@ -5,13 +5,12 @@ import { WebhookResponseDialog, WebhookResponseFormValues } from "./dialog"; // 
 import { Send } from "lucide-react";  // Icon import for the Webhook Response node
 import { useNodeStatus } from "../../hooks/use-node-status";
 import { WEBHOOK_CHANNEL_NAME } from "@/inngest/channels/webhookResponse";
-import { fetchWebhookRealtimeToken } from "./action";
 
 // Define the data type for Webhook Response Node
 type WebhookResponseNodeData = {
   responseMessage?: string;  // Custom response message
   responseStatus?: "success" | "error";  // Response status
-  webhookUrl?: string; // <--- Added this line
+  webhookUrl?: string; 
 };
 
 type WebhookResponseNodeType = Node<WebhookResponseNodeData>;
@@ -24,7 +23,12 @@ export const WebhookResponseNode = memo((props: NodeProps<WebhookResponseNodeTyp
     nodeId: props.id,
     channel: WEBHOOK_CHANNEL_NAME,
     topic: "status",
-    refreshToken: fetchWebhookRealtimeToken,
+    refreshToken: async () => {
+      const response = await fetch(
+        `/api/realtime-token/${WEBHOOK_CHANNEL_NAME}`
+      );
+      return response.json();
+    },
   });
 
 

@@ -7,7 +7,7 @@ import { Clock } from "lucide-react";
 import { BaseExecutionNode } from "../base-execution-node";
 import { DELAY_CHANNEL_NAME } from "@/inngest/channels/delay";
 import { useNodeStatus } from "../../hooks/use-node-status";
-import { fetchDelayRealtimeToken } from "./action";
+import { DISCORD_CHANNEL_NAME } from "@/inngest/channels/discord";
 
 // Define the shape of your custom data
 type DelayNodeData = {
@@ -30,7 +30,12 @@ export const DelayNode = memo((props: NodeProps<DelayNodeType>) => {
     nodeId: props.id,
     channel: DELAY_CHANNEL_NAME,
     topic: "status",
-    refreshToken: fetchDelayRealtimeToken,
+    refreshToken: async () => {
+      const response = await fetch(
+        `/api/realtime-token/${DISCORD_CHANNEL_NAME}`
+      );
+      return response.json();
+    },
   });
 
   const handleSubmit = (values: DelayFormValues) => {

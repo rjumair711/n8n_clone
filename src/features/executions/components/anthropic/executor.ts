@@ -1,144 +1,133 @@
 import type { NodeExecutor } from "@/features/executions/types";
 import { NonRetriableError } from "inngest";
 import { createAnthropic } from "@ai-sdk/anthropic";
-import Handlebars from "handlebars"
-import { generateText } from 'ai'
-import { openaiChannel } from "@/inngest/channels/openai";
-import { anthropicChannel } from "@/inngest/channels/anthropic";
+import Handlebars from "handlebars";
+import { generateText } from "ai";
 import prisma from "@/lib/db";
 import { decrypt } from "@/lib/encryption";
 
-
 Handlebars.registerHelper("json", (context) => {
-    const jsonString = JSON.stringify(context, null, 2)
-    const safeString = new Handlebars.SafeString(jsonString)
+  const jsonString = JSON.stringify(
+    context,
+    null,
+    2
+  );
 
-    return safeString;
-})
+  return new Handlebars.SafeString(
+    jsonString
+  );
+});
 
 type AnthropicData = {
-    variableName?: string;
-    model?: string;
-    credentialId?: string;
-    systemPrompt?: string;
-    userPrompt?: string
-}
+  variableName?: string;
+  model?: string;
+  credentialId?: string;
+  systemPrompt?: string;
+  userPrompt?: string;
+};
 
-export const AnthropicExecutor: NodeExecutor<AnthropicData> = async ({
-    data,
-    nodeId,
-    userId,
-    context,
-    step,
-    publish
+export const AnthropicExecutor: NodeExecutor<
+  AnthropicData
+> = async ({
+  data,
+  userId,
+  context,
+  step,
 }) => {
-    await publish(
-        anthropicChannel().status({
-            nodeId,
-            status: "loading"
-        })
-    )
 
-    if (!data.variableName) {
-        await publish(
-            anthropicChannel().status({
-                nodeId,
-                status: "error",
-            })
-        )
-        throw new NonRetriableError("Anthropic node: Variable name is missing")
+  // Validation
+  if (!data.variableName) {
+    throw new NonRetriableError(
+      "Anthropic node: Variable name is missing"
+    );
+  }
+
+  if (!data.credentialId) {
+    throw new NonRetriableError(
+      "Anthropic node: Credential ID is required"
+    );
+  }
+
+  if (!data.userPrompt) {
+    throw new NonRetriableError(
+      "Anthropic node: User prompt is required"
+    );
+  }
+
+  // Compile prompts
+  const systemPrompt = data.systemPrompt
+    ? Handlebars.compile(
+        data.systemPrompt
+      )(context)
+    : "You are a helpful assistant.";
+
+  const userPrompt = Handlebars.compile(
+    data.userPrompt
+  )(context);
+
+  // Fetch credential
+  const credential = await step.run(
+    "get-credential",
+    async () => {
+      return prisma.credential.findUnique({
+        where: {
+          id: data.credentialId,
+          userId,
+        },
+      });
     }
+  );
 
-    if (!data.credentialId) {
-        await publish(
-            anthropicChannel().status({
-                nodeId,
-                status: "error",
-            })
-        )
-        throw new NonRetriableError("Anthropic node: Credential ID is required")
-    }
+  if (!credential) {
+    throw new NonRetriableError(
+      "Anthropic node: Credential not found"
+    );
+  }
 
+  // Create Anthropic client
+  const anthropic = createAnthropic({
+    apiKey: decrypt(credential.value),
+  });
 
-    if (!data.userPrompt) {
-        await publish(
-            anthropicChannel().status({
-                nodeId,
-                status: "error",
-            })
-        )
-        throw new NonRetriableError("Anthropic node: User Prompt name is missing")
-    }
+  try {
 
-    const systemPrompt = data.systemPrompt ? Handlebars.compile(data.systemPrompt)(context) :
-        "You are a helpful assistant."
+    const { steps } = await step.ai.wrap(
+      "anthropic-generate-text",
+      generateText,
+      {
+        model: anthropic(
+          data.model || "claude-3-5-sonnet"
+        ),
 
-    const userPrompt = Handlebars.compile(data.userPrompt)(context)
+        system: systemPrompt,
 
-    const credential = await step.run("get-credential", () => {
-        return prisma.credential.findUnique({
-            where: {
-                id: data.credentialId,
-                userId,
-            }
-        })
-    })
+        prompt: userPrompt,
 
-    if (!credential) {
-        await publish(
-            anthropicChannel().status({
-                nodeId,
-                status: "error",
-            })
-        )
-        throw new NonRetriableError("Gemini node: Credential not found")
-    }
+        experimental_telemetry: {
+          isEnabled: true,
+          recordInputs: true,
+          recordOutputs: true,
+        },
+      }
+    );
 
-    const anthropic = createAnthropic({
-        apiKey: decrypt(credential.value),
-    })
+    const text =
+      steps[0].content[0].type === "text"
+        ? steps[0].content[0].text
+        : "";
 
-    try {
-        const { steps } = await step.ai.wrap(
-            "anthropic-generate-text",
-            generateText,
-            {
-                model: anthropic("claude-3-5-sonnet"),
-                system: systemPrompt,
-                prompt: userPrompt,
-                experimental_telemetry: {
-                    isEnabled: true,
-                    recordInputs: true,
-                    recordOutputs: true
-                }
-            },
-        )
+    return {
+      ...context,
 
-        const text = steps[0].content[0].type === "text"
-            ? steps[0].content[0].text : "";
+      [data.variableName]: {
+        text,
+      },
+    };
 
-        await publish(
-            anthropicChannel().status({
-                nodeId,
-                status: "success"
-            })
-        )
+  } catch (error: any) {
 
-        return {
-            ...context,
-            [data.variableName]: {
-                text,
-            }
-        }
-
-    } catch (error) {
-        await publish(
-            anthropicChannel().status({
-                nodeId,
-                status: "error"
-            })
-        )
-        throw error
-
-    }
-}
+    throw new NonRetriableError(
+      `Anthropic node failed: ${error.message}`
+    );
+  }
+};

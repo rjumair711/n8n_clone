@@ -5,7 +5,6 @@ import { BaseExecutionNode } from "@/features/executions/components/base-executi
 import { memo, useState } from "react";
 import { useNodeStatus } from "../../hooks/use-node-status";
 import { OPENAI_CHANNEL_NAME } from "@/inngest/channels/openai";
-import { fetchOpenAIRealtimeToken } from "./actions";
 import { OpenAIDialog, OpenAIFormValues } from "./dialog";
 
 type OpenAINodeData = {
@@ -26,7 +25,12 @@ export const OpenAINode = memo((props: NodeProps<OpenAINodeType>) => {
         nodeId: props.id,
         channel: OPENAI_CHANNEL_NAME,
         topic: "status",
-        refreshToken: fetchOpenAIRealtimeToken,
+        refreshToken: async () => {
+            const response = await fetch(
+                `/api/realtime-token/${OPENAI_CHANNEL_NAME}`
+            );
+            return response.json();
+        },
     })
 
     const handleOpenSettings = () => setDialogOpen(true)
@@ -67,7 +71,7 @@ export const OpenAINode = memo((props: NodeProps<OpenAINodeType>) => {
                 status={nodeStatus}
                 description={description}
                 onSettings={handleOpenSettings}
-                onDoubleClick={() => { handleOpenSettings }}
+                onDoubleClick={handleOpenSettings}
             />
         </>
     )

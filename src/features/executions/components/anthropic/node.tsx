@@ -4,7 +4,6 @@ import { Node, NodeProps, useReactFlow } from "@xyflow/react"
 import { BaseExecutionNode } from "@/features/executions/components/base-execution-node"
 import { memo, useState } from "react";
 import { useNodeStatus } from "../../hooks/use-node-status";
-import { fetchAnthropicRealtimeToken } from "./actions";
 import { AnthropicDialog, AnthropicFormValues } from "./dialog";
 import { ANTHROPIC_CHANNEL_NAME } from "@/inngest/channels/anthropic";
 
@@ -26,7 +25,12 @@ export const AnthropicNode = memo((props: NodeProps<AnthropicNodeType>) => {
         nodeId: props.id,
         channel: ANTHROPIC_CHANNEL_NAME,
         topic: "status",
-        refreshToken: fetchAnthropicRealtimeToken,
+        refreshToken: async () => {
+            const response = await fetch(
+                `/api/realtime-token/${ANTHROPIC_CHANNEL_NAME}`
+            );
+            return response.json();
+        },
     })
 
     const handleOpenSettings = () => setDialogOpen(true)

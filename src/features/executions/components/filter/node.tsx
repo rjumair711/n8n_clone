@@ -7,7 +7,6 @@ import { FilterDialog, FilterFormValues } from "./dialog";
 import { FilterIcon } from "lucide-react";
 import { useNodeStatus } from "../../hooks/use-node-status";
 import { FILTER_CHANNEL_NAME } from "@/inngest/channels/filter";
-import { fetchFilterRealtimeToken } from "./action";
 
 type FilterNodeData = {
   inputKey?: string;
@@ -27,7 +26,12 @@ export const FilterNode = memo((props: NodeProps<FilterNodeType>) => {
     nodeId: props.id,
     channel: FILTER_CHANNEL_NAME,
     topic: "status",
-    refreshToken: fetchFilterRealtimeToken,
+    refreshToken: async () => {
+      const response = await fetch(
+        `/api/realtime-token/${FILTER_CHANNEL_NAME}`
+      );
+      return response.json();
+    },
   });
 
   const handleSubmit = (values: FilterFormValues) => {

@@ -5,7 +5,6 @@ import { GoogleSheetsDialog, GoogleSheetsFormValues } from "./dialog"; // Dialog
 import { Database } from "lucide-react";  // Icon import for Google Sheets node
 import { useNodeStatus } from "../../hooks/use-node-status";
 import { SHEETS_CHANNEL_NAME } from "@/inngest/channels/googleSheet";
-import { fetchGoogleSheetsRealtimeToken } from "./action";
 
 // Define the data type for Google Sheets Node
 type GoogleSheetsNodeData = {
@@ -26,7 +25,12 @@ export const GoogleSheetsNode = memo((props: NodeProps<GoogleSheetsNodeType>) =>
     nodeId: props.id,
     channel: SHEETS_CHANNEL_NAME,
     topic: "status",
-    refreshToken: fetchGoogleSheetsRealtimeToken,
+    refreshToken: async () => {
+          const response = await fetch(
+            `/api/realtime-token/${SHEETS_CHANNEL_NAME}`
+          );
+          return response.json();
+        },
   });
 
   const handleOpenSettings = () => setDialogOpen(true);

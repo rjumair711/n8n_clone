@@ -4,7 +4,6 @@ import { BaseTriggerNode } from "../base-trigger-node"
 import { GoogleFormTriggerDialog } from "./dialog"
 import { useNodeStatus } from "@/features/executions/hooks/use-node-status"
 import { GOOGLE_FORM_TRIGGER_CHANNEL_NAME } from "@/inngest/channels/google-form-trigger"
-import { fetchGoogleFormTriggerRealtimeToken } from "./actions"
 
 
 export const GoogleFormTrigger = memo((props: NodeProps) => {
@@ -15,7 +14,12 @@ export const GoogleFormTrigger = memo((props: NodeProps) => {
         nodeId: props.id,
         channel: GOOGLE_FORM_TRIGGER_CHANNEL_NAME,
         topic: "status",
-        refreshToken: fetchGoogleFormTriggerRealtimeToken,
+          refreshToken: async () => {
+                  const response = await fetch(
+                    `/api/realtime-token/${GOOGLE_FORM_TRIGGER_CHANNEL_NAME}`
+                  );
+                  return response.json();
+                },
     })
 
 

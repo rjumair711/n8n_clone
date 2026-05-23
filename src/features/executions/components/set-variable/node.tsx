@@ -7,7 +7,6 @@ import { SetVariableDialog, SetVariableFormValues } from "./dialog";  // Importi
 import { VariableIcon } from "lucide-react";  // Using Lucide Variables icon
 import { useNodeStatus } from "../../hooks/use-node-status";
 import { SET_VARIABLE_CHANNEL_NAME } from "@/inngest/channels/set-variable";
-import { fetchSetVariableRealtimeToken } from "./action";
 
 // Define the data type for Set Variable Node
 type SetVariableNodeData = {
@@ -29,7 +28,12 @@ const nodeStatus = useNodeStatus({
     nodeId: props.id,
     channel: SET_VARIABLE_CHANNEL_NAME,
     topic: "status",
-    refreshToken: fetchSetVariableRealtimeToken,
+    refreshToken: async () => {
+          const response = await fetch(
+            `/api/realtime-token/${SET_VARIABLE_CHANNEL_NAME}`
+          );
+          return response.json();
+        },
   });
 
   // Handle the submit action for the dialog form

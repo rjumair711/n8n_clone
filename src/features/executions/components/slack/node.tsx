@@ -4,7 +4,6 @@ import { Node, NodeProps, useReactFlow } from "@xyflow/react"
 import { BaseExecutionNode } from "@/features/executions/components/base-execution-node"
 import { memo, useState } from "react";
 import { useNodeStatus } from "../../hooks/use-node-status";
-import { fetchSlackRealtimeToken } from "./actions";
 import { SLACK_CHANNEL_NAME } from "@/inngest/channels/slack";
 import { SlackDialog, SlackFormValues } from "./dialog";
 
@@ -24,7 +23,12 @@ export const SlackNode = memo((props: NodeProps<SlackNodeType>) => {
         nodeId: props.id,
         channel: SLACK_CHANNEL_NAME,
         topic: "status",
-        refreshToken: fetchSlackRealtimeToken,
+        refreshToken: async () => {
+            const response = await fetch(
+                `/api/realtime-token/${SLACK_CHANNEL_NAME}`
+            );
+            return response.json();
+        },
     })
 
     const handleOpenSettings = () => setDialogOpen(true)

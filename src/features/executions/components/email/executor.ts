@@ -1,5 +1,6 @@
 // email/executor.ts
-import { emailChannel } from "@/inngest/channels/email";
+
+import { EMAIL_CHANNEL_NAME, emailChannel } from "@/inngest/channels/email";
 import { NodeExecutor } from "../../types";
 import { NonRetriableError } from "inngest";
 import nodemailer from "nodemailer";
@@ -20,40 +21,52 @@ export const emailExecutor: NodeExecutor<EmailData> = async ({
   userId,
   context,
   step,
-  publish,
 }) => {
-  await publish(
-    emailChannel().status({ nodeId, status: "loading", message: "Sending email..." })
-  );
 
+  // Loading state
+  await step.sendEvent("email-loading", {
+    name: "email/status",
+    data: {
+      channel: EMAIL_CHANNEL_NAME,
+      topic: "status",
+      nodeId,
+      status: "loading",
+      message: "Sending email...",
+    },
+  });
+
+  // Validation
   if (!data.credentialId) {
-    await publish(emailChannel().status({ nodeId, status: "error" }));
     throw new NonRetriableError("Email node: Credential ID is required");
   }
+
   if (!data.recipient) {
-    await publish(emailChannel().status({ nodeId, status: "error" }));
     throw new NonRetriableError("Email node: Recipient is required");
   }
+
   if (!data.subject) {
-    await publish(emailChannel().status({ nodeId, status: "error" }));
     throw new NonRetriableError("Email node: Subject is required");
   }
+
   if (!data.body) {
-    await publish(emailChannel().status({ nodeId, status: "error" }));
     throw new NonRetriableError("Email node: Body is required");
   }
 
+  // Get credential
   const credential = await step.run("get-email-credential", () =>
     prisma.credential.findUnique({
-      where: { id: data.credentialId, userId },
+      where: {
+        id: data.credentialId,
+        userId,
+      },
     })
   );
 
   if (!credential) {
-    await publish(emailChannel().status({ nodeId, status: "error" }));
     throw new NonRetriableError("Email node: Credential not found");
   }
 
+  // Parse SMTP config
   let smtpConfig: {
     host: string;
     port: string;
@@ -65,25 +78,32 @@ export const emailExecutor: NodeExecutor<EmailData> = async ({
   try {
     smtpConfig = JSON.parse(decrypt(credential.value));
   } catch {
-    await publish(emailChannel().status({ nodeId, status: "error" }));
-    throw new NonRetriableError("Email node: Invalid SMTP credential format");
+    throw new NonRetriableError(
+      "Email node: Invalid SMTP credential format"
+    );
   }
 
   const { host, port, user, pass, fromName } = smtpConfig;
 
-  // Support {{variable}} interpolation like other nodes
+  // Parse variables
   const recipient = Handlebars.compile(data.recipient)(context);
   const subject = Handlebars.compile(data.subject)(context);
   const body = Handlebars.compile(data.body)(context);
 
+  // Create transporter
   const transporter = nodemailer.createTransport({
     host,
     port: parseInt(port),
     secure: parseInt(port) === 465,
-    auth: { user, pass },
+    auth: {
+      user,
+      pass,
+    },
   });
 
   try {
+
+    // Send email
     const info = await transporter.sendMail({
       from: `"${fromName || "RJBase"}" <${user}>`,
       to: recipient,
@@ -91,16 +111,42 @@ export const emailExecutor: NodeExecutor<EmailData> = async ({
       html: body,
     });
 
-    await publish(emailChannel().status({ nodeId, status: "success" }));
+    // Success event
+    await step.sendEvent("email-success", {
+      name: "email/status",
+      data: {
+        channel: EMAIL_CHANNEL_NAME,
+        topic: "status",
+        nodeId,
+        status: "success",
+        message: "Email sent successfully",
+      },
+    });
 
     return {
       ...context,
-      emailSend: { success: true, messageId: info.messageId },
+      emailSend: {
+        success: true,
+        messageId: info.messageId,
+      },
     };
+
   } catch (error: any) {
-    await publish(
-      emailChannel().status({ nodeId, status: "error", message: error.message })
+
+    // Error event
+    await step.sendEvent("email-error", {
+      name: "email/status",
+      data: {
+        channel: EMAIL_CHANNEL_NAME,
+        topic: "status",
+        nodeId,
+        status: "error",
+        message: error.message,
+      },
+    });
+
+    throw new NonRetriableError(
+      `Email node failed: ${error.message}`
     );
-    throw error;
   }
 };

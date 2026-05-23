@@ -6,7 +6,6 @@ import { memo, useState } from "react";
 import { GeminiDialog, GeminiFormValues } from "./dialog";
 import { useNodeStatus } from "../../hooks/use-node-status";
 import { GEMINI_CHANNEL_NAME } from "@/inngest/channels/gemini";
-import { fetchGeminiRealtimeToken } from "./actions";
 
 type GeminiNodeData = {
     variableName?: string;
@@ -26,7 +25,12 @@ export const GeminiNode = memo((props: NodeProps<GeminiNodeType>) => {
         nodeId: props.id,
         channel: GEMINI_CHANNEL_NAME,
         topic: "status",
-        refreshToken: fetchGeminiRealtimeToken,
+        refreshToken: async () => {
+            const response = await fetch(
+                `/api/realtime-token/${GEMINI_CHANNEL_NAME}`
+            );
+            return response.json();
+        },
     })
 
     const handleOpenSettings = () => setDialogOpen(true)

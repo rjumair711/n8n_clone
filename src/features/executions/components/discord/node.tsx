@@ -5,7 +5,6 @@ import { BaseExecutionNode } from "@/features/executions/components/base-executi
 import { memo, useState } from "react";
 import { DiscordDialog, DiscordFormValues } from "./dialog";
 import { useNodeStatus } from "../../hooks/use-node-status";
-import { fetchDiscordRealtimeToken } from "./actions";
 import { DISCORD_CHANNEL_NAME } from "@/inngest/channels/discord";
 
 type DiscordNodeData = {
@@ -25,7 +24,12 @@ export const DiscordNode = memo((props: NodeProps<DiscordNodeType>) => {
         nodeId: props.id,
         channel: DISCORD_CHANNEL_NAME,
         topic: "status",
-        refreshToken: fetchDiscordRealtimeToken,
+          refreshToken: async () => {
+          const response = await fetch(
+            `/api/realtime-token/${DISCORD_CHANNEL_NAME}`
+          );
+          return response.json();
+        },
     })
 
     const handleOpenSettings = () => setDialogOpen(true)

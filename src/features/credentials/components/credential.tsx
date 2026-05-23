@@ -43,7 +43,7 @@ const credentialTypeOptions = [
   { value: CredentialType.ANTHROPIC,     label: "Anthropic",           logo: "/logos/anthropic.svg" },
   { value: CredentialType.GEMINI,        label: "Gemini",              logo: "/logos/gemini.svg" },
   { value: CredentialType.SMTP,          label: "SMTP (Email)",        logo: "/logos/smtp.jfif" },
-  { value: CredentialType.GOOGLE_SHEETS, label: "Google Sheets",       logo: "/logos/google-sheets.svg" },
+  { value: CredentialType.GOOGLE_SHEETS, label: "Google Sheets",       logo: "/logos/googleSheet.png" },
 ];
 
 interface CredentialFormProps {
