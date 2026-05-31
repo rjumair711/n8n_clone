@@ -10,17 +10,7 @@ export const StripeTriggerNode = memo((props: NodeProps) => {
 
     const [dialogOpen, setDialogOpen] = useState(false)
 
-    const nodeStatus = useNodeStatus({
-        nodeId: props.id,
-        channel: STRIPE_TRIGGER_CHANNEL_NAME,
-        topic: "status",
-        refreshToken: async () => {
-            const response = await fetch(
-                `/api/realtime-token/${STRIPE_TRIGGER_CHANNEL_NAME}`
-            );
-            return response.json();
-        },
-    })
+    const nodeStatus = useNodeStatus(props.id);
 
 
     const handleOpenSettings = () => setDialogOpen(true)
@@ -32,7 +22,7 @@ export const StripeTriggerNode = memo((props: NodeProps) => {
                 icon="/logos/stripe.svg"
                 name="Stripe"
                 description="When stripe event is captured"
-                status={nodeStatus}
+                status={nodeStatus.status}
                 onSettings={handleOpenSettings}
                 onDoubleClick={handleOpenSettings}
             />

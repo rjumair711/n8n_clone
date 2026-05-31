@@ -44,11 +44,28 @@ export const workflowsRouter = createTRPCRouter({
                 });
             }
 
+            const execution =
+                await prisma.execution.create({
+                    data: {
+                        workflowId:
+                            workflow.id,
+
+                        status: "RUNNING",
+                    },
+                });
+
             await sendWorkflowExecution({
                 workflowId: input.id,
+                executionId:
+                    execution.id,
             });
 
-            return workflow;
+            return {
+                ...workflow,
+
+                executionId:
+                    execution.id,
+            };
         }),
 
 

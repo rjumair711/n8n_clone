@@ -14,17 +14,7 @@ export const EmailSendNode = memo((props: NodeProps<Node>) => {
   const [dialogOpen, setDialogOpen] = useState(false);
   const { setNodes } = useReactFlow();
 
-  const nodeStatus = useNodeStatus({
-    nodeId: props.id,
-    channel: EMAIL_CHANNEL_NAME,
-    topic: "status",
-    refreshToken: async () => {
-      const response = await fetch(
-        `/api/realtime-token/${EMAIL_CHANNEL_NAME}`
-      );
-      return response.json();
-    },
-  });
+  const nodeStatus = useNodeStatus(props.id);
 
   const handleOpenSettings = () => setDialogOpen(true);
 
@@ -55,7 +45,7 @@ export const EmailSendNode = memo((props: NodeProps<Node>) => {
         id={props.id}
         icon={Mail}
         name="Email Send"
-        status={nodeStatus}
+        status={nodeStatus.status}
         description={description}
         onSettings={handleOpenSettings}
         onDoubleClick={handleOpenSettings}

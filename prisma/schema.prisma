@@ -206,6 +206,33 @@ model Execution {
   error      String?         @db.Text
   errorStack String?         @db.Text
 
-  inngestEventId String @unique
+  inngestEventId String? @unique
   output         Json?
+
+  nodes ExecutionNode[]
+}
+
+model ExecutionNode {
+  id            String   @id @default(cuid())
+
+  executionId   String
+  execution     Execution @relation(fields: [executionId], references: [id], onDelete: Cascade)
+
+  nodeId        String
+  nodeName      String
+  nodeType      NodeType
+
+  status        ExecutionStatus @default(RUNNING)
+
+  input         Json?
+  output        Json?
+
+  error         String? @db.Text
+  errorStack    String? @db.Text
+
+  startedAt     DateTime @default(now())
+  completedAt   DateTime?
+
+  @@index([executionId])
+  @@index([nodeId])
 }

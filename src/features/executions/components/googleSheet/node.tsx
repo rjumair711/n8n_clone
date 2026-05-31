@@ -21,18 +21,7 @@ export const GoogleSheetsNode = memo((props: NodeProps<GoogleSheetsNodeType>) =>
   const [dialogOpen, setDialogOpen] = useState(false);
   const { setNodes } = useReactFlow();
 
-  const nodeStatus = useNodeStatus({
-    nodeId: props.id,
-    channel: SHEETS_CHANNEL_NAME,
-    topic: "status",
-    refreshToken: async () => {
-          const response = await fetch(
-            `/api/realtime-token/${SHEETS_CHANNEL_NAME}`
-          );
-          return response.json();
-        },
-  });
-
+  const nodeStatus = useNodeStatus(props.id);
   const handleOpenSettings = () => setDialogOpen(true);
 
   const handleSubmit = (values: GoogleSheetsFormValues) => {
@@ -67,7 +56,7 @@ export const GoogleSheetsNode = memo((props: NodeProps<GoogleSheetsNodeType>) =>
         id={props.id}
         icon={Database}  // Use the Database icon from Lucide React
         name="Google Sheets"
-        status={nodeStatus} // Placeholder for actual status
+        status={nodeStatus.status} // Placeholder for actual status
         description={description}
         onSettings={handleOpenSettings}
         onDoubleClick={handleOpenSettings}

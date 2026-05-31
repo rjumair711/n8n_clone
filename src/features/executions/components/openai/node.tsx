@@ -21,17 +21,7 @@ export const OpenAINode = memo((props: NodeProps<OpenAINodeType>) => {
     const [dialogOpen, setDialogOpen] = useState(false);
     const { setNodes } = useReactFlow()
 
-    const nodeStatus = useNodeStatus({
-        nodeId: props.id,
-        channel: OPENAI_CHANNEL_NAME,
-        topic: "status",
-        refreshToken: async () => {
-            const response = await fetch(
-                `/api/realtime-token/${OPENAI_CHANNEL_NAME}`
-            );
-            return response.json();
-        },
-    })
+    const nodeStatus = useNodeStatus(props.id);
 
     const handleOpenSettings = () => setDialogOpen(true)
 
@@ -68,7 +58,7 @@ export const OpenAINode = memo((props: NodeProps<OpenAINodeType>) => {
                 id={props.id}
                 icon="/logos/openai.svg"
                 name="OpenAI"
-                status={nodeStatus}
+                status={nodeStatus.status}
                 description={description}
                 onSettings={handleOpenSettings}
                 onDoubleClick={handleOpenSettings}

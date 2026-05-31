@@ -20,17 +20,7 @@ export const DiscordNode = memo((props: NodeProps<DiscordNodeType>) => {
     const [dialogOpen, setDialogOpen] = useState(false);
     const { setNodes } = useReactFlow()
 
-    const nodeStatus = useNodeStatus({
-        nodeId: props.id,
-        channel: DISCORD_CHANNEL_NAME,
-        topic: "status",
-          refreshToken: async () => {
-          const response = await fetch(
-            `/api/realtime-token/${DISCORD_CHANNEL_NAME}`
-          );
-          return response.json();
-        },
-    })
+    const nodeStatus = useNodeStatus(props.id);
 
     const handleOpenSettings = () => setDialogOpen(true)
 
@@ -69,7 +59,7 @@ export const DiscordNode = memo((props: NodeProps<DiscordNodeType>) => {
                 id={props.id}
                 icon="/logos/discord.svg"
                 name="Discord"
-                status={nodeStatus}
+                status={nodeStatus.status}
                 description={description}
                 onSettings={handleOpenSettings}
                 onDoubleClick={() => { handleOpenSettings }}

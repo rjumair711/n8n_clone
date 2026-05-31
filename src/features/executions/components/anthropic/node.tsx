@@ -5,7 +5,6 @@ import { BaseExecutionNode } from "@/features/executions/components/base-executi
 import { memo, useState } from "react";
 import { useNodeStatus } from "../../hooks/use-node-status";
 import { AnthropicDialog, AnthropicFormValues } from "./dialog";
-import { ANTHROPIC_CHANNEL_NAME } from "@/inngest/channels/anthropic";
 
 type AnthropicNodeData = {
     variableName?: string;
@@ -21,17 +20,7 @@ export const AnthropicNode = memo((props: NodeProps<AnthropicNodeType>) => {
     const [dialogOpen, setDialogOpen] = useState(false);
     const { setNodes } = useReactFlow()
 
-    const nodeStatus = useNodeStatus({
-        nodeId: props.id,
-        channel: ANTHROPIC_CHANNEL_NAME,
-        topic: "status",
-        refreshToken: async () => {
-            const response = await fetch(
-                `/api/realtime-token/${ANTHROPIC_CHANNEL_NAME}`
-            );
-            return response.json();
-        },
-    })
+   const nodeStatus = useNodeStatus(props.id);
 
     const handleOpenSettings = () => setDialogOpen(true)
 
@@ -68,7 +57,7 @@ export const AnthropicNode = memo((props: NodeProps<AnthropicNodeType>) => {
                 id={props.id}
                 icon="/logos/anthropic.svg"
                 name="Anthropic"
-                status={nodeStatus}
+                status={nodeStatus.status}
                 description={description}
                 onSettings={handleOpenSettings}
                 onDoubleClick={() => { handleOpenSettings }}

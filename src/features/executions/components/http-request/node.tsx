@@ -22,17 +22,7 @@ export const HttpRequestNode = memo((props: NodeProps<HttpRequestNodeType>) => {
     const [dialogOpen, setDialogOpen] = useState(false);
     const { setNodes } = useReactFlow()
     
-    const nodeStatus = useNodeStatus({
-        nodeId: props.id,
-        channel: HTTP_REQUEST_CHANNEL_NAME,
-        topic: "status",
-        refreshToken: async () => {
-              const response = await fetch(
-                `/api/realtime-token/${HTTP_REQUEST_CHANNEL_NAME}`
-              );
-              return response.json();
-            },
-    })
+    const nodeStatus = useNodeStatus(props.id);
 
     const handleOpenSettings = () => setDialogOpen(true)
 
@@ -70,7 +60,7 @@ export const HttpRequestNode = memo((props: NodeProps<HttpRequestNodeType>) => {
                 id={props.id}
                 icon={GlobeIcon}
                 name="HTTP Request"
-                status={nodeStatus}
+                status={nodeStatus.status}
                 description={description}
                 onSettings={handleOpenSettings}
                 onDoubleClick={() => { handleOpenSettings }}

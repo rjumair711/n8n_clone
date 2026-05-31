@@ -13,9 +13,11 @@ export function BaseNode({ className, status, ...props }: BaseNodeProps) {
   return (
     <div
       className={cn(
-        "relative rounded-md border bg-card text-card-foreground transition-colors hover:bg-accent/30",
+        "relative rounded-2xl border border-border/60 bg-card/95 text-card-foreground shadow-sm backdrop-blur transition-all duration-200 hover:-translate-y-0.5 hover:shadow-lg hover:border-primary/30",
         "[.react-flow\\_\\_node.selected_&]:border-primary",
-        "[.react-flow\\_\\_node.selected_&]:shadow-lg",
+        "[.react-flow\\_\\_node.selected_&]:shadow-2xl",
+        "[.react-flow\\_\\_node.selected_&]:ring-2",
+        "[.react-flow\\_\\_node.selected_&]:ring-primary/30",
         className,
       )}
       tabIndex={0}

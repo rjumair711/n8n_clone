@@ -19,18 +19,7 @@ export const WebhookResponseNode = memo((props: NodeProps<WebhookResponseNodeTyp
   const [dialogOpen, setDialogOpen] = useState(false);
   const { setNodes } = useReactFlow();
 
-  const nodeStatus = useNodeStatus({
-    nodeId: props.id,
-    channel: WEBHOOK_CHANNEL_NAME,
-    topic: "status",
-    refreshToken: async () => {
-      const response = await fetch(
-        `/api/realtime-token/${WEBHOOK_CHANNEL_NAME}`
-      );
-      return response.json();
-    },
-  });
-
+ const nodeStatus = useNodeStatus(props.id);
 
   const handleOpenSettings = () => setDialogOpen(true);
 
@@ -73,7 +62,7 @@ export const WebhookResponseNode = memo((props: NodeProps<WebhookResponseNodeTyp
         id={props.id}
         icon={Send}  // Sending icon for webhook response node
         name="Webhook Response"
-        status={nodeStatus} // Placeholder for actual status
+        status={nodeStatus.status} // Placeholder for actual status
         description={description}
         onSettings={handleOpenSettings}
         onDoubleClick={handleOpenSettings}

@@ -19,17 +19,7 @@ export const SlackNode = memo((props: NodeProps<SlackNodeType>) => {
     const [dialogOpen, setDialogOpen] = useState(false);
     const { setNodes } = useReactFlow()
 
-    const nodeStatus = useNodeStatus({
-        nodeId: props.id,
-        channel: SLACK_CHANNEL_NAME,
-        topic: "status",
-        refreshToken: async () => {
-            const response = await fetch(
-                `/api/realtime-token/${SLACK_CHANNEL_NAME}`
-            );
-            return response.json();
-        },
-    })
+    const nodeStatus = useNodeStatus(props.id);
 
     const handleOpenSettings = () => setDialogOpen(true)
 
@@ -68,7 +58,7 @@ export const SlackNode = memo((props: NodeProps<SlackNodeType>) => {
                 id={props.id}
                 icon="/logos/slack.svg"
                 name="Slack"
-                status={nodeStatus}
+                status={nodeStatus.status}
                 description={description}
                 onSettings={handleOpenSettings}
                 onDoubleClick={() => { handleOpenSettings }}

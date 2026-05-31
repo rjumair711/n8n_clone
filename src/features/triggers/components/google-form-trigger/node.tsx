@@ -10,17 +10,7 @@ export const GoogleFormTrigger = memo((props: NodeProps) => {
 
     const [dialogOpen, setDialogOpen] = useState(false)
 
-    const nodeStatus = useNodeStatus({
-        nodeId: props.id,
-        channel: GOOGLE_FORM_TRIGGER_CHANNEL_NAME,
-        topic: "status",
-          refreshToken: async () => {
-                  const response = await fetch(
-                    `/api/realtime-token/${GOOGLE_FORM_TRIGGER_CHANNEL_NAME}`
-                  );
-                  return response.json();
-                },
-    })
+    const nodeStatus = useNodeStatus(props.id);
 
 
     const handleOpenSettings = () => setDialogOpen(true)
@@ -32,7 +22,7 @@ export const GoogleFormTrigger = memo((props: NodeProps) => {
                 icon="/logos/googleform.svg"
                 name="Google Form"
                 description="When form is submitted"
-                status={nodeStatus}
+                status={nodeStatus.status}
                 onSettings={handleOpenSettings}
                 onDoubleClick={handleOpenSettings}
             />

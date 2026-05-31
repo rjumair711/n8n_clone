@@ -24,17 +24,7 @@ export const SetVariableNode = memo((props: NodeProps<SetVariableNodeType>) => {
   // Handle opening the settings dialog
   const handleOpenSettings = () => setDialogOpen(true);
 
-const nodeStatus = useNodeStatus({
-    nodeId: props.id,
-    channel: SET_VARIABLE_CHANNEL_NAME,
-    topic: "status",
-    refreshToken: async () => {
-          const response = await fetch(
-            `/api/realtime-token/${SET_VARIABLE_CHANNEL_NAME}`
-          );
-          return response.json();
-        },
-  });
+const nodeStatus = useNodeStatus(props.id);
 
   // Handle the submit action for the dialog form
   const handleSubmit = (values: SetVariableFormValues) => {
@@ -77,7 +67,7 @@ const nodeStatus = useNodeStatus({
         id={props.id}
         icon={VariableIcon}  // Passing the Lucide Variables icon
         name="Set Variable"
-        status={nodeStatus}  // You can later replace this with actual status
+        status={nodeStatus.status}  // You can later replace this with actual status
         description={description}
         onSettings={handleOpenSettings}
         onDoubleClick={handleOpenSettings}

@@ -26,17 +26,7 @@ export const DelayNode = memo((props: NodeProps<DelayNodeType>) => {
   const handleOpenSettings = () => setDialogOpen(true);
 
 
-  const nodeStatus = useNodeStatus({
-    nodeId: props.id,
-    channel: DELAY_CHANNEL_NAME,
-    topic: "status",
-    refreshToken: async () => {
-      const response = await fetch(
-        `/api/realtime-token/${DISCORD_CHANNEL_NAME}`
-      );
-      return response.json();
-    },
-  });
+  const nodeStatus = useNodeStatus(props.id);
 
   const handleSubmit = (values: DelayFormValues) => {
     setNodes((nodes) =>
@@ -74,7 +64,7 @@ export const DelayNode = memo((props: NodeProps<DelayNodeType>) => {
         {...props}
         icon={Clock}
         name="Delay"
-        status={nodeStatus}
+        status={nodeStatus.status}
         description={description}
         onSettings={handleOpenSettings}
         onDoubleClick={handleOpenSettings}

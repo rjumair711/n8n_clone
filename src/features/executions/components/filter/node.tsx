@@ -22,17 +22,7 @@ export const FilterNode = memo((props: NodeProps<FilterNodeType>) => {
 
   const handleOpenSettings = () => setDialogOpen(true);
 
-  const nodeStatus = useNodeStatus({
-    nodeId: props.id,
-    channel: FILTER_CHANNEL_NAME,
-    topic: "status",
-    refreshToken: async () => {
-      const response = await fetch(
-        `/api/realtime-token/${FILTER_CHANNEL_NAME}`
-      );
-      return response.json();
-    },
-  });
+  const nodeStatus = useNodeStatus(props.id);
 
   const handleSubmit = (values: FilterFormValues) => {
     setNodes((nodes) =>
@@ -73,7 +63,7 @@ export const FilterNode = memo((props: NodeProps<FilterNodeType>) => {
         id={props.id}
         icon={FilterIcon}
         name="Filter"
-        status={nodeStatus}
+        status={nodeStatus.status}
         description={description}
         onSettings={handleOpenSettings}
         onDoubleClick={handleOpenSettings}

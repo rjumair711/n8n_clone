@@ -11,18 +11,7 @@ export const ManualTriggerNode = memo((props: NodeProps) => {
 
     const [dialogOpen, setDialogOpen] = useState(false)
 
-    const nodeStatus = useNodeStatus({
-        nodeId: props.id,
-        channel: MANUAL_TRIGGER_CHANNEL_NAME,
-        topic: "status",
-        refreshToken: async () => {
-            const response = await fetch(
-                `/api/realtime-token/${MANUAL_TRIGGER_CHANNEL_NAME}`
-            );
-            return response.json();
-        },
-    })
-
+    const nodeStatus = useNodeStatus(props.id);
 
     const handleOpenSettings = () => setDialogOpen(true)
     return (
@@ -32,7 +21,7 @@ export const ManualTriggerNode = memo((props: NodeProps) => {
                 {...props}
                 icon={MousePointerIcon}
                 name="When clicking 'Execute Workflow'"
-                status={nodeStatus}
+                status={nodeStatus.status}
                 onSettings={handleOpenSettings}
                 onDoubleClick={handleOpenSettings}
             />
