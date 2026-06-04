@@ -18,6 +18,13 @@ model Test {
   name String
 }
 
+enum SubscriptionPlan {
+  FREE
+  BEGINNER
+  INTERMEDIATE
+  PRO
+}
+
 model User {
   id            String     @id
   name          String
@@ -31,6 +38,12 @@ model User {
   workflows     Workflow[]
 
   credentials Credential[]
+
+  plan SubscriptionPlan @default(FREE)
+  trialEndsAt DateTime?
+  workflowCount Int @default(0)
+  executionsUsed Int @default(0)
+  hasCompletedOnboarding Boolean @default(false)
 
   @@unique([email])
   @@map("user")
@@ -87,7 +100,7 @@ model Verification {
 model Credential {
   id        String         @id @default(cuid())
   name      String
-  value     String  // This will store the SMTP settings as a JSON string
+  value     String // This will store the SMTP settings as a JSON string
   type      CredentialType
   createdAt DateTime       @default(now())
   updatedAt DateTime       @updatedAt
@@ -213,25 +226,25 @@ model Execution {
 }
 
 model ExecutionNode {
-  id            String   @id @default(cuid())
+  id String @id @default(cuid())
 
-  executionId   String
-  execution     Execution @relation(fields: [executionId], references: [id], onDelete: Cascade)
+  executionId String
+  execution   Execution @relation(fields: [executionId], references: [id], onDelete: Cascade)
 
-  nodeId        String
-  nodeName      String
-  nodeType      NodeType
+  nodeId   String
+  nodeName String
+  nodeType NodeType
 
-  status        ExecutionStatus @default(RUNNING)
+  status ExecutionStatus @default(RUNNING)
 
-  input         Json?
-  output        Json?
+  input  Json?
+  output Json?
 
-  error         String? @db.Text
-  errorStack    String? @db.Text
+  error      String? @db.Text
+  errorStack String? @db.Text
 
-  startedAt     DateTime @default(now())
-  completedAt   DateTime?
+  startedAt   DateTime  @default(now())
+  completedAt DateTime?
 
   @@index([executionId])
   @@index([nodeId])

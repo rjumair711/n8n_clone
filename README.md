@@ -1,96 +1,335 @@
 # RJBase – AI Workflow Automation Platform
 
-RJBase is a low-cost AI workflow automation platform inspired by tools like n8n. It allows users to create, manage, and execute automated workflows using a visual drag-and-drop builder.
+RJBase is a modern AI-native workflow automation platform inspired by tools like n8n, Zapier, and Make.com. It enables users to visually build, automate, and execute workflows using AI models, APIs, messaging systems, productivity tools, webhooks, and realtime execution pipelines.
 
-The platform supports trigger nodes, AI integrations, messaging nodes, HTTP requests, email sending, background job execution, authentication, subscriptions, and execution history.
+The platform is designed as a scalable SaaS product with:
 
----
-
-## 🚀 Features
-
-### Workflow Builder
-- Visual drag-and-drop workflow builder powered by React Flow
-- Real-time node status indicators (loading, success, error)
-- Topological sort-based sequential node execution
-- Context passing between nodes with `{{variable}}` interpolation via Handlebars
-
-### Trigger Nodes
-- **Manual Trigger** — execute workflows on demand
-- **Webhook Trigger** — trigger workflows via incoming HTTP requests
-- **Google Form Trigger** — trigger workflows from Google Form submissions
-- **Stripe Trigger** — trigger workflows from Stripe payment events
-
-### Action Nodes
-- **HTTP Request** — make outbound HTTP calls and pass response data downstream
-- **Set Variable** — set named variables for use in subsequent nodes
-- **Filter** — conditional logic to branch or stop workflow execution
-- **Delay** — introduce timed pauses (seconds, minutes, or hours)
-- **Webhook Response** — send HTTP responses back to webhook callers
-- **Email Send** — send emails via SMTP with dynamic subject, recipient, and body using `{{variables}}`
-- **Google Sheets** — read and write data to Google Sheets
-
-### AI Integrations
-- **OpenAI** — GPT models with system and user prompt support
-- **Anthropic Claude** — Claude models with system and user prompt support
-- **Google Gemini** — Gemini models with system and user prompt support
-
-### Messaging Integrations
-- **Discord** — send messages to Discord channels
-- **Slack** — send messages to Slack channels
-
-### Productivity Integrations
-- **Google Sheets** — append workflow data directly into spreadsheets using Google Service Accounts
-
-### Platform Features
-- Secure credentials management with AES encryption at rest
-- Subscription-based access control (Pro plan with execution and workflow limits)
-- Background workflow execution via Inngest
-- Execution history with status tracking (running, success, failed)
-- Error tracking and monitoring via Sentry
-- User authentication via Better Auth
-- Payment and subscription management via Polar
-- Type-safe API layer via tRPC
+* visual workflow automation
+* AI-first architecture
+* realtime execution monitoring
+* secure credential management
+* multi-plan subscription system
+* usage-based monetization
+* onboarding and billing experience
 
 ---
 
-## 🛠️ Technologies Used
+# 🚀 Features
 
-### Frontend
-- Next.js App Router
-- React + TypeScript
-- React Flow (drag-and-drop workflow builder)
-- Tailwind CSS
-- Shadcn UI
-- TanStack React Query
-- Sonner Toasts
+## 🎨 Visual Workflow Builder
 
-### Backend
-- Next.js API Routes
-- tRPC
-- Prisma ORM
-- Neon PostgreSQL
-- Inngest (background job execution)
-- Better Auth (authentication)
-- Polar (payments and subscriptions)
-- Nodemailer (SMTP email sending)
-
-### AI Integrations
-- OpenAI API
-- Google Gemini API (`@ai-sdk/google`)
-- Anthropic Claude API
-
-### Monitoring & Developer Tools
-- Sentry (error tracking)
-- CodeRabbit (AI-powered code reviews)
-- GitHub (version control)
-- Vercel (deployment)
+* Drag-and-drop workflow editor powered by React Flow
+* Dynamic node-based architecture
+* Realtime node execution indicators
+* Zoom, pan, and edge connection support
+* Topological dependency resolution
+* Shared execution context between nodes
+* Modular execution engine
 
 ---
 
-## 🧠 Project Architecture
+# ⚡ Workflow Execution Engine
 
-```
+* Sequential workflow execution pipeline
+* Inngest background execution system
+* Shared execution context
+* Dynamic `{{variable}}` interpolation using Handlebars
+* Execution persistence in PostgreSQL
+* Realtime execution updates
+* Retry handling and failure propagation
+* Execution cancellation support
+
+---
+
+# 📜 Execution Logs & Monitoring
+
+RJBase includes a comprehensive execution monitoring system.
+
+## Execution Tracking
+
+Every workflow execution stores:
+
+* Execution ID
+* Workflow ID
+* Trigger source
+* Execution timestamps
+* Final execution status
+* Runtime context data
+* Error information
+
+---
+
+## Node Execution Logs
+
+Each node execution stores:
+
+| Field       | Description             |
+| ----------- | ----------------------- |
+| nodeId      | Unique node identifier  |
+| type        | Node type               |
+| status      | Current node state      |
+| startedAt   | Execution start time    |
+| completedAt | Completion timestamp    |
+| input       | Incoming execution data |
+| output      | Node output             |
+| error       | Failure details         |
+
+---
+
+## Supported Node States
+
+| Status  | Meaning   |
+| ------- | --------- |
+| initial | Waiting   |
+| loading | Executing |
+| success | Completed |
+| error   | Failed    |
+
+---
+
+## Realtime Updates
+
+Realtime workflow updates use:
+
+* Inngest Realtime Channels
+* Zustand stores
+* React Flow node rendering
+
+---
+
+## Error Monitoring
+
+* Sentry integration
+* Stack trace monitoring
+* Workflow failure propagation
+* Node-level diagnostics
+* Retry diagnostics
+
+---
+
+# 🧠 AI Integrations
+
+## OpenAI
+
+* GPT models
+* Dynamic prompts
+* Variable interpolation
+
+## Anthropic Claude
+
+* Claude Sonnet support
+* Context-aware prompting
+
+## Google Gemini
+
+* Gemini models
+* Structured AI chaining
+
+---
+
+# 🔔 Trigger Nodes
+
+| Trigger             | Description                                |
+| ------------------- | ------------------------------------------ |
+| Manual Trigger      | Manual execution                           |
+| Webhook Trigger     | External HTTP requests                     |
+| Google Form Trigger | Form submission automation                 |
+| Stripe Trigger      | Payment event automation                   |
+
+---
+
+# ⚙️ Action Nodes
+
+| Node             | Description                              |
+| ---------------- | ---------------------------------------- |
+| HTTP Request     | External API requests                    |
+| Set Variable     | Store reusable variables                 |
+| Filter           | Conditional branching                    |
+| Delay            | Pause workflow                           |
+| Webhook Response | Return webhook responses                 |
+| Email Send       | SMTP email automation                    |
+| Google Sheets    | Spreadsheet automation                   |
+
+---
+
+# 💬 Messaging Integrations
+
+| Integration | Description         |
+| ----------- | ------------------- |
+| Discord     | Discord automation  |
+| Slack       | Slack notifications |
+
+---
+
+# 📊 Productivity Integrations
+
+## Google Sheets
+
+* Read spreadsheet data
+* Append rows
+* Dynamic value insertion
+* Service account authentication
+
+---
+
+# 🔐 Credentials & Security
+
+All credentials are encrypted before database storage using AES encryption.
+
+Supported credential types:
+
+| Type          | Used By       |
+| ------------- | ------------- |
+| OPENAI        | OpenAI Nodes  |
+| ANTHROPIC     | Claude Nodes  |
+| GEMINI        | Gemini Nodes  |
+| SMTP          | Email Nodes   |
+| GOOGLE_SHEETS | Google Sheets |
+
+---
+
+# 💳 SaaS Billing & Subscription System
+
+RJBase includes a complete SaaS monetization architecture powered by Polar.
+
+## Subscription Plans
+
+### FREE Trial
+
+* Limited workflows
+* Limited executions
+* Limited credentials
+* 7-day automatic signup trial duration
+
+### Beginner Plan
+
+* Starter workflow limits
+* AI integrations
+* Basic execution tracking
+
+### Intermediate Plan
+
+* Increased workflow limits
+* Scheduling support
+* Productivity integrations
+
+### Pro Plan
+
+* High execution limits
+* Advanced automation
+* Team-ready scaling
+
+---
+
+## SaaS Features
+
+* Automatic 7-day free trial user allocation upon signup
+* Dynamic plan detection and runtime casting via Prisma Enums
+* Usage-based monetization
+* Workflow usage tracking
+* Execution usage tracking
+* Credential usage limits
+* Billing management page
+* Polar customer portal integration
+* Better Auth Polar webhook sub-plugin lifecycle syncing architecture
+* Real-time dynamic tier upgrades and revoked downgrades matching checkout selections
+* Dynamic sidebar plan UI with live checkout state cache invalidation
+
+---
+
+# 📊 Usage Tracking System
+
+RJBase tracks:
+
+* workflow usage
+* monthly executions
+* credential limits
+* current subscription plan
+* trial duration
+
+Users can view:
+
+* workflows used
+* executions used
+* current plan
+* remaining trial days
+
+---
+
+# 🎯 Onboarding System
+
+RJBase includes onboarding UX to improve activation and retention.
+
+## Current Features
+
+* First-time onboarding page
+* Create workflow CTA
+* Starter workflow templates
+* Guided product introduction
+* Trial onboarding flow with proactive expiration countdowns
+
+## Planned Improvements
+
+* Interactive onboarding checklist
+* Workflow cloning templates
+* Guided node setup
+* AI workflow generation
+* Template marketplace
+
+---
+
+# 🛠️ Tech Stack
+
+## Frontend
+
+* Next.js App Router
+* React
+* TypeScript
+* React Flow
+* Tailwind CSS
+* Shadcn UI
+* Zustand
+* TanStack Query
+* Jotai
+
+---
+
+## Backend
+
+* Next.js API Routes
+* tRPC
+* Prisma ORM
+* Neon PostgreSQL
+* Better Auth
+* Polar
+* Inngest
+* Nodemailer
+
+---
+
+## AI SDKs
+
+* OpenAI SDK
+* Anthropic SDK
+* Google Gemini SDK
+
+---
+
+## Monitoring & Dev Tools
+
+* Sentry
+* GitHub
+* CodeRabbit
+* Vercel
+
+---
+
+# 🧱 System Architecture
+
+```txt
 Frontend UI
+   ↓
+React Flow Workflow Builder
    ↓
 Next.js App Router
    ↓
@@ -100,126 +339,143 @@ Prisma ORM
    ↓
 Neon PostgreSQL
 
-Workflow Execution
+Workflow Execution Engine
    ↓
 Inngest Background Jobs
    ↓
 Node Executors
    ↓
-External APIs / AI Providers / Messaging Services / SMTP
-```
-
----
-
-## 🔨 Folder Structure
-
-```
+External APIs / AI Providers / Messaging Services
+📂 Project Structure
+Plaintext
 /src
+├── /app
 ├── /components
-│   ├── /ui                  # Reusable UI components (buttons, inputs, dialogs, etc.)
-│   ├── /react-flow          # Components related to the drag-and-drop workflow builder
-│   └── /node-status         # Node status indicators
 ├── /features
-│   ├── /executions          # Execution logic for all node types
-│   ├── /hooks               # Custom hooks (e.g., node status management)
-│   ├── /nodes               # Custom node components and dialogs
-│   ├── /credentials         # Credential management (create, update, delete, fetch by type)
-│   ├── /channels            # Channels for connecting with external services
-│   └── /dialog              # Shared dialog components
 ├── /inngest
-│   ├── /client              # Inngest client configuration
-│   ├── /channels            # Realtime channel definitions per node type
-│   ├── /functions           # Core workflow execution function
-│   ├── /utils               # Utility functions (topological sort, error handling, etc.)
-│   └── /actions             # Server actions for fetching subscription tokens
 ├── /lib
-│   ├── /db                  # Prisma client
-│   └── /encryption          # AES encrypt/decrypt for credential values
-└── /pages
-    ├── /api                 # API routes (Inngest webhook, auth, etc.)
-    └── /workflow            # Workflow management frontend pages
-```
+├── /config
+├── /trpc
+└── /hooks
+⚙️ Workflow Execution Flow
+1. Trigger Activation
+Manual execution
 
----
+Webhooks
 
-## 📂 Detailed Node Breakdown
+External events
 
-### Trigger Nodes (`/features/nodes`)
+2. Dependency Resolution
+Nodes are sorted before execution using topological sorting.
 
-| Node | Files | Description |
-|---|---|---|
-| Manual Trigger | `ManualTriggerNode.tsx`, `ManualTriggerDialog.tsx` | Execute workflows on demand from the UI |
-| Webhook Trigger | `WebhookNode.tsx`, `WebhookDialog.tsx` | Receive and process incoming webhook payloads |
-| Google Form Trigger | `GoogleFormTriggerNode.tsx`, `GoogleFormTriggerDialog.tsx` | Trigger on Google Form submissions |
-| Stripe Trigger | `StripeTriggerNode.tsx`, `StripeTriggerDialog.tsx` | Trigger on Stripe payment events |
+3. Plan Verification
+Workflow and execution limits are verified.
 
-### Action Nodes (`/features/nodes`)
+4. Node Execution
+Each node processes workflow context and returns updated data.
 
-| Node | Files | Description |
-|---|---|---|
-| HTTP Request | `HttpRequestNode.tsx`, `HttpRequestDialog.tsx` | Make outbound HTTP calls |
-| Set Variable | `SetVariableNode.tsx`, `SetVariableDialog.tsx` | Set named variables for downstream nodes |
-| Filter | `FilterNode.tsx`, `FilterDialog.tsx` | Conditional logic; stops execution if condition fails |
-| Delay | `DelayNode.tsx`, `DelayDialog.tsx` | Timed pause (seconds, minutes, hours) |
-| Webhook Response | `WebhookResponseNode.tsx`, `WebhookResponseDialog.tsx` | Send HTTP responses back to webhook callers |
-| Email Send | `EmailSendNode.tsx`, `EmailDialog.tsx` | Send SMTP emails with dynamic content via Handlebars |
-| Google Sheets | `GoogleSheetsNode.tsx`, `GoogleSheetsDialog.tsx` | Read and write Google Sheets data |
+5. Variable Interpolation
+Handlebars
+{{user.email}}
+{{openai.response}}
+{{form.responses.name}}
+6. Realtime Updates
+Execution states synchronize instantly with frontend UI.
 
-### AI Nodes (`/features/nodes`)
+7. Error Handling
+Critical failures automatically stop workflow execution.
 
-| Node | Files | Description |
-|---|---|---|
-| OpenAI | `OpenAINode.tsx`, `OpenAIDialog.tsx` | GPT model inference with system/user prompts |
-| Anthropic | `AnthropicNode.tsx`, `AnthropicDialog.tsx` | Claude model inference with system/user prompts |
-| Gemini | `GeminiNode.tsx`, `GeminiDialog.tsx` | Gemini model inference with system/user prompts |
+8. Completion
+Executions finalize as:
 
-### Messaging Nodes (`/features/nodes`)
+SUCCESS
 
-| Node | Files | Description |
-|---|---|---|
-| Discord | `DiscordNode.tsx`, `DiscordDialog.tsx` | Send messages to Discord channels |
-| Slack | `SlackNode.tsx`, `SlackDialog.tsx` | Send messages to Slack channels |
+FAILED
 
----
+Execution logs are persisted.
 
-## ⚙️ Workflow Execution Process
-
-1. **Trigger** — the workflow begins with a trigger node (manual, webhook, Google Form, or Stripe)
-2. **Topological Sort** — nodes are sorted by dependency order before execution begins
-3. **Plan Limit Check** — the user's monthly execution count is verified against their Pro plan limit
-4. **Node Execution** — each node runs sequentially, receiving and returning a shared `context` object
-5. **Context Passing** — every executor receives the full workflow context and returns an updated version. Dynamic `{{variables}}` are resolved at runtime using Handlebars in prompts, HTTP requests, emails, Google Sheets row values, and other node configurations.
-6. **Real-Time Updates** — each node publishes status events (`loading`, `success`, `error`) to its Inngest realtime channel so the UI updates live during execution
-7. **Filter Short-Circuit** — if a Filter node fails its condition, execution stops immediately for downstream nodes
-8. **Completion** — the execution record is updated to `SUCCESS` or `FAILED` in the database with output and error details
-
----
-
-## 🔐 Credentials
-
-All credentials (API keys, SMTP settings) are encrypted with AES before being stored in the database. Credentials are scoped per user and fetched by type via tRPC (`credentials.getByType`).
-
-Supported credential types:
-
-| Type | Used By |
-|---|---|
-| `OPENAI` | OpenAI node |
-| `ANTHROPIC` | Anthropic node |
-| `GEMINI` | Gemini node |
-| `SMTP` | Email Send node |
-| `GOOGLE_SHEETS` | Google Sheets node |
-
-SMTP credentials store a JSON object containing `host`, `port`, `user`, `pass`, and optional `fromName`, encrypted at rest.
-
----
-
-## 📋 Environment Variables
-
-```env
+🌍 Environment Variables
+Code snippet
 DATABASE_URL=
-INNGEST_EVENT_KEY=
-INNGEST_SIGNING_KEY=
 BETTER_AUTH_SECRET=
 POLAR_ACCESS_TOKEN=
+POLAR_SERVER=
+POLAR_SUCCESS_URL=
+POLAR_WEBHOOK_SECRET=
+POLAR_BEGINNER_PRODUCT_ID=
+POLAR_INTERMEDIATE_PRODUCT_ID=
+POLAR_PRO_PRODUCT_ID=
+
+OPENAI_API_KEY=
+ANTHROPIC_API_KEY=
+GOOGLE_GENERATIVE_AI_API_KEY=
+
+INNGEST_EVENT_KEY=
+INNGEST_SIGNING_KEY=
+
 SENTRY_DSN=
-```
+🚀 Deployment
+Recommended Platforms
+Vercel
+
+Neon PostgreSQL
+
+Inngest Cloud
+
+📈 Future Improvements
+Phase A — Dynamic SaaS UI
+Dynamic sidebar usage system
+
+Trial countdown
+
+Plan-aware UI
+
+Phase B — Premium Feature Locking (Planned For Final Stage)
+WhatsApp 🔒 Pro
+
+AI Agents 🔒 Pro
+
+Browser Automation 🔒 Pro
+
+Upgrade modals
+
+Premium node locking system
+
+Phase C — Billing Management
+Billing page
+
+Usage dashboard
+
+Upgrade/downgrade flow
+
+Subscription management
+
+Phase D — Onboarding UX
+Welcome onboarding
+
+Starter templates
+
+Guided workflow creation
+
+Product activation system
+
+Phase E — Advanced SaaS Features (Planned For Final Stage)
+Team workspaces
+
+Organizations
+
+API keys
+
+Workflow marketplace
+
+Analytics dashboard
+
+Template sharing
+
+Browser automation
+
+📄 License
+MIT License
+
+👨‍💻 Author
+RJBase is a modern AI workflow automation SaaS platform inspired by enterprise-grade systems like n8n, Zapier, Make.com, Vercel, and Linear.

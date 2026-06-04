@@ -1,20 +1,25 @@
 import { PAGINATION } from "@/config/constants";
 import prisma from "@/lib/db";
-import { createTRPCRouter, premiumProcedure, protectedProcedure } from "@/trpc/init";
+import { createTRPCRouter, protectedProcedure } from "@/trpc/init";
 import { generateSlug } from "random-word-slugs"
 import z from "zod";
 import type { Node, Edge } from "@xyflow/react"
 import { NodeType } from "@prisma/client"
 import { sendWorkflowExecution } from "@/inngest/utils";
-import { PLAN_LIMITS } from "@/config/plans";
 import { TRPCError } from "@trpc/server";
+import { PLAN_LIMITS } from "@/config/plans";
 
 export const workflowsRouter = createTRPCRouter({
 
     //EXECUTE WORKFLOW
-    execute: premiumProcedure
+    execute: protectedProcedure
         .input(z.object({ id: z.string() }))
         .mutation(async ({ input, ctx }) => {
+            const user = await prisma.user.findUniqueOrThrow({
+                where: {
+                    id: ctx.auth.user.id,
+                },
+            });
             const workflow = await prisma.workflow.findUniqueOrThrow({
                 where: {
                     id: input.id,
@@ -37,10 +42,16 @@ export const workflowsRouter = createTRPCRouter({
                 },
             });
 
-            if (executionsThisMonth >= PLAN_LIMITS.PRO.monthlyExecutions) {
+
+            const executionLimit =
+                PLAN_LIMITS[user.plan]
+                    .monthlyExecutions;
+
+            if (executionsThisMonth >= executionLimit) {
                 throw new TRPCError({
                     code: "FORBIDDEN",
-                    message: `Monthly execution limit reached. Your Pro plan includes ${PLAN_LIMITS.PRO.monthlyExecutions} executions per month.`,
+
+                    message: `Monthly execution limit reached. Your current plan includes ${executionLimit} executions per month.`,
                 });
             }
 
@@ -60,6 +71,18 @@ export const workflowsRouter = createTRPCRouter({
                     execution.id,
             });
 
+            await prisma.user.update({
+                where: {
+                    id: ctx.auth.user.id,
+                },
+
+                data: {
+                    executionsUsed: {
+                        increment: 1,
+                    },
+                },
+            });
+
             return {
                 ...workflow,
 
@@ -70,33 +93,70 @@ export const workflowsRouter = createTRPCRouter({
 
 
     // CREATE WORKFLOW
-    create: premiumProcedure.mutation(async ({ ctx }) => {
-        const workflowCount = await prisma.workflow.count({
+    create: protectedProcedure.mutation(async ({ ctx }) => {
+        const user = await prisma.user.findUniqueOrThrow({
             where: {
-                userId: ctx.auth.user.id,
+                id: ctx.auth.user.id,
             },
         });
 
-        if (workflowCount >= PLAN_LIMITS.PRO.activeWorkflows) {
+        const workflowCount =
+            await prisma.workflow.count({
+                where: {
+                    userId: ctx.auth.user.id,
+                },
+            });
+
+        const workflowLimit =
+            PLAN_LIMITS[user.plan]
+                .activeWorkflows;
+
+        const hasReachedLimit =
+            workflowCount >= workflowLimit;
+
+        if (hasReachedLimit) {
             throw new TRPCError({
                 code: "FORBIDDEN",
-                message: `Workflow limit reached. Your Pro plan allows up to ${PLAN_LIMITS.PRO.activeWorkflows} workflows.`,
+
+                message: `Workflow limit reached. Your current plan allows up to ${workflowLimit} workflows.`,
             });
         }
 
-        return prisma.workflow.create({
-            data: {
-                name: generateSlug(3),
-                userId: ctx.auth.user.id,
-                nodes: {
-                    create: {
-                        type: NodeType.INITIAL,
-                        position: { x: 0, y: 0 },
-                        name: NodeType.INITIAL,
+        const workflow =
+            await prisma.workflow.create({
+                data: {
+                    name: generateSlug(3),
+
+                    userId: ctx.auth.user.id,
+
+                    nodes: {
+                        create: {
+                            type: NodeType.INITIAL,
+
+                            position: {
+                                x: 0,
+                                y: 0,
+                            },
+
+                            name: NodeType.INITIAL,
+                        },
                     },
+                },
+            });
+
+        await prisma.user.update({
+            where: {
+                id: ctx.auth.user.id,
+            },
+
+            data: {
+                workflowCount: {
+                    increment: 1,
                 },
             },
         });
+
+        return workflow;
     }),
 
     // DELETE WORKFLOW

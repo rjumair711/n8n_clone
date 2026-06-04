@@ -1,34 +1,66 @@
 import { PAGINATION } from "@/config/constants";
 import prisma from "@/lib/db";
-import { createTRPCRouter, premiumProcedure, protectedProcedure } from "@/trpc/init";
+import { createTRPCRouter, protectedProcedure } from "@/trpc/init";
 import z from "zod";
 import { CredentialType } from "@prisma/client"
 import { encrypt } from "@/lib/encryption";
+import { PLAN_LIMITS } from "@/config/plans";
+import { TRPCError } from "@trpc/server";
 
 
 export const credentialsRouter = createTRPCRouter({
 
+
+
     // CREATE CREDENTIAL
-    create: premiumProcedure
+    create: protectedProcedure
         .input(
             z.object({
                 name: z.string().min(1, "Name is required"),
                 type: z.enum(CredentialType),
-                value: z.string().min(1, "Value is required")
+                value: z.string().min(1, "Value is required"),
             })
         )
-        .mutation(({ ctx, input }) => {
 
+        .mutation(async ({ ctx, input }) => {
             const { name, value, type } = input;
+
+            const user =
+                await prisma.user.findUniqueOrThrow({
+                    where: {
+                        id: ctx.auth.user.id,
+                    },
+                });
+
+            const credentialCount =
+                await prisma.credential.count({
+                    where: {
+                        userId: ctx.auth.user.id,
+                    },
+                });
+
+            const credentialLimit =
+                PLAN_LIMITS[user.plan].credentials;
+
+            if (credentialCount >= credentialLimit) {
+                throw new TRPCError({
+                    code: "FORBIDDEN",
+
+                    message: `Credential limit reached. Your current plan allows up to ${credentialLimit} credentials.`,
+                });
+            }
 
             return prisma.credential.create({
                 data: {
                     name,
+
                     userId: ctx.auth.user.id,
+
                     type,
+
                     value: encrypt(value),
                 },
-            })
+            });
         }),
 
 

@@ -26,7 +26,6 @@ const registerSchema = z.object({
 
 type RegisterFormValues = z.infer<typeof registerSchema>
 
-
 export function RegisterForm() {
     const router = useRouter()
 
@@ -39,31 +38,33 @@ export function RegisterForm() {
         }
     })
 
-      const signInGithub = async () => {
-            await authClient.signIn.social({
-                provider: "github"
-            }, {
-                onSuccess: () => {
-                    router.push("/");
-                },
-                onError: () => {
-                    toast.error("Something went wrong")
-                }
-            })
-        }
-    
-        const signInGoogle = async () => {
-            await authClient.signIn.social({
-                provider: "google"
-            }, {
-                onSuccess: () => {
-                    router.push("/");
-                },
-                onError: () => {
-                    toast.error("Something went wrong")
-                }
-            })
-        }
+    const signInGithub = async () => {
+        await authClient.signIn.social({
+            provider: "github",
+            callbackURL: "/workflows"
+        }, {
+            onSuccess: () => {
+                router.push("/workflows");
+            },
+            onError: () => {
+                toast.error("Something went wrong")
+            }
+        })
+    }
+
+    const signInGoogle = async () => {
+        await authClient.signIn.social({
+            provider: "google",
+            callbackURL: "/workflows"
+        }, {
+            onSuccess: () => {
+                router.push("/workflows");
+            },
+            onError: () => {
+                toast.error("Something went wrong")
+            }
+        })
+    }
 
     const onSubmit = async (values: RegisterFormValues) => {
         await authClient.signUp.email(
@@ -71,11 +72,10 @@ export function RegisterForm() {
                 name: values.email,
                 email: values.email,
                 password: values.password,
-                callbackURL: "/"
             },
             {
                 onSuccess: () => {
-                    router.push("/");
+                    router.push("/workflows");
                 },
                 onError: (ctx) => {
                     toast.error(ctx.error?.message || "Signup failed")
@@ -103,7 +103,7 @@ export function RegisterForm() {
                             <div className="grid gap-6">
                                 <div className="flex flex-col gap-4">
                                     <Button
-                                    onClick={signInGithub}
+                                        onClick={signInGithub}
                                         variant="outline"
                                         className="w-full"
                                         type="button"
@@ -116,7 +116,7 @@ export function RegisterForm() {
                                         Continue with GitHub
                                     </Button>
                                     <Button
-                                    onClick={signInGoogle}
+                                        onClick={signInGoogle}
                                         variant="outline"
                                         className="w-full"
                                         type="button"

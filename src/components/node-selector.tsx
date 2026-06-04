@@ -111,13 +111,13 @@ const executionNodes: NodeTypeOption[] = [
         type: NodeType.EMAIL_SEND,
         label: "Email",
         description: "Send a email to a webhook",
-        icon: "/logos/googleSheet.png"
+        icon: "/logos/email.jfif"
     },
     {
         type: NodeType.GOOGLE_SHEETS,
         label: "Google Sheets",
         description: "Add data to a Google Sheet",
-        icon: "/logos/email.jfif"
+        icon: "/logos/googleSheet.png"
     }
 ]
 

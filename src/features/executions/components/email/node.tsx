@@ -5,7 +5,6 @@ import { memo, useState } from "react";
 import { NodeProps, Node, useReactFlow } from "@xyflow/react";
 import { BaseExecutionNode } from "../base-execution-node";
 import { EmailDialog, EmailFormValues } from "./dialog";
-import { Mail } from "lucide-react";
 import { useNodeStatus } from "../../hooks/use-node-status";
 import { EMAIL_CHANNEL_NAME } from "@/inngest/channels/email";
 
@@ -43,7 +42,7 @@ export const EmailSendNode = memo((props: NodeProps<Node>) => {
       <BaseExecutionNode
         {...props}
         id={props.id}
-        icon={Mail}
+        icon="/logos/email.jfif"
         name="Email Send"
         status={nodeStatus.status}
         description={description}
