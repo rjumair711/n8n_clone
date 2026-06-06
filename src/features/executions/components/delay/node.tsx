@@ -5,9 +5,7 @@ import { memo, useState } from "react";
 import { DelayDialog, DelayFormValues } from "./dialog";
 import { Clock } from "lucide-react";
 import { BaseExecutionNode } from "../base-execution-node";
-import { DELAY_CHANNEL_NAME } from "@/inngest/channels/delay";
 import { useNodeStatus } from "../../hooks/use-node-status";
-import { DISCORD_CHANNEL_NAME } from "@/inngest/channels/discord";
 
 // Define the shape of your custom data
 type DelayNodeData = {

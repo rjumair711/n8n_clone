@@ -62,7 +62,7 @@ export const Editor = ({ workflowId }: { workflowId: string }) => {
         // By looping through and setting them by a unique key (nodeId or nodeName), 
         // older statuses are naturally overwritten by the newest status.
         executionNodes.forEach((node: any) => {
-            const uniqueKey = node.nodeId || node.nodeName; 
+            const uniqueKey = node.nodeId || node.nodeName;
             map.set(uniqueKey, node);
         });
         return Array.from(map.values());
@@ -78,13 +78,13 @@ export const Editor = ({ workflowId }: { workflowId: string }) => {
             node.status === "RUNNING"
                 ? "loading"
                 : node.status === "SUCCESS"
-                ? "success"
-                : "error",
+                    ? "success"
+                    : "error",
         duration:
             node.completedAt && node.startedAt
                 ? `${Math.floor(
-                      (new Date(node.completedAt).getTime() - new Date(node.startedAt).getTime()) / 1000
-                  )}s`
+                    (new Date(node.completedAt).getTime() - new Date(node.startedAt).getTime()) / 1000
+                )}s`
                 : undefined,
         error: node.error,
         output: node.output ? JSON.stringify(node.output, null, 2) : undefined,
@@ -114,11 +114,14 @@ export const Editor = ({ workflowId }: { workflowId: string }) => {
         []
     );
 
+    // ALLOW EXECUTION PANEL FOR TESTING
     // =====================================
-    // MANUAL TRIGGER CHECK
-    // =====================================
-    const hasManualTrigger = useMemo(() => {
-        return nodes.some((node) => node.type === NodeType.MANUAL_TRIGGER);
+    const showExecuteButton = useMemo(() => {
+        return nodes.some(
+            (node) =>
+                node.type === NodeType.MANUAL_TRIGGER ||
+                node.type === NodeType.SCHEDULE_TRIGGER
+        );
     }, [nodes]);
 
     // =====================================
@@ -160,7 +163,7 @@ export const Editor = ({ workflowId }: { workflowId: string }) => {
                         <AddNodeButton />
                     </Panel>
 
-                    {hasManualTrigger && (
+                    {showExecuteButton && (
                         <Panel position="bottom-center">
                             <ExecuteWorkflowButton workflowId={workflowId} />
                         </Panel>

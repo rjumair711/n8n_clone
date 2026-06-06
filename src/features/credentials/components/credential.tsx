@@ -39,11 +39,11 @@ const formSchema = z.object({
 type FormValues = z.infer<typeof formSchema>;
 
 const credentialTypeOptions = [
-  { value: CredentialType.OPENAI,        label: "OpenAI",              logo: "/logos/openai.svg" },
-  { value: CredentialType.ANTHROPIC,     label: "Anthropic",           logo: "/logos/anthropic.svg" },
-  { value: CredentialType.GEMINI,        label: "Gemini",              logo: "/logos/gemini.svg" },
-  { value: CredentialType.SMTP,          label: "SMTP (Email)",        logo: "/logos/smtp.jfif" },
-  { value: CredentialType.GOOGLE_SHEETS, label: "Google Sheets",       logo: "/logos/googleSheet.png" },
+  { value: CredentialType.OPENAI, label: "OpenAI", logo: "/logos/openai.svg" },
+  { value: CredentialType.ANTHROPIC, label: "Anthropic", logo: "/logos/anthropic.svg" },
+  { value: CredentialType.GEMINI, label: "Gemini", logo: "/logos/gemini.svg" },
+  { value: CredentialType.SMTP, label: "SMTP (Email)", logo: "/logos/smtp.jfif" },
+  { value: CredentialType.GOOGLE_SHEETS, label: "Google Sheets", logo: "/logos/googleSheet.png" },
 ];
 
 interface CredentialFormProps {
@@ -104,15 +104,15 @@ export const CredentialForm = ({ initialData }: CredentialFormProps) => {
       selectedType === CredentialType.SMTP
         ? JSON.stringify(smtpFields)
         : selectedType === CredentialType.GOOGLE_SHEETS
-        ? JSON.stringify(sheetsFields)
-        : values.value;
+          ? JSON.stringify(sheetsFields)
+          : values.value;
 
     const finalName =
       selectedType === CredentialType.SMTP && !values.name.trim()
         ? smtpFields.user || "SMTP Credential"
         : selectedType === CredentialType.GOOGLE_SHEETS && !values.name.trim()
-        ? sheetsFields.clientEmail || "Google Sheets Credential"
-        : values.name;
+          ? sheetsFields.clientEmail || "Google Sheets Credential"
+          : values.name;
 
     const payload = { ...values, name: finalName, value: finalValue };
 
@@ -200,8 +200,8 @@ export const CredentialForm = ({ initialData }: CredentialFormProps) => {
                       <Input
                         placeholder={
                           selectedType === CredentialType.SMTP ? "My Gmail SMTP" :
-                          selectedType === CredentialType.GOOGLE_SHEETS ? "My Google Sheets Account" :
-                          "My OpenAI Key"
+                            selectedType === CredentialType.GOOGLE_SHEETS ? "My Google Sheets Account" :
+                              "My OpenAI Key"
                         }
                         {...field}
                       />
@@ -251,17 +251,17 @@ export const CredentialForm = ({ initialData }: CredentialFormProps) => {
                   <div className="space-y-1">
                     <h3 className="text-sm font-medium">Google Service Account</h3>
                     <p className="text-xs text-muted-foreground">
-  Create a Service Account in{" "}
-  <a
-    href="https://console.cloud.google.com/iam-admin/serviceaccounts"
-    target="_blank"
-    rel="noopener noreferrer"
-    className="underline"
-  >
-    Google Cloud Console
-  </a>
-  , enable the Google Sheets API, and share your sheet with the service account email.
-</p>
+                      Create a Service Account in{" "}
+                      <a
+                        href="https://console.cloud.google.com/iam-admin/serviceaccounts"
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="underline"
+                      >
+                        Google Cloud Console
+                      </a>
+                      , enable the Google Sheets API, and share your sheet with the service account email.
+                    </p>
                   </div>
 
                   <div className="space-y-2">
@@ -300,24 +300,24 @@ export const CredentialForm = ({ initialData }: CredentialFormProps) => {
               {/* API key for all other types */}
               {selectedType !== CredentialType.SMTP &&
                 selectedType !== CredentialType.GOOGLE_SHEETS && (
-                <FormField
-                  control={form.control}
-                  name="value"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>API Key</FormLabel>
-                      <FormControl>
-                        <Input
-                          type="password"
-                          placeholder={selectedType === CredentialType.OPENAI ? "sk-..." : "Key..."}
-                          {...field}
-                        />
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-              )}
+                  <FormField
+                    control={form.control}
+                    name="value"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>API Key</FormLabel>
+                        <FormControl>
+                          <Input
+                            type="password"
+                            placeholder={selectedType === CredentialType.OPENAI ? "sk-..." : "Key..."}
+                            {...field}
+                          />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                )}
 
               <div className="flex gap-4">
                 <Button type="submit" disabled={createCredential.isPending || updateCredential.isPending}>

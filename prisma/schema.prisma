@@ -39,11 +39,11 @@ model User {
 
   credentials Credential[]
 
-  plan SubscriptionPlan @default(FREE)
-  trialEndsAt DateTime?
-  workflowCount Int @default(0)
-  executionsUsed Int @default(0)
-  hasCompletedOnboarding Boolean @default(false)
+  plan                   SubscriptionPlan @default(FREE)
+  trialEndsAt            DateTime?
+  workflowCount          Int              @default(0)
+  executionsUsed         Int              @default(0)
+  hasCompletedOnboarding Boolean          @default(false)
 
   @@unique([email])
   @@map("user")
@@ -137,6 +137,7 @@ model Workflow {
 enum NodeType {
   INITIAL
   MANUAL_TRIGGER
+  SCHEDULE_TRIGGER
   HTTP_REQUEST
   STRIPE_TRIGGER
   GOOGLE_FORM_TRIGGER
@@ -211,6 +212,7 @@ model Execution {
   id          String    @id @default(cuid())
   startedAt   DateTime  @default(now())
   completedAt DateTime?
+  durationMs  Int?
 
   workflowId String
   workflow   Workflow @relation(fields: [workflowId], references: [id], onDelete: Cascade)
@@ -245,6 +247,7 @@ model ExecutionNode {
 
   startedAt   DateTime  @default(now())
   completedAt DateTime?
+  durationMs  Int?
 
   @@index([executionId])
   @@index([nodeId])

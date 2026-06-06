@@ -29,6 +29,7 @@ import { filterChannel } from "./channels/filter";
 import { delayChannel } from "./channels/delay";
 import { emailChannel } from "./channels/email";
 import { googleSheetsChannel } from "./channels/googleSheet";
+import { scheduleTriggerChannel } from "./channels/schedule-trigger";
 
 export const executeWorkflow =
   inngest.createFunction(
@@ -37,7 +38,7 @@ export const executeWorkflow =
 
       retries:
         process.env.NODE_ENV ===
-          "production"
+        "production"
           ? 3
           : 0,
 
@@ -45,6 +46,16 @@ export const executeWorkflow =
         event,
       }) => {
         try {
+          // Fetch execution to calculate duration if available
+          const exec = await prisma.execution.findUnique({
+            where: { inngestEventId: event.data.event.id },
+            select: { startedAt: true }
+          });
+
+          const durationMs = exec 
+            ? Date.now() - new Date(exec.startedAt).getTime() 
+            : undefined;
+
           await prisma.execution.update(
             {
               where: {
@@ -67,6 +78,8 @@ export const executeWorkflow =
 
                 completedAt:
                   new Date(),
+                
+                durationMs: durationMs, // 👈 Capture total duration on global failure
               },
             }
           );
@@ -88,6 +101,7 @@ export const executeWorkflow =
         manualTriggerChannel(),
         googleFormTriggerChannel(),
         stripeTriggerChannel(),
+        scheduleTriggerChannel(),
 
         geminiChannel(),
         openaiChannel(),
@@ -180,12 +194,12 @@ export const executeWorkflow =
         );
 
       // =========================================
-      // FIND USER
+      // FIND USER & PLAN TIER
       // =========================================
 
-      const userId =
+      const { userId, userPlan } =
         await step.run(
-          "find-user-id",
+          "find-user-and-plan",
           async () => {
             const workflow =
               await prisma.workflow.findUniqueOrThrow(
@@ -196,16 +210,24 @@ export const executeWorkflow =
 
                   select: {
                     userId: true,
+                    user: {
+                      select: {
+                        plan: true, // 👈 Dynamically fetch user's subscription tier
+                      }
+                    }
                   },
                 }
               );
 
-            return workflow.userId;
+            return {
+              userId: workflow.userId,
+              userPlan: workflow.user.plan,
+            };
           }
         );
 
       // =========================================
-      // PLAN LIMIT CHECK
+      // DYNAMIC PLAN LIMIT CHECK
       // =========================================
 
       await step.run(
@@ -239,13 +261,14 @@ export const executeWorkflow =
               }
             );
 
-          if (
-            executionsThisMonth >=
-            PLAN_LIMITS.PRO
-              .monthlyExecutions
-          ) {
+          // Get exact limit for this user's current tier
+          const allowedExecutions = 
+            PLAN_LIMITS[userPlan]?.monthlyExecutions ?? 
+            PLAN_LIMITS.FREE.monthlyExecutions;
+
+          if (executionsThisMonth >= allowedExecutions) {
             throw new NonRetriableError(
-              `Monthly execution limit reached. Your Pro plan includes ${PLAN_LIMITS.PRO.monthlyExecutions} executions per month.`
+              `Monthly execution limit reached. Your ${userPlan} plan includes ${allowedExecutions} executions per month.`
             );
           }
         }
@@ -319,6 +342,9 @@ export const executeWorkflow =
           }
         );
 
+        // Start performance tracking block for this individual node
+        const nodeStartTime = Date.now();
+
         try {
           // ===================================
           // EXECUTE NODE
@@ -344,6 +370,8 @@ export const executeWorkflow =
               step,
             });
 
+          const nodeDurationMs = Date.now() - nodeStartTime; // 👈 Calculate delta
+
           // ===================================
           // UPDATE NODE SUCCESS
           // ===================================
@@ -364,6 +392,8 @@ export const executeWorkflow =
 
                 completedAt:
                   new Date(),
+
+                durationMs: nodeDurationMs, // 👈 Save metrics to DB
               },
             }
           );
@@ -392,6 +422,8 @@ export const executeWorkflow =
             `Node success: ${node.id}`
           );
         } catch (error) {
+          const nodeDurationMs = Date.now() - nodeStartTime; // 👈 Calculate delta even on failures
+
           const errorMessage =
             error instanceof Error
               ? error.message
@@ -430,6 +462,8 @@ export const executeWorkflow =
 
                 completedAt:
                   new Date(),
+
+                durationMs: nodeDurationMs, // 👈 Save metrics to DB
               },
             }
           );
@@ -457,6 +491,8 @@ export const executeWorkflow =
 
                 completedAt:
                   new Date(),
+
+                durationMs: Date.now() - new Date(execution.startedAt).getTime(), // 👈 Track overall workflow execution time up until this crash
               },
             }
           );
@@ -511,6 +547,8 @@ export const executeWorkflow =
       await step.run(
         "finalize-execution",
         async () => {
+          const totalDurationMs = Date.now() - new Date(execution.startedAt).getTime(); // 👈 Total successful roundtrip time
+
           return prisma.execution.update(
             {
               where: {
@@ -525,6 +563,8 @@ export const executeWorkflow =
                   new Date(),
 
                 output: context,
+
+                durationMs: totalDurationMs, // 👈 Save metrics to DB
               },
             }
           );

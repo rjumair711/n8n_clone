@@ -11,7 +11,18 @@ import {
     SparklesIcon,
 } from "lucide-react"
 
-import { Sidebar, SidebarContent, SidebarFooter, SidebarGroup, SidebarGroupContent, SidebarHeader, SidebarMenu, SidebarMenuButton, SidebarMenuItem } from "./ui/sidebar"
+import { 
+    Sidebar, 
+    SidebarContent, 
+    SidebarFooter, 
+    SidebarGroup, 
+    SidebarGroupContent, 
+    SidebarHeader, 
+    SidebarMenu, 
+    SidebarMenuButton, 
+    SidebarMenuItem,
+    useSidebar 
+} from "./ui/sidebar"
 import Link from "next/link"
 import Image from "next/image"
 import { usePathname, useRouter } from "next/navigation"
@@ -20,7 +31,6 @@ import { UsageCard } from "@/components/subscription/usage-card";
 import { getTrialDaysLeft } from "@/lib/subscription/get-trial-days-left";
 import { useCurrentPlan } from "@/features/subscription/hook/use-current-plan"
 
-// Cleaned up main items (Removed duplicate Billing link)
 const menuItems = [
     {
         title: "Main",
@@ -37,24 +47,21 @@ export const AppSidebar = () => {
     const pathname = usePathname()
     const queryClient = useQueryClient()
     const { data } = useCurrentPlan();
+    const { state } = useSidebar();
+    const isCollapsed = state === "collapsed";
 
     const isFreePlan = !data?.plan || data.plan === "FREE";
-
     const trialDaysLeft = getTrialDaysLeft(data?.trialEndsAt ?? null);
 
-    // Forces a global cache wipe if returning from Polar checkout or portal
-    // Replace your existing useEffect with this one:
     useEffect(() => {
         const params = new URLSearchParams(window.location.search);
 
         if (params.has("redirect") || params.has("customer_session_token") || params.has("session_id")) {
-            // 💡 500ms buffer ensures the webhook settles in your DB before the client refetches
             const timer = setTimeout(() => {
                 queryClient.invalidateQueries({ queryKey: ["current-plan"] });
                 queryClient.invalidateQueries({ queryKey: ["subscription"] });
             }, 500);
 
-            // Clean up the URL address bar seamlessly
             const cleanUrl = window.location.pathname;
             window.history.replaceState({}, "", cleanUrl);
 
@@ -73,11 +80,9 @@ export const AppSidebar = () => {
                         </Link>
                     </SidebarMenuButton>
                 </SidebarMenuItem>
-
-                {/* 1. Only show Trial status if they are actually on the Free plan */}
-                {isFreePlan && (
-                    <div className="px-4 py-4"> {/* Increased vertical padding */}
-                        <div className="rounded-xl border bg-card p-4 shadow-sm"> {/* Added background and padding */}
+                {isFreePlan && !isCollapsed && (
+                    <div className="px-4 py-4">
+                        <div className="rounded-xl border bg-card p-4 shadow-sm">
                             <p className="text-xs font-bold uppercase tracking-wider text-muted-foreground">
                                 Free Trial
                             </p>
@@ -91,13 +96,15 @@ export const AppSidebar = () => {
                     </div>
                 )}
 
-                <div className="px-3 pt-3">
-                    <UsageCard
-                        plan={data?.plan ?? "FREE"}
-                        workflowsUsed={data?.workflowCount ?? 0}
-                        executionsUsed={data?.executionsUsed ?? 0}
-                    />
-                </div>
+                {!isCollapsed && (
+                    <div className="px-3 pt-3">
+                        <UsageCard
+                            plan={data?.plan ?? "FREE"}
+                            workflowsUsed={data?.workflowCount ?? 0}
+                            executionsUsed={data?.executionsUsed ?? 0}
+                        />
+                    </div>
+                )}
             </SidebarHeader>
 
             <SidebarContent>
@@ -128,7 +135,6 @@ export const AppSidebar = () => {
 
             <SidebarFooter>
                 <SidebarMenu>
-                    {/* 2. DYNAMIC FOOTER: Show Upgrade if FREE, show Portal if SUBSCRIBED */}
                     {isFreePlan ? (
                         <SidebarMenuItem>
                             <SidebarMenuButton

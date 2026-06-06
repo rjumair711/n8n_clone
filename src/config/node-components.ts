@@ -13,6 +13,7 @@ import { SlackNode } from "@/features/executions/components/slack/node";
 import { WebhookResponseNode } from "@/features/executions/components/webhook/node";
 import { GoogleFormTrigger } from "@/features/triggers/components/google-form-trigger/node";
 import { ManualTriggerNode } from "@/features/triggers/components/manual-trigger/node";
+import { ScheduleNode } from '@/features/triggers/components/schedule-trigger/node';
 import { StripeTriggerNode } from "@/features/triggers/components/stripe-trigger/node";
 
 import { NodeType } from "@prisma/client";
@@ -36,6 +37,7 @@ export const nodeComponents: NodeTypes = {
     [NodeType.WEBHOOK_RESPONSE]: WebhookResponseNode,
     [NodeType.EMAIL_SEND]: EmailSendNode,
     [NodeType.GOOGLE_SHEETS]: GoogleSheetsNode,
+    [NodeType.SCHEDULE_TRIGGER]: ScheduleNode,
 };
 
 export type RegisteredNodeType = keyof typeof nodeComponents;
