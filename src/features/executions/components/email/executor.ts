@@ -105,7 +105,7 @@ export const emailExecutor: NodeExecutor<EmailData> = async ({
 
     // Send email
     const info = await transporter.sendMail({
-      from: `"${fromName || "RJBase"}" <${user}>`,
+      from: `"${fromName || "RXJ"}" <${user}>`,
       to: recipient,
       subject,
       html: body,

@@ -1,6 +1,7 @@
 import { geminiChannel } from "./channels/gemini";
 import { inngest } from "./client";
 import { NonRetriableError } from "inngest";
+import { CronExpressionParser } from "cron-parser";
 import { topologicalSort } from "./utils";
 import {
   ExecutionStatus,
@@ -30,7 +31,11 @@ import { delayChannel } from "./channels/delay";
 import { emailChannel } from "./channels/email";
 import { googleSheetsChannel } from "./channels/googleSheet";
 import { scheduleTriggerChannel } from "./channels/schedule-trigger";
+import { codeChannel } from "./channels/code";
 
+// =========================================================================
+// 1. ENGINE EXECUTOR: Runs a single execution instance from start to finish
+// =========================================================================
 export const executeWorkflow =
   inngest.createFunction(
     {
@@ -38,7 +43,7 @@ export const executeWorkflow =
 
       retries:
         process.env.NODE_ENV ===
-        "production"
+          "production"
           ? 3
           : 0,
 
@@ -52,8 +57,8 @@ export const executeWorkflow =
             select: { startedAt: true }
           });
 
-          const durationMs = exec 
-            ? Date.now() - new Date(exec.startedAt).getTime() 
+          const durationMs = exec
+            ? Date.now() - new Date(exec.startedAt).getTime()
             : undefined;
 
           await prisma.execution.update(
@@ -78,8 +83,8 @@ export const executeWorkflow =
 
                 completedAt:
                   new Date(),
-                
-                durationMs: durationMs, // 👈 Capture total duration on global failure
+
+                durationMs: durationMs, // Capture total duration on global failure
               },
             }
           );
@@ -115,6 +120,7 @@ export const executeWorkflow =
         delayChannel(),
         emailChannel(),
         googleSheetsChannel(),
+        codeChannel(),
       ],
     },
 
@@ -212,7 +218,7 @@ export const executeWorkflow =
                     userId: true,
                     user: {
                       select: {
-                        plan: true, // 👈 Dynamically fetch user's subscription tier
+                        plan: true, // Dynamically fetch user's subscription tier
                       }
                     }
                   },
@@ -262,8 +268,8 @@ export const executeWorkflow =
             );
 
           // Get exact limit for this user's current tier
-          const allowedExecutions = 
-            PLAN_LIMITS[userPlan]?.monthlyExecutions ?? 
+          const allowedExecutions =
+            PLAN_LIMITS[userPlan]?.monthlyExecutions ??
             PLAN_LIMITS.FREE.monthlyExecutions;
 
           if (executionsThisMonth >= allowedExecutions) {
@@ -370,7 +376,7 @@ export const executeWorkflow =
               step,
             });
 
-          const nodeDurationMs = Date.now() - nodeStartTime; // 👈 Calculate delta
+          const nodeDurationMs = Date.now() - nodeStartTime; // Calculate delta
 
           // ===================================
           // UPDATE NODE SUCCESS
@@ -393,7 +399,7 @@ export const executeWorkflow =
                 completedAt:
                   new Date(),
 
-                durationMs: nodeDurationMs, // 👈 Save metrics to DB
+                durationMs: nodeDurationMs, // Save metrics to DB
               },
             }
           );
@@ -422,7 +428,7 @@ export const executeWorkflow =
             `Node success: ${node.id}`
           );
         } catch (error) {
-          const nodeDurationMs = Date.now() - nodeStartTime; // 👈 Calculate delta even on failures
+          const nodeDurationMs = Date.now() - nodeStartTime; // Calculate delta even on failures
 
           const errorMessage =
             error instanceof Error
@@ -463,7 +469,7 @@ export const executeWorkflow =
                 completedAt:
                   new Date(),
 
-                durationMs: nodeDurationMs, // 👈 Save metrics to DB
+                durationMs: nodeDurationMs, // Save metrics to DB
               },
             }
           );
@@ -492,7 +498,7 @@ export const executeWorkflow =
                 completedAt:
                   new Date(),
 
-                durationMs: Date.now() - new Date(execution.startedAt).getTime(), // 👈 Track overall workflow execution time up until this crash
+                durationMs: Date.now() - new Date(execution.startedAt).getTime(), // Track overall workflow execution time up until this crash
               },
             }
           );
@@ -547,7 +553,7 @@ export const executeWorkflow =
       await step.run(
         "finalize-execution",
         async () => {
-          const totalDurationMs = Date.now() - new Date(execution.startedAt).getTime(); // 👈 Total successful roundtrip time
+          const totalDurationMs = Date.now() - new Date(execution.startedAt).getTime(); // Total successful roundtrip time
 
           return prisma.execution.update(
             {
@@ -564,7 +570,7 @@ export const executeWorkflow =
 
                 output: context,
 
-                durationMs: totalDurationMs, // 👈 Save metrics to DB
+                durationMs: totalDurationMs, // Save metrics to DB
               },
             }
           );
@@ -597,3 +603,95 @@ export const executeWorkflow =
       };
     }
   );
+
+// =========================================================================
+// 2. BACKGROUND TICKER (HEARTBEAT): Wakes up Serverless containers every min
+// =========================================================================
+export const workflowCronHeartbeat = inngest.createFunction(
+  { id: "workflow-cron-heartbeat" },
+  { cron: "* * * * *" }, // Wakes up Vercel precisely every single minute
+  async ({ step, event }) => {
+    // 1. Fetch workflows containing a schedule trigger node
+    const scheduledWorkflows = await step.run("fetch-scheduled-workflows", async () => {
+      return prisma.workflow.findMany({
+        where: {
+          nodes: { some: { type: NodeType.SCHEDULE_TRIGGER } },
+        },
+        include: {
+          nodes: { where: { type: NodeType.SCHEDULE_TRIGGER } },
+        },
+      });
+    });
+
+    if (scheduledWorkflows.length === 0) {
+      return { status: "skipped", reason: "No active scheduled nodes found." };
+    }
+
+    // 2. FIX A: Lock time to the exact moment the Inngest cron event was fired
+    // Look at the type definition from the error: it uses `ts` for the timestamp!
+    const now = event.ts ? new Date(event.ts) : new Date();
+
+    // 3. FIX B: Normalize 'now' to the absolute start of the current minute block
+    const currentMinute = new Date(
+      now.getFullYear(),
+      now.getMonth(),
+      now.getDate(),
+      now.getHours(),
+      now.getMinutes(),
+      0,
+      0
+    );
+
+    // 4. Evaluate each schedule config against this deterministic minute
+    for (const workflow of scheduledWorkflows) {
+      const triggerNode = workflow.nodes[0];
+      if (!triggerNode) continue;
+
+      const nodeData = (triggerNode.data as Record<string, any>) || {};
+      const cronExpression = nodeData.interval || "*/5 * * * *";
+
+      let isDue = false;
+      try {
+        // Look 1 second backward from the top of the minute to find the next target execution
+        const oneSecondBefore = new Date(currentMinute.getTime() - 1000);
+        const interval = CronExpressionParser.parse(cronExpression, { currentDate: oneSecondBefore });
+        const nextExecution = interval.next().toDate();
+
+        // Is the very next scheduled execution supposed to happen EXACTLY this minute?
+        isDue = nextExecution.getTime() === currentMinute.getTime();
+      } catch (err) {
+        console.error(`Invalid cron calculation on workflow ${workflow.id}: ${cronExpression}`);
+        continue;
+      }
+
+      if (isDue) {
+        // FIX C: Simplify the step ID. It only needs to be unique within this specific run instance.
+        await step.run(`trigger-workflow-${workflow.id}`, async () => {
+          // A. Instantiate the execution log entry in the DB
+          const newExecution = await prisma.execution.create({
+            data: {
+              workflowId: workflow.id,
+              status: ExecutionStatus.RUNNING,
+            },
+          });
+
+          // B. Fire the formal engine event to run the compiled graph asynchronously
+          await inngest.send({
+            name: "workflows/execute.workflow",
+            data: {
+              workflowId: workflow.id,
+              executionId: newExecution.id,
+              InitialData: {
+                metadata: {
+                  triggeredBy: "schedule_heartbeat",
+                  timestamp: currentMinute.toISOString(),
+                  interval: cronExpression,
+                },
+              },
+            },
+          });
+        });
+      }
+    }
+  }
+);

@@ -11,17 +11,17 @@ import {
     SparklesIcon,
 } from "lucide-react"
 
-import { 
-    Sidebar, 
-    SidebarContent, 
-    SidebarFooter, 
-    SidebarGroup, 
-    SidebarGroupContent, 
-    SidebarHeader, 
-    SidebarMenu, 
-    SidebarMenuButton, 
+import {
+    Sidebar,
+    SidebarContent,
+    SidebarFooter,
+    SidebarGroup,
+    SidebarGroupContent,
+    SidebarHeader,
+    SidebarMenu,
+    SidebarMenuButton,
     SidebarMenuItem,
-    useSidebar 
+    useSidebar
 } from "./ui/sidebar"
 import Link from "next/link"
 import Image from "next/image"
@@ -70,13 +70,12 @@ export const AppSidebar = () => {
     }, [queryClient]);
 
     return (
-        <Sidebar collapsible="icon">
-            <SidebarHeader>
+        <Sidebar collapsible="icon" className="bg-gradient-to-b from-[#0a0a1a] via-[#0d1530] to-[#0a0a1a]">
+            <SidebarHeader className="bg-transparent">
                 <SidebarMenuItem>
-                    <SidebarMenuButton asChild className="gap-x-4 h-10 px-4">
+                    <SidebarMenuButton asChild className="flex justify-center items-center h-10 px-4">
                         <Link href="/" prefetch>
-                            <Image src="/logos/logo.svg" alt="Nodebase" width={30} height={30} />
-                            <span className="font-semibold text-sm">Nodebase</span>
+                            <Image src="/logos/RXJ.png" alt="RXJ" width={145} height={145} />
                         </Link>
                     </SidebarMenuButton>
                 </SidebarMenuItem>
@@ -107,7 +106,7 @@ export const AppSidebar = () => {
                 )}
             </SidebarHeader>
 
-            <SidebarContent>
+            <SidebarContent className="bg-transparent">
                 {menuItems.map((group) => (
                     <SidebarGroup key={group.title}>
                         <SidebarGroupContent>
@@ -133,7 +132,7 @@ export const AppSidebar = () => {
                 ))}
             </SidebarContent>
 
-            <SidebarFooter>
+            <SidebarFooter className="bg-transparent">
                 <SidebarMenu>
                     {isFreePlan ? (
                         <SidebarMenuItem>

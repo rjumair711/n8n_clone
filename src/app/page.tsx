@@ -26,7 +26,7 @@ export default function RootHomepage() {
             <div className="container mx-auto max-w-6xl py-16 px-4">
                 <div className="text-center">
                     <div className="inline-flex rounded-full border px-4 py-2 text-sm">
-                        🚀 Welcome to RJBase
+                        🚀 Welcome to RXJ
                     </div>
 
                     <h1 className="mt-6 text-5xl font-bold tracking-tight">
@@ -64,8 +64,8 @@ export default function RootHomepage() {
                             <div key={template.title} className="rounded-2xl border p-6 transition hover:border-primary">
                                 <h3 className="text-lg font-semibold">{template.title}</h3>
                                 <p className="mt-2 text-sm text-muted-foreground">{template.description}</p>
-                                <button 
-                                    onClick={handlePrimaryAction} 
+                                <button
+                                    onClick={handlePrimaryAction}
                                     className="mt-6 rounded-xl border px-4 py-2 text-sm hover:bg-muted"
                                 >
                                     Use Template

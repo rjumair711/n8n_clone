@@ -26,7 +26,7 @@ export const UpgradeModal = ({
                 <AlertDialogFooter>
                     <AlertDialogCancel>Cancel</AlertDialogCancel>
                     <AlertDialogAction
-                    onClick={() => authClient.checkout({slug: "RJbase"})}>
+                        onClick={() => authClient.checkout({ slug: "RXJ" })}>
                         Upgrade Now
                     </AlertDialogAction>
                 </AlertDialogFooter>

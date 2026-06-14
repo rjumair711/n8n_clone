@@ -127,6 +127,7 @@
     0px 8px 10px -1px hsl(0 0% 0% / 0.1);
   --shadow-2xl: 0px 1px 3px 0px hsl(0 0% 0% / 0.25);
   --tracking-normal: 0em;
+  --sidebar-background: linear-gradient(to bottom, #0a0a1a, #0d1530, #0a0a1a);
 }
 
 .dark {
@@ -209,4 +210,23 @@
 /* React Flow node selection styles */
 .react-flow__node.selected #base-node {
   @apply ring-3 ring-muted-foreground/25 shadow-lg;
+}
+
+[data-sidebar="sidebar"] {
+  background: linear-gradient(to bottom, #0a0a1a, #0d1530, #0a0a1a) !important;
+  border-right: 1px solid rgba(59, 130, 246, 0.15);
+}
+
+[data-sidebar="sidebar"] * {
+  color: white;
+}
+
+[data-sidebar="sidebar"] [data-active="true"] {
+  background-color: rgba(59, 130, 246, 0.15) !important;
+  color: white !important;
+}
+
+[data-sidebar="sidebar"] button:hover,
+[data-sidebar="sidebar"] a:hover {
+  background-color: rgba(255, 255, 255, 0.05) !important;
 }

@@ -13,6 +13,7 @@ export interface NodeExecutorParams<
   context: WorkflowContext;
   step: StepTools;
   credential?: any;
+  publish: any
 }
 
 export type NodeExecutor<

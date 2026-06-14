@@ -21,7 +21,7 @@ export default withSentryConfig(nextConfig, {
 
   org: "rjm-jj",
 
-  project: "rjbase",
+  project: "RXJ",
 
   // Only print logs for uploading source maps in CI
   silent: !process.env.CI,

@@ -63,14 +63,6 @@ export const ExecuteWorkflowButton = ({
                             false
                         );
                     },
-
-                    onSettled: () => {
-
-                        // Workflow finished
-                        setExecutionActive(
-                            false
-                        );
-                    },
                 }
             );
         };

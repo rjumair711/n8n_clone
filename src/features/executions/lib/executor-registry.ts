@@ -16,6 +16,7 @@ import { webhookResponseExecutor } from '../components/webhook/executor';
 import { emailExecutor } from '../components/email/executor';
 import { googleSheetsExecutor } from '../components/googleSheet/executor';
 import { ScheduleExecutor } from '@/features/triggers/components/schedule-trigger/executor';
+import { codeNodeExecutor } from '../components/code/executor';
 
 export const executorRegistry: Record<NodeType, NodeExecutor<any>> = {
   [NodeType.MANUAL_TRIGGER]: manualTriggerExecutor,
@@ -35,6 +36,7 @@ export const executorRegistry: Record<NodeType, NodeExecutor<any>> = {
   [NodeType.GOOGLE_SHEETS]: googleSheetsExecutor,
   [NodeType.EMAIL_SEND]: emailExecutor,
   [NodeType.SCHEDULE_TRIGGER]: ScheduleExecutor,
+  [NodeType.CODE]: codeNodeExecutor,
 }
 
 export const getExecutor = (type: NodeType): NodeExecutor<any> => {

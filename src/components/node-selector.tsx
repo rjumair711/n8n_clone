@@ -12,7 +12,7 @@ import {
     SheetTrigger
 } from "./ui/sheet"
 import { NodeType } from "@prisma/client"
-import { Clock, FilterIcon, GlobeIcon, Mail, MousePointerIcon, Send, VariableIcon, ChevronDown, ChevronRight } from "lucide-react"
+import { Clock, FilterIcon, GlobeIcon, Mail, MousePointerIcon, Send, VariableIcon, ChevronDown, ChevronRight, Code2 } from "lucide-react"
 import { toast } from "sonner"
 
 export type NodeTypeOption = {
@@ -101,6 +101,12 @@ const coreExecutionNodes: NodeTypeOption[] = [
         label: "Set Variable",
         description: "Set a workflow variable",
         icon: VariableIcon
+    },
+    {
+        type: NodeType.CODE,
+        label: "JavaScript Code",
+        description: "Run custom JavaScript or TypeScript code to transform data",
+        icon: Code2
     },
     {
         type: NodeType.DELAY,

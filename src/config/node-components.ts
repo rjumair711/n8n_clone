@@ -1,6 +1,7 @@
 import { EmailSendNode } from './../features/executions/components/email/node';
 import { InitialNode } from "@/components/initial-node";
 import { AnthropicNode } from "@/features/executions/components/anthropic/node";
+import { CodeNode } from '@/features/executions/components/code/node';
 import { DelayNode } from "@/features/executions/components/delay/node";
 import { DiscordNode } from "@/features/executions/components/discord/node";
 import { FilterNode } from "@/features/executions/components/filter/node";
@@ -38,6 +39,7 @@ export const nodeComponents: NodeTypes = {
     [NodeType.EMAIL_SEND]: EmailSendNode,
     [NodeType.GOOGLE_SHEETS]: GoogleSheetsNode,
     [NodeType.SCHEDULE_TRIGGER]: ScheduleNode,
+    [NodeType.CODE]: CodeNode,
 };
 
 export type RegisteredNodeType = keyof typeof nodeComponents;

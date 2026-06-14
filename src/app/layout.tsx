@@ -17,7 +17,7 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "RJBase",
+  title: "RXJ",
   description: "Affordable AI workflow automation platform",
 };
 

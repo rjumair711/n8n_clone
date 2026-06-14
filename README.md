@@ -1,6 +1,6 @@
-# RJBase – AI Workflow Automation Platform
+# RXJ – AI Workflow Automation Platform
 
-RJBase is a modern AI-native workflow automation platform inspired by tools like n8n, Zapier, and Make.com. It enables users to visually build, automate, and execute workflows using AI models, APIs, messaging systems, productivity tools, webhooks, and realtime execution pipelines.
+RXJ is a modern AI-native workflow automation platform inspired by tools like n8n, Zapier, and Make.com. It enables users to visually build, automate, and execute workflows using AI models, APIs, messaging systems, productivity tools, webhooks, and realtime execution pipelines.
 
 The platform is designed as a scalable SaaS product with:
 
@@ -32,6 +32,7 @@ The platform is designed as a scalable SaaS product with:
 
 * Sequential workflow execution pipeline
 * Inngest background execution system
+* Dynamic time-based execution engine via an automated Background Ticker (`* * * * *` clock matching system)
 * Shared execution context
 * Dynamic `{{variable}}` interpolation using Handlebars
 * Execution persistence in PostgreSQL
@@ -43,7 +44,7 @@ The platform is designed as a scalable SaaS product with:
 
 # 📜 Execution Logs & Monitoring
 
-RJBase includes a comprehensive execution monitoring system.
+RXJ includes a comprehensive execution monitoring system.
 
 ## Execution Tracking
 
@@ -129,26 +130,27 @@ Realtime workflow updates use:
 
 # 🔔 Trigger Nodes
 
-| Trigger             | Description                                |
-| ------------------- | ------------------------------------------ |
-| Manual Trigger      | Manual execution                           |
-| Webhook Trigger     | External HTTP requests                     |
-| Google Form Trigger | Form submission automation                 |
-| Stripe Trigger      | Payment event automation                   |
+| Trigger             | Description                                                                |
+| ------------------- | -------------------------------------------------------------------------- |
+| Manual Trigger      | Manual execution on user demand                                            |
+| Schedule Trigger    | Time-based automatic triggers evaluated each minute using custom Cron intervals (e.g., `*/5 * * * *`) |
+| Webhook Trigger     | External HTTP requests inbound routing                                     |
+| Google Form Trigger | Form submission automation                                                 |
+| Stripe Trigger      | Payment event automation                                                   |
 
 ---
 
 # ⚙️ Action Nodes
 
-| Node             | Description                              |
-| ---------------- | ---------------------------------------- |
-| HTTP Request     | External API requests                    |
-| Set Variable     | Store reusable variables                 |
-| Filter           | Conditional branching                    |
-| Delay            | Pause workflow                           |
-| Webhook Response | Return webhook responses                 |
-| Email Send       | SMTP email automation                    |
-| Google Sheets    | Spreadsheet automation                   |
+| Node             | Description                                              |
+| ---------------- | -------------------------------------------------------- |
+| HTTP Request     | External API requests                                    |
+| Set Variable     | Store reusable variables                                 |
+| Filter           | Conditional branching                                    |
+| Delay            | Pause workflow                                           |
+| Webhook Response | Return webhook responses                                 |
+| Email Send       | SMTP email automation                                    |
+| Google Sheets    | Spreadsheet automation                                   |
 
 ---
 
@@ -190,36 +192,7 @@ Supported credential types:
 
 # 💳 SaaS Billing & Subscription System
 
-RJBase includes a complete SaaS monetization architecture powered by Polar.
-
-## Subscription Plans
-
-### FREE Trial
-
-* Limited workflows
-* Limited executions
-* Limited credentials
-* 7-day automatic signup trial duration
-
-### Beginner Plan
-
-* Starter workflow limits
-* AI integrations
-* Basic execution tracking
-
-### Intermediate Plan
-
-* Increased workflow limits
-* Scheduling support
-* Productivity integrations
-
-### Pro Plan
-
-* High execution limits
-* Advanced automation
-* Team-ready scaling
-
----
+RXJ includes a complete SaaS monetization architecture powered by Polar.
 
 ## SaaS Features
 
@@ -239,7 +212,7 @@ RJBase includes a complete SaaS monetization architecture powered by Polar.
 
 # 📊 Usage Tracking System
 
-RJBase tracks:
+RXJ tracks:
 
 * workflow usage
 * monthly executions
@@ -258,7 +231,7 @@ Users can view:
 
 # 🎯 Onboarding System
 
-RJBase includes onboarding UX to improve activation and retention.
+RXJ includes onboarding UX to improve activation and retention.
 
 ## Current Features
 
@@ -302,7 +275,7 @@ RJBase includes onboarding UX to improve activation and retention.
 * Neon PostgreSQL
 * Better Auth
 * Polar
-* Inngest
+* Inngest (Background Workers & Event Streams)
 * Nodemailer
 
 ---
@@ -341,141 +314,8 @@ Neon PostgreSQL
 
 Workflow Execution Engine
    ↓
-Inngest Background Jobs
+Inngest Background Jobs & Cron Heartbeats
    ↓
 Node Executors
    ↓
 External APIs / AI Providers / Messaging Services
-📂 Project Structure
-Plaintext
-/src
-├── /app
-├── /components
-├── /features
-├── /inngest
-├── /lib
-├── /config
-├── /trpc
-└── /hooks
-⚙️ Workflow Execution Flow
-1. Trigger Activation
-Manual execution
-
-Webhooks
-
-External events
-
-2. Dependency Resolution
-Nodes are sorted before execution using topological sorting.
-
-3. Plan Verification
-Workflow and execution limits are verified.
-
-4. Node Execution
-Each node processes workflow context and returns updated data.
-
-5. Variable Interpolation
-Handlebars
-{{user.email}}
-{{openai.response}}
-{{form.responses.name}}
-6. Realtime Updates
-Execution states synchronize instantly with frontend UI.
-
-7. Error Handling
-Critical failures automatically stop workflow execution.
-
-8. Completion
-Executions finalize as:
-
-SUCCESS
-
-FAILED
-
-Execution logs are persisted.
-
-🌍 Environment Variables
-Code snippet
-DATABASE_URL=
-BETTER_AUTH_SECRET=
-POLAR_ACCESS_TOKEN=
-POLAR_SERVER=
-POLAR_SUCCESS_URL=
-POLAR_WEBHOOK_SECRET=
-POLAR_BEGINNER_PRODUCT_ID=
-POLAR_INTERMEDIATE_PRODUCT_ID=
-POLAR_PRO_PRODUCT_ID=
-
-OPENAI_API_KEY=
-ANTHROPIC_API_KEY=
-GOOGLE_GENERATIVE_AI_API_KEY=
-
-INNGEST_EVENT_KEY=
-INNGEST_SIGNING_KEY=
-
-SENTRY_DSN=
-🚀 Deployment
-Recommended Platforms
-Vercel
-
-Neon PostgreSQL
-
-Inngest Cloud
-
-📈 Future Improvements
-Phase A — Dynamic SaaS UI
-Dynamic sidebar usage system
-
-Trial countdown
-
-Plan-aware UI
-
-Phase B — Premium Feature Locking (Planned For Final Stage)
-WhatsApp 🔒 Pro
-
-AI Agents 🔒 Pro
-
-Browser Automation 🔒 Pro
-
-Upgrade modals
-
-Premium node locking system
-
-Phase C — Billing Management
-Billing page
-
-Usage dashboard
-
-Upgrade/downgrade flow
-
-Subscription management
-
-Phase D — Onboarding UX
-Welcome onboarding
-
-Starter templates
-
-Guided workflow creation
-
-Product activation system
-
-Phase E — Advanced SaaS Features (Planned For Final Stage)
-Team workspaces
-
-Organizations
-
-API keys
-
-Workflow marketplace
-
-Analytics dashboard
-
-Template sharing
-
-Browser automation
-
-📄 License
-MIT License
-
-👨‍💻 Author
-RJBase is a modern AI workflow automation SaaS platform inspired by enterprise-grade systems like n8n, Zapier, Make.com, Vercel, and Linear.

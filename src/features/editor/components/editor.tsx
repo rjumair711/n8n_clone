@@ -3,7 +3,7 @@
 import "@xyflow/react/dist/style.css";
 import { ErrorView, LoadingView } from "@/components/entity-components";
 import { useSuspenseWorkflow } from "@/features/workflows/hooks/use-workflows";
-import { useState, useCallback, useMemo } from "react";
+import { useState, useCallback, useMemo, useEffect } from "react";
 import {
     ReactFlow,
     applyNodeChanges,
@@ -30,6 +30,7 @@ import { ExecutionSidebar, type ExecutionLog } from "@/features/executions/compo
 import { ExecutionEdge } from "@/components/react-flow/execution-edge";
 import { useExecutionStore } from "@/features/executions/store/execution-store";
 import { useExecutionNodes } from "@/features/executions/hooks/use-execution-nodes";
+import { useExecutionSubscription } from "@/features/executions/hooks/use-execution-subscription";
 
 export const EditorLoading = () => <LoadingView message="Loading editor..." />;
 export const EditorError = () => <ErrorView message="Error loading editor" />;
@@ -41,6 +42,8 @@ export const Editor = ({ workflowId }: { workflowId: string }) => {
     // ACTIVE EXECUTION
     // =====================================
     const activeExecutionId = useExecutionStore((state) => state.activeExecutionId);
+
+    useExecutionSubscription(activeExecutionId);
 
     // =====================================
     // LIVE EXECUTION NODES
@@ -131,11 +134,29 @@ export const Editor = ({ workflowId }: { workflowId: string }) => {
         execution: ExecutionEdge,
     };
 
+    const setNodeStatus = useExecutionStore((state) => state.setNodeStatus);
+
+    // Sync DB polling results into the store so canvas nodes show status
+    useEffect(() => {
+        executionNodes.forEach((node: any) => {
+            setNodeStatus(node.nodeId, {
+                status:
+                    node.status === "RUNNING"
+                        ? "loading"
+                        : node.status === "SUCCESS"
+                            ? "success"
+                            : "error",
+                error: node.error ?? undefined,
+            });
+        });
+    }, [executionNodes, setNodeStatus]);
+
     // =====================================
     // RENDER
     // =====================================
     return (
         <div className="flex h-full w-full overflow-hidden">
+
             <div className="relative h-full flex-1 overflow-hidden">
                 <ReactFlow
                     nodes={nodes}

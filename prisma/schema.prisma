@@ -126,6 +126,7 @@ model Workflow {
   updatedAt DateTime @updatedAt
 
   executions Execution[]
+  active     Boolean     @default(false)
 
   userId String
   user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
@@ -152,6 +153,7 @@ enum NodeType {
   WEBHOOK_RESPONSE
   EMAIL_SEND
   GOOGLE_SHEETS
+  CODE
 }
 
 model Node {
