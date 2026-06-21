@@ -32,6 +32,8 @@ import { emailChannel } from "./channels/email";
 import { googleSheetsChannel } from "./channels/googleSheet";
 import { scheduleTriggerChannel } from "./channels/schedule-trigger";
 import { codeChannel } from "./channels/code";
+import { aiAgentChannel } from "./channels/ai-agent";
+import { bufferMemoryChannel } from "./channels/bufferMemory";
 
 // =========================================================================
 // 1. ENGINE EXECUTOR: Runs a single execution instance from start to finish
@@ -121,6 +123,8 @@ export const executeWorkflow =
         emailChannel(),
         googleSheetsChannel(),
         codeChannel(),
+        aiAgentChannel(),
+        bufferMemoryChannel()
       ],
     },
 
@@ -169,35 +173,30 @@ export const executeWorkflow =
       // PREPARE WORKFLOW
       // =========================================
 
-      const sortedNodes =
-        await step.run(
-          "prepare-workflow",
-          async () => {
-            const workflow =
-              await prisma.workflow.findUniqueOrThrow(
-                {
-                  where: {
-                    id: workflowId,
-                  },
+      const { sortedNodes, allNodes, connections } = await step.run(
+        "prepare-workflow",
+        async () => {
+          const workflow = await prisma.workflow.findUniqueOrThrow({
+            where: {
+              id: workflowId,
+            },
+            include: {
+              nodes: {
+                include: {
+                  credential: true,
+                },
+              },
+              connections: true,
+            },
+          });
 
-                  include: {
-                    nodes: {
-                      include: {
-                        credential: true,
-                      },
-                    },
-
-                    connections: true,
-                  },
-                }
-              );
-
-            return topologicalSort(
-              workflow.nodes,
-              workflow.connections
-            );
-          }
-        );
+          return {
+            sortedNodes: topologicalSort(workflow.nodes, workflow.connections),
+            allNodes: workflow.nodes,
+            connections: workflow.connections, // We need this to trace cables!
+          };
+        }
+      );
 
       // =========================================
       // FIND USER & PLAN TIER
@@ -288,11 +287,44 @@ export const executeWorkflow =
         event.data.InitialData ||
         {};
 
+      // =========================================================================
+      // N8N FIX: FILTER OUT STRUCTURAL SUPPLY NODES FROM THE MAIN SEQUENTIAL LOOP
+      // =========================================================================
+      const executableNodes = sortedNodes.filter((node) => {
+        // 1. Filter out AI Models and Memories (They are lazily loaded by AI_AGENT, not standalone execution steps)
+        const isAIParameterSupplyNode = [
+          "GEMINI",
+          "OPENAI",
+          "ANTHROPIC",
+          "BUFFER_MEMORY",
+        ].includes(node.type);
+
+        if (isAIParameterSupplyNode) return false;
+
+        // 2. Filter out nodes used exclusively as an Agent tool parameter (e.g. connected to toInput: "tools")
+        const isUsedAsToolOnly = connections.some(
+          (conn) => conn.fromNodeId === node.id && conn.toInput === "tools"
+        );
+
+        const hasMainTimelineOutput = connections.some(
+          (conn) => conn.fromNodeId === node.id &&
+            conn.toInput !== "tools" &&
+            !conn.toInput?.includes("Model") &&
+            conn.toInput !== "memory"
+        );
+
+        if (isUsedAsToolOnly && !hasMainTimelineOutput) {
+          return false;
+        }
+
+        return true;
+      });
+
       // =========================================
       // EXECUTE NODES
       // =========================================
 
-      for (const node of sortedNodes) {
+      for (const node of executableNodes) {
         const executor =
           getExecutor(
             node.type as NodeType
@@ -356,25 +388,16 @@ export const executeWorkflow =
           // EXECUTE NODE
           // ===================================
 
-          context =
-            await executor({
-              data:
-                node.data as Record<
-                  string,
-                  unknown
-                >,
-
-              nodeId: node.id,
-
-              credential:
-                node.credentialId,
-
-              userId,
-
-              context,
-
-              step,
-            });
+          context = await executor({
+            data: node.data as Record<string, unknown>,
+            nodeId: node.id,
+            credential: node.credentialId,
+            userId,
+            context,
+            step,
+            allNodes: allNodes as any,    // Agent uses this to find the OpenAI/Gemini config
+            connections: connections as any, // Agent uses this to see what is plugged into its target handles
+          });
 
           const nodeDurationMs = Date.now() - nodeStartTime; // Calculate delta
 

@@ -17,6 +17,8 @@ import { emailExecutor } from '../components/email/executor';
 import { googleSheetsExecutor } from '../components/googleSheet/executor';
 import { ScheduleExecutor } from '@/features/triggers/components/schedule-trigger/executor';
 import { codeNodeExecutor } from '../components/code/executor';
+import { aiAgentExecutor } from '../../editor/components/agent/executor';
+import { bufferMemoryExecutor } from '@/features/editor/components/memory/executor';
 
 export const executorRegistry: Record<NodeType, NodeExecutor<any>> = {
   [NodeType.MANUAL_TRIGGER]: manualTriggerExecutor,
@@ -37,6 +39,8 @@ export const executorRegistry: Record<NodeType, NodeExecutor<any>> = {
   [NodeType.EMAIL_SEND]: emailExecutor,
   [NodeType.SCHEDULE_TRIGGER]: ScheduleExecutor,
   [NodeType.CODE]: codeNodeExecutor,
+  [NodeType.AI_AGENT]: aiAgentExecutor,
+  [NodeType.BUFFER_MEMORY]: bufferMemoryExecutor,
 }
 
 export const getExecutor = (type: NodeType): NodeExecutor<any> => {

@@ -38,10 +38,9 @@ export function RegisterForm() {
         }
     })
 
-    const signInGithub = async () => {
+    const signUpGithub = async () => {
         await authClient.signIn.social({
             provider: "github",
-            callbackURL: "/workflows"
         }, {
             onSuccess: () => {
                 router.push("/workflows");
@@ -52,10 +51,9 @@ export function RegisterForm() {
         })
     }
 
-    const signInGoogle = async () => {
+    const signUpGoogle = async () => {
         await authClient.signIn.social({
             provider: "google",
-            callbackURL: "/workflows"
         }, {
             onSuccess: () => {
                 router.push("/workflows");
@@ -103,7 +101,7 @@ export function RegisterForm() {
                             <div className="grid gap-6">
                                 <div className="flex flex-col gap-4">
                                     <Button
-                                        onClick={signInGithub}
+                                        onClick={signUpGithub}
                                         variant="outline"
                                         className="w-full"
                                         type="button"
@@ -116,7 +114,7 @@ export function RegisterForm() {
                                         Continue with GitHub
                                     </Button>
                                     <Button
-                                        onClick={signInGoogle}
+                                        onClick={signUpGoogle}
                                         variant="outline"
                                         className="w-full"
                                         type="button"

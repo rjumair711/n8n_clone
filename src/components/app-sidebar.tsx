@@ -82,7 +82,7 @@ export const AppSidebar = () => {
                 {isFreePlan && !isCollapsed && (
                     <div className="px-4 py-4">
                         <div className="rounded-xl border bg-card p-4 shadow-sm">
-                            <p className="text-xs font-bold uppercase tracking-wider text-muted-foreground">
+                            <p className="text-xs font-bold uppercase tracking-wider text-muted-foreground text-blue-300/70">
                                 Free Trial
                             </p>
                             <p className="mt-1 text-sm font-medium">

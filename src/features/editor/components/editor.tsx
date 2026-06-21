@@ -32,6 +32,8 @@ import { useExecutionStore } from "@/features/executions/store/execution-store";
 import { useExecutionNodes } from "@/features/executions/hooks/use-execution-nodes";
 import { useExecutionSubscription } from "@/features/executions/hooks/use-execution-subscription";
 
+// 1. Import your AI Agent Dialog component
+
 export const EditorLoading = () => <LoadingView message="Loading editor..." />;
 export const EditorError = () => <ErrorView message="Error loading editor" />;
 
@@ -57,13 +59,14 @@ export const Editor = ({ workflowId }: { workflowId: string }) => {
     const [nodes, setNodes] = useState<Node[]>(workflow.nodes);
     const [edges, setEdges] = useState<Edge[]>(workflow.edges);
 
+    // 2. Added State to manage active dialog config targets
+    const [editingNode, setEditingNode] = useState<Node | null>(null);
+
     // =====================================
     // DEDUPLICATE LOGS (FIX FOR TOO MANY LOGS)
     // =====================================
     const deduplicatedNodes = useMemo(() => {
         const map = new Map();
-        // By looping through and setting them by a unique key (nodeId or nodeName), 
-        // older statuses are naturally overwritten by the newest status.
         executionNodes.forEach((node: any) => {
             const uniqueKey = node.nodeId || node.nodeName;
             map.set(uniqueKey, node);
@@ -117,6 +120,13 @@ export const Editor = ({ workflowId }: { workflowId: string }) => {
         []
     );
 
+    // 3. Catch node selection click events on canvas layout
+    const onNodeClick = useCallback((_: React.MouseEvent, node: Node) => {
+        if (node.type === "AI_AGENT") {
+            setEditingNode(node);
+        }
+    }, []);
+
     // ALLOW EXECUTION PANEL FOR TESTING
     // =====================================
     const showExecuteButton = useMemo(() => {
@@ -168,6 +178,7 @@ export const Editor = ({ workflowId }: { workflowId: string }) => {
                     onNodesChange={onNodesChange}
                     onEdgesChange={onEdgesChange}
                     onConnect={onConnect}
+                    onNodeClick={onNodeClick} 
                     nodeTypes={nodeComponents}
                     onInit={setEditor}
                     fitView
@@ -191,7 +202,6 @@ export const Editor = ({ workflowId }: { workflowId: string }) => {
                     )}
                 </ReactFlow>
             </div>
-
             <ExecutionSidebar logs={logs} />
         </div>
     );

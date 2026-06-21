@@ -12,7 +12,7 @@ import {
     SheetTrigger
 } from "./ui/sheet"
 import { NodeType } from "@prisma/client"
-import { Clock, FilterIcon, GlobeIcon, Mail, MousePointerIcon, Send, VariableIcon, ChevronDown, ChevronRight, Code2 } from "lucide-react"
+import { Clock, FilterIcon, GlobeIcon, Mail, MousePointerIcon, Send, VariableIcon, ChevronDown, ChevronRight, Code2, Bot, MemoryStickIcon } from "lucide-react"
 import { toast } from "sonner"
 
 export type NodeTypeOption = {
@@ -45,7 +45,7 @@ const triggerNodes: NodeTypeOption[] = [
     {
         type: NodeType.SCHEDULE_TRIGGER,
         label: "Schedule Trigger",
-        description: "Runs the flow at specific times or periodic intervals (Cron)", 
+        description: "Runs the flow at specific times or periodic intervals (Cron)",
         icon: "/logos/schedule-trigger.png",
     },
 ]
@@ -69,6 +69,12 @@ const aiNodes: NodeTypeOption[] = [
         description: "Uses Anthropic models to generate text",
         icon: "/logos/anthropic.svg"
     },
+    {
+        type: NodeType.AI_AGENT, 
+        label: "AI Agent",
+        description: "Runs an autonomous, multi-turn reasoning agent loop with real-time log tracking",
+        icon: Bot
+    }
 ]
 
 const coreExecutionNodes: NodeTypeOption[] = [
@@ -118,7 +124,7 @@ const coreExecutionNodes: NodeTypeOption[] = [
         type: NodeType.WEBHOOK_RESPONSE,
         label: "Webhook Response",
         description: "Send a response to a webhook",
-        icon: Send 
+        icon: Send
     },
     {
         type: NodeType.EMAIL_SEND,
@@ -131,6 +137,12 @@ const coreExecutionNodes: NodeTypeOption[] = [
         label: "Google Sheets",
         description: "Add data to a Google Sheet",
         icon: "/logos/googleSheet.png"
+    },
+    {
+        type: NodeType.BUFFER_MEMORY,
+        label: "Memory",
+        description: "Store data in a memory",
+        icon: MemoryStickIcon
     }
 ]
 
@@ -210,7 +222,7 @@ export function NodeSelector({
             {nodes.map((nodeType) => {
                 const Icon = nodeType.icon;
                 return (
-                    <div 
+                    <div
                         key={nodeType.type}
                         className="w-full justify-start h-auto py-3.5 px-4 cursor-pointer 
                                  border-l-2 border-transparent hover:border-l-primary hover:bg-muted/40 
@@ -220,7 +232,7 @@ export function NodeSelector({
                         <div className="flex items-start gap-4 w-full overflow-hidden">
                             <div className="flex-shrink-0 mt-0.5 bg-secondary/50 p-1.5 rounded-md group-hover:bg-background transition-colors">
                                 {typeof Icon === "string" ? (
-                                    <img 
+                                    <img
                                         src={Icon}
                                         alt={nodeType.label}
                                         className="size-5 object-contain rounded-sm"
@@ -255,7 +267,7 @@ export function NodeSelector({
         <Sheet open={open} onOpenChange={onOpenChange}>
             <SheetTrigger asChild>{children}</SheetTrigger>
             <SheetContent side="right" className="w-full sm:max-w-md p-0 flex flex-col h-screen bg-background">
-                
+
                 {/* Fixed Non-Scrollable Header Section */}
                 <div className="p-6 border-b border-border flex-shrink-0">
                     <SheetHeader>
@@ -272,7 +284,7 @@ export function NodeSelector({
                         const isOpen = openSections[section.id];
                         return (
                             <div key={section.id} className="border border-border/40 rounded-xl bg-card/30 overflow-hidden shadow-2xs">
-                                
+
                                 {/* Accordion Click Target Header */}
                                 <button
                                     onClick={() => toggleSection(section.id)}
@@ -287,9 +299,8 @@ export function NodeSelector({
                                 </button>
 
                                 {/* Dropdown Collapsible Element Panel */}
-                                <div className={`grid transition-all duration-200 ease-in-out ${
-                                    isOpen ? "grid-rows-[1fr] opacity-100" : "grid-rows-[0fr] opacity-0 pointer-events-none"
-                                }`}>
+                                <div className={`grid transition-all duration-200 ease-in-out ${isOpen ? "grid-rows-[1fr] opacity-100" : "grid-rows-[0fr] opacity-0 pointer-events-none"
+                                    }`}>
                                     <div className="overflow-hidden bg-background/50">
                                         {renderNodeList(section.data)}
                                     </div>
@@ -298,7 +309,7 @@ export function NodeSelector({
                         )
                     })}
                 </div>
-                
+
             </SheetContent>
         </Sheet>
     )

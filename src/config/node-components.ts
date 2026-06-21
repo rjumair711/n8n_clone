@@ -16,10 +16,10 @@ import { GoogleFormTrigger } from "@/features/triggers/components/google-form-tr
 import { ManualTriggerNode } from "@/features/triggers/components/manual-trigger/node";
 import { ScheduleNode } from '@/features/triggers/components/schedule-trigger/node';
 import { StripeTriggerNode } from "@/features/triggers/components/stripe-trigger/node";
-
 import { NodeType } from "@prisma/client";
-
-import type { NodeTypes } from "@xyflow/react";
+import { AIAgentNode } from '../features/editor/components/agent/node';
+import { BufferMemoryNode } from '@/features/editor/components/memory/node';
+import { NodeTypes } from '@xyflow/react';
 
 export const nodeComponents: NodeTypes = {
     [NodeType.INITIAL]: InitialNode,
@@ -40,6 +40,9 @@ export const nodeComponents: NodeTypes = {
     [NodeType.GOOGLE_SHEETS]: GoogleSheetsNode,
     [NodeType.SCHEDULE_TRIGGER]: ScheduleNode,
     [NodeType.CODE]: CodeNode,
+    [NodeType.AI_AGENT]: AIAgentNode,
+    [NodeType.BUFFER_MEMORY]: BufferMemoryNode
+    
 };
 
 export type RegisteredNodeType = keyof typeof nodeComponents;

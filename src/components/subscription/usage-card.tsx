@@ -26,7 +26,7 @@ export const UsageCard = ({
 
     return (
         <div className="rounded-2xl border p-4">
-            <h3 className="text-sm font-semibold">
+            <h3 className="text-sm font-semibold text-blue-300/70">
                 Usage
             </h3>
 

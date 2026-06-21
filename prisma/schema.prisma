@@ -26,19 +26,17 @@ enum SubscriptionPlan {
 }
 
 model User {
-  id            String     @id
-  name          String
-  email         String
-  emailVerified Boolean    @default(false)
-  image         String?
-  createdAt     DateTime   @default(now())
-  updatedAt     DateTime   @updatedAt
-  sessions      Session[]
-  accounts      Account[]
-  workflows     Workflow[]
-
-  credentials Credential[]
-
+  id                     String           @id
+  name                   String
+  email                  String
+  emailVerified          Boolean          @default(false)
+  image                  String?
+  createdAt              DateTime         @default(now())
+  updatedAt              DateTime         @updatedAt
+  sessions               Session[]
+  accounts               Account[]
+  workflows              Workflow[]
+  credentials            Credential[]
   plan                   SubscriptionPlan @default(FREE)
   trialEndsAt            DateTime?
   workflowCount          Int              @default(0)
@@ -104,11 +102,9 @@ model Credential {
   type      CredentialType
   createdAt DateTime       @default(now())
   updatedAt DateTime       @updatedAt
-
-  userId String
-  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
-
-  Node Node[]
+  userId    String
+  user      User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  Node      Node[]
 }
 
 enum CredentialType {
@@ -120,17 +116,14 @@ enum CredentialType {
 }
 
 model Workflow {
-  id        String   @id @default(cuid())
-  name      String
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  executions Execution[]
-  active     Boolean     @default(false)
-
-  userId String
-  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
-
+  id          String       @id @default(cuid())
+  name        String
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+  executions  Execution[]
+  active      Boolean      @default(false)
+  userId      String
+  user        User         @relation(fields: [userId], references: [id], onDelete: Cascade)
   nodes       Node[]
   connections Connection[]
 }
@@ -154,6 +147,8 @@ enum NodeType {
   EMAIL_SEND
   GOOGLE_SHEETS
   CODE
+  AI_AGENT
+  BUFFER_MEMORY
 }
 
 model Node {
@@ -253,4 +248,31 @@ model ExecutionNode {
 
   @@index([executionId])
   @@index([nodeId])
+}
+
+model ChatMessage {
+  id        String   @id @default(cuid())
+  sessionId String // The unique ID for the chat session
+  role      String // 'user', 'assistant', 'system', 'tool'
+  content   String
+  createdAt DateTime @default(now())
+
+  // Index for fast retrieval based on the session
+  @@index([sessionId])
+}
+
+
+model AgentMemory {
+  id        String   @id @default(cuid())
+  nodeId    String
+  userId    String
+  sessionId String?  // Optional fallback if no session context is provided
+  role      String   // 'user', 'assistant'
+  content   String   @db.Text
+  createdAt DateTime @default(now())
+
+  @@index([nodeId])
+  @@index([userId])
+  @@index([sessionId])
+  @@map("agent_memory")
 }

@@ -130,27 +130,28 @@ Realtime workflow updates use:
 
 # 🔔 Trigger Nodes
 
-| Trigger             | Description                                                                |
-| ------------------- | -------------------------------------------------------------------------- |
-| Manual Trigger      | Manual execution on user demand                                            |
-| Schedule Trigger    | Time-based automatic triggers evaluated each minute using custom Cron intervals (e.g., `*/5 * * * *`) |
-| Webhook Trigger     | External HTTP requests inbound routing                                     |
-| Google Form Trigger | Form submission automation                                                 |
-| Stripe Trigger      | Payment event automation                                                   |
+| Trigger             | Description                                                                                                |
+| ------------------- | ---------------------------------------------------------------------------------------------------------- |
+| Manual Trigger      | Manual execution on user demand                                                                            |
+| Schedule Trigger    | Time-based automatic triggers evaluated each minute using custom Cron intervals (e.g., `*/5 * * * *`)       |
+| Webhook Trigger     | External HTTP requests inbound routing                                                                     |
+| Google Form Trigger | Form submission automation                                                                                 |
+| Stripe Trigger      | Payment event automation                                                                                   |
 
 ---
 
 # ⚙️ Action Nodes
 
-| Node             | Description                                              |
-| ---------------- | -------------------------------------------------------- |
-| HTTP Request     | External API requests                                    |
-| Set Variable     | Store reusable variables                                 |
-| Filter           | Conditional branching                                    |
-| Delay            | Pause workflow                                           |
-| Webhook Response | Return webhook responses                                 |
-| Email Send       | SMTP email automation                                    |
-| Google Sheets    | Spreadsheet automation                                   |
+| Node             | Description                                                               |
+| ---------------- | ------------------------------------------------------------------------- |
+| HTTP Request     | External API requests                                                     |
+| JavaScript Code  | Execute custom JavaScript code within the shared execution context        |
+| Set Variable     | Store reusable variables                                                  |
+| Filter           | Conditional branching                                                     |
+| Delay            | Pause workflow                                                            |
+| Webhook Response | Return webhook responses                                                  |
+| Email Send       | SMTP email automation                                                     |
+| Google Sheets    | Spreadsheet automation                                                    |
 
 ---
 
