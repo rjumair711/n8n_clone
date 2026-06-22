@@ -32,7 +32,14 @@ import React from "react";
 
 const formSchema = z.object({
   name: z.string().min(1, "Credential name is required"),
-  type: z.enum(CredentialType),
+  type: z.enum([
+    CredentialType.OPENAI, 
+    CredentialType.ANTHROPIC, 
+    CredentialType.GEMINI, 
+    CredentialType.SMTP, 
+    CredentialType.GOOGLE_SHEETS,
+    CredentialType.GOOGLE_CALENDAR 
+  ]),
   value: z.string().min(1, "Value is required"),
 });
 
@@ -44,6 +51,7 @@ const credentialTypeOptions = [
   { value: CredentialType.GEMINI, label: "Gemini", logo: "/logos/gemini.svg" },
   { value: CredentialType.SMTP, label: "SMTP (Email)", logo: "/logos/smtp.jfif" },
   { value: CredentialType.GOOGLE_SHEETS, label: "Google Sheets", logo: "/logos/googleSheet.png" },
+  { value: CredentialType.GOOGLE_CALENDAR, label: "Google Calendar", logo: "/logos/calender.png" }, // Ensure this logo exists or swap to Lucide icon
 ];
 
 interface CredentialFormProps {
@@ -63,7 +71,7 @@ export const CredentialForm = ({ initialData }: CredentialFormProps) => {
   const isEdit = !!initialData?.id;
 
   const form = useForm<FormValues>({
-    resolver: zodResolver(formSchema),
+    resolver: zodResolver(formSchema as any),
     defaultValues: initialData || {
       name: "",
       type: CredentialType.OPENAI,
@@ -78,8 +86,8 @@ export const CredentialForm = ({ initialData }: CredentialFormProps) => {
     host: "", port: "465", user: "", pass: "", fromName: "",
   });
 
-  // Google Sheets fields
-  const [sheetsFields, setSheetsFields] = React.useState({
+  // Shared Service Account fields for both Sheets & Calendar
+  const [serviceAccountFields, setServiceAccountFields] = React.useState({
     clientEmail: "",
     privateKey: "",
     projectId: "",
@@ -92,26 +100,28 @@ export const CredentialForm = ({ initialData }: CredentialFormProps) => {
     }
   }, [smtpFields, selectedType, form]);
 
-  // Sync Google Sheets → form value
+  // Sync Google Service Accounts (Sheets & Calendar) → form value
   React.useEffect(() => {
-    if (selectedType === CredentialType.GOOGLE_SHEETS) {
-      form.setValue("value", JSON.stringify(sheetsFields), { shouldValidate: true });
+    if (selectedType === CredentialType.GOOGLE_SHEETS || selectedType === CredentialType.GOOGLE_CALENDAR) {
+      form.setValue("value", JSON.stringify(serviceAccountFields), { shouldValidate: true });
     }
-  }, [sheetsFields, selectedType, form]);
+  }, [serviceAccountFields, selectedType, form]);
 
   const onSubmit = async (values: FormValues) => {
+    const isGoogleServiceAccount = selectedType === CredentialType.GOOGLE_SHEETS || selectedType === CredentialType.GOOGLE_CALENDAR;
+
     const finalValue =
       selectedType === CredentialType.SMTP
         ? JSON.stringify(smtpFields)
-        : selectedType === CredentialType.GOOGLE_SHEETS
-          ? JSON.stringify(sheetsFields)
+        : isGoogleServiceAccount
+          ? JSON.stringify(serviceAccountFields)
           : values.value;
 
     const finalName =
       selectedType === CredentialType.SMTP && !values.name.trim()
         ? smtpFields.user || "SMTP Credential"
-        : selectedType === CredentialType.GOOGLE_SHEETS && !values.name.trim()
-          ? sheetsFields.clientEmail || "Google Sheets Credential"
+        : isGoogleServiceAccount && !values.name.trim()
+          ? serviceAccountFields.clientEmail || `${selectedType === CredentialType.GOOGLE_SHEETS ? 'Google Sheets' : 'Google Calendar'} Credential`
           : values.name;
 
     const payload = { ...values, name: finalName, value: finalValue };
@@ -125,6 +135,8 @@ export const CredentialForm = ({ initialData }: CredentialFormProps) => {
       });
     }
   };
+
+  const isGoogleServiceAccountType = selectedType === CredentialType.GOOGLE_SHEETS || selectedType === CredentialType.GOOGLE_CALENDAR;
 
   return (
     <>
@@ -157,7 +169,10 @@ export const CredentialForm = ({ initialData }: CredentialFormProps) => {
                           form.setValue("value", JSON.stringify(smtpFields));
                         } else if (value === CredentialType.GOOGLE_SHEETS) {
                           form.setValue("name", "Google Sheets");
-                          form.setValue("value", JSON.stringify(sheetsFields));
+                          form.setValue("value", JSON.stringify(serviceAccountFields));
+                        } else if (value === CredentialType.GOOGLE_CALENDAR) {
+                          form.setValue("name", "Google Calendar");
+                          form.setValue("value", JSON.stringify(serviceAccountFields));
                         } else {
                           form.setValue("name", "");
                           form.setValue("value", "");
@@ -173,7 +188,10 @@ export const CredentialForm = ({ initialData }: CredentialFormProps) => {
                         {credentialTypeOptions.map((option) => (
                           <SelectItem key={option.value} value={option.value}>
                             <div className="flex items-center gap-2">
-                              <Image src={option.logo} alt={option.label} width={16} height={16} />
+                              {/* Using fallback generic icon if image fails */}
+                              <div className="w-4 h-4 flex items-center justify-center">
+                                <Image src={option.logo} alt={option.label} width={16} height={16} className="object-contain" />
+                              </div>
                               {option.label}
                             </div>
                           </SelectItem>
@@ -192,7 +210,7 @@ export const CredentialForm = ({ initialData }: CredentialFormProps) => {
                 render={({ field }) => (
                   <FormItem>
                     <FormLabel>
-                      {selectedType === CredentialType.SMTP || selectedType === CredentialType.GOOGLE_SHEETS
+                      {selectedType === CredentialType.SMTP || isGoogleServiceAccountType
                         ? "Credential Name"
                         : "API Key Name"}
                     </FormLabel>
@@ -201,7 +219,8 @@ export const CredentialForm = ({ initialData }: CredentialFormProps) => {
                         placeholder={
                           selectedType === CredentialType.SMTP ? "My Gmail SMTP" :
                             selectedType === CredentialType.GOOGLE_SHEETS ? "My Google Sheets Account" :
-                              "My OpenAI Key"
+                              selectedType === CredentialType.GOOGLE_CALENDAR ? "My Google Calendar Account" :
+                                "My OpenAI Key"
                         }
                         {...field}
                       />
@@ -245,8 +264,8 @@ export const CredentialForm = ({ initialData }: CredentialFormProps) => {
                 </div>
               )}
 
-              {/* Google Sheets Service Account fields */}
-              {selectedType === CredentialType.GOOGLE_SHEETS && (
+              {/* Google Service Account fields (Sheets & Calendar) */}
+              {isGoogleServiceAccountType && (
                 <div className="space-y-4 rounded-md border p-4 bg-muted/20">
                   <div className="space-y-1">
                     <h3 className="text-sm font-medium">Google Service Account</h3>
@@ -260,7 +279,7 @@ export const CredentialForm = ({ initialData }: CredentialFormProps) => {
                       >
                         Google Cloud Console
                       </a>
-                      , enable the Google Sheets API, and share your sheet with the service account email.
+                      , enable the {selectedType === CredentialType.GOOGLE_SHEETS ? "Google Sheets" : "Google Calendar"} API, and share your {selectedType === CredentialType.GOOGLE_SHEETS ? "sheet" : "calendar"} with the service account email.
                     </p>
                   </div>
 
@@ -268,8 +287,8 @@ export const CredentialForm = ({ initialData }: CredentialFormProps) => {
                     <label className="text-xs font-medium">Project ID</label>
                     <Input
                       placeholder="my-project-123"
-                      value={sheetsFields.projectId}
-                      onChange={(e) => setSheetsFields({ ...sheetsFields, projectId: e.target.value })}
+                      value={serviceAccountFields.projectId}
+                      onChange={(e) => setServiceAccountFields({ ...serviceAccountFields, projectId: e.target.value })}
                     />
                   </div>
 
@@ -277,8 +296,8 @@ export const CredentialForm = ({ initialData }: CredentialFormProps) => {
                     <label className="text-xs font-medium">Client Email</label>
                     <Input
                       placeholder="my-service-account@my-project.iam.gserviceaccount.com"
-                      value={sheetsFields.clientEmail}
-                      onChange={(e) => setSheetsFields({ ...sheetsFields, clientEmail: e.target.value })}
+                      value={serviceAccountFields.clientEmail}
+                      onChange={(e) => setServiceAccountFields({ ...serviceAccountFields, clientEmail: e.target.value })}
                     />
                   </div>
 
@@ -287,8 +306,8 @@ export const CredentialForm = ({ initialData }: CredentialFormProps) => {
                     <Textarea
                       placeholder={"-----BEGIN PRIVATE KEY-----\n...\n-----END PRIVATE KEY-----"}
                       className="min-h-[120px] font-mono text-xs"
-                      value={sheetsFields.privateKey}
-                      onChange={(e) => setSheetsFields({ ...sheetsFields, privateKey: e.target.value })}
+                      value={serviceAccountFields.privateKey}
+                      onChange={(e) => setServiceAccountFields({ ...serviceAccountFields, privateKey: e.target.value })}
                     />
                     <p className="text-xs text-muted-foreground">
                       Paste the full private key from your Service Account JSON file.
@@ -298,8 +317,7 @@ export const CredentialForm = ({ initialData }: CredentialFormProps) => {
               )}
 
               {/* API key for all other types */}
-              {selectedType !== CredentialType.SMTP &&
-                selectedType !== CredentialType.GOOGLE_SHEETS && (
+              {selectedType !== CredentialType.SMTP && !isGoogleServiceAccountType && (
                   <FormField
                     control={form.control}
                     name="value"

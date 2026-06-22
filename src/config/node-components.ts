@@ -20,6 +20,7 @@ import { NodeType } from "@prisma/client";
 import { AIAgentNode } from '../features/editor/components/agent/node';
 import { BufferMemoryNode } from '@/features/editor/components/memory/node';
 import { NodeTypes } from '@xyflow/react';
+import { GoogleCalendarNode } from '@/features/executions/components/googleCalender/node';
 
 export const nodeComponents: NodeTypes = {
     [NodeType.INITIAL]: InitialNode,
@@ -41,8 +42,8 @@ export const nodeComponents: NodeTypes = {
     [NodeType.SCHEDULE_TRIGGER]: ScheduleNode,
     [NodeType.CODE]: CodeNode,
     [NodeType.AI_AGENT]: AIAgentNode,
-    [NodeType.BUFFER_MEMORY]: BufferMemoryNode
-    
+    [NodeType.BUFFER_MEMORY]: BufferMemoryNode,
+    [NodeType.GOOGLE_CALENDAR]: GoogleCalendarNode,    
 };
 
 export type RegisteredNodeType = keyof typeof nodeComponents;

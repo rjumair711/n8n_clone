@@ -34,6 +34,7 @@ import { scheduleTriggerChannel } from "./channels/schedule-trigger";
 import { codeChannel } from "./channels/code";
 import { aiAgentChannel } from "./channels/ai-agent";
 import { bufferMemoryChannel } from "./channels/bufferMemory";
+import { googleCalendarChannel } from "./channels/googleCalendar";
 
 // =========================================================================
 // 1. ENGINE EXECUTOR: Runs a single execution instance from start to finish
@@ -124,7 +125,8 @@ export const executeWorkflow =
         googleSheetsChannel(),
         codeChannel(),
         aiAgentChannel(),
-        bufferMemoryChannel()
+        bufferMemoryChannel(),
+        googleCalendarChannel(),
       ],
     },
 

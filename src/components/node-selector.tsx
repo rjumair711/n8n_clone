@@ -139,6 +139,12 @@ const coreExecutionNodes: NodeTypeOption[] = [
         icon: "/logos/googleSheet.png"
     },
     {
+        type: NodeType.GOOGLE_CALENDAR,
+        label: "Google Calendar",
+        description: "Create or manage events in a Google Calendar",
+        icon: "/logos/calender.png" 
+    },
+    {
         type: NodeType.BUFFER_MEMORY,
         label: "Memory",
         description: "Store data in a memory",

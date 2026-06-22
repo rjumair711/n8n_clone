@@ -118,7 +118,8 @@ const credentialLogos: Record<CredentialType, string> = {
     [CredentialType.ANTHROPIC]: "/logos/anthropic.svg",
     [CredentialType.GEMINI]: "/logos/gemini.svg",
     [CredentialType.SMTP]: "/logos/smtp.jfif",
-    [CredentialType.GOOGLE_SHEETS]: "/logos/googleSheet.png"
+    [CredentialType.GOOGLE_SHEETS]: "/logos/googleSheet.png",
+    [CredentialType.GOOGLE_CALENDAR]: "/logos/calender.png",
 }
 
 export const CredentialItem = ({

@@ -19,6 +19,7 @@ import { ScheduleExecutor } from '@/features/triggers/components/schedule-trigge
 import { codeNodeExecutor } from '../components/code/executor';
 import { aiAgentExecutor } from '../../editor/components/agent/executor';
 import { bufferMemoryExecutor } from '@/features/editor/components/memory/executor';
+import { googleCalendarExecutor } from '../components/googleCalender/executor';
 
 export const executorRegistry: Record<NodeType, NodeExecutor<any>> = {
   [NodeType.MANUAL_TRIGGER]: manualTriggerExecutor,
@@ -41,6 +42,7 @@ export const executorRegistry: Record<NodeType, NodeExecutor<any>> = {
   [NodeType.CODE]: codeNodeExecutor,
   [NodeType.AI_AGENT]: aiAgentExecutor,
   [NodeType.BUFFER_MEMORY]: bufferMemoryExecutor,
+  [NodeType.GOOGLE_CALENDAR]: googleCalendarExecutor,
 }
 
 export const getExecutor = (type: NodeType): NodeExecutor<any> => {

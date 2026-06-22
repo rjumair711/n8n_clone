@@ -110,6 +110,12 @@ Realtime workflow updates use:
 
 # 🧠 AI Integrations
 
+## Autonomous AI Agent
+* **Dynamic Orchestration:** Automatically utilizes connected nodes (like HTTP Requests or JavaScript) as executing tools.
+* **Dependency Injection:** Lazily loads configurations (API keys, models, system prompts) directly from connected UI nodes.
+* **Contextual Memory:** Integrates with Buffer Memory nodes to retrieve and persist conversation history.
+* **Realtime Thought Logging:** Broadcasts step-by-step reasoning and tool-calling decisions to the frontend during execution.
+
 ## OpenAI
 
 * GPT models
@@ -144,6 +150,7 @@ Realtime workflow updates use:
 
 | Node             | Description                                                               |
 | ---------------- | ------------------------------------------------------------------------- |
+| AI Agent         | Autonomous LLM loop that dynamically utilizes connected nodes as tools    |
 | HTTP Request     | External API requests                                                     |
 | JavaScript Code  | Execute custom JavaScript code within the shared execution context        |
 | Set Variable     | Store reusable variables                                                  |
@@ -152,6 +159,7 @@ Realtime workflow updates use:
 | Webhook Response | Return webhook responses                                                  |
 | Email Send       | SMTP email automation                                                     |
 | Google Sheets    | Spreadsheet automation                                                    |
+| Google Calendar  | Manage events (Create, Update, Delete) with dynamic value parsing         |
 
 ---
 
@@ -173,6 +181,14 @@ Realtime workflow updates use:
 * Dynamic value insertion
 * Service account authentication
 
+## Google Calendar
+
+* Create calendar events
+* Update event properties dynamically via Event ID patching
+* Delete calendar events
+* Dynamic value insertion using Handlebars templates
+* Service account credential parsing and authentication
+
 ---
 
 # 🔐 Credentials & Security
@@ -188,6 +204,7 @@ Supported credential types:
 | GEMINI        | Gemini Nodes  |
 | SMTP          | Email Nodes   |
 | GOOGLE_SHEETS | Google Sheets |
+| GOOGLE_CALENDAR | Google Calendar |
 
 ---
 
@@ -283,6 +300,7 @@ RXJ includes onboarding UX to improve activation and retention.
 
 ## AI SDKs
 
+* Vercel AI SDK (Agent Orchestration & Tool Calling)
 * OpenAI SDK
 * Anthropic SDK
 * Google Gemini SDK

@@ -113,6 +113,7 @@ enum CredentialType {
   GEMINI
   SMTP
   GOOGLE_SHEETS
+  GOOGLE_CALENDAR
 }
 
 model Workflow {
@@ -149,6 +150,7 @@ enum NodeType {
   CODE
   AI_AGENT
   BUFFER_MEMORY
+  GOOGLE_CALENDAR
 }
 
 model Node {
