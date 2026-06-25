@@ -20,6 +20,7 @@ import { codeNodeExecutor } from '../components/code/executor';
 import { aiAgentExecutor } from '../../editor/components/agent/executor';
 import { bufferMemoryExecutor } from '@/features/editor/components/memory/executor';
 import { googleCalendarExecutor } from '../components/googleCalender/executor';
+import { notionExecutor } from '../components/notion/executor';
 
 export const executorRegistry: Record<NodeType, NodeExecutor<any>> = {
   [NodeType.MANUAL_TRIGGER]: manualTriggerExecutor,
@@ -43,6 +44,8 @@ export const executorRegistry: Record<NodeType, NodeExecutor<any>> = {
   [NodeType.AI_AGENT]: aiAgentExecutor,
   [NodeType.BUFFER_MEMORY]: bufferMemoryExecutor,
   [NodeType.GOOGLE_CALENDAR]: googleCalendarExecutor,
+  [NodeType.NOTION]: notionExecutor,
+
 }
 
 export const getExecutor = (type: NodeType): NodeExecutor<any> => {

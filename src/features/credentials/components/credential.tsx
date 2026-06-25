@@ -30,16 +30,10 @@ import { Button } from "@/components/ui/button";
 import Link from "next/link";
 import React from "react";
 
+// FIX: Changed from z.enum to z.nativeEnum to match Prisma enum perfectly
 const formSchema = z.object({
   name: z.string().min(1, "Credential name is required"),
-  type: z.enum([
-    CredentialType.OPENAI, 
-    CredentialType.ANTHROPIC, 
-    CredentialType.GEMINI, 
-    CredentialType.SMTP, 
-    CredentialType.GOOGLE_SHEETS,
-    CredentialType.GOOGLE_CALENDAR 
-  ]),
+  type: z.nativeEnum(CredentialType),
   value: z.string().min(1, "Value is required"),
 });
 
@@ -51,7 +45,8 @@ const credentialTypeOptions = [
   { value: CredentialType.GEMINI, label: "Gemini", logo: "/logos/gemini.svg" },
   { value: CredentialType.SMTP, label: "SMTP (Email)", logo: "/logos/smtp.jfif" },
   { value: CredentialType.GOOGLE_SHEETS, label: "Google Sheets", logo: "/logos/googleSheet.png" },
-  { value: CredentialType.GOOGLE_CALENDAR, label: "Google Calendar", logo: "/logos/calender.png" }, // Ensure this logo exists or swap to Lucide icon
+  { value: CredentialType.GOOGLE_CALENDAR, label: "Google Calendar", logo: "/logos/calender.png" },
+  { value: CredentialType.NOTION, label: "Notion", logo: "/logos/notion.png" }, 
 ];
 
 interface CredentialFormProps {
@@ -71,7 +66,7 @@ export const CredentialForm = ({ initialData }: CredentialFormProps) => {
   const isEdit = !!initialData?.id;
 
   const form = useForm<FormValues>({
-    resolver: zodResolver(formSchema as any),
+    resolver: zodResolver(formSchema), // FIX: Removed 'as any' since types align perfectly now
     defaultValues: initialData || {
       name: "",
       type: CredentialType.OPENAI,
@@ -173,6 +168,9 @@ export const CredentialForm = ({ initialData }: CredentialFormProps) => {
                         } else if (value === CredentialType.GOOGLE_CALENDAR) {
                           form.setValue("name", "Google Calendar");
                           form.setValue("value", JSON.stringify(serviceAccountFields));
+                        } else if (value === CredentialType.NOTION) {
+                          form.setValue("name", "Notion Connection");
+                          form.setValue("value", "");
                         } else {
                           form.setValue("name", "");
                           form.setValue("value", "");
@@ -188,7 +186,6 @@ export const CredentialForm = ({ initialData }: CredentialFormProps) => {
                         {credentialTypeOptions.map((option) => (
                           <SelectItem key={option.value} value={option.value}>
                             <div className="flex items-center gap-2">
-                              {/* Using fallback generic icon if image fails */}
                               <div className="w-4 h-4 flex items-center justify-center">
                                 <Image src={option.logo} alt={option.label} width={16} height={16} className="object-contain" />
                               </div>
@@ -220,7 +217,8 @@ export const CredentialForm = ({ initialData }: CredentialFormProps) => {
                           selectedType === CredentialType.SMTP ? "My Gmail SMTP" :
                             selectedType === CredentialType.GOOGLE_SHEETS ? "My Google Sheets Account" :
                               selectedType === CredentialType.GOOGLE_CALENDAR ? "My Google Calendar Account" :
-                                "My OpenAI Key"
+                                selectedType === CredentialType.NOTION ? "My Notion Workspace" :
+                                  "My OpenAI Key"
                         }
                         {...field}
                       />
@@ -316,26 +314,32 @@ export const CredentialForm = ({ initialData }: CredentialFormProps) => {
                 </div>
               )}
 
-              {/* API key for all other types */}
+              {/* API key / Token entry field for Notion and LLMs */}
               {selectedType !== CredentialType.SMTP && !isGoogleServiceAccountType && (
-                  <FormField
-                    control={form.control}
-                    name="value"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>API Key</FormLabel>
-                        <FormControl>
-                          <Input
-                            type="password"
-                            placeholder={selectedType === CredentialType.OPENAI ? "sk-..." : "Key..."}
-                            {...field}
-                          />
-                        </FormControl>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-                )}
+                <FormField
+                  control={form.control}
+                  name="value"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>
+                        {selectedType === CredentialType.NOTION ? "Internal Integration Token" : "API Key"}
+                      </FormLabel>
+                      <FormControl>
+                        <Input
+                          type="password"
+                          placeholder={
+                            selectedType === CredentialType.OPENAI ? "sk-..." : 
+                              selectedType === CredentialType.NOTION ? "secret_..." : 
+                                "Key..."
+                          }
+                          {...field}
+                        />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+              )}
 
               <div className="flex gap-4">
                 <Button type="submit" disabled={createCredential.isPending || updateCredential.isPending}>

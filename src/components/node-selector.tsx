@@ -11,8 +11,9 @@ import {
     SheetTitle,
     SheetTrigger
 } from "./ui/sheet"
+import { Input } from "@/components/ui/input"
 import { NodeType } from "@prisma/client"
-import { Clock, FilterIcon, GlobeIcon, Mail, MousePointerIcon, Send, VariableIcon, ChevronDown, ChevronRight, Code2, Bot, MemoryStickIcon } from "lucide-react"
+import { Clock, FilterIcon, GlobeIcon, MousePointerIcon, Send, VariableIcon, ChevronDown, ChevronRight, Code2, Bot, MemoryStickIcon, Search } from "lucide-react"
 import { toast } from "sonner"
 
 export type NodeTypeOption = {
@@ -23,6 +24,7 @@ export type NodeTypeOption = {
 }
 
 // 1. Grouped Node Definitions
+
 const triggerNodes: NodeTypeOption[] = [
     {
         type: NodeType.MANUAL_TRIGGER,
@@ -47,6 +49,39 @@ const triggerNodes: NodeTypeOption[] = [
         label: "Schedule Trigger",
         description: "Runs the flow at specific times or periodic intervals (Cron)",
         icon: "/logos/schedule-trigger.png",
+    },
+]
+
+const logicNodes: NodeTypeOption[] = [
+    {
+        type: NodeType.FILTER,
+        label: "Filter",
+        description: "Continue only if a condition is true",
+        icon: FilterIcon
+    },
+    {
+        type: NodeType.SET_VARIABLE,
+        label: "Set Variable",
+        description: "Set a workflow variable",
+        icon: VariableIcon
+    },
+    {
+        type: NodeType.CODE,
+        label: "JavaScript Code",
+        description: "Run custom JavaScript or TypeScript code to transform data",
+        icon: Code2
+    },
+    {
+        type: NodeType.DELAY,
+        label: "Delay",
+        description: "Pause workflow for a specific duration",
+        icon: Clock,
+    },
+    {
+        type: NodeType.BUFFER_MEMORY,
+        label: "Memory",
+        description: "Store data in a memory",
+        icon: MemoryStickIcon
     },
 ]
 
@@ -77,19 +112,7 @@ const aiNodes: NodeTypeOption[] = [
     }
 ]
 
-const coreExecutionNodes: NodeTypeOption[] = [
-    {
-        type: NodeType.FILTER,
-        label: "Filter",
-        description: "Continue only if a condition is true",
-        icon: FilterIcon
-    },
-    {
-        type: NodeType.HTTP_REQUEST,
-        label: "HTTP Request",
-        description: "Makes an HTTP request",
-        icon: GlobeIcon
-    },
+const communicationNodes: NodeTypeOption[] = [
     {
         type: NodeType.DISCORD,
         label: "Discord",
@@ -103,35 +126,14 @@ const coreExecutionNodes: NodeTypeOption[] = [
         icon: "/logos/slack.svg"
     },
     {
-        type: NodeType.SET_VARIABLE,
-        label: "Set Variable",
-        description: "Set a workflow variable",
-        icon: VariableIcon
-    },
-    {
-        type: NodeType.CODE,
-        label: "JavaScript Code",
-        description: "Run custom JavaScript or TypeScript code to transform data",
-        icon: Code2
-    },
-    {
-        type: NodeType.DELAY,
-        label: "Delay",
-        description: "Pause workflow for a specific duration",
-        icon: Clock,
-    },
-    {
-        type: NodeType.WEBHOOK_RESPONSE,
-        label: "Webhook Response",
-        description: "Send a response to a webhook",
-        icon: Send
-    },
-    {
         type: NodeType.EMAIL_SEND,
         label: "Email",
         description: "Send an email notification step",
         icon: "/logos/email.jfif"
     },
+]
+
+const productivityNodes: NodeTypeOption[] = [
     {
         type: NodeType.GOOGLE_SHEETS,
         label: "Google Sheets",
@@ -145,11 +147,26 @@ const coreExecutionNodes: NodeTypeOption[] = [
         icon: "/logos/calender.png" 
     },
     {
-        type: NodeType.BUFFER_MEMORY,
-        label: "Memory",
-        description: "Store data in a memory",
-        icon: MemoryStickIcon
-    }
+        type: NodeType.NOTION,
+        label: "Notion",
+        description: "Create or manage pages in Notion",
+        icon: "/logos/notion.png" 
+    },
+]
+
+const networkNodes: NodeTypeOption[] = [
+    {
+        type: NodeType.HTTP_REQUEST,
+        label: "HTTP Request",
+        description: "Makes an HTTP request",
+        icon: GlobeIcon
+    },
+    {
+        type: NodeType.WEBHOOK_RESPONSE,
+        label: "Webhook Response",
+        description: "Send a response to a webhook",
+        icon: Send
+    },
 ]
 
 interface NodeSelectorProps {
@@ -165,11 +182,15 @@ export function NodeSelector({
 }: NodeSelectorProps) {
     const { setNodes, getNodes, screenToFlowPosition } = useReactFlow()
 
-    // 2. State management for dropdown collapsible menus
+    // 2. State management
+    const [searchQuery, setSearchQuery] = useState("")
     const [openSections, setOpenSections] = useState<Record<string, boolean>>({
         triggers: false,
+        logic: false,
         aiModels: false,
-        actions: false,
+        communications: false,
+        productivity: false,
+        network: false,
     })
 
     const toggleSection = (sectionKey: string) => {
@@ -219,6 +240,8 @@ export function NodeSelector({
             return [...nodes, newNode]
         })
 
+        // Reset search query when closing the menu
+        setSearchQuery("")
         onOpenChange(false)
     }, [setNodes, getNodes, onOpenChange, screenToFlowPosition])
 
@@ -263,57 +286,94 @@ export function NodeSelector({
     )
 
     // Formatted array layout to dynamically iterate accordion rows
-    const menuSections = [
+    const allMenuSections = [
         { id: "triggers", title: "TRIGGERS", data: triggerNodes },
+        { id: "logic", title: "CORE LOGIC", data: logicNodes },
         { id: "aiModels", title: "AI & LANGUAGE MODELS", data: aiNodes },
-        { id: "actions", title: "LOGIC & INTEGRATIONS", data: coreExecutionNodes },
+        { id: "communications", title: "COMMUNICATIONS", data: communicationNodes },
+        { id: "productivity", title: "PRODUCTIVITY APPS", data: productivityNodes },
+        { id: "network", title: "NETWORK & API", data: networkNodes },
     ]
 
+    // Filter sections based on search query
+    const filteredSections = allMenuSections
+        .map((section) => ({
+            ...section,
+            data: section.data.filter(
+                (node) =>
+                    node.label.toLowerCase().includes(searchQuery.toLowerCase()) ||
+                    node.description.toLowerCase().includes(searchQuery.toLowerCase())
+            ),
+        }))
+        .filter((section) => section.data.length > 0) // Hide empty sections
+
     return (
-        <Sheet open={open} onOpenChange={onOpenChange}>
+        <Sheet open={open} onOpenChange={(isOpen) => {
+            if (!isOpen) setSearchQuery(""); // Clear search on close
+            onOpenChange(isOpen);
+        }}>
             <SheetTrigger asChild>{children}</SheetTrigger>
             <SheetContent side="right" className="w-full sm:max-w-md p-0 flex flex-col h-screen bg-background">
 
                 {/* Fixed Non-Scrollable Header Section */}
-                <div className="p-6 border-b border-border flex-shrink-0">
+                <div className="p-6 pb-4 border-b border-border flex-shrink-0 space-y-4">
                     <SheetHeader>
                         <SheetTitle className="text-xl font-semibold tracking-tight">Add a Node</SheetTitle>
                         <SheetDescription className="text-sm text-muted-foreground mt-1">
                             Select a trigger or execution block to add to your flow builder canvas.
                         </SheetDescription>
                     </SheetHeader>
+                    
+                    {/* Search Bar */}
+                    <div className="relative">
+                        <Search className="absolute left-3 top-1/2 -translate-y-1/2 size-4 text-muted-foreground" />
+                        <Input 
+                            placeholder="Search for Nodes, Triggers, or Apps..." 
+                            className="pl-9 bg-muted/30 border-border/50 focus-visible:ring-1 focus-visible:ring-primary/50"
+                            value={searchQuery}
+                            onChange={(e) => setSearchQuery(e.target.value)}
+                        />
+                    </div>
                 </div>
 
                 {/* Independent Scrollable Content Area */}
                 <div className="flex-1 overflow-y-auto p-4 space-y-4">
-                    {menuSections.map((section) => {
-                        const isOpen = openSections[section.id];
-                        return (
-                            <div key={section.id} className="border border-border/40 rounded-xl bg-card/30 overflow-hidden shadow-2xs">
+                    {filteredSections.length === 0 ? (
+                        <div className="flex flex-col items-center justify-center h-40 text-center space-y-2">
+                            <Search className="size-8 text-muted-foreground/30" />
+                            <p className="text-sm text-muted-foreground">No nodes found matching "{searchQuery}"</p>
+                        </div>
+                    ) : (
+                        filteredSections.map((section) => {
+                            // Automatically open sections if there is a search query
+                            const isOpen = searchQuery.length > 0 ? true : openSections[section.id];
+                            
+                            return (
+                                <div key={section.id} className="border border-border/40 rounded-xl bg-card/30 overflow-hidden shadow-sm">
+                                    {/* Accordion Click Target Header */}
+                                    <button
+                                        onClick={() => toggleSection(section.id)}
+                                        className="flex items-center justify-between w-full p-4 text-xs font-bold tracking-wider text-muted-foreground hover:text-foreground hover:bg-muted/20 transition-all border-b border-border/20"
+                                    >
+                                        <span>{section.title}</span>
+                                        {isOpen ? (
+                                            <ChevronDown className="size-4 opacity-70" />
+                                        ) : (
+                                            <ChevronRight className="size-4 opacity-70" />
+                                        )}
+                                    </button>
 
-                                {/* Accordion Click Target Header */}
-                                <button
-                                    onClick={() => toggleSection(section.id)}
-                                    className="flex items-center justify-between w-full p-4 text-xs font-bold tracking-wider text-muted-foreground hover:text-foreground hover:bg-muted/20 transition-all border-b border-border/20"
-                                >
-                                    <span>{section.title}</span>
-                                    {isOpen ? (
-                                        <ChevronDown className="size-4 opacity-70" />
-                                    ) : (
-                                        <ChevronRight className="size-4 opacity-70" />
-                                    )}
-                                </button>
-
-                                {/* Dropdown Collapsible Element Panel */}
-                                <div className={`grid transition-all duration-200 ease-in-out ${isOpen ? "grid-rows-[1fr] opacity-100" : "grid-rows-[0fr] opacity-0 pointer-events-none"
-                                    }`}>
-                                    <div className="overflow-hidden bg-background/50">
-                                        {renderNodeList(section.data)}
+                                    {/* Dropdown Collapsible Element Panel */}
+                                    <div className={`grid transition-all duration-200 ease-in-out ${isOpen ? "grid-rows-[1fr] opacity-100" : "grid-rows-[0fr] opacity-0 pointer-events-none"
+                                        }`}>
+                                        <div className="overflow-hidden bg-background/50">
+                                            {renderNodeList(section.data)}
+                                        </div>
                                     </div>
                                 </div>
-                            </div>
-                        )
-                    })}
+                            )
+                        })
+                    )}
                 </div>
 
             </SheetContent>

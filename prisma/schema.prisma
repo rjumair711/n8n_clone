@@ -114,6 +114,7 @@ enum CredentialType {
   SMTP
   GOOGLE_SHEETS
   GOOGLE_CALENDAR
+  NOTION
 }
 
 model Workflow {
@@ -151,6 +152,7 @@ enum NodeType {
   AI_AGENT
   BUFFER_MEMORY
   GOOGLE_CALENDAR
+  NOTION
 }
 
 model Node {

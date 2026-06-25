@@ -160,6 +160,7 @@ Realtime workflow updates use:
 | Email Send       | SMTP email automation                                                     |
 | Google Sheets    | Spreadsheet automation                                                    |
 | Google Calendar  | Manage events (Create, Update, Delete) with dynamic value parsing         |
+| Notion           | Interact with Notion workspaces (Create Pages, Query Databases)           |
 
 ---
 
@@ -205,6 +206,7 @@ Supported credential types:
 | SMTP          | Email Nodes   |
 | GOOGLE_SHEETS | Google Sheets |
 | GOOGLE_CALENDAR | Google Calendar |
+| NOTION        | Notion Nodes  |
 
 ---
 
