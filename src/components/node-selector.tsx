@@ -131,6 +131,12 @@ const communicationNodes: NodeTypeOption[] = [
         description: "Send an email notification step",
         icon: "/logos/email.jfif"
     },
+    {
+        type: NodeType.TELEGRAM,
+        label: "Telegram",
+        description: "Send a message or interact with a Telegram bot",
+        icon: "/logos/telegram.jfif" 
+    },
 ]
 
 const productivityNodes: NodeTypeOption[] = [

@@ -47,6 +47,7 @@ const credentialTypeOptions = [
   { value: CredentialType.GOOGLE_SHEETS, label: "Google Sheets", logo: "/logos/googleSheet.png" },
   { value: CredentialType.GOOGLE_CALENDAR, label: "Google Calendar", logo: "/logos/calender.png" },
   { value: CredentialType.NOTION, label: "Notion", logo: "/logos/notion.png" }, 
+  { value: CredentialType.TELEGRAM, label: "Telegram", logo: "/logos/telegram.jfif" },
 ];
 
 interface CredentialFormProps {
@@ -171,6 +172,9 @@ export const CredentialForm = ({ initialData }: CredentialFormProps) => {
                         } else if (value === CredentialType.NOTION) {
                           form.setValue("name", "Notion Connection");
                           form.setValue("value", "");
+                        } else if (value === CredentialType.TELEGRAM) {
+                          form.setValue("name", "Telegram Bot");
+                          form.setValue("value", "");
                         } else {
                           form.setValue("name", "");
                           form.setValue("value", "");
@@ -209,7 +213,9 @@ export const CredentialForm = ({ initialData }: CredentialFormProps) => {
                     <FormLabel>
                       {selectedType === CredentialType.SMTP || isGoogleServiceAccountType
                         ? "Credential Name"
-                        : "API Key Name"}
+                        : selectedType === CredentialType.TELEGRAM 
+                          ? "Bot Configuration Name" 
+                          : "API Key Name"}
                     </FormLabel>
                     <FormControl>
                       <Input
@@ -218,7 +224,8 @@ export const CredentialForm = ({ initialData }: CredentialFormProps) => {
                             selectedType === CredentialType.GOOGLE_SHEETS ? "My Google Sheets Account" :
                               selectedType === CredentialType.GOOGLE_CALENDAR ? "My Google Calendar Account" :
                                 selectedType === CredentialType.NOTION ? "My Notion Workspace" :
-                                  "My OpenAI Key"
+                                  selectedType === CredentialType.TELEGRAM ? "My Telegram System Bot" :
+                                    "My OpenAI Key"
                         }
                         {...field}
                       />
@@ -314,7 +321,7 @@ export const CredentialForm = ({ initialData }: CredentialFormProps) => {
                 </div>
               )}
 
-              {/* API key / Token entry field for Notion and LLMs */}
+              {/* API key / Token entry field for Notion, Telegram, and LLMs */}
               {selectedType !== CredentialType.SMTP && !isGoogleServiceAccountType && (
                 <FormField
                   control={form.control}
@@ -322,7 +329,8 @@ export const CredentialForm = ({ initialData }: CredentialFormProps) => {
                   render={({ field }) => (
                     <FormItem>
                       <FormLabel>
-                        {selectedType === CredentialType.NOTION ? "Internal Integration Token" : "API Key"}
+                        {selectedType === CredentialType.NOTION ? "Internal Integration Token" :
+                          selectedType === CredentialType.TELEGRAM ? "Bot Token" : "API Key"}
                       </FormLabel>
                       <FormControl>
                         <Input
@@ -330,7 +338,8 @@ export const CredentialForm = ({ initialData }: CredentialFormProps) => {
                           placeholder={
                             selectedType === CredentialType.OPENAI ? "sk-..." : 
                               selectedType === CredentialType.NOTION ? "secret_..." : 
-                                "Key..."
+                                selectedType === CredentialType.TELEGRAM ? "1234567890:ABCdefGhIJKlmNoPQRsTUVwxyZ" :
+                                  "Key..."
                           }
                           {...field}
                         />

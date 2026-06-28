@@ -36,6 +36,7 @@ import { aiAgentChannel } from "./channels/ai-agent";
 import { bufferMemoryChannel } from "./channels/bufferMemory";
 import { googleCalendarChannel } from "./channels/googleCalendar";
 import { notionChannel } from "./channels/notion";
+import { telegramChannel } from "./channels/telegram";
 
 // =========================================================================
 // 1. ENGINE EXECUTOR: Runs a single execution instance from start to finish
@@ -129,6 +130,7 @@ export const executeWorkflow =
         bufferMemoryChannel(),
         googleCalendarChannel(),
         notionChannel(),
+        telegramChannel()
       ],
     },
 

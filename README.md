@@ -170,7 +170,7 @@ Realtime workflow updates use:
 | ----------- | ------------------- |
 | Discord     | Discord automation  |
 | Slack       | Slack notifications |
-
+| Telegram    | Bot Messaging       |
 ---
 
 # 📊 Productivity Integrations
@@ -207,6 +207,7 @@ Supported credential types:
 | GOOGLE_SHEETS | Google Sheets |
 | GOOGLE_CALENDAR | Google Calendar |
 | NOTION        | Notion Nodes  |
+| TEELGRAM      | Telegram Nodes|
 
 ---
 

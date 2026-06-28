@@ -115,6 +115,7 @@ enum CredentialType {
   GOOGLE_SHEETS
   GOOGLE_CALENDAR
   NOTION
+  TELEGRAM
 }
 
 model Workflow {
@@ -153,6 +154,7 @@ enum NodeType {
   BUFFER_MEMORY
   GOOGLE_CALENDAR
   NOTION
+  TELEGRAM
 }
 
 model Node {

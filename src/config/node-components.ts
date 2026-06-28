@@ -22,6 +22,7 @@ import { BufferMemoryNode } from '@/features/editor/components/memory/node';
 import { NodeTypes } from '@xyflow/react';
 import { GoogleCalendarNode } from '@/features/executions/components/googleCalender/node';
 import { NotionNode } from '@/features/executions/components/notion/node';
+import { TelegramNode } from '@/features/executions/components/telegram/node';
 
 export const nodeComponents: NodeTypes = {
     [NodeType.INITIAL]: InitialNode,
@@ -46,6 +47,7 @@ export const nodeComponents: NodeTypes = {
     [NodeType.BUFFER_MEMORY]: BufferMemoryNode,
     [NodeType.GOOGLE_CALENDAR]: GoogleCalendarNode,
     [NodeType.NOTION]: NotionNode,
+    [NodeType.TELEGRAM]: TelegramNode,
 };
 
 export type RegisteredNodeType = keyof typeof nodeComponents;
