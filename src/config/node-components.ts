@@ -23,6 +23,7 @@ import { NodeTypes } from '@xyflow/react';
 import { GoogleCalendarNode } from '@/features/executions/components/googleCalender/node';
 import { NotionNode } from '@/features/executions/components/notion/node';
 import { TelegramNode } from '@/features/executions/components/telegram/node';
+import { DateTimeNode } from '@/features/executions/components/daytime/node';
 
 export const nodeComponents: NodeTypes = {
     [NodeType.INITIAL]: InitialNode,
@@ -48,6 +49,7 @@ export const nodeComponents: NodeTypes = {
     [NodeType.GOOGLE_CALENDAR]: GoogleCalendarNode,
     [NodeType.NOTION]: NotionNode,
     [NodeType.TELEGRAM]: TelegramNode,
+    [NodeType.DATE_TIME]: DateTimeNode,
 };
 
 export type RegisteredNodeType = keyof typeof nodeComponents;

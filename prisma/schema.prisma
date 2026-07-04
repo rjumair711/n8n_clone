@@ -155,6 +155,7 @@ enum NodeType {
   GOOGLE_CALENDAR
   NOTION
   TELEGRAM
+  DATE_TIME
 }
 
 model Node {

@@ -66,6 +66,12 @@ const logicNodes: NodeTypeOption[] = [
         icon: VariableIcon
     },
     {
+        type: NodeType.DATE_TIME, 
+        label: "Date & Time",
+        description: "Get current time, format, manipulate, or compare dates",
+        icon: "/logos/clock.svg", 
+    },
+    {
         type: NodeType.CODE,
         label: "JavaScript Code",
         description: "Run custom JavaScript or TypeScript code to transform data",

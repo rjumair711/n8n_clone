@@ -22,6 +22,7 @@ import { bufferMemoryExecutor } from '@/features/editor/components/memory/execut
 import { googleCalendarExecutor } from '../components/googleCalender/executor';
 import { notionExecutor } from '../components/notion/executor';
 import { telegramExecutor } from '../components/telegram/executor';
+import { dateTimeExecutor } from '../components/daytime/executor';
 
 export const executorRegistry: Record<NodeType, NodeExecutor<any>> = {
   [NodeType.MANUAL_TRIGGER]: manualTriggerExecutor,
@@ -47,6 +48,7 @@ export const executorRegistry: Record<NodeType, NodeExecutor<any>> = {
   [NodeType.GOOGLE_CALENDAR]: googleCalendarExecutor,
   [NodeType.NOTION]: notionExecutor,
   [NodeType.TELEGRAM]: telegramExecutor,
+  [NodeType.DATE_TIME]: dateTimeExecutor,
 }
 
 export const getExecutor = (type: NodeType): NodeExecutor<any> => {

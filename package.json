@@ -38,6 +38,7 @@
     "cross-env": "^10.1.0",
     "cryptr": "^6.4.0",
     "date-fns": "^4.1.0",
+    "dayjs": "^1.11.21",
     "embla-carousel-react": "^8.6.0",
     "eslint-config-next": "^15.5.6",
     "googleapis": "^171.4.0",
