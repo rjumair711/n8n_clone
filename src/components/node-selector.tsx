@@ -13,7 +13,7 @@ import {
 } from "./ui/sheet"
 import { Input } from "@/components/ui/input"
 import { NodeType } from "@prisma/client"
-import { Clock, FilterIcon, GlobeIcon, MousePointerIcon, Send, VariableIcon, ChevronDown, ChevronRight, Code2, Bot, MemoryStickIcon, Search } from "lucide-react"
+import { Clock, FilterIcon, GlobeIcon, MousePointerIcon, Send, VariableIcon, ChevronDown, ChevronRight, Code2, Bot, MemoryStickIcon, Search, Type } from "lucide-react"
 import { toast } from "sonner"
 
 export type NodeTypeOption = {
@@ -64,6 +64,12 @@ const logicNodes: NodeTypeOption[] = [
         label: "Set Variable",
         description: "Set a workflow variable",
         icon: VariableIcon
+    },
+    {
+        type: NodeType.TEXT_FORMATTER,
+        label: "Text Formatter",
+        description: "Transform, clean, or extract text strings",
+        icon: Type 
     },
     {
         type: NodeType.DATE_TIME, 

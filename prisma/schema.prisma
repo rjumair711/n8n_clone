@@ -156,6 +156,7 @@ enum NodeType {
   NOTION
   TELEGRAM
   DATE_TIME
+  TEXT_FORMATTER
 }
 
 model Node {

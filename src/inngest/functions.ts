@@ -38,6 +38,7 @@ import { googleCalendarChannel } from "./channels/googleCalendar";
 import { notionChannel } from "./channels/notion";
 import { telegramChannel } from "./channels/telegram";
 import { dateTimeChannel } from "./channels/datetime";
+import { textFormatterChannel } from "./channels/textformatter";
 
 // =========================================================================
 // 1. ENGINE EXECUTOR: Runs a single execution instance from start to finish
@@ -132,7 +133,8 @@ export const executeWorkflow =
         googleCalendarChannel(),
         notionChannel(),
         telegramChannel(),
-        dateTimeChannel()
+        dateTimeChannel(),
+        textFormatterChannel()
       ],
     },
 

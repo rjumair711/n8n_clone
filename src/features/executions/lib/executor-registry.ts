@@ -23,6 +23,7 @@ import { googleCalendarExecutor } from '../components/googleCalender/executor';
 import { notionExecutor } from '../components/notion/executor';
 import { telegramExecutor } from '../components/telegram/executor';
 import { dateTimeExecutor } from '../components/daytime/executor';
+import { textFormatterExecutor } from '../components/textFormatter/executor';
 
 export const executorRegistry: Record<NodeType, NodeExecutor<any>> = {
   [NodeType.MANUAL_TRIGGER]: manualTriggerExecutor,
@@ -49,6 +50,7 @@ export const executorRegistry: Record<NodeType, NodeExecutor<any>> = {
   [NodeType.NOTION]: notionExecutor,
   [NodeType.TELEGRAM]: telegramExecutor,
   [NodeType.DATE_TIME]: dateTimeExecutor,
+  [NodeType.TEXT_FORMATTER]: textFormatterExecutor,
 }
 
 export const getExecutor = (type: NodeType): NodeExecutor<any> => {
