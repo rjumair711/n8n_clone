@@ -1,3 +1,4 @@
+import { calculatorExecutor } from './../components/calculator/executor';
 import { stripeTriggerExecutor } from './../../triggers/components/stripe-trigger/executor';
 import { NodeType } from "@prisma/client";
 import { NodeExecutor } from "../types";
@@ -51,6 +52,7 @@ export const executorRegistry: Record<NodeType, NodeExecutor<any>> = {
   [NodeType.TELEGRAM]: telegramExecutor,
   [NodeType.DATE_TIME]: dateTimeExecutor,
   [NodeType.TEXT_FORMATTER]: textFormatterExecutor,
+  [NodeType.CALCULATOR]: calculatorExecutor,
 }
 
 export const getExecutor = (type: NodeType): NodeExecutor<any> => {

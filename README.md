@@ -163,6 +163,8 @@ Realtime workflow updates use:
 | Notion           | Interact with Notion workspaces (Create Pages, Query Databases)           |
 | Date & Time      | Get current time, format, manipulate, or compare dates                    |
 | Text Formatter   | Transform, clean, or extract text strings (Uppercase, Replace, Regex)     |
+| Calculator       | Perform mathematical operations on numbers or variables                   |
+
 
 ---
 

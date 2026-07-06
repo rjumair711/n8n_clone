@@ -1,3 +1,4 @@
+import { calculatorChannel } from './channels/calculator';
 import { geminiChannel } from "./channels/gemini";
 import { inngest } from "./client";
 import { NonRetriableError } from "inngest";
@@ -134,7 +135,8 @@ export const executeWorkflow =
         notionChannel(),
         telegramChannel(),
         dateTimeChannel(),
-        textFormatterChannel()
+        textFormatterChannel(),
+        calculatorChannel()
       ],
     },
 

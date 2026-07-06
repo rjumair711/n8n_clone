@@ -25,6 +25,7 @@ import { NotionNode } from '@/features/executions/components/notion/node';
 import { TelegramNode } from '@/features/executions/components/telegram/node';
 import { DateTimeNode } from '@/features/executions/components/daytime/node';
 import { TextFormatterNode } from '../features/executions/components/textFormatter/node';
+import { CalculatorNode } from '../features/executions/components/calculator/node';
 
 export const nodeComponents: NodeTypes = {
     [NodeType.INITIAL]: InitialNode,
@@ -52,6 +53,7 @@ export const nodeComponents: NodeTypes = {
     [NodeType.TELEGRAM]: TelegramNode,
     [NodeType.DATE_TIME]: DateTimeNode,
     [NodeType.TEXT_FORMATTER]: TextFormatterNode,
+    [NodeType.CALCULATOR]: CalculatorNode,
 };
 
 export type RegisteredNodeType = keyof typeof nodeComponents;

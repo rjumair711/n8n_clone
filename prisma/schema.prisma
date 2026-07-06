@@ -157,6 +157,7 @@ enum NodeType {
   TELEGRAM
   DATE_TIME
   TEXT_FORMATTER
+  CALCULATOR
 }
 
 model Node {

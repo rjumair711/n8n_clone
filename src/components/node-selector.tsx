@@ -13,7 +13,7 @@ import {
 } from "./ui/sheet"
 import { Input } from "@/components/ui/input"
 import { NodeType } from "@prisma/client"
-import { Clock, FilterIcon, GlobeIcon, MousePointerIcon, Send, VariableIcon, ChevronDown, ChevronRight, Code2, Bot, MemoryStickIcon, Search, Type } from "lucide-react"
+import { Clock, FilterIcon, GlobeIcon, MousePointerIcon, Send, VariableIcon, ChevronDown, ChevronRight, Code2, Bot, MemoryStickIcon, Search, Type, Calculator } from "lucide-react"
 import { toast } from "sonner"
 
 export type NodeTypeOption = {
@@ -58,6 +58,12 @@ const logicNodes: NodeTypeOption[] = [
         label: "Filter",
         description: "Continue only if a condition is true",
         icon: FilterIcon
+    },
+    {
+        type: NodeType.CALCULATOR,
+        label: "Calculator",
+        description: "Perform mathematical operations on numbers or variables",
+        icon: Calculator 
     },
     {
         type: NodeType.SET_VARIABLE,
