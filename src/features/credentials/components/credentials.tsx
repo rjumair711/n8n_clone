@@ -122,6 +122,10 @@ const credentialLogos: Record<CredentialType, string> = {
     [CredentialType.GOOGLE_CALENDAR]: "/logos/calender.png",
     [CredentialType.NOTION]: "/logos/notion.png",
     [CredentialType.TELEGRAM]: "/logos/telegram.jfif",
+    [CredentialType.GITHUB]: "/logos/github.svg",
+    [CredentialType.AIRTABLE]: "/logos/airtable.svg",
+    [CredentialType.POSTGRES]: "/logos/postgres.svg",
+    [CredentialType.WHATSAPP]: "/logos/whatsapp.svg",
 }
 
 export const CredentialItem = ({

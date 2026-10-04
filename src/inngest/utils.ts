@@ -1,59 +1,7 @@
-import { Connection, Node } from "@prisma/client";
-import toposort from "toposort";
+import { ExecutionStatus, NodeType } from "@prisma/client";
 import { inngest } from "./client";
 import { createId } from "@paralleldrive/cuid2";
-
-
-
-export const topologicalSort = (
-    nodes: Node[],
-    connections: Connection[],
-): Node[] => {
-    // if no connections, return node as-in (they're all independant)
-
-    if (connections.length === 0) {
-        return nodes;
-    }
-
-
-    //Create edges array for toposort
-
-    const edges: [string, string][] = connections.map((conn) => [
-        conn.fromNodeId,
-        conn.toNodeId
-    ])
-
-    // Add nodes with no connections as self-edges to ensure they're included
-    const connectedNodeIds = new Set<string>()
-    for (const conn of connections) {
-        connectedNodeIds.add(conn.fromNodeId);
-        connectedNodeIds.add(conn.toNodeId)
-    }
-
-    for (const node of nodes) {
-        if (!connectedNodeIds.has(node.id)) {
-            edges.push([node.id, node.id])
-        }
-    }
-
-
-    // Perform topological sort
-    let sortedNodeIds: string[];
-    try {
-        sortedNodeIds = toposort(edges);
-        // Remove duplicates (from self-edges)
-        sortedNodeIds = [...new Set(sortedNodeIds)]
-    } catch (error) {
-        if (error instanceof Error && error.message.includes("Cyclic")) {
-            throw new Error("Workflow contains a cycle")
-        }
-        throw error
-    }
-
-    // Map sorted IDs back to node objects
-    const nodeMap = new Map(nodes.map((n) => [n.id, n]));
-    return sortedNodeIds.map((id) => nodeMap.get(id)!).filter(Boolean)
-}
+import prisma from "@/lib/db";
 
 export const sendWorkflowExecution = async (data: {
     workflowId: string;
@@ -64,5 +12,47 @@ export const sendWorkflowExecution = async (data: {
         name: "workflows/execute.workflow",
         data,
         id: createId()
+    })
+}
+
+// Used by the webhook routes: the engine needs an Execution row to exist
+// before the event arrives.
+export const startWorkflowExecution = async ({
+    workflowId,
+    trigger,
+    initialData,
+}: {
+    workflowId: string;
+    trigger: NodeType;
+    initialData: Record<string, unknown>;
+}) => {
+    const execution = await prisma.execution.create({
+        data: {
+            workflowId,
+            status: ExecutionStatus.RUNNING,
+        },
+    })
+
+    await sendWorkflowExecution({
+        workflowId,
+        executionId: execution.id,
+        trigger,
+        InitialData: initialData,
+    })
+
+    return execution
+}
+
+// Returns the workflow's trigger nodes of the given type (empty when the
+// workflow does not exist or is not listening for this trigger).
+export const findTriggerNodes = async (
+    workflowId: string,
+    trigger: NodeType,
+) => {
+    return prisma.node.findMany({
+        where: {
+            workflowId,
+            type: trigger,
+        },
     })
 }

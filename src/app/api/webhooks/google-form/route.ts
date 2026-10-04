@@ -1,6 +1,6 @@
-import { sendWorkflowExecution } from "@/inngest/utils";
+import { findTriggerNodes, startWorkflowExecution } from "@/inngest/utils";
 import { type NextRequest, NextResponse } from "next/server";
-import { randomUUID } from "crypto";
+import { NodeType } from "@prisma/client";
 
 export async function POST(request: NextRequest) {
     try {
@@ -20,6 +20,22 @@ export async function POST(request: NextRequest) {
             );
         }
 
+        const triggerNodes = await findTriggerNodes(
+            workflowId,
+            NodeType.GOOGLE_FORM_TRIGGER
+        );
+
+        if (triggerNodes.length === 0) {
+            return NextResponse.json(
+                {
+                    success: false,
+                    error:
+                        "Workflow not found or it has no Google Form trigger",
+                },
+                { status: 404 }
+            );
+        }
+
         const body = await request.json();
 
         const formData = {
@@ -34,10 +50,9 @@ export async function POST(request: NextRequest) {
         };
 
         // Trigger an Inngest Job
-        await sendWorkflowExecution({
+        await startWorkflowExecution({
             workflowId,
-
-            executionId: randomUUID(),
+            trigger: NodeType.GOOGLE_FORM_TRIGGER,
 
             initialData: {
                 googleForm: formData,

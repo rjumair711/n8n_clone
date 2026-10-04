@@ -6,7 +6,6 @@ import { memo, useState } from "react";
 import { FilterDialog, FilterFormValues } from "./dialog";
 import { FilterIcon } from "lucide-react";
 import { useNodeStatus } from "../../hooks/use-node-status";
-import { FILTER_CHANNEL_NAME } from "@/inngest/channels/filter";
 
 type FilterNodeData = {
   inputKey?: string;
@@ -63,7 +62,6 @@ export const FilterNode = memo((props: NodeProps<FilterNodeType>) => {
         id={props.id}
         icon={FilterIcon}
         name="Filter"
-        status={nodeStatus.status}
         description={description}
         onSettings={handleOpenSettings}
         onDoubleClick={handleOpenSettings}

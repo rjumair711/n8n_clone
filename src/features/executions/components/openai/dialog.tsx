@@ -22,6 +22,7 @@ const formSchema = z.object({
             message: "Variable name must start with a letter or underscore and container only letters, numbers, and underscores"
         }),
     credentialId: z.string().min(1, "Credential is required"),
+    model: z.string().optional(),
     systemPrompt: z.string().optional(),
     userPrompt: z.string().min(1, "User prompt is required"),
 })
@@ -53,6 +54,7 @@ export const OpenAIDialog = ({
         defaultValues: {
             variableName: defaultValues.variableName || "",
             credentialId: defaultValues.credentialId || "",
+            model: defaultValues.model || "",
             systemPrompt: defaultValues.systemPrompt || "",
             userPrompt: defaultValues.userPrompt || "",
         }
@@ -62,6 +64,7 @@ export const OpenAIDialog = ({
             form.reset({
                 variableName: defaultValues.variableName || "",
                 credentialId: defaultValues.credentialId || "",
+                model: defaultValues.model || "",
                 systemPrompt: defaultValues.systemPrompt || "",
                 userPrompt: defaultValues.userPrompt || "",
             });
@@ -147,6 +150,26 @@ export const OpenAIDialog = ({
                                             ))}
                                         </SelectContent>
                                     </Select>
+                                    <FormMessage />
+                                </FormItem>
+                            )}
+                        />
+                        <FormField
+                            control={form.control}
+                            name="model"
+                            render={({ field }) => (
+                                <FormItem>
+                                    <FormLabel>Model (Optional)</FormLabel>
+                                    <FormControl>
+                                        <Input placeholder="gpt-4o-mini"
+                                            {...field}
+                                        />
+                                    </FormControl>
+                                    <FormDescription>
+                                        Leave empty to use gpt-4o-mini. This is also the
+                                        model an AI Agent uses when this node is connected
+                                        to its Chat Model port.
+                                    </FormDescription>
                                     <FormMessage />
                                 </FormItem>
                             )}

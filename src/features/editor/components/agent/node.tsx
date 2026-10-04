@@ -1,19 +1,35 @@
 "use client";
 
-import { memo } from "react";
+import { memo, useMemo, useState } from "react";
 import { Handle, Position, NodeProps, useReactFlow, Node, useEdges } from "@xyflow/react";
-import { Bot, Trash2 } from "lucide-react";
+import { Bot, Settings, Trash2 } from "lucide-react";
+import { useNodeStatus } from "@/features/executions/hooks/use-node-status";
+import { AIAgentDialog, type AIAgentFormValues, type ConnectedTool } from "./dialog";
 
 const PORT_COLOR = "#7B81BC";
 
-export const AIAgentNode = memo(({ id, selected }: NodeProps<Node>) => {
-  const { setNodes, setEdges } = useReactFlow();
+type AIAgentNodeData = Partial<AIAgentFormValues> & { systemPrompt?: string };
+
+export const AIAgentNode = memo(({ id, selected, data }: NodeProps<Node<AIAgentNodeData>>) => {
+  const { setNodes, setEdges, getNode } = useReactFlow();
   const edges = useEdges();
+  const [dialogOpen, setDialogOpen] = useState(false);
+  const nodeStatus = useNodeStatus(id);
 
   // 🚀 n8n Style: Compute tool attachments dynamically from canvas edges
-  const toolCount = edges.filter(
-    (edge) => edge.target === id && edge.targetHandle === "sub-tools"
-  ).length;
+  const tools = useMemo<ConnectedTool[]>(
+    () =>
+      edges
+        .filter((edge) => edge.target === id && edge.targetHandle === "sub-tools")
+        .flatMap((edge) => {
+          const source = getNode(edge.source);
+          return source
+            ? [{ id: source.id, type: source.type || "", data: source.data || {} }]
+            : [];
+        }),
+    [edges, id, getNode]
+  );
+  const toolCount = tools.length;
 
   const handleDelete = (e: React.MouseEvent) => {
     e.stopPropagation();
@@ -21,25 +37,69 @@ export const AIAgentNode = memo(({ id, selected }: NodeProps<Node>) => {
     setEdges((edges) => edges.filter((edge) => edge.source !== id && edge.target !== id));
   };
 
+  const handleOpenSettings = (e?: React.MouseEvent) => {
+    e?.stopPropagation();
+    setDialogOpen(true);
+  };
+
+  const handleSubmit = (values: AIAgentFormValues) => {
+    setNodes((nodes) =>
+      nodes.map((node) =>
+        node.id === id
+          ? { ...node, data: { ...node.data, ...values } }
+          : node
+      )
+    );
+  };
+
+  const statusBorder =
+    nodeStatus.status === "loading"
+      ? "border-2 border-blue-400 animate-pulse"
+      : nodeStatus.status === "success"
+        ? "border-2 border-green-500"
+        : nodeStatus.status === "error"
+          ? "border-2 border-red-500"
+          : selected
+            ? "border-2 border-blue-500"
+            : "border border-slate-300 hover:border-slate-400";
+
+  const buttonVisibility = selected
+    ? "opacity-100 scale-100"
+    : "opacity-0 scale-90 group-hover:opacity-100 group-hover:scale-100";
+
   return (
     <div className="relative selection:bg-transparent group">
-      
+
+      <AIAgentDialog
+        open={dialogOpen}
+        onOpenChange={setDialogOpen}
+        onSubmit={handleSubmit}
+        defaultValues={data}
+        tools={tools}
+      />
+
+      {/* Settings Button */}
+      <button
+        onClick={handleOpenSettings}
+        className={`absolute -top-3 right-6 z-10 p-1.5 bg-slate-50 text-slate-600 border border-slate-200 rounded-full shadow-sm hover:bg-slate-100 transition-all duration-200 ${buttonVisibility}`}
+        title="Settings"
+      >
+        <Settings className="w-4 h-4" strokeWidth={2} />
+      </button>
+
       {/* Delete Button */}
       <button
         onClick={handleDelete}
-        className={`absolute -top-3 -right-3 z-10 p-1.5 bg-red-50 text-red-500 border border-red-200 rounded-full shadow-sm hover:bg-red-100 transition-all duration-200 ${
-          selected ? "opacity-100 scale-100" : "opacity-0 scale-90 group-hover:opacity-100 group-hover:scale-100"
-        }`}
+        className={`absolute -top-3 -right-3 z-10 p-1.5 bg-red-50 text-red-500 border border-red-200 rounded-full shadow-sm hover:bg-red-100 transition-all duration-200 ${buttonVisibility}`}
         title="Delete Node"
       >
         <Trash2 className="w-4 h-4" strokeWidth={2} />
       </button>
 
       {/* Main Node Body */}
-      <div 
-        className={`w-[260px] h-[100px] bg-white rounded-xl shadow-sm transition-colors flex items-center pl-[42px] pr-6 gap-[18px] ${
-          selected ? "border-2 border-blue-500" : "border border-slate-300 hover:border-slate-400"
-        }`}
+      <div
+        onDoubleClick={() => handleOpenSettings()}
+        className={`w-[260px] h-[100px] bg-white rounded-xl shadow-sm transition-colors flex items-center pl-[42px] pr-6 gap-[18px] ${statusBorder}`}
       >
         <Bot className="w-9 h-9 text-slate-800 flex-shrink-0" strokeWidth={1.6} />
         <div className="flex flex-col min-w-0 text-left leading-tight">

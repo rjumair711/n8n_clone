@@ -1,26 +1,92 @@
-import { generateText } from "ai";
+import { tool, type ModelMessage, type ToolSet } from "ai";
 import { createOpenAI } from "@ai-sdk/openai";
 import { createAnthropic } from "@ai-sdk/anthropic";
 import { createGoogleGenerativeAI } from "@ai-sdk/google";
 import { NonRetriableError } from "inngest";
-import Handlebars from "handlebars";
 import prisma from "@/lib/db";
 import { decrypt } from "@/lib/encryption";
-import { NodeExecutor } from "@/features/executions/types";
-import { z } from "zod";
+import type {
+  NodeExecutor,
+  NodeWithCredential,
+  WorkflowContext,
+} from "@/features/executions/types";
 import { NodeType } from "@prisma/client";
 import { executorRegistry } from "@/features/executions/lib/executor-registry";
+import { renderTemplate } from "@/features/executions/lib/templates";
+import {
+  buildToolInputSchema,
+  extractAIParameters,
+  getDefaultToolDescription,
+  getDefaultToolName,
+  sanitizeToolName,
+  uniqueToolName,
+} from "@/features/executions/lib/agent-tools";
+import { AGENT_DEFAULT_MAX_ITERATIONS, runAgentLoop } from "./agent-loop";
 
-// NOTE: Import your Inngest client here to broadcast real-time thoughts to your UI
-// import { inngest } from "@/inngest/client";
+export type AIAgentData = {
+  // "auto": read the prompt from the previous node (chatInput), like n8n's
+  // "Take from previous node automatically". "define": use `text`.
+  promptType?: "auto" | "define";
+  text?: string;
+  systemMessage?: string;
+  maxIterations?: number;
+  returnIntermediateSteps?: boolean;
+  variableName?: string;
+  // Name / description the model sees for each connected tool node
+  toolSettings?: Record<string, { name?: string; description?: string }>;
 
-type AIAgentData = {
+  // Legacy fields, used when no Chat Model node is connected
   provider?: "OPENAI" | "ANTHROPIC" | "GEMINI";
   credentialId?: string;
   modelName?: string;
   systemPrompt?: string;
-  maxIterations?: number;
-  variableName?: string;
+};
+
+type Provider = "OPENAI" | "ANTHROPIC" | "GEMINI";
+
+const MODEL_NODE_PROVIDERS: Record<string, Provider> = {
+  OPENAI: "OPENAI",
+  ANTHROPIC: "ANTHROPIC",
+  GEMINI: "GEMINI",
+};
+
+// Same defaults the standalone model nodes use
+const DEFAULT_MODELS: Record<Provider, string> = {
+  OPENAI: "gpt-4o-mini",
+  ANTHROPIC: "claude-3-5-sonnet",
+  GEMINI: "gemini-2.5-flash",
+};
+
+const DEFAULT_SYSTEM_MESSAGE = "You are a helpful assistant";
+const MAX_TOOL_RESULT_CHARS = 20000;
+
+const readPath = (context: WorkflowContext, path: string[]): unknown =>
+  path.reduce<unknown>(
+    (current, key) =>
+      current && typeof current === "object"
+        ? (current as Record<string, unknown>)[key]
+        : undefined,
+    context
+  );
+
+/**
+ * "Take from previous node automatically": n8n looks for `chatInput`.
+ * Webhook bodies are accepted too so an API can drive the agent.
+ */
+const findAutomaticPrompt = (context: WorkflowContext): string => {
+  const candidates = [
+    ["chatInput"],
+    ["webhook", "body", "chatInput"],
+    ["webhook", "body", "message"],
+    ["message"],
+  ];
+
+  for (const path of candidates) {
+    const value = readPath(context, path);
+    if (typeof value === "string" && value.trim()) return value;
+  }
+
+  return "";
 };
 
 export const aiAgentExecutor: NodeExecutor<AIAgentData> = async ({
@@ -32,333 +98,299 @@ export const aiAgentExecutor: NodeExecutor<AIAgentData> = async ({
   allNodes,
   connections,
 }) => {
-  const rawSystemPrompt = data.systemPrompt?.trim() || "You are a helpful autonomous AI agent.";
-  const maxIterations = data.maxIterations ?? 5;
+  const maxIterations =
+    Number(data.maxIterations) || AGENT_DEFAULT_MAX_ITERATIONS;
   const targetOutputKey = data.variableName?.trim() || "aiAgentOutput";
 
   // =========================================================================
-  // 1. SCAN CANVAS TOPOLOGY WITH INTELLIGENT NODE-TYPE AUTO-DETECTION
+  // 1. SUB-NODES: what is plugged into the Chat Model / Memory / Tools ports
   // =========================================================================
-  const incomingEdges = connections.filter((e: any) => e.toNodeId === nodeId);
+  const incomingEdges = connections.filter((edge) => edge.toNodeId === nodeId);
 
-  let overridenModel = null;
-  let overridenMemory = null;
-  const toolEdges: any[] = [];
-
-  console.log(`[AI Agent Execution Node: ${nodeId}] Mapping ${incomingEdges.length} incoming connections.`);
+  let modelNode: NodeWithCredential | undefined;
+  let memoryNode: NodeWithCredential | undefined;
+  const toolNodes: NodeWithCredential[] = [];
 
   for (const edge of incomingEdges) {
-    const sourceNode = allNodes.find((n) => n.id === edge.fromNodeId);
+    const sourceNode = allNodes.find((node) => node.id === edge.fromNodeId);
     if (!sourceNode) continue;
 
-    const nodeTypeLower = sourceNode.type?.toLowerCase() || "";
-    const handleLower = (edge.toInput || "").toLowerCase();
+    const handle = (edge.toInput || "").toLowerCase();
 
-    // Route connection by verifying either handle names OR source component types
-    const isModelConnection =
-      handleLower.includes("model") ||
-      nodeTypeLower.includes("gemini") ||
-      nodeTypeLower.includes("openai") ||
-      nodeTypeLower.includes("anthropic") ||
-      nodeTypeLower.includes("llm");
-
-    const isMemoryConnection =
-      handleLower.includes("memory") ||
-      nodeTypeLower.includes("memory");
-
-    if (isModelConnection && !overridenModel) {
-      const nodeData = (sourceNode.data as Record<string, any>) || {};
-      const isGemini = nodeTypeLower.includes("gemini");
-      const isOpenAI = nodeTypeLower.includes("openai");
-      const isAnthropic = nodeTypeLower.includes("anthropic");
-
-      overridenModel = {
-        provider: nodeData.provider || (isGemini ? "GEMINI" : isOpenAI ? "OPENAI" : isAnthropic ? "ANTHROPIC" : sourceNode.type?.toUpperCase()),
-        modelName: nodeData.modelName || nodeData.model || (isGemini ? "gemini-2.5-flash" : "unknown-model"),
-        credentialId: sourceNode.credentialId || nodeData.credentialId,
-        inlineCredential: sourceNode.credential
-      };
-      console.log(`-> Successfully bound Model Provider: ${overridenModel.provider} (${overridenModel.modelName})`);
-    } else if (isMemoryConnection && !overridenMemory) {
-      overridenMemory = {
-        id: sourceNode.id,
-        type: sourceNode.type,
-        data: (sourceNode.data as Record<string, any>) || {}
-      };
-      console.log(`-> Successfully bound Context Memory Node ID: ${sourceNode.id}`);
-    } else {
-      toolEdges.push(edge);
+    if (handle.includes("tool")) {
+      toolNodes.push(sourceNode);
+    } else if (
+      handle.includes("model") ||
+      sourceNode.type in MODEL_NODE_PROVIDERS
+    ) {
+      modelNode ??= sourceNode;
+    } else if (
+      handle.includes("memory") ||
+      sourceNode.type === NodeType.BUFFER_MEMORY
+    ) {
+      memoryNode ??= sourceNode;
     }
+    // Anything else is the main "flow-in" connection, which is not a tool
   }
 
-  const dynamicTools = toolEdges.map((edge: any) => {
-    const sourceNode = allNodes.find((n) => n.id === edge.fromNodeId);
-    const nodeData = (sourceNode?.data as Record<string, any>) || {};
+  // =========================================================================
+  // 2. CHAT MODEL
+  // =========================================================================
+  const modelData = (modelNode?.data ?? {}) as Record<string, any>;
 
-    return {
-      id: sourceNode?.id,
-      type: sourceNode?.type,
-      name: nodeData.name || `tool_${sourceNode?.id?.replace(/-/g, '_')}`,
-      description: nodeData.description || `Executes pipeline actions for connected ${sourceNode?.type} node.`,
-      nodeData: nodeData,
-    };
+  const provider: Provider | undefined = modelNode
+    ? MODEL_NODE_PROVIDERS[modelNode.type]
+    : data.provider;
+
+  if (!provider) {
+    throw new NonRetriableError(
+      "AI Agent: a Chat Model node must be connected to the Chat Model port"
+    );
+  }
+
+  const modelName: string =
+    modelData.model ||
+    modelData.modelName ||
+    (modelNode ? "" : data.modelName) ||
+    DEFAULT_MODELS[provider];
+
+  const credentialId: string | undefined = modelNode
+    ? modelData.credentialId || modelNode.credentialId
+    : data.credentialId;
+
+  if (!credentialId) {
+    throw new NonRetriableError(
+      "AI Agent: the connected Chat Model node has no credential selected"
+    );
+  }
+
+  const credential = await step.run("get-agent-model-credential", async () => {
+    // Scoped to the workflow owner: never use another user's credential
+    return prisma.credential.findUnique({
+      where: { id: credentialId, userId },
+    });
   });
 
-  // =========================================================================
-  // 2. RESOLVE CREDENTIALS & INSTANTIATE PROVIDERS
-  // =========================================================================
-  const executionProvider = overridenModel?.provider || data.provider;
-  const executionModelName = overridenModel?.modelName || data.modelName;
-
-  if (!executionProvider || !executionModelName) {
-    throw new NonRetriableError("AI Agent configuration missing: Model and Provider details are unmapped.");
+  if (!credential) {
+    throw new NonRetriableError("AI Agent: Chat Model credential not found");
   }
 
-  let targetCredential = overridenModel?.inlineCredential;
-  if (!targetCredential) {
-    const executionCredentialId = overridenModel?.credentialId || data.credentialId;
-    if (!executionCredentialId) {
-      throw new NonRetriableError(`AI Agent [${nodeId}] requires a Chat Model node connection.`);
-    }
-    targetCredential = await prisma.credential.findUnique({ where: { id: executionCredentialId } });
+  // =========================================================================
+  // 3. PROMPT
+  // =========================================================================
+  const promptType = data.promptType || "auto";
+
+  const prompt =
+    promptType === "define"
+      ? renderTemplate(data.text, context).trim()
+      : findAutomaticPrompt(context);
+
+  if (!prompt) {
+    throw new NonRetriableError(
+      promptType === "define"
+        ? "AI Agent: the Prompt (User Message) is empty"
+        : "AI Agent: no prompt specified. Expected to find the prompt in a field called 'chatInput' (this is what the Chat Trigger outputs). To use something else, set Source for Prompt to 'Define below'."
+    );
   }
 
-  if (!targetCredential) {
-    throw new NonRetriableError("Linked workspace credential payload could not be verified.");
-  }
-
-  const decryptedKey = decrypt(targetCredential.value).trim();
-  let apiKey = decryptedKey;
-  try {
-    const parsed = JSON.parse(decryptedKey);
-    apiKey = parsed.apiKey || parsed.token || decryptedKey;
-  } catch { }
+  const system =
+    renderTemplate(data.systemMessage ?? data.systemPrompt, context).trim() ||
+    DEFAULT_SYSTEM_MESSAGE;
 
   // =========================================================================
-  // 3. HANDLE MEMORY RETRIEVAL
+  // 4. MEMORY: previous turns of this session become real chat messages
   // =========================================================================
-  let pastChatHistory = "";
-  let resolvedSessionId = "";
+  const memoryData = (memoryNode?.data ?? {}) as Record<string, any>;
 
-  if (overridenMemory) {
-    const memoryData = (overridenMemory.data as Record<string, any>) || {};
-    const rawSessionId = memoryData.sessionId || "{{webhook.sessionId}}";
-    try {
-      resolvedSessionId = Handlebars.compile(rawSessionId)(context);
-    } catch {
-      resolvedSessionId = rawSessionId;
-    }
+  const sessionId = memoryNode
+    ? renderTemplate(memoryData.sessionId || "{{sessionId}}", context).trim() ||
+      (typeof context.sessionId === "string" ? context.sessionId : "") ||
+      "default"
+    : "";
 
-    const userWindowSize = memoryData.windowSize;
-    const dynamicLimit = userWindowSize !== undefined ? Number(userWindowSize) : 10;
+  let history: ModelMessage[] = [];
 
-    pastChatHistory = await step.run("retrieve-agent-memory", async () => {
-      const memoryLogs = await prisma.agentMemory.findMany({
-        where: {
-          nodeId: overridenMemory!.id,
-          userId,
-          ...(resolvedSessionId ? { sessionId: resolvedSessionId } : {})
-        },
-        take: dynamicLimit,
-        orderBy: { createdAt: "desc" }
+  if (memoryNode) {
+    const memoryNodeId = memoryNode.id;
+    const windowSize = Number(memoryData.windowSize) || 10;
+
+    history = await step.run("retrieve-agent-memory", async () => {
+      const rows = await prisma.agentMemory.findMany({
+        where: { nodeId: memoryNodeId, userId, sessionId },
+        take: windowSize,
+        orderBy: { createdAt: "desc" },
       });
-      return memoryLogs.map((m) => `${m.role}: ${m.content}`).reverse().join("\n");
+
+      const messages = rows.reverse().map((row) => ({
+        role: row.role === "assistant" ? ("assistant" as const) : ("user" as const),
+        content: row.content,
+      }));
+
+      // A conversation has to start with the user's turn
+      while (messages.length > 0 && messages[0].role !== "user") {
+        messages.shift();
+      }
+
+      return messages;
     });
   }
 
-  let resolvedSystemPrompt = rawSystemPrompt;
-  try {
-    resolvedSystemPrompt = Handlebars.compile(rawSystemPrompt)(context);
-  } catch {
-    console.warn("Handlebars compilation failed for system prompt, utilizing raw input.");
-  }
-
-  const compositeSystemPrompt = `${resolvedSystemPrompt}\n\n[Conversation History Memory]\n${pastChatHistory}`;
-  const userMessage = context.output || context.message || `Current Context State: ${JSON.stringify(context)}`;
+  const messages: ModelMessage[] = [
+    ...history,
+    { role: "user", content: prompt },
+  ];
 
   // =========================================================================
-  // 4. MAP COMPONENT REGISTRY TO ACTIVE AGENT TOOLS
+  // 5. TOOLS: every node on the Tools port becomes a function the model can call
   // =========================================================================
-  const activeTools: Record<string, any> = {};
+  // Tools run inside the agent's own step, so their step calls run inline
+  const inlineStep = {
+    ...step,
+    run: async (_id: unknown, fn: () => unknown) => fn(),
+    sleep: async () => {},
+    sleepUntil: async () => {},
+    sendEvent: async () => ({ ids: [] }),
+    ai: {
+      ...step.ai,
+      wrap: async (_id: unknown, fn: (...args: any[]) => unknown, ...args: any[]) =>
+        fn(...args),
+    },
+  } as unknown as typeof step;
 
-  for (const toolNode of dynamicTools) {
-    if (!toolNode.id || !toolNode.type) continue;
+  const tools: ToolSet = {};
+  const takenNames = new Set<string>();
 
-    activeTools[toolNode.name] = {
-      description: toolNode.description,
-      parameters: z.object({
-        inputPayload: z.any().describe(
-          "JSON string or object parameters to pass directly into the tool node context."
-        ),
-      }),
-      execute: async ({ inputPayload }: { inputPayload: any }) => {
-        const targetExecutor = executorRegistry[toolNode.type as NodeType];
-        if (!targetExecutor) {
-          return { error: `No runtime executor found mapping to node type: ${toolNode.type}` };
-        }
+  for (const toolNode of toolNodes) {
+    const executor = executorRegistry[toolNode.type as NodeType];
+    if (!executor) continue;
+
+    const toolData = (toolNode.data ?? {}) as Record<string, unknown>;
+    const settings = data.toolSettings?.[toolNode.id] ?? {};
+
+    const name = uniqueToolName(
+      sanitizeToolName(settings.name || "") || getDefaultToolName(toolNode.type),
+      takenNames
+    );
+
+    tools[name] = tool({
+      description:
+        settings.description?.trim() ||
+        getDefaultToolDescription(toolNode.type, toolData),
+      inputSchema: buildToolInputSchema(extractAIParameters(toolData)),
+      execute: async (input: Record<string, unknown>) => {
+        // The model's arguments are exposed as {{$fromAI "key"}} / {{ai.key}}
+        const toolContext: WorkflowContext = { ...context, ai: input };
 
         try {
-          let parsedArgs = {};
-          if (typeof inputPayload === "string") {
-            try { parsedArgs = JSON.parse(inputPayload); } catch { parsedArgs = { input: inputPayload }; }
-          } else {
-            parsedArgs = inputPayload || {};
-          }
-
-          const executionOutput = await targetExecutor({
-            data: toolNode.nodeData,
-            nodeId: toolNode.id!,
+          const output = await executor({
+            data: toolData,
+            nodeId: toolNode.id,
             userId,
             allNodes,
             connections,
-            step: {
-              ...step,
-              run: async (id: string, fn: () => any) => {
-                return await fn();
-              }
-            } as any,
-            context: { ...context, ...parsedArgs }
+            step: inlineStep,
+            context: toolContext,
           });
 
-          return { status: "success", data: executionOutput };
-        } catch (err: any) {
-          return { status: "error", message: err.message || "Failed running node pipeline action." };
+          // Hand back only what the tool produced, not the whole context
+          const produced: Record<string, unknown> = {};
+          for (const [key, value] of Object.entries(output)) {
+            if (key !== "ai" && toolContext[key] !== value) {
+              produced[key] = value;
+            }
+          }
+
+          const keys = Object.keys(produced);
+          const result = keys.length === 1 ? produced[keys[0]] : produced;
+          const serialized = JSON.stringify(result ?? null);
+
+          return serialized.length > MAX_TOOL_RESULT_CHARS
+            ? `${serialized.slice(0, MAX_TOOL_RESULT_CHARS)}... [truncated]`
+            : result;
+        } catch (error: any) {
+          // The model sees the failure and can retry or explain it
+          return {
+            error: error?.message || "The tool failed to run",
+          };
         }
-      }
-    };
+      },
+    });
   }
 
   // =========================================================================
-  // 5. EXECUTE AI GENERATION LOOP
+  // 6. RUN THE AGENT
   // =========================================================================
-  const agentExecutionResult = await step.run("execute-agent-llm-loop", async () => {
+  const agentResult = await step.run("execute-agent-llm-loop", async () => {
     try {
-      let modelInstance;
+      const apiKey = decrypt(credential.value).trim();
 
-      // Explicitly map providers to prevent fallback errors with future integrations
-      if (executionProvider === "OPENAI") {
-        modelInstance = createOpenAI({ apiKey })(executionModelName);
-      } else if (executionProvider === "ANTHROPIC") {
-        modelInstance = createAnthropic({ apiKey })(executionModelName);
-      } else if (executionProvider === "GEMINI" || executionProvider === "GOOGLE") {
-        modelInstance = createGoogleGenerativeAI({ apiKey })(executionModelName);
-      } else {
-        throw new NonRetriableError(`Unsupported or unmapped LLM Provider: ${executionProvider}`);
-      }
+      const model =
+        provider === "OPENAI"
+          ? createOpenAI({ apiKey })(modelName)
+          : provider === "ANTHROPIC"
+            ? createAnthropic({ apiKey })(modelName)
+            : createGoogleGenerativeAI({ apiKey })(modelName);
 
-      const generateOptions: any = {
-        model: modelInstance,
-        system: compositeSystemPrompt,
-        prompt: typeof userMessage === "object" ? JSON.stringify(userMessage) : userMessage,
-        temperature: 0.3,
-
-        // ADDED: Capture every step of the agent's thought process!
-        onStepFinish: async ({
-          text,
-          toolCalls,
-          toolResults
-        }: {
-          text: string;
-          toolCalls?: any[];
-          toolResults?: any[];
-        }) => {
-          const stepLogs: string[] = [];
-
-          if (toolCalls && toolCalls.length > 0) {
-            toolCalls.forEach((call: any) => {
-              stepLogs.push(`Agent decided to use tool: [${call.toolName}] with args: ${JSON.stringify(call.args)}`);
-            });
-          }
-
-          if (toolResults && toolResults.length > 0) {
-            toolResults.forEach((result: any) => {
-              stepLogs.push(`Tool [${result.toolName}] returned data successfully.`);
-            });
-          }
-
-          // Broadcast the thought process to the frontend channel
-          if (stepLogs.length > 0) {
-            // Note: Uncomment and adjust the import/path to your specific Inngest client instance
-            // await inngest.send({
-            //   name: "sys/channel.broadcast",
-            //   data: {
-            //     channel: "ai-agent-execution",
-            //     events: stepLogs.map(log => ({
-            //       name: "log",
-            //       data: {
-            //         executionId: context.executionId || "unknown", // Pass execution ID from context
-            //         nodeId: nodeId,
-            //         type: "THOUGHT",
-            //         message: log,
-            //         timestamp: new Date().toISOString()
-            //       }
-            //     }))
-            //   }
-            // });
-
-            // Local debugging
-            console.log(`[AI Agent THOUGHT - ${nodeId}]:`, stepLogs.join(" | "));
-          }
-        }
-      };
-
-      if (Object.keys(activeTools).length > 0) {
-        generateOptions.tools = activeTools;
-        generateOptions.maxSteps = maxIterations;
-      }
-
-      const result = await generateText(generateOptions);
-
-      return {
-        response: result.text || "",
-        usage: result.usage,
-        modelUsed: executionModelName
-      };
-
+      return await runAgentLoop({
+        model,
+        system,
+        messages,
+        tools,
+        maxIterations,
+      });
     } catch (error: any) {
-      // 🚨 INTERCEPT THE ERROR AND BLAME THE PROVIDER 🚨
-      console.error(`[AI Agent Error]: Failed to communicate with ${executionProvider}`, error);
+      console.error(`[AI Agent Error]: Failed to communicate with ${provider}`, error);
 
-      // Throwing a NonRetriableError ensures Inngest stops immediately and marks the AI Agent node as FAILED
+      // Stop immediately and mark the AI Agent node as FAILED
       throw new NonRetriableError(
-        `LLM Provider Error (${executionProvider}): ${error.message || "Failed to generate response."}`
+        `LLM Provider Error (${provider}): ${error.message || "Failed to generate response."}`
       );
     }
   });
 
   // =========================================================================
-  // 6. PERSIST INTERACTION LOGS
+  // 7. SAVE THIS TURN TO MEMORY
   // =========================================================================
-  if (overridenMemory) {
+  if (memoryNode) {
+    const memoryNodeId = memoryNode.id;
+
     await step.run("persist-agent-memory", async () => {
       await prisma.agentMemory.createMany({
         data: [
           {
-            nodeId: overridenMemory!.id,
+            nodeId: memoryNodeId,
             userId,
             role: "user",
-            content: typeof userMessage === "string" ? userMessage : JSON.stringify(userMessage),
-            sessionId: resolvedSessionId || null
+            content: prompt,
+            sessionId,
           },
           {
-            nodeId: overridenMemory!.id,
+            nodeId: memoryNodeId,
             userId,
             role: "assistant",
-            // Safe guard in case agentExecutionResult.response is typed as an object or generic '{}'
-            content: typeof agentExecutionResult.response === "string"
-              ? agentExecutionResult.response
-              : JSON.stringify(agentExecutionResult.response),
-            sessionId: resolvedSessionId || null
-          }
-        ]
+            content: agentResult.output,
+            sessionId,
+          },
+        ],
       });
     });
   }
 
+  const agentOutput = {
+    output: agentResult.output,
+    // Kept for workflows that referenced {{aiAgentOutput.response}}
+    response: agentResult.output,
+    ...(data.returnIntermediateSteps
+      ? { intermediateSteps: agentResult.intermediateSteps }
+      : {}),
+    usage: agentResult.usage,
+    modelUsed: modelName,
+  };
+
   return {
     ...context,
-    [targetOutputKey]: agentExecutionResult,
-    output: agentExecutionResult.response,
-    json: agentExecutionResult
+    [targetOutputKey]: agentOutput,
+    // n8n exposes the answer as `output`
+    output: agentResult.output,
   };
 };

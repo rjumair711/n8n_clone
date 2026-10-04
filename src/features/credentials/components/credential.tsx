@@ -48,7 +48,35 @@ const credentialTypeOptions = [
   { value: CredentialType.GOOGLE_CALENDAR, label: "Google Calendar", logo: "/logos/calender.png" },
   { value: CredentialType.NOTION, label: "Notion", logo: "/logos/notion.png" }, 
   { value: CredentialType.TELEGRAM, label: "Telegram", logo: "/logos/telegram.jfif" },
+  { value: CredentialType.GITHUB, label: "GitHub", logo: "/logos/github.svg" },
+  { value: CredentialType.AIRTABLE, label: "Airtable", logo: "/logos/airtable.svg" },
+  { value: CredentialType.POSTGRES, label: "Postgres", logo: "/logos/postgres.svg" },
+  { value: CredentialType.WHATSAPP, label: "WhatsApp", logo: "/logos/whatsapp.svg" },
 ];
+
+// Label and placeholder of the secret field for single-secret credentials
+const secretFieldOptions: Partial<Record<CredentialType, { label: string; placeholder: string; hint?: string }>> = {
+  [CredentialType.GITHUB]: {
+    label: "Personal Access Token",
+    placeholder: "github_pat_...",
+    hint: "Create one under GitHub Settings > Developer settings > Personal access tokens, with access to Issues.",
+  },
+  [CredentialType.AIRTABLE]: {
+    label: "Personal Access Token",
+    placeholder: "pat...",
+    hint: "Create one at airtable.com/create/tokens with data.records:read and data.records:write scopes.",
+  },
+  [CredentialType.POSTGRES]: {
+    label: "Connection String",
+    placeholder: "postgresql://user:password@host:5432/database?sslmode=require",
+    hint: "Use a database user that only has the permissions your workflows need.",
+  },
+  [CredentialType.WHATSAPP]: {
+    label: "Access Token",
+    placeholder: "EAAG...",
+    hint: "A permanent System User token from Meta Business with the whatsapp_business_messaging permission.",
+  },
+};
 
 interface CredentialFormProps {
   initialData?: {
@@ -329,21 +357,28 @@ export const CredentialForm = ({ initialData }: CredentialFormProps) => {
                   render={({ field }) => (
                     <FormItem>
                       <FormLabel>
-                        {selectedType === CredentialType.NOTION ? "Internal Integration Token" :
-                          selectedType === CredentialType.TELEGRAM ? "Bot Token" : "API Key"}
+                        {secretFieldOptions[selectedType]?.label ??
+                          (selectedType === CredentialType.NOTION ? "Internal Integration Token" :
+                            selectedType === CredentialType.TELEGRAM ? "Bot Token" : "API Key")}
                       </FormLabel>
                       <FormControl>
                         <Input
                           type="password"
                           placeholder={
+                            secretFieldOptions[selectedType]?.placeholder ?? (
                             selectedType === CredentialType.OPENAI ? "sk-..." : 
                               selectedType === CredentialType.NOTION ? "secret_..." : 
                                 selectedType === CredentialType.TELEGRAM ? "1234567890:ABCdefGhIJKlmNoPQRsTUVwxyZ" :
-                                  "Key..."
+                                  "Key...")
                           }
                           {...field}
                         />
                       </FormControl>
+                      {secretFieldOptions[selectedType]?.hint && (
+                        <p className="text-xs text-muted-foreground">
+                          {secretFieldOptions[selectedType]?.hint}
+                        </p>
+                      )}
                       <FormMessage />
                     </FormItem>
                   )}

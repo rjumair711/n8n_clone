@@ -1,6 +1,6 @@
-import { sendWorkflowExecution } from "@/inngest/utils";
+import { findTriggerNodes, startWorkflowExecution } from "@/inngest/utils";
 import { type NextRequest, NextResponse } from "next/server";
-import { randomUUID } from "crypto";
+import { NodeType } from "@prisma/client";
 
 export async function POST(request: NextRequest) {
     try {
@@ -20,6 +20,22 @@ export async function POST(request: NextRequest) {
             );
         }
 
+        const triggerNodes = await findTriggerNodes(
+            workflowId,
+            NodeType.STRIPE_TRIGGER
+        );
+
+        if (triggerNodes.length === 0) {
+            return NextResponse.json(
+                {
+                    success: false,
+                    error:
+                        "Workflow not found or it has no Stripe trigger",
+                },
+                { status: 404 }
+            );
+        }
+
         const body = await request.json();
 
         const stripeData = {
@@ -32,10 +48,9 @@ export async function POST(request: NextRequest) {
         };
 
         // Trigger an Inngest Job
-        await sendWorkflowExecution({
+        await startWorkflowExecution({
             workflowId,
-
-            executionId: randomUUID(),
+            trigger: NodeType.STRIPE_TRIGGER,
 
             initialData: {
                 stripe: stripeData,

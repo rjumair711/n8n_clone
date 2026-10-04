@@ -20,6 +20,8 @@ export const testCodeNodeWorkflow = inngest.createFunction(
       publish, // Move publish here (at the top level of the parameter object)
       step,
       nodeId: nodeId || "manual-test-node",
+      allNodes: [],
+      connections: [],
     });
 
     return {

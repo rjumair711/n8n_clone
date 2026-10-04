@@ -1,7 +1,7 @@
 import { codeChannel } from "@/inngest/channels/code";
 import { NodeExecutor } from "../../types";
 import { NonRetriableError } from "inngest";
-import vm from "vm";
+import { runInSandbox } from "../../lib/code-sandbox";
 
 type CodeNodeExecutionData = {
   code?: string;
@@ -39,62 +39,34 @@ export const codeNodeExecutor: NodeExecutor<CodeNodeExecutionData> = async ({
   }
 
   const executionContextSnapshot = JSON.parse(JSON.stringify(context));
-  const formattedScriptCode = `(async () => { ${data.code} })()`;
-  const runtimeLogs: string[] = [];
+  // The publish function cannot cross into the sandbox
+  delete executionContextSnapshot.publish;
 
   const result = await step.run("execute-sandbox-script", async () => {
     try {
-      const sandbox = {
-        context: executionContextSnapshot,
-        console: {
-          log: (...args: any[]) => {
-            const message = args.map(arg => typeof arg === 'object' ? JSON.stringify(arg) : arg).join(" ");
-            runtimeLogs.push(`[LOG] ${message}`);
-            
-            if (publish) {
-              publish(
-                codeChannel().log({
-                  executionId,
-                  nodeId,
-                  type: "LOG",
-                  message,
-                  timestamp: new Date().toISOString(),
-                })
-              ).catch(() => {});
-            }
-          },
-          error: (...args: any[]) => {
-            const message = args.map(arg => typeof arg === 'object' ? JSON.stringify(arg) : arg).join(" ");
-            runtimeLogs.push(`[ERROR] ${message}`);
-            
-            if (publish) {
-              publish(
-                codeChannel().log({
-                  executionId,
-                  nodeId,
-                  type: "ERROR",
-                  message,
-                  timestamp: new Date().toISOString(),
-                })
-              ).catch(() => {});
-            }
-          },
+      const outcome = await runInSandbox(
+        data.code!,
+        executionContextSnapshot,
+        (type, message) => {
+          if (publish) {
+            publish(
+              codeChannel().log({
+                executionId,
+                nodeId,
+                type,
+                message,
+                timestamp: new Date().toISOString(),
+              })
+            ).catch(() => {});
+          }
         }
-      };
-
-      vm.createContext(sandbox);
-      const script = new vm.Script(formattedScriptCode, { filename: "sandbox-workflow-user-code.js" });
-
-      const executionPromise = script.runInContext(sandbox, {
-        timeout: 4000, 
-        breakOnSigint: true
-      });
-
-      const timeoutFallback = new Promise((_, reject) =>
-        setTimeout(() => reject(new Error("Script execution timed out (4000ms limit exceeded)")), 4000)
       );
 
-      const outputData = await Promise.race([executionPromise, timeoutFallback]);
+      if (!outcome.success) {
+        return outcome;
+      }
+
+      const outputData = outcome.data;
 
       let finalizedOutput = outputData;
       if (outputData === undefined || outputData === null) {
@@ -106,13 +78,13 @@ export const codeNodeExecutor: NodeExecutor<CodeNodeExecutionData> = async ({
       return {
         success: true as const,
         data: finalizedOutput,
-        logs: runtimeLogs,
+        logs: outcome.logs,
       };
     } catch (error: any) {
       return {
         success: false as const,
-        error: error.message,
-        logs: runtimeLogs,
+        error: error.message as string,
+        logs: [] as string[],
       };
     }
   });

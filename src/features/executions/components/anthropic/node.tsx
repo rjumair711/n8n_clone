@@ -10,6 +10,7 @@ type AnthropicNodeData = {
     variableName?: string;
     systemPrompt?: string;
     credentialId?: string;
+    model?: string;
     userPrompt?: string;
 }
 

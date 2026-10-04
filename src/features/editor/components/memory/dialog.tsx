@@ -28,7 +28,7 @@ export const BufferMemoryDialog = ({ open, onOpenChange, onSubmit, defaultValues
   const form = useForm<BufferMemoryFormValues>({
     resolver: zodResolver(formSchema),
     values: {
-      sessionId: defaultValues?.sessionId || "{{webhook.sessionId}}",
+      sessionId: defaultValues?.sessionId || "{{sessionId}}",
       windowSize: defaultValues?.windowSize !== undefined ? Number(defaultValues.windowSize) : 10,
     },
   });
@@ -54,7 +54,7 @@ export const BufferMemoryDialog = ({ open, onOpenChange, onSubmit, defaultValues
                 <FormItem>
                   <FormLabel>Session ID</FormLabel>
                   <FormControl>
-                    <Input {...field} placeholder="{{webhook.sessionId}}" />
+                    <Input {...field} placeholder="{{sessionId}}" />
                   </FormControl>
                   <FormMessage />
                 </FormItem>
