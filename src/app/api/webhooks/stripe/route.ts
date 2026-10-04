@@ -30,7 +30,7 @@ export async function POST(request: NextRequest) {
                 {
                     success: false,
                     error:
-                        "Workflow not found or it has no Stripe trigger",
+                        "Workflow not found, not active, or it has no Stripe trigger",
                 },
                 { status: 404 }
             );

@@ -4,7 +4,8 @@ import { Breadcrumb, BreadcrumbItem, BreadcrumbLink, BreadcrumbList, BreadcrumbS
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { SidebarTrigger } from '@/components/ui/sidebar'
-import { useSuspenseWorkflow, useUpdateWorkflow, useUpdateWorkflowName } from '@/features/workflows/hooks/use-workflows'
+import { Switch } from '@/components/ui/switch'
+import { useSetWorkflowActive, useSuspenseWorkflow, useUpdateWorkflow, useUpdateWorkflowName } from '@/features/workflows/hooks/use-workflows'
 import { useAtomValue } from 'jotai'
 import { SaveIcon, Workflow } from 'lucide-react'
 import Link from 'next/link'
@@ -34,12 +35,34 @@ export const EditorSaveButton = ({ workflowId }: { workflowId: string }) => {
     }
 
     return (
-        <div className='ml-auto'>
+        <div>
             <Button size="sm" onClick={handleSave} disabled={saveWorkflow.isPending}>
                 <SaveIcon className='size-4' />
                 Save
             </Button>
         </div>
+    )
+}
+
+// Schedules and webhooks only fire while the workflow is active
+export const EditorActiveToggle = ({ workflowId }: { workflowId: string }) => {
+    const { data: workflow } = useSuspenseWorkflow(workflowId)
+    const setActive = useSetWorkflowActive()
+
+    return (
+        <label
+            className='ml-auto flex items-center gap-2 text-sm cursor-pointer select-none'
+            title='Active workflows run from their schedule and webhook triggers'
+        >
+            <span className={workflow.active ? 'font-medium' : 'text-muted-foreground'}>
+                {workflow.active ? 'Active' : 'Inactive'}
+            </span>
+            <Switch
+                checked={workflow.active}
+                disabled={setActive.isPending}
+                onCheckedChange={(active) => setActive.mutate({ id: workflowId, active })}
+            />
+        </label>
     )
 }
 
@@ -143,6 +166,7 @@ export const EditorHeader = ({ workflowId }: { workflowId: string }) => {
             <SidebarTrigger />
             <div className='flex flex-row items-center justify-between gap-x-4 w-full'>
                 <EditorBreadcrumbs workflowId={workflowId} />
+                <EditorActiveToggle workflowId={workflowId} />
                 <EditorSaveButton workflowId={workflowId} />
             </div>
         </header>

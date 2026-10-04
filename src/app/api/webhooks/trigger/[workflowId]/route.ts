@@ -49,7 +49,7 @@ async function handler(
                 {
                     success: false,
                     error:
-                        "Workflow not found or it has no Webhook trigger",
+                        "Workflow not found, not active, or it has no Webhook trigger",
                 },
                 { status: 404 }
             );

@@ -439,6 +439,7 @@ export const workflowCronHeartbeat = inngest.createFunction(
     const scheduledWorkflows = await step.run("fetch-scheduled-workflows", async () => {
       return prisma.workflow.findMany({
         where: {
+          active: true,
           nodes: { some: { type: NodeType.SCHEDULE_TRIGGER } },
         },
         include: {

@@ -202,6 +202,21 @@ export const workflowsRouter = createTRPCRouter({
             })
         }),
 
+    // ACTIVATE / DEACTIVATE WORKFLOW
+    // Only active workflows run from schedules and webhooks. Manual runs and
+    // the chat panel always work, so a workflow can be tested while inactive.
+    setActive: protectedProcedure
+        .input(z.object({ id: z.string(), active: z.boolean() }))
+        .mutation(({ ctx, input }) => {
+            return prisma.workflow.update({
+                where: {
+                    id: input.id,
+                    userId: ctx.auth.user.id
+                },
+                data: { active: input.active },
+            })
+        }),
+
     // UPDATE WORKFLOW
     update: protectedProcedure
         .input(z.object({
@@ -305,6 +320,7 @@ export const workflowsRouter = createTRPCRouter({
             return {
                 id: workflow.id,
                 name: workflow.name,
+                active: workflow.active,
                 nodes,
                 edges
             }

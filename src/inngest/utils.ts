@@ -44,7 +44,7 @@ export const startWorkflowExecution = async ({
 }
 
 // Returns the workflow's trigger nodes of the given type (empty when the
-// workflow does not exist or is not listening for this trigger).
+// workflow does not exist, is inactive, or is not listening for this trigger).
 export const findTriggerNodes = async (
     workflowId: string,
     trigger: NodeType,
@@ -53,6 +53,7 @@ export const findTriggerNodes = async (
         where: {
             workflowId,
             type: trigger,
+            workflow: { active: true },
         },
     })
 }
