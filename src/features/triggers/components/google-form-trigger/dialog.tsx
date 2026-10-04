@@ -8,15 +8,21 @@ import { CopyIcon } from "lucide-react";
 import { useParams } from "next/navigation";
 import { toast } from "sonner";
 import { generateGoogleFormScript } from "./utils";
+import { useEffect } from "react";
+import { generateSecret } from "@/lib/generate-secret";
 
 interface Props {
     open: boolean;
     onOpenChange: (open: boolean) => void;
+    secret?: string;
+    onSecretChange: (secret: string) => void;
 }
 
 export const GoogleFormTriggerDialog = ({
     open,
-    onOpenChange
+    onOpenChange,
+    secret,
+    onSecretChange,
 }: Props) => {
 
     const params = useParams()
@@ -25,6 +31,13 @@ export const GoogleFormTriggerDialog = ({
     // Construct the webhook URL
     const baseUrl = process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000"
     const webhookUrl = `${baseUrl}/api/webhooks/google-form?workflowId=${workflowId}`
+
+    // The webhook rejects requests without the secret, so every node needs one
+    useEffect(() => {
+        if (open && !secret) {
+            onSecretChange(generateSecret())
+        }
+    }, [open, secret, onSecretChange])
 
     const copyToClipboard = async () => {
         try {
@@ -84,7 +97,7 @@ export const GoogleFormTriggerDialog = ({
                             type="button"
                             variant="outline"
                             onClick={async () => {
-                                const script = generateGoogleFormScript(webhookUrl)
+                                const script = generateGoogleFormScript(webhookUrl, secret || "")
                                 try {
                                     await navigator.clipboard.writeText(script);
                                     toast.success("Script copied to clipboard");
@@ -97,8 +110,11 @@ export const GoogleFormTriggerDialog = ({
                             Copy Google Apps Script
                         </Button>
                         <p className="text-sm text-muted-foreground">
-                            This script includes your webhook URL and handles
-                            form submissions
+                            This script includes your webhook URL and its secret,
+                            and handles form submissions. Save the workflow after
+                            opening this dialog, then paste the script again if you
+                            set this form up before: older copies have no secret and
+                            are now rejected.
                         </p>
                     </div>
                     <div className="rounded-lg bg-muted p-4 space-y-2">

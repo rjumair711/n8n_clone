@@ -8,18 +8,13 @@ import { CopyIcon, RefreshCwIcon } from "lucide-react";
 import { useParams } from "next/navigation";
 import { useEffect } from "react";
 import { toast } from "sonner";
+import { generateSecret } from "@/lib/generate-secret";
 
 interface Props {
     open: boolean;
     onOpenChange: (open: boolean) => void;
     secret?: string;
     onSecretChange: (secret: string) => void;
-}
-
-const generateSecret = () => {
-    const bytes = new Uint8Array(24)
-    crypto.getRandomValues(bytes)
-    return Array.from(bytes, (byte) => byte.toString(16).padStart(2, "0")).join("")
 }
 
 export const WebhookTriggerDialog = ({

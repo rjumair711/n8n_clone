@@ -15,6 +15,10 @@ import { Input } from "@/components/ui/input"
 import { NodeType } from "@prisma/client"
 import { Clock, FilterIcon, GlobeIcon, MousePointerIcon, Send, VariableIcon, ChevronDown, ChevronRight, Code2, Bot, MemoryStickIcon, Search, Type, Calculator, GitBranch, GitFork, Merge, Repeat, Webhook, MessageSquare } from "lucide-react"
 import { toast } from "sonner"
+import { Lock } from "lucide-react"
+import { getRequiredPlanForNode } from "@/config/plans"
+import { useCurrentPlan } from "@/features/subscription/hook/use-current-plan"
+import { UpgradeModal } from "@/components/upgrade-modal"
 
 export type NodeTypeOption = {
     type: NodeType,
@@ -266,6 +270,15 @@ export function NodeSelector({
 }: NodeSelectorProps) {
     const { setNodes, getNodes, screenToFlowPosition } = useReactFlow()
 
+    // Nodes outside the user's plan are shown with a lock
+    const { data: currentPlan } = useCurrentPlan()
+    const [upgradeOpen, setUpgradeOpen] = useState(false)
+
+    const getRequiredPlan = (type: NodeType) =>
+        currentPlan
+            ? getRequiredPlanForNode(type, currentPlan.plan, currentPlan.trialEndsAt)
+            : null
+
     // 2. State management
     const [searchQuery, setSearchQuery] = useState("")
     const [openSections, setOpenSections] = useState<Record<string, boolean>>({
@@ -285,6 +298,14 @@ export function NodeSelector({
     }
 
     const handleNodeSelect = useCallback((selection: NodeTypeOption) => {
+        const requiredPlan = getRequiredPlan(selection.type)
+
+        if (requiredPlan) {
+            toast.error(`${selection.label} requires the ${requiredPlan} plan`)
+            setUpgradeOpen(true)
+            return;
+        }
+
         if (selection.type === NodeType.MANUAL_TRIGGER) {
             const nodes = getNodes()
             const hasManualTrigger = nodes.some(
@@ -327,13 +348,14 @@ export function NodeSelector({
         // Reset search query when closing the menu
         setSearchQuery("")
         onOpenChange(false)
-    }, [setNodes, getNodes, onOpenChange, screenToFlowPosition])
+    }, [setNodes, getNodes, onOpenChange, screenToFlowPosition, currentPlan])
 
     // Helper map renderer to align rows cleanly
     const renderNodeList = (nodes: NodeTypeOption[]) => (
         <div className="flex flex-col">
             {nodes.map((nodeType) => {
                 const Icon = nodeType.icon;
+                const requiredPlan = getRequiredPlan(nodeType.type);
                 return (
                     <div
                         key={nodeType.type}
@@ -355,8 +377,14 @@ export function NodeSelector({
                                 )}
                             </div>
                             <div className="flex flex-col items-start text-left min-w-0">
-                                <span className="text-sm font-medium text-foreground group-hover:text-primary transition-colors">
+                                <span className="text-sm font-medium text-foreground group-hover:text-primary transition-colors flex items-center gap-2">
                                     {nodeType.label}
+                                    {requiredPlan && (
+                                        <span className="inline-flex items-center gap-1 rounded-full border px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground">
+                                            <Lock className="size-3" />
+                                            {requiredPlan}
+                                        </span>
+                                    )}
                                 </span>
                                 <span className="text-xs text-muted-foreground line-clamp-2 mt-0.5 leading-relaxed">
                                     {nodeType.description}
@@ -392,6 +420,8 @@ export function NodeSelector({
         .filter((section) => section.data.length > 0) // Hide empty sections
 
     return (
+        <>
+        <UpgradeModal open={upgradeOpen} onOpenChange={setUpgradeOpen} />
         <Sheet open={open} onOpenChange={(isOpen) => {
             if (!isOpen) setSearchQuery(""); // Clear search on close
             onOpenChange(isOpen);
@@ -462,5 +492,6 @@ export function NodeSelector({
 
             </SheetContent>
         </Sheet>
+        </>
     )
 }

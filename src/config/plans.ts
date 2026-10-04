@@ -102,3 +102,45 @@ export const PLAN_LIMITS = {
     },
   },
 } as const;
+
+export type PlanFeature = keyof typeof PLAN_LIMITS.PRO.features;
+
+// Nodes that are only available on plans with the given feature. Node types
+// that are not listed are available on every plan.
+export const NODE_PLAN_FEATURES: Record<string, PlanFeature> = {
+  SCHEDULE_TRIGGER: "scheduling",
+  GOOGLE_SHEETS: "googleSheets",
+  AI_AGENT: "aiAgents",
+  WHATSAPP: "whatsapp",
+};
+
+const PLAN_ORDER = ["FREE", "BEGINNER", "INTERMEDIATE", "PRO"] as const;
+
+const PLAN_LABELS: Record<keyof typeof PLAN_LIMITS, string> = {
+  FREE: "Free",
+  BEGINNER: "Beginner",
+  INTERMEDIATE: "Intermediate",
+  PRO: "Pro",
+};
+
+/**
+ * Returns the name of the cheapest plan that unlocks the node, or null when
+ * the user may use it. An active free trial unlocks every node, so new users
+ * can try the whole product; execution and workflow limits still apply.
+ */
+export const getRequiredPlanForNode = (
+  nodeType: string,
+  plan: keyof typeof PLAN_LIMITS,
+  trialEndsAt?: Date | string | null
+): string | null => {
+  const feature = NODE_PLAN_FEATURES[nodeType];
+  if (!feature) return null;
+
+  if (PLAN_LIMITS[plan]?.features[feature]) return null;
+
+  if (trialEndsAt && new Date(trialEndsAt) > new Date()) return null;
+
+  const required = PLAN_ORDER.find((name) => PLAN_LIMITS[name].features[feature]);
+
+  return PLAN_LABELS[required ?? "PRO"];
+};

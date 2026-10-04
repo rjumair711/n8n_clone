@@ -1,22 +1,41 @@
-import { NodeProps } from "@xyflow/react"
+import { Node, NodeProps, useReactFlow } from "@xyflow/react"
 import { memo, useState } from "react"
 import { BaseTriggerNode } from "../base-trigger-node"
 import { GoogleFormTriggerDialog } from "./dialog"
 import { useNodeStatus } from "@/features/executions/hooks/use-node-status"
-import { GOOGLE_FORM_TRIGGER_CHANNEL_NAME } from "@/inngest/channels/google-form-trigger"
 
+type GoogleFormTriggerNodeData = {
+    secret?: string;
+}
 
-export const GoogleFormTrigger = memo((props: NodeProps) => {
+type GoogleFormTriggerNodeType = Node<GoogleFormTriggerNodeData>
+
+export const GoogleFormTrigger = memo((props: NodeProps<GoogleFormTriggerNodeType>) => {
 
     const [dialogOpen, setDialogOpen] = useState(false)
+    const { setNodes } = useReactFlow()
 
     const nodeStatus = useNodeStatus(props.id);
 
+    const handleSecretChange = (secret: string) => {
+        setNodes((nodes) =>
+            nodes.map((node) =>
+                node.id === props.id
+                    ? { ...node, data: { ...node.data, secret } }
+                    : node
+            )
+        )
+    }
 
     const handleOpenSettings = () => setDialogOpen(true)
     return (
         <>
-            <GoogleFormTriggerDialog open={dialogOpen} onOpenChange={setDialogOpen} />
+            <GoogleFormTriggerDialog
+                open={dialogOpen}
+                onOpenChange={setDialogOpen}
+                secret={props.data?.secret}
+                onSecretChange={handleSecretChange}
+            />
             <BaseTriggerNode
                 {...props}
                 icon="/logos/googleform.svg"
@@ -30,3 +49,5 @@ export const GoogleFormTrigger = memo((props: NodeProps) => {
         </>
     )
 })
+
+GoogleFormTrigger.displayName = "GoogleFormTrigger"

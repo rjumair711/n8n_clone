@@ -30,7 +30,7 @@ import { slackChannel } from "./channels/slack";
 
 import prisma from "@/lib/db";
 
-import { PLAN_LIMITS } from "@/config/plans";
+import { PLAN_LIMITS, getRequiredPlanForNode } from "@/config/plans";
 
 import { webhookChannel } from "./channels/webhookResponse";
 import { filterChannel } from "./channels/filter";
@@ -177,7 +177,7 @@ export const executeWorkflow =
       // PREPARE WORKFLOW
       // =========================================
 
-      const { allNodes, connections, userId, userPlan } = await step.run(
+      const { allNodes, connections, userId, userPlan, trialEndsAt } = await step.run(
         "prepare-workflow",
         async () => {
           const workflow = await prisma.workflow.findUniqueOrThrow({
@@ -194,6 +194,7 @@ export const executeWorkflow =
               user: {
                 select: {
                   plan: true, // Dynamically fetch user's subscription tier
+                  trialEndsAt: true,
                 },
               },
             },
@@ -204,6 +205,7 @@ export const executeWorkflow =
             connections: workflow.connections, // We need this to trace cables!
             userId: workflow.userId,
             userPlan: workflow.user.plan,
+            trialEndsAt: workflow.user.trialEndsAt,
           };
         }
       );
@@ -266,6 +268,19 @@ export const executeWorkflow =
         context: WorkflowContext,
         meta: { inputs: { active: number; total: number } }
       ): Promise<WorkflowContext> => {
+        // Paid-plan nodes stop the run with a message the user can act on
+        const requiredPlan = getRequiredPlanForNode(
+          node.type,
+          userPlan,
+          trialEndsAt
+        );
+
+        if (requiredPlan) {
+          throw new NonRetriableError(
+            `The ${node.type} node requires the ${requiredPlan} plan. Upgrade your plan or remove the node.`
+          );
+        }
+
         const executor = getExecutor(node.type as NodeType);
 
         const nodeExecutionId = await step.run(
@@ -444,6 +459,7 @@ export const workflowCronHeartbeat = inngest.createFunction(
         },
         include: {
           nodes: { where: { type: NodeType.SCHEDULE_TRIGGER } },
+          user: { select: { plan: true, trialEndsAt: true } },
         },
       });
     });
@@ -471,6 +487,17 @@ export const workflowCronHeartbeat = inngest.createFunction(
     for (const workflow of scheduledWorkflows) {
       const triggerNode = workflow.nodes[0];
       if (!triggerNode) continue;
+
+      // Do not start runs that would only fail the plan check
+      if (
+        getRequiredPlanForNode(
+          NodeType.SCHEDULE_TRIGGER,
+          workflow.user.plan,
+          workflow.user.trialEndsAt
+        )
+      ) {
+        continue;
+      }
 
       const nodeData = (triggerNode.data as Record<string, any>) || {};
       // The schedule dialog saves the expression as `cronExpression`

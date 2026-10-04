@@ -1,4 +1,5 @@
 import { findTriggerNodes, startWorkflowExecution } from "@/inngest/utils";
+import { verifyStripeSignature } from "@/lib/webhook-security";
 import { type NextRequest, NextResponse } from "next/server";
 import { NodeType } from "@prisma/client";
 
@@ -36,7 +37,36 @@ export async function POST(request: NextRequest) {
             );
         }
 
-        const body = await request.json();
+        // The signature covers the exact bytes Stripe sent, so read the raw
+        // body before parsing it
+        const rawBody = await request.text();
+
+        const verified = triggerNodes.some((node) => {
+            const signingSecret =
+                (node.data as { signingSecret?: string } | null)?.signingSecret;
+
+            return (
+                !!signingSecret &&
+                verifyStripeSignature({
+                    rawBody,
+                    signatureHeader: request.headers.get("stripe-signature"),
+                    signingSecret: signingSecret.trim(),
+                })
+            );
+        });
+
+        if (!verified) {
+            return NextResponse.json(
+                {
+                    success: false,
+                    error:
+                        "Invalid Stripe signature. Add the endpoint's signing secret to the Stripe trigger node and save the workflow.",
+                },
+                { status: 401 }
+            );
+        }
+
+        const body = JSON.parse(rawBody);
 
         const stripeData = {
             // Event metadata

@@ -1,14 +1,7 @@
 import { findTriggerNodes, startWorkflowExecution } from "@/inngest/utils";
 import { type NextRequest, NextResponse } from "next/server";
 import { NodeType } from "@prisma/client";
-import { timingSafeEqual } from "crypto";
-
-const secretsMatch = (provided: string, expected: string) => {
-    const a = Buffer.from(provided);
-    const b = Buffer.from(expected);
-
-    return a.length === b.length && timingSafeEqual(a, b);
-};
+import { secretsMatch } from "@/lib/webhook-security";
 
 const readBody = async (request: NextRequest): Promise<unknown> => {
     if (request.method === "GET" || request.method === "HEAD") {
