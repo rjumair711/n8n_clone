@@ -27,6 +27,47 @@ export const executionsRouter = createTRPCRouter({
             })
         }),
 
+    // Data of the workflow's most recent run, for the editor's variable picker
+    getLatestData: protectedProcedure
+        .input(z.object({ workflowId: z.string() }))
+        .query(async ({ ctx, input }) => {
+            const execution = await prisma.execution.findFirst({
+                where: {
+                    workflowId: input.workflowId,
+                    workflow: {
+                        userId: ctx.auth.user.id
+                    }
+                },
+                orderBy: {
+                    startedAt: "desc"
+                },
+                select: {
+                    id: true,
+                    status: true,
+                    startedAt: true,
+                    output: true,
+                    nodes: {
+                        orderBy: { startedAt: "desc" },
+                        take: 1,
+                        select: { input: true, output: true },
+                    },
+                },
+            })
+
+            if (!execution) return null
+
+            // A failed or running execution has no final output yet: use what
+            // its last node saw
+            const lastNode = execution.nodes[0]
+
+            return {
+                executionId: execution.id,
+                status: execution.status,
+                startedAt: execution.startedAt,
+                data: execution.output ?? lastNode?.output ?? lastNode?.input ?? {},
+            }
+        }),
+
     // UPDATE MANY
     getMany: protectedProcedure
         .input(

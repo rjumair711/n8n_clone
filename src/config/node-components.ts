@@ -26,6 +26,16 @@ import { TelegramNode } from '@/features/executions/components/telegram/node';
 import { DateTimeNode } from '@/features/executions/components/daytime/node';
 import { TextFormatterNode } from '../features/executions/components/textFormatter/node';
 import { CalculatorNode } from '../features/executions/components/calculator/node';
+import { SwitchNode } from '@/features/executions/components/switch/node';
+import { IfNode } from '@/features/executions/components/if/node';
+import { MergeNode } from '@/features/executions/components/merge/node';
+import { LoopNode } from '@/features/executions/components/loop/node';
+import { WebhookTriggerNode } from '@/features/triggers/components/webhook-trigger/node';
+import { ChatTriggerNode } from '@/features/triggers/components/chat-trigger/node';
+import { GithubNode } from '@/features/executions/components/github/node';
+import { AirtableNode } from '@/features/executions/components/airtable/node';
+import { PostgresNode } from '@/features/executions/components/postgres/node';
+import { WhatsappNode } from '@/features/executions/components/whatsapp/node';
 
 export const nodeComponents: NodeTypes = {
     [NodeType.INITIAL]: InitialNode,
@@ -54,6 +64,16 @@ export const nodeComponents: NodeTypes = {
     [NodeType.DATE_TIME]: DateTimeNode,
     [NodeType.TEXT_FORMATTER]: TextFormatterNode,
     [NodeType.CALCULATOR]: CalculatorNode,
+    [NodeType.SWITCH]: SwitchNode,
+    [NodeType.IF]: IfNode,
+    [NodeType.MERGE]: MergeNode,
+    [NodeType.LOOP]: LoopNode,
+    [NodeType.WEBHOOK_TRIGGER]: WebhookTriggerNode,
+    [NodeType.CHAT_TRIGGER]: ChatTriggerNode,
+    [NodeType.GITHUB]: GithubNode,
+    [NodeType.AIRTABLE]: AirtableNode,
+    [NodeType.POSTGRES]: PostgresNode,
+    [NodeType.WHATSAPP]: WhatsappNode,
 };
 
 export type RegisteredNodeType = keyof typeof nodeComponents;

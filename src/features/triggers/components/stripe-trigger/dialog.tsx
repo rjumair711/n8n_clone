@@ -11,11 +11,15 @@ import { toast } from "sonner";
 interface Props {
     open: boolean;
     onOpenChange: (open: boolean) => void;
+    signingSecret?: string;
+    onSigningSecretChange: (signingSecret: string) => void;
 }
 
 export const StripeTriggerDialog = ({
     open,
-    onOpenChange
+    onOpenChange,
+    signingSecret,
+    onSigningSecretChange,
 }: Props) => {
 
     const params = useParams()
@@ -66,6 +70,23 @@ export const StripeTriggerDialog = ({
                             </Button>
                         </div>
                     </div>
+                    <div className="space-y-2">
+                        <Label htmlFor="signing-secret">
+                            Signing Secret
+                        </Label>
+                        <Input
+                            id="signing-secret"
+                            type="password"
+                            placeholder="whsec_..."
+                            value={signingSecret || ""}
+                            onChange={(event) => onSigningSecretChange(event.target.value.trim())}
+                            className="font-mono text-sm" />
+                        <p className="text-sm text-muted-foreground">
+                            Required. Events are rejected unless their signature
+                            matches this secret, so nobody else can trigger the
+                            workflow. Save the workflow after pasting it.
+                        </p>
+                    </div>
                     <div className="rounded-lg bg-muted p-4 space-y-2">
                         <h4 className="font-medium text-sm">Setup instructions:</h4>
                         <ol className="text-sm text-muted-foreground space-y-1 list-decimal list-inside ">
@@ -74,7 +95,7 @@ export const StripeTriggerDialog = ({
                             <li>Click "Add endpoint"</li>
                             <li>Paste the webhook URL above</li>
                             <li>Select events to listen for (e.g., payment_intent.succeeded)</li>
-                            <li>Save and copy the signing secret</li>
+                            <li>Save, reveal the endpoint's signing secret (whsec_...) and paste it above</li>
                         </ol>
                     </div>
 

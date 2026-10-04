@@ -24,6 +24,9 @@ export interface NodeExecutorParams<
   // NEW: Graph topology for n8n-style dynamic connections
   allNodes: NodeWithCredential[]; 
   connections: Connection[];
+
+  // How many of this node's connected inputs were reached in this run
+  inputs?: { active: number; total: number };
 }
 
 export type NodeExecutor<

@@ -17,7 +17,7 @@ import {
 import { BaseHandle } from "../../../components/react-flow/base-handle";
 import { WorkflowNode } from "../../../components/workflow-node";
 import { LucideIcon } from "lucide-react";
-import { NodeStatusIndicator } from "@/components/react-flow/node-status-indicator";
+import { type NodeStatus, NodeStatusIndicator } from "@/components/react-flow/node-status-indicator";
 import { cn } from "@/lib/utils";
 import { useNodeStatus } from "../hooks/use-node-status";
 
@@ -26,6 +26,10 @@ interface BaseExecutionNodeProps extends NodeProps {
     name: string;
     description?: string;
     children?: ReactNode;
+    // Overrides the live execution status from the store
+    status?: NodeStatus;
+    // Named outputs for branching nodes; replaces the single default output
+    outputs?: { id: string; label: string }[];
     onSettings?: () => void;
     onDoubleClick?: () => void;
 }
@@ -37,6 +41,8 @@ export const BaseExecutionNode = memo(
         name,
         description,
         children,
+        status: statusOverride,
+        outputs,
         onSettings,
         onDoubleClick,
     }: BaseExecutionNodeProps) => {
@@ -56,7 +62,7 @@ export const BaseExecutionNode = memo(
         };
 
         const nodeExecution = useNodeStatus(id);
-        const status = nodeExecution.status;
+        const status = statusOverride ?? nodeExecution.status;
 
         return (
             <WorkflowNode
@@ -79,7 +85,14 @@ export const BaseExecutionNode = memo(
                             status === "error" && "shadow-lg shadow-red-500/20"
                         )}
                     >
-                        <BaseNodeContent>
+                        <BaseNodeContent
+                            className="justify-center"
+                            style={
+                                outputs && outputs.length > 2
+                                    ? { minHeight: outputs.length * 16 }
+                                    : undefined
+                            }
+                        >
                             {typeof Icon === "string" ? (
                                 <Image src={Icon} alt={name} width={16} height={16} />
                             ) : (
@@ -91,7 +104,23 @@ export const BaseExecutionNode = memo(
                             {/* Removed the redundant stacked StatusIcon component here to prevent vertical stretching */}
 
                             <BaseHandle id="target-1" type="target" position={Position.Left} />
-                            <BaseHandle id="source-1" type="source" position={Position.Right} />
+                            {outputs ? (
+                                outputs.map((output, index) => (
+                                    <BaseHandle
+                                        key={output.id}
+                                        id={output.id}
+                                        type="source"
+                                        position={Position.Right}
+                                        style={{ top: `${((index + 1) / (outputs.length + 1)) * 100}%` }}
+                                    >
+                                        <span className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 whitespace-nowrap text-[8px] leading-none text-muted-foreground">
+                                            {output.label}
+                                        </span>
+                                    </BaseHandle>
+                                ))
+                            ) : (
+                                <BaseHandle id="source-1" type="source" position={Position.Right} />
+                            )}
                         </BaseNodeContent>
                     </BaseNode>
                 </NodeStatusIndicator>

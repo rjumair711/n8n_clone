@@ -13,6 +13,12 @@ const nextConfig: NextConfig = {
   },
 
   devIndicators: false,
+
+  // The Code node sandbox loads a .wasm file at runtime; keep it out of the bundle
+  serverExternalPackages: ["quickjs-emscripten"],
+  outputFileTracingIncludes: {
+    "/api/inngest": ["./node_modules/@jitl/quickjs-*/**/*"],
+  },
 };
 
 export default withSentryConfig(nextConfig, {

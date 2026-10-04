@@ -35,7 +35,7 @@ export const BufferMemoryNode = memo((props: NodeProps<BufferMemoryNodeType>) =>
     );
   };
 
-  const sessionIdPreview = props.data?.sessionId || "{{webhook.sessionId}}";
+  const sessionIdPreview = props.data?.sessionId || "{{sessionId}}";
   const windowSizePreview = props.data?.windowSize || 10;
   
   const description = `Session: ${sessionIdPreview} (Last ${windowSizePreview} msgs)`;

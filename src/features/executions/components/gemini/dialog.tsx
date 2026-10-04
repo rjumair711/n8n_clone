@@ -22,6 +22,7 @@ const formSchema = z.object({
             message: "Variable name must start with a letter or underscore and container only letters, numbers, and underscores"
         }),
     credentialId: z.string().min(1, "Credential is required"),
+    model: z.string().optional(),
     systemPrompt: z.string().optional(),
     userPrompt: z.string().min(1, "User prompt is required"),
 })
@@ -54,6 +55,7 @@ export const GeminiDialog = ({
         defaultValues: {
             variableName: defaultValues.variableName || "",
             credentialId: defaultValues.credentialId || "",
+            model: defaultValues.model || "",
             systemPrompt: defaultValues.systemPrompt || "",
             userPrompt: defaultValues.userPrompt || "",
         }
@@ -63,6 +65,7 @@ export const GeminiDialog = ({
             form.reset({
                 variableName: defaultValues.variableName || "",
                 credentialId: defaultValues.credentialId || "",
+                model: defaultValues.model || "",
                 systemPrompt: defaultValues.systemPrompt || "",
                 userPrompt: defaultValues.userPrompt || "",
             });
@@ -148,6 +151,26 @@ export const GeminiDialog = ({
                                             ))}
                                         </SelectContent>
                                     </Select>
+                                    <FormMessage />
+                                </FormItem>
+                            )}
+                        />
+                        <FormField
+                            control={form.control}
+                            name="model"
+                            render={({ field }) => (
+                                <FormItem>
+                                    <FormLabel>Model (Optional)</FormLabel>
+                                    <FormControl>
+                                        <Input placeholder="gemini-2.5-flash"
+                                            {...field}
+                                        />
+                                    </FormControl>
+                                    <FormDescription>
+                                        Leave empty to use gemini-2.5-flash. This is also the
+                                        model an AI Agent uses when this node is connected
+                                        to its Chat Model port.
+                                    </FormDescription>
                                     <FormMessage />
                                 </FormItem>
                             )}

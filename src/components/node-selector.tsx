@@ -13,8 +13,12 @@ import {
 } from "./ui/sheet"
 import { Input } from "@/components/ui/input"
 import { NodeType } from "@prisma/client"
-import { Clock, FilterIcon, GlobeIcon, MousePointerIcon, Send, VariableIcon, ChevronDown, ChevronRight, Code2, Bot, MemoryStickIcon, Search, Type, Calculator } from "lucide-react"
+import { Clock, FilterIcon, GlobeIcon, MousePointerIcon, Send, VariableIcon, ChevronDown, ChevronRight, Code2, Bot, MemoryStickIcon, Search, Type, Calculator, GitBranch, GitFork, Merge, Repeat, Webhook, MessageSquare } from "lucide-react"
 import { toast } from "sonner"
+import { Lock } from "lucide-react"
+import { getRequiredPlanForNode } from "@/config/plans"
+import { useCurrentPlan } from "@/features/subscription/hook/use-current-plan"
+import { UpgradeModal } from "@/components/upgrade-modal"
 
 export type NodeTypeOption = {
     type: NodeType,
@@ -50,6 +54,18 @@ const triggerNodes: NodeTypeOption[] = [
         description: "Runs the flow at specific times or periodic intervals (Cron)",
         icon: "/logos/schedule-trigger.png",
     },
+    {
+        type: NodeType.WEBHOOK_TRIGGER,
+        label: "Webhook",
+        description: "Runs the flow when an HTTP request hits this workflow's webhook URL",
+        icon: Webhook,
+    },
+    {
+        type: NodeType.CHAT_TRIGGER,
+        label: "Chat Trigger",
+        description: "Runs the flow when a message is sent in the chat panel. Pair it with an AI Agent",
+        icon: MessageSquare,
+    },
 ]
 
 const logicNodes: NodeTypeOption[] = [
@@ -58,6 +74,30 @@ const logicNodes: NodeTypeOption[] = [
         label: "Filter",
         description: "Continue only if a condition is true",
         icon: FilterIcon
+    },
+    {
+        type: NodeType.IF,
+        label: "IF",
+        description: "Route to a true or false branch based on conditions",
+        icon: GitBranch
+    },
+    {
+        type: NodeType.SWITCH,
+        label: "Switch",
+        description: "Route to one of several branches based on rules",
+        icon: GitFork
+    },
+    {
+        type: NodeType.MERGE,
+        label: "Merge",
+        description: "Join branches back into a single path",
+        icon: Merge
+    },
+    {
+        type: NodeType.LOOP,
+        label: "Loop",
+        description: "Run a set of nodes once for every item in a list",
+        icon: Repeat
     },
     {
         type: NodeType.CALCULATOR,
@@ -125,7 +165,7 @@ const aiNodes: NodeTypeOption[] = [
     {
         type: NodeType.AI_AGENT, 
         label: "AI Agent",
-        description: "Runs an autonomous, multi-turn reasoning agent loop with real-time log tracking",
+        description: "Tools Agent: a chat model that decides which connected tools to call",
         icon: Bot
     }
 ]
@@ -155,6 +195,12 @@ const communicationNodes: NodeTypeOption[] = [
         description: "Send a message or interact with a Telegram bot",
         icon: "/logos/telegram.jfif" 
     },
+    {
+        type: NodeType.WHATSAPP,
+        label: "WhatsApp",
+        description: "Send WhatsApp messages with the Business Cloud API",
+        icon: "/logos/whatsapp.svg"
+    },
 ]
 
 const productivityNodes: NodeTypeOption[] = [
@@ -175,6 +221,24 @@ const productivityNodes: NodeTypeOption[] = [
         label: "Notion",
         description: "Create or manage pages in Notion",
         icon: "/logos/notion.png" 
+    },
+    {
+        type: NodeType.GITHUB,
+        label: "GitHub",
+        description: "Create issues, comment and read repositories",
+        icon: "/logos/github.svg"
+    },
+    {
+        type: NodeType.AIRTABLE,
+        label: "Airtable",
+        description: "List, create, update or delete Airtable records",
+        icon: "/logos/airtable.svg"
+    },
+    {
+        type: NodeType.POSTGRES,
+        label: "Postgres",
+        description: "Run SQL queries against a PostgreSQL database",
+        icon: "/logos/postgres.svg"
     },
 ]
 
@@ -206,6 +270,15 @@ export function NodeSelector({
 }: NodeSelectorProps) {
     const { setNodes, getNodes, screenToFlowPosition } = useReactFlow()
 
+    // Nodes outside the user's plan are shown with a lock
+    const { data: currentPlan } = useCurrentPlan()
+    const [upgradeOpen, setUpgradeOpen] = useState(false)
+
+    const getRequiredPlan = (type: NodeType) =>
+        currentPlan
+            ? getRequiredPlanForNode(type, currentPlan.plan, currentPlan.trialEndsAt)
+            : null
+
     // 2. State management
     const [searchQuery, setSearchQuery] = useState("")
     const [openSections, setOpenSections] = useState<Record<string, boolean>>({
@@ -225,6 +298,14 @@ export function NodeSelector({
     }
 
     const handleNodeSelect = useCallback((selection: NodeTypeOption) => {
+        const requiredPlan = getRequiredPlan(selection.type)
+
+        if (requiredPlan) {
+            toast.error(`${selection.label} requires the ${requiredPlan} plan`)
+            setUpgradeOpen(true)
+            return;
+        }
+
         if (selection.type === NodeType.MANUAL_TRIGGER) {
             const nodes = getNodes()
             const hasManualTrigger = nodes.some(
@@ -267,13 +348,14 @@ export function NodeSelector({
         // Reset search query when closing the menu
         setSearchQuery("")
         onOpenChange(false)
-    }, [setNodes, getNodes, onOpenChange, screenToFlowPosition])
+    }, [setNodes, getNodes, onOpenChange, screenToFlowPosition, currentPlan])
 
     // Helper map renderer to align rows cleanly
     const renderNodeList = (nodes: NodeTypeOption[]) => (
         <div className="flex flex-col">
             {nodes.map((nodeType) => {
                 const Icon = nodeType.icon;
+                const requiredPlan = getRequiredPlan(nodeType.type);
                 return (
                     <div
                         key={nodeType.type}
@@ -295,8 +377,14 @@ export function NodeSelector({
                                 )}
                             </div>
                             <div className="flex flex-col items-start text-left min-w-0">
-                                <span className="text-sm font-medium text-foreground group-hover:text-primary transition-colors">
+                                <span className="text-sm font-medium text-foreground group-hover:text-primary transition-colors flex items-center gap-2">
                                     {nodeType.label}
+                                    {requiredPlan && (
+                                        <span className="inline-flex items-center gap-1 rounded-full border px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground">
+                                            <Lock className="size-3" />
+                                            {requiredPlan}
+                                        </span>
+                                    )}
                                 </span>
                                 <span className="text-xs text-muted-foreground line-clamp-2 mt-0.5 leading-relaxed">
                                     {nodeType.description}
@@ -332,6 +420,8 @@ export function NodeSelector({
         .filter((section) => section.data.length > 0) // Hide empty sections
 
     return (
+        <>
+        <UpgradeModal open={upgradeOpen} onOpenChange={setUpgradeOpen} />
         <Sheet open={open} onOpenChange={(isOpen) => {
             if (!isOpen) setSearchQuery(""); // Clear search on close
             onOpenChange(isOpen);
@@ -402,5 +492,6 @@ export function NodeSelector({
 
             </SheetContent>
         </Sheet>
+        </>
     )
 }

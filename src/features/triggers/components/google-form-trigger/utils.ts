@@ -1,5 +1,6 @@
 export const generateGoogleFormScript = (
   webhookUrl: string,
+  secret: string,
 ) => `function onFormSubmit(e) {
   var formResponse = e.response;
   var itemResponses = formResponse.getItemResponses();
@@ -25,6 +26,7 @@ export const generateGoogleFormScript = (
   var options = {
     'method': 'post',
     'contentType': 'application/json',
+    'headers': { 'x-webhook-secret': '${secret}' },
     'payload': JSON.stringify(payload)
   };
 

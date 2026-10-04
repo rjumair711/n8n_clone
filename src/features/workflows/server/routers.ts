@@ -13,7 +13,14 @@ export const workflowsRouter = createTRPCRouter({
 
     //EXECUTE WORKFLOW
     execute: protectedProcedure
-        .input(z.object({ id: z.string() }))
+        .input(z.object({
+            id: z.string(),
+            // Sent by the editor's chat panel: runs the Chat Trigger branch
+            chat: z.object({
+                message: z.string().min(1),
+                sessionId: z.string().min(1),
+            }).optional(),
+        }))
         .mutation(async ({ input, ctx }) => {
             const user = await prisma.user.findUniqueOrThrow({
                 where: {
@@ -69,6 +76,17 @@ export const workflowsRouter = createTRPCRouter({
                 workflowId: input.id,
                 executionId:
                     execution.id,
+
+                ...(input.chat
+                    ? {
+                        trigger: NodeType.CHAT_TRIGGER,
+                        InitialData: {
+                            action: "sendMessage",
+                            chatInput: input.chat.message,
+                            sessionId: input.chat.sessionId,
+                        },
+                    }
+                    : { trigger: NodeType.MANUAL_TRIGGER }),
             });
 
             await prisma.user.update({
@@ -184,6 +202,21 @@ export const workflowsRouter = createTRPCRouter({
             })
         }),
 
+    // ACTIVATE / DEACTIVATE WORKFLOW
+    // Only active workflows run from schedules and webhooks. Manual runs and
+    // the chat panel always work, so a workflow can be tested while inactive.
+    setActive: protectedProcedure
+        .input(z.object({ id: z.string(), active: z.boolean() }))
+        .mutation(({ ctx, input }) => {
+            return prisma.workflow.update({
+                where: {
+                    id: input.id,
+                    userId: ctx.auth.user.id
+                },
+                data: { active: input.active },
+            })
+        }),
+
     // UPDATE WORKFLOW
     update: protectedProcedure
         .input(z.object({
@@ -287,6 +320,7 @@ export const workflowsRouter = createTRPCRouter({
             return {
                 id: workflow.id,
                 name: workflow.name,
+                active: workflow.active,
                 nodes,
                 edges
             }

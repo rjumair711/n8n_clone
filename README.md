@@ -30,7 +30,8 @@ The platform is designed as a scalable SaaS product with:
 
 # ⚡ Workflow Execution Engine
 
-* Sequential workflow execution pipeline
+* Branch-aware execution: only connections activated by IF / Switch / Filter are followed
+* Loops that run a sub-flow once per list item
 * Inngest background execution system
 * Dynamic time-based execution engine via an automated Background Ticker (`* * * * *` clock matching system)
 * Shared execution context
@@ -110,11 +111,18 @@ Realtime workflow updates use:
 
 # 🧠 AI Integrations
 
-## Autonomous AI Agent
-* **Dynamic Orchestration:** Automatically utilizes connected nodes (like HTTP Requests or JavaScript) as executing tools.
-* **Dependency Injection:** Lazily loads configurations (API keys, models, system prompts) directly from connected UI nodes.
-* **Contextual Memory:** Integrates with Buffer Memory nodes to retrieve and persist conversation history.
-* **Realtime Thought Logging:** Broadcasts step-by-step reasoning and tool-calling decisions to the frontend during execution.
+## AI Agent (Tools Agent)
+
+Works like the n8n AI Agent: a chat model that decides which tools to call and loops until it has an answer.
+
+* **Chat Model (required):** connect an OpenAI, Anthropic or Gemini node to the Chat Model port; its credential and model are used.
+* **Memory (optional):** a Buffer Memory node keeps the last N messages per session and replays them as real chat turns.
+* **Tools (optional):** any node connected to the Tools port becomes a tool. Give each one a name and description in the agent's settings.
+* **`{{$fromAI "name" "description"}}`:** write this in any field of a tool node to let the agent fill in that value.
+* **Prompt source:** taken from the Chat Trigger (`{{chatInput}}`) or defined in the node with `{{variables}}`.
+* **Options:** System Message, Max Iterations (default 10), Return Intermediate Steps.
+* **Output:** `{{output}}` and `{{<variableName>.output}}`, plus `intermediateSteps` when enabled.
+* **Chat panel:** workflows with a Chat Trigger get an "Open chat" button in the editor to talk to the agent.
 
 ## OpenAI
 
@@ -140,9 +148,10 @@ Realtime workflow updates use:
 | ------------------- | ---------------------------------------------------------------------------------------------------------- |
 | Manual Trigger      | Manual execution on user demand                                                                            |
 | Schedule Trigger    | Time-based automatic triggers evaluated each minute using custom Cron intervals (e.g., `*/5 * * * *`)       |
-| Webhook Trigger     | External HTTP requests inbound routing                                                                     |
+| Webhook Trigger     | Runs on any HTTP request to `/api/webhooks/trigger/<workflowId>`, protected by a per-node secret            |
 | Google Form Trigger | Form submission automation                                                                                 |
 | Stripe Trigger      | Payment event automation                                                                                   |
+| Chat Trigger        | Runs when a message is sent from the editor's chat panel; provides `chatInput` and `sessionId`             |
 
 ---
 
@@ -150,11 +159,15 @@ Realtime workflow updates use:
 
 | Node             | Description                                                               |
 | ---------------- | ------------------------------------------------------------------------- |
-| AI Agent         | Autonomous LLM loop that dynamically utilizes connected nodes as tools    |
+| AI Agent         | n8n-style Tools Agent with Chat Model, Memory and Tools sub-nodes         |
 | HTTP Request     | External API requests                                                     |
-| JavaScript Code  | Execute custom JavaScript code within the shared execution context        |
+| JavaScript Code  | Execute custom JavaScript in an isolated QuickJS (WebAssembly) sandbox    |
 | Set Variable     | Store reusable variables                                                  |
-| Filter           | Conditional branching                                                     |
+| Filter           | Stop the current branch unless a condition is true                        |
+| IF               | Route to a True or False output based on one or more conditions           |
+| Switch           | Route to one of several outputs based on ordered rules, with a fallback   |
+| Merge            | Join branches back into one path (any branch, or wait for all)            |
+| Loop             | Run the connected nodes once for every item in a list                     |
 | Delay            | Pause workflow                                                            |
 | Webhook Response | Return webhook responses                                                  |
 | Email Send       | SMTP email automation                                                     |
@@ -164,6 +177,9 @@ Realtime workflow updates use:
 | Date & Time      | Get current time, format, manipulate, or compare dates                    |
 | Text Formatter   | Transform, clean, or extract text strings (Uppercase, Replace, Regex)     |
 | Calculator       | Perform mathematical operations on numbers or variables                   |
+| GitHub           | Create issues, comment on issues, list issues, read a repository          |
+| Airtable         | List, create, update and delete records                                   |
+| Postgres         | Run parameterised SQL, select rows, insert rows                           |
 
 
 ---
@@ -175,6 +191,7 @@ Realtime workflow updates use:
 | Discord     | Discord automation  |
 | Slack       | Slack notifications |
 | Telegram    | Bot Messaging       |
+| WhatsApp    | Text and template messages via the WhatsApp Business Cloud API |
 ---
 
 # 📊 Productivity Integrations
@@ -211,7 +228,11 @@ Supported credential types:
 | GOOGLE_SHEETS | Google Sheets |
 | GOOGLE_CALENDAR | Google Calendar |
 | NOTION        | Notion Nodes  |
-| TEELGRAM      | Telegram Nodes|
+| TELEGRAM      | Telegram Nodes|
+| GITHUB        | GitHub Nodes (personal access token) |
+| AIRTABLE      | Airtable Nodes (personal access token) |
+| POSTGRES      | Postgres Nodes (connection string) |
+| WHATSAPP      | WhatsApp Nodes (Cloud API access token) |
 
 ---
 
@@ -275,6 +296,46 @@ RXJ includes onboarding UX to improve activation and retention.
 * Template marketplace
 
 ---
+
+# 🗺️ Node Roadmap (Planned)
+
+Nodes that are not built yet, listed in the order they are most worth adding. Each new integration is a config passed to `createIntegrationNode` plus an executor; see `src/features/executions/components/github` for the pattern.
+
+## Core (most valuable)
+
+| Node | What it adds |
+| ---- | ------------ |
+| HTTP Request upgrade | Custom headers, query parameters and authentication. Today the node can only send a JSON body, which blocks most APIs |
+| Edit Fields | Set several values in one node instead of one Set Variable per value |
+| Respond to Webhook | Send a real synchronous reply to the caller of a Webhook Trigger |
+| Execute Sub-workflow | Call another workflow and use its result |
+| Error Trigger | Start a workflow when another workflow fails, for alerts |
+| List tools | Split Out, Aggregate, Sort, Limit, Remove Duplicates |
+
+## AI
+
+| Node | What it adds |
+| ---- | ------------ |
+| OpenAI-compatible Chat Model | One node for Groq, OpenRouter, DeepSeek and Ollama (base URL + key + model). Cheap or free models for the community |
+| Structured Output Parser | Make the AI Agent return JSON in a fixed shape |
+| Embeddings + Vector Store | Question answering over documents; Neon supports pgvector |
+| Information Extractor / Text Classifier | Common single-purpose AI steps without writing prompts |
+
+## Triggers and apps
+
+| Node | What it adds |
+| ---- | ------------ |
+| Telegram Trigger | Start a workflow on an incoming Telegram message. With the AI Agent this makes a full chatbot |
+| WhatsApp Trigger | The same for incoming WhatsApp messages (Cloud API webhook) |
+| Google sign-in (OAuth) | Unlocks Gmail, Google Drive and Google Docs nodes; these APIs cannot use a simple token |
+| Gmail | Send, read and label emails (needs Google OAuth) |
+| Google Drive / Docs | Upload, list and read files (needs Google OAuth) |
+| MySQL, MongoDB, Supabase | More databases next to Postgres |
+| RSS Read | Poll a feed for new items |
+| Twilio SMS | Send text messages |
+
+---
+
 
 # 🛠️ Tech Stack
 

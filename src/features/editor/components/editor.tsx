@@ -26,6 +26,8 @@ import { useSetAtom } from "jotai";
 import { editorAtom } from "../store/atoms";
 import { NodeType } from "@prisma/client";
 import { ExecuteWorkflowButton } from "./execute-workflow-button";
+import { ChatPanel } from "./chat-panel";
+import { VariablePickerProvider } from "@/components/variable-picker";
 import { ExecutionSidebar, type ExecutionLog } from "@/features/executions/components/execution-sidebar";
 import { ExecutionEdge } from "@/components/react-flow/execution-edge";
 import { useExecutionStore } from "@/features/executions/store/execution-store";
@@ -137,6 +139,11 @@ export const Editor = ({ workflowId }: { workflowId: string }) => {
         );
     }, [nodes]);
 
+    // The chat panel drives workflows that start with a Chat Trigger
+    const showChatButton = useMemo(() => {
+        return nodes.some((node) => node.type === NodeType.CHAT_TRIGGER);
+    }, [nodes]);
+
     // =====================================
     // EDGE TYPES
     // =====================================
@@ -165,6 +172,7 @@ export const Editor = ({ workflowId }: { workflowId: string }) => {
     // RENDER
     // =====================================
     return (
+        <VariablePickerProvider workflowId={workflowId}>
         <div className="flex h-full w-full overflow-hidden">
 
             <div className="relative h-full flex-1 overflow-hidden">
@@ -195,14 +203,22 @@ export const Editor = ({ workflowId }: { workflowId: string }) => {
                         <AddNodeButton />
                     </Panel>
 
-                    {showExecuteButton && (
+                    {(showExecuteButton || showChatButton) && (
                         <Panel position="bottom-center">
-                            <ExecuteWorkflowButton workflowId={workflowId} />
+                            <div className="flex items-center gap-2">
+                                {showExecuteButton && (
+                                    <ExecuteWorkflowButton workflowId={workflowId} />
+                                )}
+                                {showChatButton && (
+                                    <ChatPanel workflowId={workflowId} />
+                                )}
+                            </div>
                         </Panel>
                     )}
                 </ReactFlow>
             </div>
             <ExecutionSidebar logs={logs} />
         </div>
+        </VariablePickerProvider>
     );
 };

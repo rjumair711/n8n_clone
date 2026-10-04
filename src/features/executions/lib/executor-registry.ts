@@ -25,6 +25,16 @@ import { notionExecutor } from '../components/notion/executor';
 import { telegramExecutor } from '../components/telegram/executor';
 import { dateTimeExecutor } from '../components/daytime/executor';
 import { textFormatterExecutor } from '../components/textFormatter/executor';
+import { switchExecutor } from '../components/switch/executor';
+import { ifExecutor } from '../components/if/executor';
+import { mergeExecutor } from '../components/merge/executor';
+import { loopExecutor } from '../components/loop/executor';
+import { webhookTriggerExecutor } from '@/features/triggers/components/webhook-trigger/executor';
+import { chatTriggerExecutor } from '@/features/triggers/components/chat-trigger/executor';
+import { githubExecutor } from '../components/github/executor';
+import { airtableExecutor } from '../components/airtable/executor';
+import { postgresExecutor } from '../components/postgres/executor';
+import { whatsappExecutor } from '../components/whatsapp/executor';
 
 export const executorRegistry: Record<NodeType, NodeExecutor<any>> = {
   [NodeType.MANUAL_TRIGGER]: manualTriggerExecutor,
@@ -53,6 +63,16 @@ export const executorRegistry: Record<NodeType, NodeExecutor<any>> = {
   [NodeType.DATE_TIME]: dateTimeExecutor,
   [NodeType.TEXT_FORMATTER]: textFormatterExecutor,
   [NodeType.CALCULATOR]: calculatorExecutor,
+  [NodeType.SWITCH]: switchExecutor,
+  [NodeType.IF]: ifExecutor,
+  [NodeType.MERGE]: mergeExecutor,
+  [NodeType.LOOP]: loopExecutor,
+  [NodeType.WEBHOOK_TRIGGER]: webhookTriggerExecutor,
+  [NodeType.CHAT_TRIGGER]: chatTriggerExecutor,
+  [NodeType.GITHUB]: githubExecutor,
+  [NodeType.AIRTABLE]: airtableExecutor,
+  [NodeType.POSTGRES]: postgresExecutor,
+  [NodeType.WHATSAPP]: whatsappExecutor,
 }
 
 export const getExecutor = (type: NodeType): NodeExecutor<any> => {

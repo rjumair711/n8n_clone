@@ -1,15 +1,21 @@
+import { switchChannel } from './channels/switch';
 import { calculatorChannel } from './channels/calculator';
 import { geminiChannel } from "./channels/gemini";
 import { inngest } from "./client";
 import { NonRetriableError } from "inngest";
 import { CronExpressionParser } from "cron-parser";
-import { topologicalSort } from "./utils";
+import { buildGraph, runWorkflowGraph } from "./engine";
 import {
   ExecutionStatus,
   NodeType,
+  Prisma,
 } from "@prisma/client";
 
 import { getExecutor } from "@/features/executions/lib/executor-registry";
+import type {
+  NodeWithCredential,
+  WorkflowContext,
+} from "@/features/executions/types";
 
 import { httpRequestChannel } from "./channels/http-request";
 import { manualTriggerChannel } from "./channels/manual-trigger";
@@ -24,7 +30,7 @@ import { slackChannel } from "./channels/slack";
 
 import prisma from "@/lib/db";
 
-import { PLAN_LIMITS } from "@/config/plans";
+import { PLAN_LIMITS, getRequiredPlanForNode } from "@/config/plans";
 
 import { webhookChannel } from "./channels/webhookResponse";
 import { filterChannel } from "./channels/filter";
@@ -40,6 +46,8 @@ import { notionChannel } from "./channels/notion";
 import { telegramChannel } from "./channels/telegram";
 import { dateTimeChannel } from "./channels/datetime";
 import { textFormatterChannel } from "./channels/textformatter";
+
+const toJson = (value: unknown) => value as Prisma.InputJsonValue;
 
 // =========================================================================
 // 1. ENGINE EXECUTOR: Runs a single execution instance from start to finish
@@ -59,43 +67,26 @@ export const executeWorkflow =
         event,
       }) => {
         try {
+          const executionId = event.data.event.data.executionId;
+
           // Fetch execution to calculate duration if available
           const exec = await prisma.execution.findUnique({
-            where: { inngestEventId: event.data.event.id },
+            where: { id: executionId },
             select: { startedAt: true }
           });
 
-          const durationMs = exec
-            ? Date.now() - new Date(exec.startedAt).getTime()
-            : undefined;
+          if (!exec) return;
 
-          await prisma.execution.update(
-            {
-              where: {
-                inngestEventId:
-                  event.data.event.id,
-              },
-
-              data: {
-                status:
-                  ExecutionStatus.FAILED,
-
-                error:
-                  event.data.error
-                    ?.message ??
-                  "Unknown workflow error",
-
-                errorStack:
-                  event.data.error
-                    ?.stack,
-
-                completedAt:
-                  new Date(),
-
-                durationMs: durationMs, // Capture total duration on global failure
-              },
-            }
-          );
+          await prisma.execution.update({
+            where: { id: executionId },
+            data: {
+              status: ExecutionStatus.FAILED,
+              error: event.data.error?.message ?? "Unknown workflow error",
+              errorStack: event.data.error?.stack,
+              completedAt: new Date(),
+              durationMs: Date.now() - new Date(exec.startedAt).getTime(), // Capture total duration on global failure
+            },
+          });
         } catch (err) {
           console.error(
             "Failed to update execution on failure",
@@ -136,56 +127,57 @@ export const executeWorkflow =
         telegramChannel(),
         dateTimeChannel(),
         textFormatterChannel(),
-        calculatorChannel()
+        calculatorChannel(),
+        switchChannel()
       ],
     },
 
     async ({ event, step }) => {
-      const inngestEventId =
-        event.id;
+      const inngestEventId = event.id;
+      const workflowId = event.data.workflowId;
+      const executionId = event.data.executionId;
 
-      const workflowId =
-        event.data.workflowId;
-
-      if (
-        !inngestEventId ||
-        !workflowId
-      ) {
+      if (!inngestEventId || !workflowId || !executionId) {
         throw new NonRetriableError(
-          "Workflow ID is missing"
+          "Workflow ID or execution ID is missing"
         );
       }
+
+      // Everything that touches the database runs inside a step. Inngest
+      // re-runs this function body after every step, so writes made outside
+      // of one would be repeated on each replay.
 
       // =========================================
       // FIND EXECUTION
       // =========================================
 
-      const execution =
-        await prisma.execution.findUniqueOrThrow(
-          {
-            where: {
-              id:
-                event.data.executionId,
-            },
-          }
-        );
+      const execution = await step.run("init-execution", async () => {
+        const found = await prisma.execution.findUnique({
+          where: { id: executionId },
+        });
 
-      await prisma.execution.update({
-        where: {
-          id: execution.id,
-        },
+        if (!found || found.workflowId !== workflowId) {
+          throw new NonRetriableError(
+            `Execution ${executionId} not found for workflow ${workflowId}`
+          );
+        }
 
-        data: {
-          inngestEventId:
-            inngestEventId,
-        },
+        await prisma.execution.update({
+          where: { id: found.id },
+          data: { inngestEventId },
+        });
+
+        return {
+          id: found.id,
+          startedAt: found.startedAt.toISOString(),
+        };
       });
 
       // =========================================
       // PREPARE WORKFLOW
       // =========================================
 
-      const { sortedNodes, allNodes, connections } = await step.run(
+      const { allNodes, connections, userId, userPlan, trialEndsAt } = await step.run(
         "prepare-workflow",
         async () => {
           const workflow = await prisma.workflow.findUniqueOrThrow({
@@ -199,49 +191,24 @@ export const executeWorkflow =
                 },
               },
               connections: true,
+              user: {
+                select: {
+                  plan: true, // Dynamically fetch user's subscription tier
+                  trialEndsAt: true,
+                },
+              },
             },
           });
 
           return {
-            sortedNodes: topologicalSort(workflow.nodes, workflow.connections),
             allNodes: workflow.nodes,
             connections: workflow.connections, // We need this to trace cables!
+            userId: workflow.userId,
+            userPlan: workflow.user.plan,
+            trialEndsAt: workflow.user.trialEndsAt,
           };
         }
       );
-
-      // =========================================
-      // FIND USER & PLAN TIER
-      // =========================================
-
-      const { userId, userPlan } =
-        await step.run(
-          "find-user-and-plan",
-          async () => {
-            const workflow =
-              await prisma.workflow.findUniqueOrThrow(
-                {
-                  where: {
-                    id: workflowId,
-                  },
-
-                  select: {
-                    userId: true,
-                    user: {
-                      select: {
-                        plan: true, // Dynamically fetch user's subscription tier
-                      }
-                    }
-                  },
-                }
-              );
-
-            return {
-              userId: workflow.userId,
-              userPlan: workflow.user.plan,
-            };
-          }
-        );
 
       // =========================================
       // DYNAMIC PLAN LIMIT CHECK
@@ -250,40 +217,28 @@ export const executeWorkflow =
       await step.run(
         "check-monthly-execution-limit",
         async () => {
-          const startOfMonth =
-            new Date();
-
+          const startOfMonth = new Date();
           startOfMonth.setDate(1);
+          startOfMonth.setHours(0, 0, 0, 0);
 
-          startOfMonth.setHours(
-            0,
-            0,
-            0,
-            0
-          );
-
-          const executionsThisMonth =
-            await prisma.execution.count(
-              {
-                where: {
-                  workflow: {
-                    userId,
-                  },
-
-                  startedAt: {
-                    gte:
-                      startOfMonth,
-                  },
-                },
-              }
-            );
+          const executionsThisMonth = await prisma.execution.count({
+            where: {
+              workflow: {
+                userId,
+              },
+              startedAt: {
+                gte: startOfMonth,
+              },
+            },
+          });
 
           // Get exact limit for this user's current tier
           const allowedExecutions =
             PLAN_LIMITS[userPlan]?.monthlyExecutions ??
             PLAN_LIMITS.FREE.monthlyExecutions;
 
-          if (executionsThisMonth >= allowedExecutions) {
+          // The count already includes this execution
+          if (executionsThisMonth > allowedExecutions) {
             throw new NonRetriableError(
               `Monthly execution limit reached. Your ${userPlan} plan includes ${allowedExecutions} executions per month.`
             );
@@ -292,179 +247,75 @@ export const executeWorkflow =
       );
 
       // =========================================
-      // INITIAL CONTEXT
+      // BUILD GRAPH
       // =========================================
 
-      let context =
-        event.data.InitialData ||
-        {};
+      let graph;
+      try {
+        graph = buildGraph(allNodes, connections);
+      } catch (error) {
+        throw new NonRetriableError(
+          error instanceof Error ? error.message : "Invalid workflow graph"
+        );
+      }
 
-      // =========================================================================
-      // N8N FIX: FILTER OUT STRUCTURAL SUPPLY NODES FROM THE MAIN SEQUENTIAL LOOP
-      // =========================================================================
-      const executableNodes = sortedNodes.filter((node) => {
-        // 1. Filter out AI Models and Memories (They are lazily loaded by AI_AGENT, not standalone execution steps)
-        const isAIParameterSupplyNode = [
-          "GEMINI",
-          "OPENAI",
-          "ANTHROPIC",
-          "BUFFER_MEMORY",
-        ].includes(node.type);
+      // =========================================
+      // RUN A SINGLE NODE
+      // =========================================
 
-        if (isAIParameterSupplyNode) return false;
-
-        // 2. Filter out nodes used exclusively as an Agent tool parameter (e.g. connected to toInput: "tools")
-        const isUsedAsToolOnly = connections.some(
-          (conn) => conn.fromNodeId === node.id && conn.toInput === "tools"
+      const runNode = async (
+        node: (typeof allNodes)[number],
+        context: WorkflowContext,
+        meta: { inputs: { active: number; total: number } }
+      ): Promise<WorkflowContext> => {
+        // Paid-plan nodes stop the run with a message the user can act on
+        const requiredPlan = getRequiredPlanForNode(
+          node.type,
+          userPlan,
+          trialEndsAt
         );
 
-        const hasMainTimelineOutput = connections.some(
-          (conn) => conn.fromNodeId === node.id &&
-            conn.toInput !== "tools" &&
-            !conn.toInput?.includes("Model") &&
-            conn.toInput !== "memory"
-        );
-
-        if (isUsedAsToolOnly && !hasMainTimelineOutput) {
-          return false;
+        if (requiredPlan) {
+          throw new NonRetriableError(
+            `The ${node.type} node requires the ${requiredPlan} plan. Upgrade your plan or remove the node.`
+          );
         }
 
-        return true;
-      });
+        const executor = getExecutor(node.type as NodeType);
 
-      // =========================================
-      // EXECUTE NODES
-      // =========================================
-
-      for (const node of executableNodes) {
-        const executor =
-          getExecutor(
-            node.type as NodeType
-          );
-
-        console.log(
-          `Executing node: ${node.id}`
-        );
-
-        // =====================================
-        // CREATE NODE EXECUTION
-        // =====================================
-
-        const nodeExecution =
-          await prisma.executionNode.create(
-            {
+        const nodeExecutionId = await step.run(
+          `node-start-${node.id}`,
+          async () => {
+            const nodeExecution = await prisma.executionNode.create({
               data: {
-                executionId:
-                  execution.id,
-
+                executionId: execution.id,
                 nodeId: node.id,
-
-                nodeName:
-                  node.name,
-
-                nodeType:
-                  node.type,
-
-                status:
-                  ExecutionStatus.RUNNING,
-
-                input: context,
+                nodeName: node.name,
+                nodeType: node.type,
+                status: ExecutionStatus.RUNNING,
+                input: toJson(context),
               },
-            }
-          );
+            });
 
-        // =====================================
-        // PUBLISH RUNNING EVENT
-        // =====================================
-
-        await step.sendEvent(
-          "node-running-event",
-          {
-            name: "workflow/node.running",
-            data: {
-              workflowId,
-              executionId: execution.id,
-              nodeExecutionId: nodeExecution.id,
-              nodeId: node.id,
-              nodeType: node.type,
-              status: "loading",
-            },
+            return nodeExecution.id;
           }
         );
 
-        // Start performance tracking block for this individual node
-        const nodeStartTime = Date.now();
+        let output: WorkflowContext;
 
         try {
-          // ===================================
-          // EXECUTE NODE
-          // ===================================
-
-          context = await executor({
+          output = await executor({
             data: node.data as Record<string, unknown>,
             nodeId: node.id,
             credential: node.credentialId,
             userId,
             context,
             step,
-            allNodes: allNodes as any,    // Agent uses this to find the OpenAI/Gemini config
+            allNodes: allNodes as unknown as NodeWithCredential[],    // Agent uses this to find the OpenAI/Gemini config
             connections: connections as any, // Agent uses this to see what is plugged into its target handles
+            inputs: meta.inputs,
           });
-
-          const nodeDurationMs = Date.now() - nodeStartTime; // Calculate delta
-
-          // ===================================
-          // UPDATE NODE SUCCESS
-          // ===================================
-
-          await prisma.executionNode.update(
-            {
-              where: {
-                id:
-                  nodeExecution.id,
-              },
-
-              data: {
-                status:
-                  ExecutionStatus.SUCCESS,
-
-                output:
-                  context,
-
-                completedAt:
-                  new Date(),
-
-                durationMs: nodeDurationMs, // Save metrics to DB
-              },
-            }
-          );
-
-          // ===================================
-          // PUBLISH SUCCESS EVENT
-          // ===================================
-
-          await step.sendEvent(
-            "node-success-event",
-            {
-              name: "workflow/node.success",
-              data: {
-                workflowId,
-                executionId: execution.id,
-                nodeExecutionId: nodeExecution.id,
-                nodeId: node.id,
-                nodeType: node.type,
-                status: "SUCCESS",
-                output: context,
-              },
-            }
-          );
-
-          console.log(
-            `Node success: ${node.id}`
-          );
         } catch (error) {
-          const nodeDurationMs = Date.now() - nodeStartTime; // Calculate delta even on failures
-
           const errorMessage =
             error instanceof Error
               ? error.message
@@ -475,111 +326,87 @@ export const executeWorkflow =
               ? error.stack
               : undefined;
 
-          console.error(
-            `Node failed: ${node.id}`,
-            error
-          );
+          console.error(`Node failed: ${node.id}`, error);
 
-          // ===================================
-          // UPDATE NODE FAILURE
-          // ===================================
+          await step.run(`node-failed-${node.id}`, async () => {
+            const started = await prisma.executionNode.findUnique({
+              where: { id: nodeExecutionId },
+              select: { startedAt: true },
+            });
 
-          await prisma.executionNode.update(
-            {
-              where: {
-                id:
-                  nodeExecution.id,
-              },
+            const completedAt = new Date();
 
+            await prisma.executionNode.update({
+              where: { id: nodeExecutionId },
               data: {
-                status:
-                  ExecutionStatus.FAILED,
-
-                error:
-                  errorMessage,
-
-                errorStack:
-                  errorStack,
-
-                completedAt:
-                  new Date(),
-
-                durationMs: nodeDurationMs, // Save metrics to DB
-              },
-            }
-          );
-
-          // ===================================
-          // UPDATE WORKFLOW FAILURE
-          // ===================================
-
-          await prisma.execution.update(
-            {
-              where: {
-                id:
-                  execution.id,
-              },
-
-              data: {
-                status:
-                  ExecutionStatus.FAILED,
-
-                error:
-                  errorMessage,
-
-                errorStack:
-                  errorStack,
-
-                completedAt:
-                  new Date(),
-
-                durationMs: Date.now() - new Date(execution.startedAt).getTime(), // Track overall workflow execution time up until this crash
-              },
-            }
-          );
-
-          // ===================================
-          // PUBLISH FAILURE EVENT
-          // ===================================
-
-          await step.sendEvent(
-            "node-error-event",
-            {
-              name: "workflow/node.error",
-              data: {
-                workflowId,
-                executionId: execution.id,
-                nodeExecutionId: nodeExecution.id,
-                nodeId: node.id,
-                nodeType: node.type,
-                status: "error",
+                status: ExecutionStatus.FAILED,
                 error: errorMessage,
+                errorStack: errorStack,
+                completedAt,
+                durationMs: started
+                  ? completedAt.getTime() - started.startedAt.getTime()
+                  : undefined,
               },
-            }
-          );
+            });
+
+            await prisma.execution.update({
+              where: { id: execution.id },
+              data: {
+                status: ExecutionStatus.FAILED,
+                error: errorMessage,
+                errorStack: errorStack,
+                completedAt,
+                durationMs:
+                  completedAt.getTime() -
+                  new Date(execution.startedAt).getTime(), // Track overall workflow execution time up until this crash
+              },
+            });
+          });
 
           throw new NonRetriableError(
             `Node ${node.id} failed: ${errorMessage}`
           );
         }
 
-        // =====================================
-        // FILTER SHORT CIRCUIT
-        // =====================================
+        await step.run(`node-finish-${node.id}`, async () => {
+          const started = await prisma.executionNode.findUnique({
+            where: { id: nodeExecutionId },
+            select: { startedAt: true },
+          });
 
-        if (
-          node.type ===
-          NodeType.FILTER &&
-          context.filterPassed ===
-          false
-        ) {
-          console.log(
-            `Filter stopped workflow at node ${node.id}`
-          );
+          const completedAt = new Date();
 
-          break;
-        }
-      }
+          await prisma.executionNode.update({
+            where: { id: nodeExecutionId },
+            data: {
+              status: ExecutionStatus.SUCCESS,
+              output: toJson(output),
+              completedAt,
+              durationMs: started
+                ? completedAt.getTime() - started.startedAt.getTime()
+                : undefined,
+            },
+          });
+        });
+
+        return output;
+      };
+
+      // =========================================
+      // EXECUTE NODES
+      // =========================================
+
+      // Only connections that were actually activated are followed, so
+      // IF / Switch / Filter decide which branches run.
+      const context = await runWorkflowGraph({
+        graph,
+        trigger: event.data.trigger,
+        context:
+          event.data.InitialData ||
+          event.data.initialData ||
+          {},
+        runNode,
+      });
 
       // =========================================
       // FINALIZE EXECUTION
@@ -588,44 +415,21 @@ export const executeWorkflow =
       await step.run(
         "finalize-execution",
         async () => {
-          const totalDurationMs = Date.now() - new Date(execution.startedAt).getTime(); // Total successful roundtrip time
+          const completedAt = new Date();
 
-          return prisma.execution.update(
-            {
-              where: {
-                id: execution.id,
-              },
-
-              data: {
-                status:
-                  ExecutionStatus.SUCCESS,
-
-                completedAt:
-                  new Date(),
-
-                output: context,
-
-                durationMs: totalDurationMs, // Save metrics to DB
-              },
-            }
-          );
-        }
-      );
-
-      // =========================================
-      // WORKFLOW SUCCESS EVENT
-      // =========================================
-
-      await step.sendEvent(
-        "workflow-success-event",
-        {
-          name: "workflow/success",
-          data: {
-            workflowId,
-            executionId: execution.id,
-            status: "success",
-            output: context,
-          },
+          return prisma.execution.update({
+            where: {
+              id: execution.id,
+            },
+            data: {
+              status: ExecutionStatus.SUCCESS,
+              completedAt,
+              output: toJson(context),
+              durationMs:
+                completedAt.getTime() -
+                new Date(execution.startedAt).getTime(), // Total successful roundtrip time
+            },
+          });
         }
       );
 
@@ -650,10 +454,12 @@ export const workflowCronHeartbeat = inngest.createFunction(
     const scheduledWorkflows = await step.run("fetch-scheduled-workflows", async () => {
       return prisma.workflow.findMany({
         where: {
+          active: true,
           nodes: { some: { type: NodeType.SCHEDULE_TRIGGER } },
         },
         include: {
           nodes: { where: { type: NodeType.SCHEDULE_TRIGGER } },
+          user: { select: { plan: true, trialEndsAt: true } },
         },
       });
     });
@@ -682,8 +488,20 @@ export const workflowCronHeartbeat = inngest.createFunction(
       const triggerNode = workflow.nodes[0];
       if (!triggerNode) continue;
 
+      // Do not start runs that would only fail the plan check
+      if (
+        getRequiredPlanForNode(
+          NodeType.SCHEDULE_TRIGGER,
+          workflow.user.plan,
+          workflow.user.trialEndsAt
+        )
+      ) {
+        continue;
+      }
+
       const nodeData = (triggerNode.data as Record<string, any>) || {};
-      const cronExpression = nodeData.interval || "*/5 * * * *";
+      // The schedule dialog saves the expression as `cronExpression`
+      const cronExpression = nodeData.cronExpression || nodeData.interval || "*/5 * * * *";
 
       let isDue = false;
       try {
@@ -716,6 +534,7 @@ export const workflowCronHeartbeat = inngest.createFunction(
             data: {
               workflowId: workflow.id,
               executionId: newExecution.id,
+              trigger: NodeType.SCHEDULE_TRIGGER,
               InitialData: {
                 metadata: {
                   triggeredBy: "schedule_heartbeat",

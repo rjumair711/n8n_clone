@@ -22,6 +22,7 @@ const formSchema = z.object({
             message: "Variable name must start with a letter or underscore and container only letters, numbers, and underscores"
         }),
     credentialId: z.string().min(1, "Credential is required"),
+    model: z.string().optional(),
     systemPrompt: z.string().optional(),
     userPrompt: z.string().min(1, "User prompt is required"),
 })
@@ -55,6 +56,7 @@ export const AnthropicDialog = ({
         defaultValues: {
             variableName: defaultValues.variableName || "",
             credentialId: defaultValues.credentialId || "",
+            model: defaultValues.model || "",
             systemPrompt: defaultValues.systemPrompt || "",
             userPrompt: defaultValues.userPrompt || "",
         }
@@ -64,6 +66,7 @@ export const AnthropicDialog = ({
             form.reset({
                 variableName: defaultValues.variableName || "",
                 credentialId: defaultValues.credentialId || "",
+                model: defaultValues.model || "",
                 systemPrompt: defaultValues.systemPrompt || "",
                 userPrompt: defaultValues.userPrompt || "",
             });
@@ -149,6 +152,26 @@ export const AnthropicDialog = ({
                                             ))}
                                         </SelectContent>
                                     </Select>
+                                    <FormMessage />
+                                </FormItem>
+                            )}
+                        />
+                        <FormField
+                            control={form.control}
+                            name="model"
+                            render={({ field }) => (
+                                <FormItem>
+                                    <FormLabel>Model (Optional)</FormLabel>
+                                    <FormControl>
+                                        <Input placeholder="claude-3-5-sonnet"
+                                            {...field}
+                                        />
+                                    </FormControl>
+                                    <FormDescription>
+                                        Leave empty to use claude-3-5-sonnet. This is also the
+                                        model an AI Agent uses when this node is connected
+                                        to its Chat Model port.
+                                    </FormDescription>
                                     <FormMessage />
                                 </FormItem>
                             )}
