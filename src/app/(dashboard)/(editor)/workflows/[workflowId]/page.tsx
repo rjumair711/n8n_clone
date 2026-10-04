@@ -25,10 +25,13 @@ const Page = async ({ params }: PageProps) => {
         <HydrateClient>
             <ErrorBoundary fallback={<EditorError />}>
                 <Suspense fallback={<EditorLoading />}>
-                    <EditorHeader workflowId={workflowId} />
-                    <main className="flex-1">
-                        <Editor workflowId={workflowId} />
-                    </main>
+                    {/* Exactly one viewport tall: the page never scrolls, only the logs list does */}
+                    <div className="flex h-dvh min-w-0 flex-col overflow-hidden">
+                        <EditorHeader workflowId={workflowId} />
+                        <main className="min-h-0 min-w-0 flex-1 overflow-hidden">
+                            <Editor workflowId={workflowId} />
+                        </main>
+                    </div>
                 </Suspense>
             </ErrorBoundary>
         </HydrateClient>

@@ -1,5 +1,6 @@
 import { ExecutionStatus, NodeType } from "@prisma/client";
 import { inngest } from "./client";
+import { TRIGGER_TYPE_SOURCES } from "@/config/trigger-sources";
 import { createId } from "@paralleldrive/cuid2";
 import prisma from "@/lib/db";
 
@@ -30,6 +31,7 @@ export const startWorkflowExecution = async ({
         data: {
             workflowId,
             status: ExecutionStatus.RUNNING,
+            triggerSource: TRIGGER_TYPE_SOURCES[trigger],
         },
     })
 

@@ -244,6 +244,9 @@ model Execution {
   inngestEventId String? @unique
   output         Json?
 
+  // How the run was started: manual, manual-test, chat, schedule, webhook...
+  triggerSource String?
+
   nodes ExecutionNode[]
 }
 

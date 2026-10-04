@@ -41,14 +41,27 @@ const readReply = (output: unknown): string => {
     return output ? JSON.stringify(output, null, 2) : "(The workflow returned no output)";
 };
 
-export const ChatPanel = ({ workflowId }: { workflowId: string }) => {
+export const ChatPanel = ({
+    workflowId,
+    open: openProp,
+    onOpenChange,
+    showTrigger = true,
+}: {
+    workflowId: string;
+    // Controlled by the editor so the Execute button can open the panel
+    open?: boolean;
+    onOpenChange?: (open: boolean) => void;
+    showTrigger?: boolean;
+}) => {
     const trpc = useTRPC();
     const queryClient = useQueryClient();
     const executeWorkflow = useExecuteWorkflow();
 
     const { resetExecution, setExecutionActive, setExecutionId } = useExecutionStore();
 
-    const [open, setOpen] = useState(false);
+    const [internalOpen, setInternalOpen] = useState(false);
+    const open = openProp ?? internalOpen;
+    const setOpen = onOpenChange ?? setInternalOpen;
     const [sessionId, setSessionId] = useState(() => createId());
     const [messages, setMessages] = useState<ChatMessage[]>([]);
     const [draft, setDraft] = useState("");
@@ -124,12 +137,14 @@ export const ChatPanel = ({ workflowId }: { workflowId: string }) => {
 
     return (
         <Sheet open={open} onOpenChange={setOpen}>
-            <SheetTrigger asChild>
-                <Button size="lg" variant="outline">
-                    <MessageSquare className="size-4" />
-                    Open chat
-                </Button>
-            </SheetTrigger>
+            {showTrigger && (
+                <SheetTrigger asChild>
+                    <Button size="lg" variant="outline">
+                        <MessageSquare className="size-4" />
+                        Open chat
+                    </Button>
+                </SheetTrigger>
+            )}
 
             <SheetContent side="left" className="w-full sm:max-w-md p-0 flex flex-col h-screen bg-background">
                 <div className="p-6 pb-4 border-b flex-shrink-0">

@@ -25,9 +25,10 @@ import { AddNodeButton } from "./add-node-button";
 import { useSetAtom } from "jotai";
 import { editorAtom } from "../store/atoms";
 import { NodeType } from "@prisma/client";
-import { ExecuteWorkflowButton } from "./execute-workflow-button";
+import { ExecuteWorkflowButton, type ExecuteTrigger } from "./execute-workflow-button";
 import { ChatPanel } from "./chat-panel";
 import { VariablePickerProvider } from "@/components/variable-picker";
+import { getNodeLabel } from "@/config/node-labels";
 import { ExecutionSidebar, type ExecutionLog } from "@/features/executions/components/execution-sidebar";
 import { ExecutionEdge } from "@/components/react-flow/execution-edge";
 import { useExecutionStore } from "@/features/executions/store/execution-store";
@@ -45,7 +46,19 @@ export const Editor = ({ workflowId }: { workflowId: string }) => {
     // =====================================
     // ACTIVE EXECUTION
     // =====================================
-    const activeExecutionId = useExecutionStore((state) => state.activeExecutionId);
+    // The store is shared by every editor page. Only read an execution that
+    // belongs to this workflow, so a new workflow never opens with another
+    // workflow's logs (not even for the first render).
+    const activeExecutionId = useExecutionStore((state) =>
+        state.workflowId === workflowId ? state.activeExecutionId : null
+    );
+    const setWorkflow = useExecutionStore((state) => state.setWorkflow);
+    const resetExecution = useExecutionStore((state) => state.resetExecution);
+
+    // Opening a different workflow clears the logs and the node status badges
+    useEffect(() => {
+        setWorkflow(workflowId);
+    }, [workflowId, setWorkflow]);
 
     useExecutionSubscription(activeExecutionId);
 
@@ -79,9 +92,16 @@ export const Editor = ({ workflowId }: { workflowId: string }) => {
     // =====================================
     // SIDEBAR LOGS
     // =====================================
+    const formatDuration = (ms: number) =>
+        ms < 1000 ? `${ms}ms` : `${(ms / 1000).toFixed(1)}s`;
+
     const logs: ExecutionLog[] = deduplicatedNodes.map((node: any) => ({
         id: node.id,
-        nodeName: node.nodeName,
+        // "HTTP Request" instead of HTTP_REQUEST
+        nodeName: getNodeLabel(node.nodeType || node.nodeName),
+        // The variable name the user gave the node on the canvas
+        detail: nodes.find((canvasNode) => canvasNode.id === node.nodeId)?.data
+            ?.variableName as string | undefined,
         status:
             node.status === "RUNNING"
                 ? "loading"
@@ -90,9 +110,10 @@ export const Editor = ({ workflowId }: { workflowId: string }) => {
                     : "error",
         duration:
             node.completedAt && node.startedAt
-                ? `${Math.floor(
-                    (new Date(node.completedAt).getTime() - new Date(node.startedAt).getTime()) / 1000
-                )}s`
+                ? formatDuration(
+                    node.durationMs ??
+                    new Date(node.completedAt).getTime() - new Date(node.startedAt).getTime()
+                )
                 : undefined,
         error: node.error,
         output: node.output ? JSON.stringify(node.output, null, 2) : undefined,
@@ -129,15 +150,25 @@ export const Editor = ({ workflowId }: { workflowId: string }) => {
         }
     }, []);
 
-    // ALLOW EXECUTION PANEL FOR TESTING
+    // WHICH TRIGGER THE EXECUTE BUTTON RUNS
     // =====================================
-    const showExecuteButton = useMemo(() => {
-        return nodes.some(
-            (node) =>
-                node.type === NodeType.MANUAL_TRIGGER ||
-                node.type === NodeType.SCHEDULE_TRIGGER
+    // With several triggers on the canvas the first match in this order wins
+    const executeTrigger = useMemo(() => {
+        const order: ExecuteTrigger[] = [
+            NodeType.MANUAL_TRIGGER,
+            NodeType.SCHEDULE_TRIGGER,
+            NodeType.WEBHOOK_TRIGGER,
+            NodeType.STRIPE_TRIGGER,
+            NodeType.GOOGLE_FORM_TRIGGER,
+            NodeType.CHAT_TRIGGER,
+        ];
+
+        return (
+            order.find((type) => nodes.some((node) => node.type === type)) ?? null
         );
     }, [nodes]);
+
+    const [chatOpen, setChatOpen] = useState(false);
 
     // The chat panel drives workflows that start with a Chat Trigger
     const showChatButton = useMemo(() => {
@@ -155,6 +186,8 @@ export const Editor = ({ workflowId }: { workflowId: string }) => {
 
     // Sync DB polling results into the store so canvas nodes show status
     useEffect(() => {
+        if (!activeExecutionId) return;
+
         executionNodes.forEach((node: any) => {
             setNodeStatus(node.nodeId, {
                 status:
@@ -166,7 +199,7 @@ export const Editor = ({ workflowId }: { workflowId: string }) => {
                 error: node.error ?? undefined,
             });
         });
-    }, [executionNodes, setNodeStatus]);
+    }, [executionNodes, setNodeStatus, activeExecutionId]);
 
     // =====================================
     // RENDER
@@ -175,7 +208,7 @@ export const Editor = ({ workflowId }: { workflowId: string }) => {
         <VariablePickerProvider workflowId={workflowId}>
         <div className="flex h-full w-full overflow-hidden">
 
-            <div className="relative h-full flex-1 overflow-hidden">
+            <div className="relative h-full min-w-0 flex-1 overflow-hidden">
                 <ReactFlow
                     nodes={nodes}
                     edges={edges.map((edge) => ({
@@ -203,21 +236,28 @@ export const Editor = ({ workflowId }: { workflowId: string }) => {
                         <AddNodeButton />
                     </Panel>
 
-                    {(showExecuteButton || showChatButton) && (
-                        <Panel position="bottom-center">
-                            <div className="flex items-center gap-2">
-                                {showExecuteButton && (
-                                    <ExecuteWorkflowButton workflowId={workflowId} />
-                                )}
-                                {showChatButton && (
-                                    <ChatPanel workflowId={workflowId} />
-                                )}
-                            </div>
-                        </Panel>
-                    )}
+                    <Panel position="bottom-center">
+                        <div className="flex items-center gap-2">
+                            <ExecuteWorkflowButton
+                                workflowId={workflowId}
+                                trigger={executeTrigger}
+                                onOpenChat={() => setChatOpen(true)}
+                            />
+                            {showChatButton && (
+                                <ChatPanel
+                                    workflowId={workflowId}
+                                    open={chatOpen}
+                                    onOpenChange={setChatOpen}
+                                    // With only a Chat Trigger, Execute opens the chat itself
+                                    showTrigger={executeTrigger !== NodeType.CHAT_TRIGGER}
+                                />
+                            )}
+                        </div>
+                    </Panel>
                 </ReactFlow>
             </div>
-            <ExecutionSidebar logs={logs} />
+            {/* Clearing is UI-only: executions stay in the database */}
+            <ExecutionSidebar logs={logs} onClear={resetExecution} />
         </div>
         </VariablePickerProvider>
     );

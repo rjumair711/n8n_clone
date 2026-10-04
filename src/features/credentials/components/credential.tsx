@@ -32,7 +32,9 @@ import React from "react";
 
 // FIX: Changed from z.enum to z.nativeEnum to match Prisma enum perfectly
 const formSchema = z.object({
-  name: z.string().min(1, "Credential name is required"),
+  // Required on create; checked in onSubmit because an existing credential
+  // with an empty name gets a default name instead of an error
+  name: z.string(),
   type: z.nativeEnum(CredentialType),
   value: z.string().min(1, "Value is required"),
 });
@@ -54,27 +56,96 @@ const credentialTypeOptions = [
   { value: CredentialType.WHATSAPP, label: "WhatsApp", logo: "/logos/whatsapp.svg" },
 ];
 
-// Label and placeholder of the secret field for single-secret credentials
-const secretFieldOptions: Partial<Record<CredentialType, { label: string; placeholder: string; hint?: string }>> = {
+// Everything the form shows for a credential type. Add a type here and the
+// placeholders, labels and help text follow.
+const credentialFieldConfig: Record<CredentialType, {
+  namePlaceholder: string;
+  // Used when a saved credential has no name
+  defaultName: string;
+  secretLabel: string;
+  secretPlaceholder: string;
+  help?: string;
+}> = {
+  [CredentialType.OPENAI]: {
+    namePlaceholder: "My OpenAI Key",
+    defaultName: "OpenAI credential",
+    secretLabel: "API Key",
+    secretPlaceholder: "sk-...",
+    help: "Create one at platform.openai.com under API keys.",
+  },
+  [CredentialType.ANTHROPIC]: {
+    namePlaceholder: "My Anthropic Key",
+    defaultName: "Anthropic credential",
+    secretLabel: "API Key",
+    secretPlaceholder: "sk-ant-...",
+    help: "Create one in the Anthropic Console under API keys.",
+  },
+  [CredentialType.GEMINI]: {
+    namePlaceholder: "My Gemini Key",
+    defaultName: "Gemini credential",
+    secretLabel: "API Key",
+    secretPlaceholder: "AIza...",
+    help: "Create one in Google AI Studio.",
+  },
+  [CredentialType.SMTP]: {
+    namePlaceholder: "My Gmail SMTP",
+    defaultName: "SMTP credential",
+    secretLabel: "SMTP Settings",
+    secretPlaceholder: "",
+  },
+  [CredentialType.GOOGLE_SHEETS]: {
+    namePlaceholder: "My Google Sheets Account",
+    defaultName: "Google Sheets credential",
+    secretLabel: "Service Account",
+    secretPlaceholder: "",
+  },
+  [CredentialType.GOOGLE_CALENDAR]: {
+    namePlaceholder: "My Google Calendar Account",
+    defaultName: "Google Calendar credential",
+    secretLabel: "Service Account",
+    secretPlaceholder: "",
+  },
+  [CredentialType.NOTION]: {
+    namePlaceholder: "My Notion Workspace",
+    defaultName: "Notion credential",
+    secretLabel: "Internal Integration Token",
+    secretPlaceholder: "secret_... or ntn_...",
+    help: "Create an internal integration at notion.so/my-integrations and share your database with it.",
+  },
+  [CredentialType.TELEGRAM]: {
+    namePlaceholder: "My Telegram Bot",
+    defaultName: "Telegram credential",
+    secretLabel: "Bot Token",
+    secretPlaceholder: "123456:ABC-...",
+    help: "Message @BotFather on Telegram and use /newbot to get a token.",
+  },
   [CredentialType.GITHUB]: {
-    label: "Personal Access Token",
-    placeholder: "github_pat_...",
-    hint: "Create one under GitHub Settings > Developer settings > Personal access tokens, with access to Issues.",
+    namePlaceholder: "My GitHub Token",
+    defaultName: "GitHub credential",
+    secretLabel: "Personal Access Token",
+    secretPlaceholder: "github_pat_... or ghp_...",
+    help: "Fine-grained token with Issues and Contents permissions.",
   },
   [CredentialType.AIRTABLE]: {
-    label: "Personal Access Token",
-    placeholder: "pat...",
-    hint: "Create one at airtable.com/create/tokens with data.records:read and data.records:write scopes.",
+    namePlaceholder: "My Airtable Token",
+    defaultName: "Airtable credential",
+    secretLabel: "Personal Access Token",
+    secretPlaceholder: "pat...",
+    help: "Create one at airtable.com/create/tokens with data.records:read and data.records:write scopes.",
   },
   [CredentialType.POSTGRES]: {
-    label: "Connection String",
-    placeholder: "postgresql://user:password@host:5432/database?sslmode=require",
-    hint: "Use a database user that only has the permissions your workflows need.",
+    namePlaceholder: "My Postgres Database",
+    defaultName: "Postgres credential",
+    secretLabel: "Connection String",
+    secretPlaceholder: "postgresql://user:password@host/db?sslmode=require",
+    help: "Use a database user that only has the permissions your workflows need.",
   },
   [CredentialType.WHATSAPP]: {
-    label: "Access Token",
-    placeholder: "EAAG...",
-    hint: "A permanent System User token from Meta Business with the whatsapp_business_messaging permission.",
+    namePlaceholder: "My WhatsApp Business Account",
+    defaultName: "WhatsApp credential",
+    secretLabel: "Access Token",
+    secretPlaceholder: "Cloud API access token",
+    help: "A permanent System User token from Meta Business with the whatsapp_business_messaging permission.",
   },
 };
 
@@ -131,7 +202,14 @@ export const CredentialForm = ({ initialData }: CredentialFormProps) => {
     }
   }, [serviceAccountFields, selectedType, form]);
 
+  const fieldConfig = credentialFieldConfig[selectedType];
+
   const onSubmit = async (values: FormValues) => {
+    if (!isEdit && !values.name.trim()) {
+      form.setError("name", { message: "Credential name is required" });
+      return;
+    }
+
     const isGoogleServiceAccount = selectedType === CredentialType.GOOGLE_SHEETS || selectedType === CredentialType.GOOGLE_CALENDAR;
 
     const finalValue =
@@ -141,12 +219,7 @@ export const CredentialForm = ({ initialData }: CredentialFormProps) => {
           ? JSON.stringify(serviceAccountFields)
           : values.value;
 
-    const finalName =
-      selectedType === CredentialType.SMTP && !values.name.trim()
-        ? smtpFields.user || "SMTP Credential"
-        : isGoogleServiceAccount && !values.name.trim()
-          ? serviceAccountFields.clientEmail || `${selectedType === CredentialType.GOOGLE_SHEETS ? 'Google Sheets' : 'Google Calendar'} Credential`
-          : values.name;
+    const finalName = values.name.trim() || fieldConfig.defaultName;
 
     const payload = { ...values, name: finalName, value: finalValue };
 
@@ -189,22 +262,10 @@ export const CredentialForm = ({ initialData }: CredentialFormProps) => {
                       onValueChange={(value) => {
                         field.onChange(value);
                         if (value === CredentialType.SMTP) {
-                          form.setValue("name", "SMTP Email");
                           form.setValue("value", JSON.stringify(smtpFields));
-                        } else if (value === CredentialType.GOOGLE_SHEETS) {
-                          form.setValue("name", "Google Sheets");
+                        } else if (value === CredentialType.GOOGLE_SHEETS || value === CredentialType.GOOGLE_CALENDAR) {
                           form.setValue("value", JSON.stringify(serviceAccountFields));
-                        } else if (value === CredentialType.GOOGLE_CALENDAR) {
-                          form.setValue("name", "Google Calendar");
-                          form.setValue("value", JSON.stringify(serviceAccountFields));
-                        } else if (value === CredentialType.NOTION) {
-                          form.setValue("name", "Notion Connection");
-                          form.setValue("value", "");
-                        } else if (value === CredentialType.TELEGRAM) {
-                          form.setValue("name", "Telegram Bot");
-                          form.setValue("value", "");
                         } else {
-                          form.setValue("name", "");
                           form.setValue("value", "");
                         }
                       }}
@@ -238,23 +299,10 @@ export const CredentialForm = ({ initialData }: CredentialFormProps) => {
                 name="name"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>
-                      {selectedType === CredentialType.SMTP || isGoogleServiceAccountType
-                        ? "Credential Name"
-                        : selectedType === CredentialType.TELEGRAM 
-                          ? "Bot Configuration Name" 
-                          : "API Key Name"}
-                    </FormLabel>
+                    <FormLabel>Credential Name</FormLabel>
                     <FormControl>
                       <Input
-                        placeholder={
-                          selectedType === CredentialType.SMTP ? "My Gmail SMTP" :
-                            selectedType === CredentialType.GOOGLE_SHEETS ? "My Google Sheets Account" :
-                              selectedType === CredentialType.GOOGLE_CALENDAR ? "My Google Calendar Account" :
-                                selectedType === CredentialType.NOTION ? "My Notion Workspace" :
-                                  selectedType === CredentialType.TELEGRAM ? "My Telegram System Bot" :
-                                    "My OpenAI Key"
-                        }
+                        placeholder={fieldConfig.namePlaceholder}
                         {...field}
                       />
                     </FormControl>
@@ -356,27 +404,17 @@ export const CredentialForm = ({ initialData }: CredentialFormProps) => {
                   name="value"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>
-                        {secretFieldOptions[selectedType]?.label ??
-                          (selectedType === CredentialType.NOTION ? "Internal Integration Token" :
-                            selectedType === CredentialType.TELEGRAM ? "Bot Token" : "API Key")}
-                      </FormLabel>
+                      <FormLabel>{fieldConfig.secretLabel}</FormLabel>
                       <FormControl>
                         <Input
                           type="password"
-                          placeholder={
-                            secretFieldOptions[selectedType]?.placeholder ?? (
-                            selectedType === CredentialType.OPENAI ? "sk-..." : 
-                              selectedType === CredentialType.NOTION ? "secret_..." : 
-                                selectedType === CredentialType.TELEGRAM ? "1234567890:ABCdefGhIJKlmNoPQRsTUVwxyZ" :
-                                  "Key...")
-                          }
+                          placeholder={fieldConfig.secretPlaceholder}
                           {...field}
                         />
                       </FormControl>
-                      {secretFieldOptions[selectedType]?.hint && (
+                      {fieldConfig.help && (
                         <p className="text-xs text-muted-foreground">
-                          {secretFieldOptions[selectedType]?.hint}
+                          {fieldConfig.help}
                         </p>
                       )}
                       <FormMessage />
