@@ -6,6 +6,7 @@ import { Dialog as DialogPrimitive } from "radix-ui"
 
 import { cn } from "@/lib/utils"
 import { Button } from "@/components/ui/button"
+import { DialogVariablePicker } from "@/components/variable-picker"
 
 function Dialog({
   ...props
@@ -66,6 +67,8 @@ function DialogContent({
         )}
         {...props}
       >
+        {/* Workflow editor only: insert values from the last run into a field */}
+        <DialogVariablePicker />
         {children}
         {showCloseButton && (
           <DialogPrimitive.Close

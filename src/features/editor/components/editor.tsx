@@ -27,6 +27,7 @@ import { editorAtom } from "../store/atoms";
 import { NodeType } from "@prisma/client";
 import { ExecuteWorkflowButton } from "./execute-workflow-button";
 import { ChatPanel } from "./chat-panel";
+import { VariablePickerProvider } from "@/components/variable-picker";
 import { ExecutionSidebar, type ExecutionLog } from "@/features/executions/components/execution-sidebar";
 import { ExecutionEdge } from "@/components/react-flow/execution-edge";
 import { useExecutionStore } from "@/features/executions/store/execution-store";
@@ -171,6 +172,7 @@ export const Editor = ({ workflowId }: { workflowId: string }) => {
     // RENDER
     // =====================================
     return (
+        <VariablePickerProvider workflowId={workflowId}>
         <div className="flex h-full w-full overflow-hidden">
 
             <div className="relative h-full flex-1 overflow-hidden">
@@ -217,5 +219,6 @@ export const Editor = ({ workflowId }: { workflowId: string }) => {
             </div>
             <ExecutionSidebar logs={logs} />
         </div>
+        </VariablePickerProvider>
     );
 };
