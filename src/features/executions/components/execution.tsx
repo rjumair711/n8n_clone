@@ -1,6 +1,7 @@
 "use client"
 
 import { ExecutionStatus } from "@prisma/client"
+import { formatTriggerSource } from "@/config/trigger-sources";
 import { CheckCircle2Icon, ClockIcon, Loader2Icon, XCircleIcon } from "lucide-react"
 import Link from "next/link"
 import { useState } from "react"
@@ -76,6 +77,11 @@ export const ExecutionView = ({
                         <p className="text-sm font-medium
                         text-muted-foreground">Status</p>
                         <p className="text-sm">{formatStatus(execution.status)}</p>
+                    </div>
+                    <div>
+                        <p className="text-sm font-medium
+                        text-muted-foreground">Trigger</p>
+                        <p className="text-sm">{formatTriggerSource(execution.triggerSource) ?? "Unknown"}</p>
                     </div>
                     <div>
                         <p className="text-sm font-medium

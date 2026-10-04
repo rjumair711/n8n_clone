@@ -12,6 +12,7 @@ import {
 } from "@prisma/client";
 
 import { getExecutor } from "@/features/executions/lib/executor-registry";
+import { TRIGGER_SOURCES } from "@/config/trigger-sources";
 import type {
   NodeWithCredential,
   WorkflowContext,
@@ -525,6 +526,7 @@ export const workflowCronHeartbeat = inngest.createFunction(
             data: {
               workflowId: workflow.id,
               status: ExecutionStatus.RUNNING,
+              triggerSource: TRIGGER_SOURCES.SCHEDULE,
             },
           });
 

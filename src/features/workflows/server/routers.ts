@@ -7,7 +7,9 @@ import type { Node, Edge } from "@xyflow/react"
 import { NodeType } from "@prisma/client"
 import { sendWorkflowExecution } from "@/inngest/utils";
 import { TRPCError } from "@trpc/server";
-import { PLAN_LIMITS } from "@/config/plans";
+import { PLAN_LIMITS, getRequiredPlanForNode } from "@/config/plans";
+import { TRIGGER_SOURCES } from "@/config/trigger-sources";
+import { TESTABLE_TRIGGERS, TRIGGER_LABELS, buildTestPayload } from "./test-payloads";
 
 export const workflowsRouter = createTRPCRouter({
 
@@ -20,6 +22,9 @@ export const workflowsRouter = createTRPCRouter({
                 message: z.string().min(1),
                 sessionId: z.string().min(1),
             }).optional(),
+            // Which trigger the editor's Execute button runs. Anything other
+            // than the manual trigger is a test run with a sample payload.
+            trigger: z.enum(TESTABLE_TRIGGERS).default(NodeType.MANUAL_TRIGGER),
         }))
         .mutation(async ({ input, ctx }) => {
             const user = await prisma.user.findUniqueOrThrow({
@@ -33,6 +38,39 @@ export const workflowsRouter = createTRPCRouter({
                     userId: ctx.auth.user.id,
                 },
             });
+
+            // Runs use the saved workflow, so the trigger has to be saved too
+            const triggerType = input.chat ? NodeType.CHAT_TRIGGER : input.trigger;
+
+            const triggerNode = await prisma.node.findFirst({
+                where: {
+                    workflowId: workflow.id,
+                    type: triggerType,
+                },
+            });
+
+            if (!triggerNode) {
+                throw new TRPCError({
+                    code: "BAD_REQUEST",
+
+                    message: "The saved workflow does not have this trigger yet. Save the workflow and try again.",
+                });
+            }
+
+            // Plan locks apply to test runs too
+            const requiredPlan = getRequiredPlanForNode(
+                triggerType,
+                user.plan,
+                user.trialEndsAt
+            );
+
+            if (requiredPlan) {
+                throw new TRPCError({
+                    code: "FORBIDDEN",
+
+                    message: `This trigger requires the ${requiredPlan} plan.`,
+                });
+            }
 
             const startOfMonth = new Date();
             startOfMonth.setDate(1);
@@ -69,6 +107,12 @@ export const workflowsRouter = createTRPCRouter({
                             workflow.id,
 
                         status: "RUNNING",
+
+                        triggerSource: input.chat
+                            ? TRIGGER_SOURCES.CHAT
+                            : input.trigger === NodeType.MANUAL_TRIGGER
+                                ? TRIGGER_SOURCES.MANUAL
+                                : TRIGGER_SOURCES.MANUAL_TEST,
                     },
                 });
 
@@ -86,7 +130,16 @@ export const workflowsRouter = createTRPCRouter({
                             sessionId: input.chat.sessionId,
                         },
                     }
-                    : { trigger: NodeType.MANUAL_TRIGGER }),
+                    : {
+                        // The engine starts from this trigger only. The real
+                        // webhook routes are not involved, so their secret and
+                        // Active checks stay as they are.
+                        trigger: input.trigger,
+                        InitialData: buildTestPayload(
+                            input.trigger,
+                            (triggerNode.data ?? {}) as Record<string, unknown>
+                        ),
+                    }),
             });
 
             await prisma.user.update({

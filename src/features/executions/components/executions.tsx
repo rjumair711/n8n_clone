@@ -9,6 +9,7 @@ import { useExecutionsParams } from "../hooks/use-executions-params"
 import { Execution, ExecutionStatus } from "@prisma/client"
 import { useSuspenseExecutions } from "../hooks/use-executions"
 import { CheckCircle2Icon, ClockIcon, Loader2Icon, XCircleIcon } from "lucide-react"
+import { formatTriggerSource } from "@/config/trigger-sources"
 
 
 
@@ -127,9 +128,12 @@ export const ExecutionItem = ({
                 getTime()) / 1000,
         ) : null;
 
+    const triggerSource = formatTriggerSource(data.triggerSource);
+
     const subtitle = (
         <>
-            {data.workflow.name} &bull; Started{" "}
+            {data.workflow.name}
+            {triggerSource && <> &bull; {triggerSource}</>} &bull; Started{" "}
             {formatDistanceToNow(data.startedAt, { addSuffix: true })}
             {duration !== null && <> &bull; Took {duration}s </>}
         </>
