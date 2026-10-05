@@ -13,6 +13,8 @@ import {
 } from "./ui/sheet"
 import { Input } from "@/components/ui/input"
 import { NodeType } from "@prisma/client"
+import { Braces, DatabaseZap, FileInput, FileOutput, FileText, PencilRuler, Plug, Rss, ScanText, Tags } from "lucide-react"
+import { AlertTriangle, ArrowDownUp, CopyMinus, Group, ListEnd, OctagonX, Reply, Sigma, Split, Workflow } from "lucide-react"
 import { Clock, FilterIcon, GlobeIcon, MousePointerIcon, Send, VariableIcon, ChevronDown, ChevronRight, Code2, Bot, MemoryStickIcon, Search, Type, Calculator, GitBranch, GitFork, Merge, Repeat, Webhook, MessageSquare } from "lucide-react"
 import { toast } from "sonner"
 import { Lock } from "lucide-react"
@@ -66,6 +68,114 @@ const triggerNodes: NodeTypeOption[] = [
         description: "Runs the flow when a message is sent in the chat panel. Pair it with an AI Agent",
         icon: MessageSquare,
     },
+    {
+        type: NodeType.TELEGRAM_TRIGGER,
+        label: "Telegram Trigger",
+        description: "Runs the flow when your Telegram bot receives a message",
+        icon: "/logos/telegram.jfif",
+    },
+    {
+        type: NodeType.WHATSAPP_TRIGGER,
+        label: "WhatsApp Trigger",
+        description: "Runs the flow when your WhatsApp Business number receives a message",
+        icon: "/logos/whatsapp.svg",
+    },
+    {
+        type: NodeType.GMAIL_TRIGGER,
+        label: "Gmail Trigger",
+        description: "Runs the flow when a new email arrives in your Gmail inbox",
+        icon: "/logos/gmail.svg",
+    },
+    {
+        type: NodeType.RSS_FEED_TRIGGER,
+        label: "RSS Feed Trigger",
+        description: "Runs the flow when a new item appears in an RSS or Atom feed",
+        icon: Rss,
+    },
+    {
+        type: NodeType.TYPEFORM_TRIGGER,
+        label: "Typeform Trigger",
+        description: "Runs the flow when someone submits your typeform",
+        icon: "/logos/typeform.svg",
+    },
+    {
+        type: NodeType.EXECUTE_WORKFLOW_TRIGGER,
+        label: "When Executed by Another Workflow",
+        description: "Runs the flow when an Execute Workflow node or an AI Agent tool calls it",
+        icon: Workflow,
+    },
+    {
+        type: NodeType.ERROR_TRIGGER,
+        label: "Error Trigger",
+        description: "Runs the flow when a workflow fails, to send an alert",
+        icon: AlertTriangle,
+    },
+]
+
+const dataNodes: NodeTypeOption[] = [
+    {
+        type: NodeType.EDIT_FIELDS,
+        label: "Edit Fields",
+        description: "Set, keep, remove and rename fields. After a list node it reshapes every item",
+        icon: PencilRuler,
+    },
+    {
+        type: NodeType.SPLIT_OUT,
+        label: "Split Out",
+        description: "Turn a list inside your data into separate items",
+        icon: Split,
+    },
+    {
+        type: NodeType.AGGREGATE,
+        label: "Aggregate",
+        description: "Combine a field from many items into a single list",
+        icon: Group,
+    },
+    {
+        type: NodeType.SORT,
+        label: "Sort",
+        description: "Order the items of a list by a field",
+        icon: ArrowDownUp,
+    },
+    {
+        type: NodeType.LIMIT,
+        label: "Limit",
+        description: "Keep only the first or last items of a list",
+        icon: ListEnd,
+    },
+    {
+        type: NodeType.REMOVE_DUPLICATES,
+        label: "Remove Duplicates",
+        description: "Remove items that repeat an earlier item",
+        icon: CopyMinus,
+    },
+    {
+        type: NodeType.SUMMARIZE,
+        label: "Summarize",
+        description: "Count, sum or average a list, like a pivot table",
+        icon: Sigma,
+    },
+]
+
+const fileNodes: NodeTypeOption[] = [
+    {
+        type: NodeType.PDF_GENERATOR,
+        label: "PDF Generator",
+        description: "Make a PDF from text: an invoice, a report, a letter",
+        icon: FileText,
+    },
+    {
+        type: NodeType.CONVERT_TO_FILE,
+        label: "Convert to File",
+        description: "Turn workflow data into a CSV, JSON or text file",
+        icon: FileOutput,
+    },
+    {
+        type: NodeType.EXTRACT_FROM_FILE,
+        label: "Extract from File",
+        description: "Read a CSV, JSON or text file back into workflow data",
+        icon: FileInput,
+    },
 ]
 
 const logicNodes: NodeTypeOption[] = [
@@ -98,6 +208,18 @@ const logicNodes: NodeTypeOption[] = [
         label: "Loop",
         description: "Run a set of nodes once for every item in a list",
         icon: Repeat
+    },
+    {
+        type: NodeType.EXECUTE_WORKFLOW,
+        label: "Execute Workflow",
+        description: "Run another workflow and use its result",
+        icon: Workflow
+    },
+    {
+        type: NodeType.STOP_AND_ERROR,
+        label: "Stop and Error",
+        description: "Fail the workflow with your own error message",
+        icon: OctagonX
     },
     {
         type: NodeType.CALCULATOR,
@@ -167,6 +289,42 @@ const aiNodes: NodeTypeOption[] = [
         label: "AI Agent",
         description: "Tools Agent: a chat model that decides which connected tools to call",
         icon: Bot
+    },
+    {
+        type: NodeType.CHAT_MODEL,
+        label: "Chat Model (OpenRouter, Groq, Ollama...)",
+        description: "Any OpenAI-compatible model: OpenRouter, Groq, DeepSeek, Mistral, Together, Ollama. Works as an AI Agent's Chat Model",
+        icon: "/logos/chat-model.svg"
+    },
+    {
+        type: NodeType.TEXT_CLASSIFIER,
+        label: "Text Classifier",
+        description: "Sort text into your own categories with a chat model and branch on the result",
+        icon: Tags
+    },
+    {
+        type: NodeType.INFORMATION_EXTRACTOR,
+        label: "Information Extractor",
+        description: "Pull names, numbers, dates and other values out of free text",
+        icon: ScanText
+    },
+    {
+        type: NodeType.STRUCTURED_OUTPUT_PARSER,
+        label: "Structured Output Parser",
+        description: "Make an AI Agent answer with JSON in a structure you define",
+        icon: Braces
+    },
+    {
+        type: NodeType.VECTOR_STORE,
+        label: "Vector Store",
+        description: "Save documents and search them by meaning (RAG). Works as an AI Agent tool",
+        icon: DatabaseZap
+    },
+    {
+        type: NodeType.MCP_CLIENT_TOOL,
+        label: "MCP Client",
+        description: "Give an AI Agent the tools of an MCP server",
+        icon: Plug
     }
 ]
 
@@ -190,6 +348,30 @@ const communicationNodes: NodeTypeOption[] = [
         icon: "/logos/email.jfif"
     },
     {
+        type: NodeType.RESEND,
+        label: "Resend",
+        description: "Send an email with the Resend API",
+        icon: "/logos/resend.svg"
+    },
+    {
+        type: NodeType.SENDGRID,
+        label: "SendGrid",
+        description: "Send an email with the SendGrid API",
+        icon: "/logos/sendgrid.svg"
+    },
+    {
+        type: NodeType.TWILIO,
+        label: "Twilio",
+        description: "Send SMS and WhatsApp messages with Twilio",
+        icon: "/logos/twilio.svg"
+    },
+    {
+        type: NodeType.GMAIL,
+        label: "Gmail",
+        description: "Send, reply to and read emails with your Google account",
+        icon: "/logos/gmail.svg"
+    },
+    {
         type: NodeType.TELEGRAM,
         label: "Telegram",
         description: "Send a message or interact with a Telegram bot",
@@ -209,6 +391,12 @@ const productivityNodes: NodeTypeOption[] = [
         label: "Google Sheets",
         description: "Add data to a Google Sheet",
         icon: "/logos/googleSheet.png"
+    },
+    {
+        type: NodeType.GOOGLE_DRIVE,
+        label: "Google Drive",
+        description: "Upload, download, find and delete files in Google Drive",
+        icon: "/logos/google-drive.svg"
     },
     {
         type: NodeType.GOOGLE_CALENDAR,
@@ -240,19 +428,61 @@ const productivityNodes: NodeTypeOption[] = [
         description: "Run SQL queries against a PostgreSQL database",
         icon: "/logos/postgres.svg"
     },
+    {
+        type: NodeType.MYSQL,
+        label: "MySQL",
+        description: "Run SQL queries against a MySQL or MariaDB database",
+        icon: "/logos/mysql.svg"
+    },
+    {
+        type: NodeType.JIRA,
+        label: "Jira",
+        description: "Create, read and search issues in Jira Cloud",
+        icon: "/logos/jira.svg"
+    },
+    {
+        type: NodeType.HUBSPOT,
+        label: "HubSpot",
+        description: "Create, update and find contacts and deals in HubSpot CRM",
+        icon: "/logos/hubspot.svg"
+    },
+    {
+        type: NodeType.SALESFORCE,
+        label: "Salesforce",
+        description: "Query, create, update and delete records of any Salesforce object",
+        icon: "/logos/salesforce.svg"
+    },
 ]
 
 const networkNodes: NodeTypeOption[] = [
     {
+        type: NodeType.SSH,
+        label: "SSH",
+        description: "Run a command on your own server over SSH",
+        icon: "/logos/ssh.svg"
+    },
+    {
+        type: NodeType.RSS_READ,
+        label: "RSS Read",
+        description: "Read the items of an RSS or Atom feed",
+        icon: Rss
+    },
+    {
         type: NodeType.HTTP_REQUEST,
         label: "HTTP Request",
-        description: "Makes an HTTP request",
+        description: "Call any API, with headers, query parameters and authentication",
         icon: GlobeIcon
     },
     {
+        type: NodeType.RESPOND_TO_WEBHOOK,
+        label: "Respond to Webhook",
+        description: "Answer the HTTP request that started the workflow",
+        icon: Reply
+    },
+    {
         type: NodeType.WEBHOOK_RESPONSE,
-        label: "Webhook Response",
-        description: "Send a response to a webhook",
+        label: "Webhook Callback",
+        description: "POST the workflow's data to another URL",
         icon: Send
     },
 ]
@@ -284,6 +514,8 @@ export function NodeSelector({
     const [openSections, setOpenSections] = useState<Record<string, boolean>>({
         triggers: false,
         logic: false,
+        data: false,
+        files: false,
         aiModels: false,
         communications: false,
         productivity: false,
@@ -401,6 +633,8 @@ export function NodeSelector({
     const allMenuSections = [
         { id: "triggers", title: "TRIGGERS", data: triggerNodes },
         { id: "logic", title: "CORE LOGIC", data: logicNodes },
+        { id: "data", title: "DATA TRANSFORMATION", data: dataNodes },
+        { id: "files", title: "FILES", data: fileNodes },
         { id: "aiModels", title: "AI & LANGUAGE MODELS", data: aiNodes },
         { id: "communications", title: "COMMUNICATIONS", data: communicationNodes },
         { id: "productivity", title: "PRODUCTIVITY APPS", data: productivityNodes },

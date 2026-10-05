@@ -20,6 +20,7 @@ import { LucideIcon } from "lucide-react";
 import { type NodeStatus, NodeStatusIndicator } from "@/components/react-flow/node-status-indicator";
 import { cn } from "@/lib/utils";
 import { useNodeStatus } from "../hooks/use-node-status";
+import { NodeErrorSettings } from "@/components/node-error-settings";
 
 interface BaseExecutionNodeProps extends NodeProps {
     icon: LucideIcon | string;
@@ -30,6 +31,8 @@ interface BaseExecutionNodeProps extends NodeProps {
     status?: NodeStatus;
     // Named outputs for branching nodes; replaces the single default output
     outputs?: { id: string; label: string }[];
+    // Ports on the bottom edge that configuration nodes (a chat model) plug into
+    subInputs?: { id: string; label: string }[];
     onSettings?: () => void;
     onDoubleClick?: () => void;
 }
@@ -43,6 +46,7 @@ export const BaseExecutionNode = memo(
         children,
         status: statusOverride,
         outputs,
+        subInputs,
         onSettings,
         onDoubleClick,
     }: BaseExecutionNodeProps) => {
@@ -70,6 +74,7 @@ export const BaseExecutionNode = memo(
                 description={description}
                 onDelete={handleDelete}
                 onSettings={onSettings}
+                extraActions={<NodeErrorSettings nodeId={id} />}
             >
                 <NodeStatusIndicator
                     status={status}
@@ -104,6 +109,20 @@ export const BaseExecutionNode = memo(
                             {/* Removed the redundant stacked StatusIcon component here to prevent vertical stretching */}
 
                             <BaseHandle id="target-1" type="target" position={Position.Left} />
+                            {subInputs?.map((port, index) => (
+                                <BaseHandle
+                                    key={port.id}
+                                    id={port.id}
+                                    type="target"
+                                    position={Position.Bottom}
+                                    className="!rounded-none !rotate-45"
+                                    style={{ left: `${((index + 1) / (subInputs.length + 1)) * 100}%` }}
+                                >
+                                    <span className="pointer-events-none absolute left-2 top-2 -rotate-45 whitespace-nowrap text-[8px] leading-none text-muted-foreground">
+                                        {port.label}
+                                    </span>
+                                </BaseHandle>
+                            ))}
                             {outputs ? (
                                 outputs.map((output, index) => (
                                     <BaseHandle

@@ -12,6 +12,7 @@ type TelegramNodeData = {
     chatId?: string;
     text?: string;
     parseMode?: "HTML" | "MarkdownV2" | "None";
+    file?: string;
 }
 
 type TelegramNodeType = Node<TelegramNodeData>

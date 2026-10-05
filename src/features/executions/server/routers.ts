@@ -2,8 +2,33 @@ import { PAGINATION } from "@/config/constants";
 import prisma from "@/lib/db";
 import { createTRPCRouter, protectedProcedure } from "@/trpc/init";
 import z from "zod";
+import { TRPCError } from "@trpc/server";
+import { RetryError, retryExecution } from "./retry";
 
 export const executionsRouter = createTRPCRouter({
+
+    // RUN AGAIN: same trigger, same starting data, current workflow
+    retry: protectedProcedure
+        .input(z.object({ id: z.string() }))
+        .mutation(async ({ ctx, input }) => {
+            try {
+                return await retryExecution(input.id, ctx.auth.user.id);
+            } catch (error) {
+                if (error instanceof RetryError) {
+                    throw new TRPCError({
+                        code:
+                            error.reason === "not_found"
+                                ? "NOT_FOUND"
+                                : error.reason === "limit"
+                                    ? "FORBIDDEN"
+                                    : "BAD_REQUEST",
+                        message: error.message,
+                    });
+                }
+
+                throw error;
+            }
+        }),
 
     // UPDATE ONE
     getOne: protectedProcedure

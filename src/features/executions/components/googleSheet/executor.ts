@@ -1,9 +1,10 @@
 import { NodeExecutor } from "../../types";
+import { renderEscapedTemplate } from "@/features/executions/lib/templates";
 import { NonRetriableError } from "inngest";
 import { google } from "googleapis";
 import Handlebars from "handlebars";
 import prisma from "@/lib/db";
-import { decrypt } from "@/lib/encryption";
+import { getGoogleAuth } from "@/lib/google-oauth";
 
 type GoogleSheetsData = {
   credentialId?: string;
@@ -66,28 +67,10 @@ export const googleSheetsExecutor: NodeExecutor<
     );
   }
 
-  // Parse service account
-  let serviceAccount: {
-    clientEmail: string;
-    privateKey: string;
-    projectId: string;
-  };
-
-  try {
-    serviceAccount = JSON.parse(
-      decrypt(credential.value)
-    );
-  } catch {
-    throw new NonRetriableError(
-      "Google Sheets node: Invalid credential format"
-    );
-  }
 
   // Resolve handlebars variables
   const resolvedRowData =
-    Handlebars.compile(
-      data.rowData
-    )(context);
+    renderEscapedTemplate(data.rowData, context);
 
   // Convert CSV string to array
   const rowValues = resolvedRowData
@@ -105,26 +88,10 @@ export const googleSheetsExecutor: NodeExecutor<
       "append-row-to-sheet",
       async () => {
 
-        const auth =
-          new google.auth.GoogleAuth({
-            credentials: {
-              client_email:
-                serviceAccount.clientEmail,
-
-              private_key:
-                serviceAccount.privateKey.replace(
-                  /\\n/g,
-                  "\n"
-                ),
-
-              project_id:
-                serviceAccount.projectId,
-            },
-
-            scopes: [
-              "https://www.googleapis.com/auth/spreadsheets",
-            ],
-          });
+        // A Google account (OAuth) or a service account
+        const auth = getGoogleAuth("Google Sheets", credential, [
+          "https://www.googleapis.com/auth/spreadsheets",
+        ]);
 
         const sheets = google.sheets({
           version: "v4",

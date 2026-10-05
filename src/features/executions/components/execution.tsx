@@ -2,10 +2,11 @@
 
 import { ExecutionStatus } from "@prisma/client"
 import { formatTriggerSource } from "@/config/trigger-sources";
-import { CheckCircle2Icon, ClockIcon, Loader2Icon, XCircleIcon } from "lucide-react"
+import { CheckCircle2Icon, ClockIcon, Loader2Icon, RotateCcwIcon, XCircleIcon } from "lucide-react"
+import { useRouter } from "next/navigation"
 import Link from "next/link"
 import { useState } from "react"
-import { useSuspenseExecution } from "../hooks/use-executions"
+import { useRetryExecution, useSuspenseExecution } from "../hooks/use-executions"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { formatDistanceToNow } from "date-fns"
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible"
@@ -36,6 +37,16 @@ export const ExecutionView = ({
 }) => {
     const { data: execution } = useSuspenseExecution(executionId);
     const [showStackTrace, setShowStackTrace] = useState(false)
+    const router = useRouter()
+    const retryExecution = useRetryExecution()
+
+    // Runs the workflow again from the same trigger with the same data
+    const handleRetry = () => {
+        retryExecution.mutate(
+            { id: executionId },
+            { onSuccess: (retried) => router.push(`/executions/${retried.id}`) }
+        )
+    }
 
     const duration = execution.completedAt
         ? Math.round(
@@ -56,6 +67,19 @@ export const ExecutionView = ({
                             Execution for {execution.workflow.name}
                         </CardDescription>
                     </div>
+                    {execution.status !== ExecutionStatus.RUNNING && execution.trigger && (
+                        <Button
+                            variant="outline"
+                            size="sm"
+                            className="ml-auto"
+                            onClick={handleRetry}
+                            disabled={retryExecution.isPending}
+                            title="Runs the workflow again from the same trigger with the same data"
+                        >
+                            <RotateCcwIcon className="size-4" />
+                            {execution.status === ExecutionStatus.FAILED ? "Retry" : "Run again"}
+                        </Button>
+                    )}
                 </div>
             </CardHeader>
             <CardContent className="space-y-4">

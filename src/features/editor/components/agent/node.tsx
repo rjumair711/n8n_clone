@@ -5,6 +5,7 @@ import { Handle, Position, NodeProps, useReactFlow, Node, useEdges } from "@xyfl
 import { Bot, Settings, Trash2 } from "lucide-react";
 import { useNodeStatus } from "@/features/executions/hooks/use-node-status";
 import { AIAgentDialog, type AIAgentFormValues, type ConnectedTool } from "./dialog";
+import { NodeErrorSettings } from "@/components/node-error-settings";
 
 const PORT_COLOR = "#7B81BC";
 
@@ -78,6 +79,15 @@ export const AIAgentNode = memo(({ id, selected, data }: NodeProps<Node<AIAgentN
         tools={tools}
       />
 
+      {/* Error handling (On Error, Retry On Fail, Execute Once) */}
+      <div
+        onClick={(e) => e.stopPropagation()}
+        onDoubleClick={(e) => e.stopPropagation()}
+        className={`absolute -top-3 right-[60px] z-10 bg-slate-50 text-slate-600 border border-slate-200 rounded-full shadow-sm hover:bg-slate-100 transition-all duration-200 [&_button]:h-[30px] [&_button]:w-[30px] [&_button]:rounded-full [&_button]:p-0 ${buttonVisibility}`}
+      >
+        <NodeErrorSettings nodeId={id} />
+      </div>
+
       {/* Settings Button */}
       <button
         onClick={handleOpenSettings}
@@ -131,39 +141,52 @@ export const AIAgentNode = memo(({ id, selected, data }: NodeProps<Node<AIAgentN
         type="target"
         position={Position.Bottom}
         id="sub-model"
-        className="!left-[20%] !w-2.5 !h-2.5 !rounded-none !rotate-45 !border !border-white"
+        className="!left-[14%] !w-2.5 !h-2.5 !rounded-none !rotate-45 !border !border-white"
+        style={{ background: PORT_COLOR }}
+      />
+      <Handle
+        type="target"
+        position={Position.Bottom}
+        id="sub-parser"
+        className="!left-[40%] !w-2.5 !h-2.5 !rounded-none !rotate-45 !border !border-white"
         style={{ background: PORT_COLOR }}
       />
       <Handle
         type="target"
         position={Position.Bottom}
         id="sub-memory"
-        className="!left-[60%] !w-2.5 !h-2.5 !rounded-none !rotate-45 !border !border-white"
+        className="!left-[63%] !w-2.5 !h-2.5 !rounded-none !rotate-45 !border !border-white"
         style={{ background: PORT_COLOR }}
       />
       <Handle
         type="target"
         position={Position.Bottom}
         id="sub-tools"
-        className="!left-[80%] !w-2.5 !h-2.5 !rounded-none !rotate-45 !border !border-white"
+        className="!left-[85%] !w-2.5 !h-2.5 !rounded-none !rotate-45 !border !border-white"
         style={{ background: PORT_COLOR }}
       />
 
       {/* Labels */}
       <span
-        className="absolute left-[20%] top-full -translate-x-1/2 mt-1.5 text-[10px] font-medium whitespace-nowrap pointer-events-none"
+        className="absolute left-[14%] top-full -translate-x-1/2 mt-1.5 text-[10px] font-medium whitespace-nowrap pointer-events-none"
         style={{ color: PORT_COLOR }}
       >
         Chat Model<span className="text-red-500">*</span>
       </span>
       <span
-        className="absolute left-[60%] top-full -translate-x-1/2 mt-1.5 text-[10px] font-medium whitespace-nowrap pointer-events-none"
+        className="absolute left-[40%] top-full -translate-x-1/2 mt-1.5 text-[10px] font-medium whitespace-nowrap pointer-events-none"
+        style={{ color: PORT_COLOR }}
+      >
+        Parser
+      </span>
+      <span
+        className="absolute left-[63%] top-full -translate-x-1/2 mt-1.5 text-[10px] font-medium whitespace-nowrap pointer-events-none"
         style={{ color: PORT_COLOR }}
       >
         Memory
       </span>
       <span
-        className="absolute left-[80%] top-full -translate-x-1/2 mt-1.5 text-[10px] font-medium whitespace-nowrap pointer-events-none"
+        className="absolute left-[85%] top-full -translate-x-1/2 mt-1.5 text-[10px] font-medium whitespace-nowrap pointer-events-none"
         style={{ color: PORT_COLOR }}
       >
         Tools {toolCount > 0 && `(${toolCount})`}

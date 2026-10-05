@@ -1,4 +1,5 @@
 import type { NodeExecutor } from "@/features/executions/types";
+import { renderEscapedTemplate } from "@/features/executions/lib/templates";
 import { NonRetriableError } from "inngest";
 import { createOpenAI } from "@ai-sdk/openai";
 import Handlebars from "handlebars";
@@ -56,14 +57,10 @@ export const OpenAIExecutor: NodeExecutor<
 
   // Compile prompts
   const systemPrompt = data.systemPrompt
-    ? Handlebars.compile(
-        data.systemPrompt
-      )(context)
+    ? renderEscapedTemplate(data.systemPrompt, context)
     : "You are a helpful assistant.";
 
-  const userPrompt = Handlebars.compile(
-    data.userPrompt
-  )(context);
+  const userPrompt = renderEscapedTemplate(data.userPrompt, context);
 
   // Fetch credential
   const credential = await step.run(

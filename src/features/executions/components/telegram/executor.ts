@@ -1,9 +1,11 @@
 import type { NodeExecutor } from "@/features/executions/types";
+import { renderEscapedTemplate } from "@/features/executions/lib/templates";
 import { NonRetriableError } from "inngest";
 import Handlebars from "handlebars";
 import prisma from "@/lib/db";
 import { decrypt } from "@/lib/encryption";
-import { fetch, ProxyAgent } from "undici";
+import { fetch, FormData, ProxyAgent } from "undici";
+import { loadFiles, resolveFileId } from "../files/executors";
 
 type TelegramData = {
   variableName?: string;
@@ -11,7 +13,13 @@ type TelegramData = {
   chatId?: string;
   text?: string;
   parseMode?: "HTML" | "MarkdownV2" | "None";
+  // A file variable (e.g. "pdf.file"): the message is sent as a document
+  // with the text as its caption
+  file?: string;
 };
+
+// Telegram's limit for a caption; a longer text is cut
+const MAX_CAPTION_LENGTH = 1024;
 
 // ✅ Fix 1: Explicit response shape — kills all 'unknown' TS errors
 type TelegramAPIResponse = {
@@ -35,8 +43,11 @@ export const telegramExecutor: NodeExecutor<TelegramData> = async ({
   if (!data.chatId) throw new NonRetriableError("Telegram node: Target destination Chat ID identifier required");
   if (!data.text) throw new NonRetriableError("Telegram node: Dispatched target string text structural body required");
 
-  const targetChatId = Handlebars.compile(data.chatId)(context);
-  const messageText = Handlebars.compile(data.text)(context);
+  const targetChatId = renderEscapedTemplate(data.chatId, context);
+  const messageText = renderEscapedTemplate(data.text, context);
+  const documentId = data.file?.trim()
+    ? resolveFileId("Telegram", context, data.file)
+    : null;
 
   const credential = await step.run("get-telegram-credential", async () => {
     return prisma.credential.findUnique({
@@ -68,16 +79,43 @@ export const telegramExecutor: NodeExecutor<TelegramData> = async ({
         : undefined;
 
       try {
-        const response = await fetch(
-          `https://api.telegram.org/bot${botToken}/sendMessage`,
-          {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify(payload),
-            signal: AbortSignal.timeout(10_000),
-            ...(dispatcher && { dispatcher }),
-          }
-        );
+        let response: Awaited<ReturnType<typeof fetch>>;
+
+        if (documentId) {
+          const [file] = await loadFiles("Telegram", [documentId], userId);
+
+          const form = new FormData();
+          form.set("chat_id", targetChatId);
+          form.set("caption", messageText.slice(0, MAX_CAPTION_LENGTH));
+          if (payload.parse_mode) form.set("parse_mode", String(payload.parse_mode));
+          form.set(
+            "document",
+            new Blob([new Uint8Array(file.data)], { type: file.mimeType }),
+            file.fileName
+          );
+
+          response = await fetch(
+            `https://api.telegram.org/bot${botToken}/sendDocument`,
+            {
+              method: "POST",
+              body: form,
+              // Uploads take longer than a text message
+              signal: AbortSignal.timeout(60_000),
+              ...(dispatcher && { dispatcher }),
+            }
+          );
+        } else {
+          response = await fetch(
+            `https://api.telegram.org/bot${botToken}/sendMessage`,
+            {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify(payload),
+              signal: AbortSignal.timeout(10_000),
+              ...(dispatcher && { dispatcher }),
+            }
+          );
+        }
 
         // ✅ Fix 4: Cast json() to our known type
         const responseData = await response.json() as TelegramAPIResponse;

@@ -22,7 +22,36 @@ export const getValueByPath = (
   path: string
 ): unknown => {
   // Accept "{{user.email}}" as well as "user.email"
-  const cleanPath = path.replace(/^\s*\{\{\s*|\s*\}\}\s*$/g, "").trim();
+  const trimmedPath = path.replace(/^\s*\{\{\s*|\s*\}\}\s*$/g, "").trim();
+
+  // While a node runs for one item of a list, "$json.status" means the
+  // item's field; anything the item does not have falls through to the
+  // workflow's variables
+  if (
+    /^\$json\b/.test(trimmedPath) &&
+    "itemIndex" in object &&
+    object.item !== null &&
+    typeof object.item === "object"
+  ) {
+    const { item, ...rest } = object;
+    const fromItem = getValueByPath(
+      item as Record<string, unknown>,
+      trimmedPath.replace(/^\$json\.?/, "")
+    );
+
+    return fromItem !== undefined
+      ? fromItem
+      : getValueByPath(rest, trimmedPath.replace(/^\$json\.?/, ""));
+  }
+
+  const cleanPath = trimmedPath
+    // n8n's "$json.user.email": $json is the whole set of variables here
+    .replace(/^\$json\.?/, "")
+    // items[0].name and items["name"] are the same as items.0.name
+    .replace(/\[\s*["']?([^\]"']+)["']?\s*\]/g, ".$1")
+    .replace(/^\./, "");
+
+  if (!cleanPath) return object;
 
   return cleanPath.split(".").reduce<unknown>((current, key) => {
     if (current !== null && typeof current === "object" && key in current) {

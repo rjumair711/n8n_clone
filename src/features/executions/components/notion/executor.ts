@@ -1,4 +1,5 @@
 import type { NodeExecutor } from "@/features/executions/types";
+import { renderEscapedTemplate } from "@/features/executions/lib/templates";
 import { NonRetriableError } from "inngest";
 import Handlebars from "handlebars";
 import ky from "ky";
@@ -48,7 +49,7 @@ export const notionExecutor: NodeExecutor<NotionNodeData> = async ({
 
   // 3. Decrypt token and resolve Handlebars vars
   const accessToken = decrypt(credential.value);
-  const databaseId = Handlebars.compile(data.databaseId)(context).trim();
+  const databaseId = renderEscapedTemplate(data.databaseId, context).trim();
 
   const headers = {
     Authorization: `Bearer ${accessToken}`,
@@ -61,9 +62,7 @@ export const notionExecutor: NodeExecutor<NotionNodeData> = async ({
       const result = await step.run(
         `notion-${nodeId}-create-page`,
         async () => {
-          const rawProperties = Handlebars.compile(
-            data.propertiesJson || "{}"
-          )(context);
+          const rawProperties = renderEscapedTemplate(data.propertiesJson || "{}", context);
 
           let propertiesPayload: Record<string, unknown>;
           try {

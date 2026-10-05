@@ -1,6 +1,7 @@
 import { NodeExecutor } from "../../types";
 import { NonRetriableError } from "inngest";
 import ky from "ky";
+import { assertPublicUrl } from "@/lib/ssrf";
 
 type WebhookResponseData = {
   responseMessage: string;
@@ -51,9 +52,13 @@ export const webhookResponseExecutor: NodeExecutor<
       "send-webhook-response",
       async () => {
 
+        // The URL is typed in by the user: never call into a private network
+        await assertPublicUrl(webhookUrl);
+
         const response = await ky.post(
           webhookUrl,
           {
+            redirect: "error",
             json: responseBody,
 
             headers: {

@@ -5,6 +5,93 @@ import prisma from "./db"
 import { checkout, polar, portal, webhooks } from "@polar-sh/better-auth"
 import { polarClient } from "./polar"
 import { SubscriptionPlan } from "@prisma/client"
+import { Resend } from "resend"
+
+// Where the app may be opened from. Set NEXT_PUBLIC_APP_URL (and
+// TRUSTED_ORIGINS, comma-separated, for any extra domains) per environment
+// instead of listing addresses in the code.
+const getTrustedOrigins = () => {
+  const origins = new Set<string>()
+
+  const add = (value?: string) => {
+    const trimmed = value?.trim().replace(/\/+$/, "")
+    if (!trimmed) return
+
+    origins.add(/^https?:\/\//.test(trimmed) ? trimmed : `https://${trimmed}`)
+  }
+
+  add(process.env.NEXT_PUBLIC_APP_URL)
+  add(process.env.BETTER_AUTH_URL)
+
+  for (const origin of (process.env.TRUSTED_ORIGINS || "").split(",")) {
+    add(origin)
+  }
+
+  // Set by Vercel: this deployment, and the project's production domain
+  add(process.env.VERCEL_URL)
+  add(process.env.VERCEL_PROJECT_PRODUCTION_URL)
+
+  if (process.env.NODE_ENV !== "production") {
+    origins.add("http://localhost:3000")
+    // The tunnel started by "npm run ngrok:dev"
+    add(process.env.NGROK_URL)
+  }
+
+  return [...origins]
+}
+
+// Verification emails are sent with Resend. Without a key they cannot be
+// sent, so the requirement is only switched on when one is configured.
+const emailVerificationEnabled =
+  !!process.env.RESEND_API_KEY &&
+  process.env.REQUIRE_EMAIL_VERIFICATION !== "false"
+
+// Verification and password-reset mail. Returns false when it was not sent.
+const sendAuthEmail = async ({
+  to,
+  subject,
+  intro,
+  linkText,
+  url,
+}: {
+  to: string
+  subject: string
+  intro: string
+  linkText: string
+  url: string
+}) => {
+  if (!process.env.RESEND_API_KEY) {
+    console.error(`Cannot send "${subject}": RESEND_API_KEY is not set`)
+    return false
+  }
+
+  const resend = new Resend(process.env.RESEND_API_KEY)
+  const footer = "If you did not ask for this, you can ignore this email."
+
+  const { error } = await resend.emails.send({
+    // Must be an address on a domain verified in Resend
+    from: process.env.EMAIL_FROM || "RXJ <onboarding@resend.dev>",
+    to,
+    subject,
+    text: `${intro}
+
+${linkText}:
+${url}
+
+${footer}`,
+    html: `<p>${escapeHtml(intro)}</p><p><a href="${escapeHtml(url)}">${escapeHtml(linkText)}</a></p><p>${footer}</p>`,
+  })
+
+  if (error) {
+    console.error(`Failed to send "${subject}":`, error)
+    return false
+  }
+
+  return true
+}
+
+const escapeHtml = (text: string) =>
+  text.replace(/[&<>"']/g, (char) => `&#${char.charCodeAt(0)};`)
 
 export const auth = betterAuth({
   database: prismaAdapter(prisma, {
@@ -31,15 +118,47 @@ export const auth = betterAuth({
     },
   },
 
-  trustedOrigins: [
-    "http://localhost:3000",
-    "https://n8n-clone-nine.vercel.app",
-    "https://cringe-overhaul-marsupial.ngrok-free.dev",
-  ],
+  trustedOrigins: getTrustedOrigins(),
 
   emailAndPassword: {
     enabled: true,
     autoSignIn: true,
+    // Password sign-in only works once the address is confirmed. Google and
+    // GitHub sign-ins arrive already verified.
+    requireEmailVerification: emailVerificationEnabled,
+    // "Forgot your password?": the link opens /reset-password
+    resetPasswordTokenExpiresIn: 60 * 60,
+    sendResetPassword: async ({ user, url }) => {
+      // A failure is only logged: the form answers the same either way, so
+      // it does not reveal which addresses have an account
+      await sendAuthEmail({
+        to: user.email,
+        subject: "Reset your RXJ password",
+        intro: "We received a request to reset the password of your RXJ account. The link works for one hour.",
+        linkText: "Choose a new password",
+        url,
+      })
+    },
+  },
+
+  emailVerification: {
+    sendOnSignUp: emailVerificationEnabled,
+    // A sign-in attempt with an unverified address sends the link again
+    sendOnSignIn: emailVerificationEnabled,
+    autoSignInAfterVerification: true,
+    sendVerificationEmail: async ({ user, url }) => {
+      const sent = await sendAuthEmail({
+        to: user.email,
+        subject: "Confirm your email address",
+        intro: "Welcome to RXJ. Confirm your email address to finish creating your account.",
+        linkText: "Confirm your email address",
+        url,
+      })
+
+      // The sign-up form shows this, so the user is not left waiting for
+      // an email that will not arrive
+      if (!sent) throw new Error("The verification email could not be sent")
+    },
   },
   socialProviders: {
     github: {

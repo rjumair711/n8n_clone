@@ -8,12 +8,7 @@ import { HttpRequestFormValues, HttpRequestDialog } from "./dialog";
 import { useNodeStatus } from "../../hooks/use-node-status";
 import { HTTP_REQUEST_CHANNEL_NAME } from "@/inngest/channels/http-request";
 
-type HttpRequestNodeData = {
-    variableName?: string;
-    endpoint?: string;
-    method?: "GET" | "POST" | "PUT" | "PATCH" | "DELETE";
-    body?: string;
-}
+type HttpRequestNodeData = Partial<HttpRequestFormValues>
 
 type HttpRequestNodeType = Node<HttpRequestNodeData>
 
@@ -63,7 +58,7 @@ export const HttpRequestNode = memo((props: NodeProps<HttpRequestNodeType>) => {
                 status={nodeStatus.status}
                 description={description}
                 onSettings={handleOpenSettings}
-                onDoubleClick={() => { handleOpenSettings }}
+                onDoubleClick={handleOpenSettings}
             />
         </>
     )

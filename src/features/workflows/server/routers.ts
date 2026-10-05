@@ -10,6 +10,7 @@ import { TRPCError } from "@trpc/server";
 import { PLAN_LIMITS, getRequiredPlanForNode } from "@/config/plans";
 import { TRIGGER_SOURCES } from "@/config/trigger-sources";
 import { TESTABLE_TRIGGERS, TRIGGER_LABELS, buildTestPayload } from "./test-payloads";
+import { syncTelegramWebhooks } from "@/lib/telegram";
 
 export const workflowsRouter = createTRPCRouter({
 
@@ -260,7 +261,29 @@ export const workflowsRouter = createTRPCRouter({
     // the chat panel always work, so a workflow can be tested while inactive.
     setActive: protectedProcedure
         .input(z.object({ id: z.string(), active: z.boolean() }))
-        .mutation(({ ctx, input }) => {
+        .mutation(async ({ ctx, input }) => {
+            await prisma.workflow.findUniqueOrThrow({
+                where: {
+                    id: input.id,
+                    userId: ctx.auth.user.id
+                },
+            })
+
+            // Telegram Trigger: the bot's webhook is registered on activation
+            // and removed on deactivation, like n8n does
+            const telegramError = await syncTelegramWebhooks({
+                workflowId: input.id,
+                userId: ctx.auth.user.id,
+                active: input.active,
+            })
+
+            if (telegramError) {
+                throw new TRPCError({
+                    code: "BAD_REQUEST",
+                    message: telegramError,
+                });
+            }
+
             return prisma.workflow.update({
                 where: {
                     id: input.id,
@@ -305,7 +328,7 @@ export const workflowsRouter = createTRPCRouter({
                 },
             })
             // Transaction to ensure consistency
-            return await prisma.$transaction(async (tx) => {
+            const saved = await prisma.$transaction(async (tx) => {
                 // Delete existing nodes and connections (cascade deletes connections)
                 await tx.node.deleteMany({
                     where: { workflowId: id }
@@ -342,6 +365,25 @@ export const workflowsRouter = createTRPCRouter({
                 })
                 return workflow;
             })
+
+            // A Telegram Trigger added or changed while the workflow is
+            // active needs its webhook registered right away
+            if (workflow.active) {
+                const telegramError = await syncTelegramWebhooks({
+                    workflowId: id,
+                    userId: ctx.auth.user.id,
+                    active: true,
+                })
+
+                if (telegramError) {
+                    throw new TRPCError({
+                        code: "BAD_REQUEST",
+                        message: `The workflow was saved. ${telegramError}`,
+                    });
+                }
+            }
+
+            return saved;
         }),
 
     // UPDATE ONE

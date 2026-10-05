@@ -154,6 +154,10 @@ export function LoginForm() {
                                             </FormItem>
                                         )}
                                     />
+                                    <div className="-mt-3 text-right text-sm">
+                                        <Link href="/forgot-password"
+                                            className="underline underline-offset-4 text-muted-foreground">Forgot your password?</Link>
+                                    </div>
                                     <Button type="submit" className="w-full" disabled={isPending}>Login</Button>
                                 </div>
                                 <div className="text-center text-sm">

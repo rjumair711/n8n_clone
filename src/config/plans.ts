@@ -24,9 +24,8 @@ export const PLAN_LIMITS = {
 
       whatsapp: false,
       aiAgents: false,
-      browserAutomation: false,
       apiAccess: false,
-      teamWorkspace: false,
+      ssh: false,
     },
   },
 
@@ -48,9 +47,8 @@ export const PLAN_LIMITS = {
 
       whatsapp: false,
       aiAgents: false,
-      browserAutomation: false,
       apiAccess: false,
-      teamWorkspace: false,
+      ssh: false,
     },
   },
 
@@ -72,9 +70,8 @@ export const PLAN_LIMITS = {
 
       whatsapp: false,
       aiAgents: true,
-      browserAutomation: false,
       apiAccess: false,
-      teamWorkspace: false,
+      ssh: false,
     },
   },
 
@@ -96,9 +93,8 @@ export const PLAN_LIMITS = {
 
       whatsapp: true,
       aiAgents: true,
-      browserAutomation: true,
       apiAccess: true,
-      teamWorkspace: true,
+      ssh: true,
     },
   },
 } as const;
@@ -112,7 +108,15 @@ export const NODE_PLAN_FEATURES: Record<string, PlanFeature> = {
   GOOGLE_SHEETS: "googleSheets",
   AI_AGENT: "aiAgents",
   WHATSAPP: "whatsapp",
+  WHATSAPP_TRIGGER: "whatsapp",
+  GMAIL: "gmail",
+  GMAIL_TRIGGER: "gmail",
+  SSH: "ssh",
 };
+
+// Not unlocked by the free trial. SSH opens connections from this server to
+// hosts users choose; it stays with paying, identifiable accounts.
+const TRIAL_EXCLUDED_FEATURES = new Set<PlanFeature>(["ssh"]);
 
 const PLAN_ORDER = ["FREE", "BEGINNER", "INTERMEDIATE", "PRO"] as const;
 
@@ -138,7 +142,13 @@ export const getRequiredPlanForNode = (
 
   if (PLAN_LIMITS[plan]?.features[feature]) return null;
 
-  if (trialEndsAt && new Date(trialEndsAt) > new Date()) return null;
+  if (
+    !TRIAL_EXCLUDED_FEATURES.has(feature) &&
+    trialEndsAt &&
+    new Date(trialEndsAt) > new Date()
+  ) {
+    return null;
+  }
 
   const required = PLAN_ORDER.find((name) => PLAN_LIMITS[name].features[feature]);
 

@@ -25,6 +25,13 @@ export type ExecuteTrigger = Extract<
     | "WEBHOOK_TRIGGER"
     | "STRIPE_TRIGGER"
     | "GOOGLE_FORM_TRIGGER"
+    | "TELEGRAM_TRIGGER"
+    | "WHATSAPP_TRIGGER"
+    | "GMAIL_TRIGGER"
+    | "TYPEFORM_TRIGGER"
+    | "RSS_FEED_TRIGGER"
+    | "EXECUTE_WORKFLOW_TRIGGER"
+    | "ERROR_TRIGGER"
     | "CHAT_TRIGGER"
 >;
 

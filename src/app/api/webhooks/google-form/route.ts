@@ -1,6 +1,7 @@
 import { findTriggerNodes, startWorkflowExecution } from "@/inngest/utils";
 import { secretsMatch } from "@/lib/webhook-security";
 import { type NextRequest, NextResponse } from "next/server";
+import { rateLimitResponse } from "@/lib/rate-limit";
 import { NodeType } from "@prisma/client";
 
 export async function POST(request: NextRequest) {
@@ -20,6 +21,9 @@ export async function POST(request: NextRequest) {
                 { status: 400 }
             );
         }
+
+        const limited = await rateLimitResponse(`google-form:${workflowId}`);
+        if (limited) return limited;
 
         const triggerNodes = await findTriggerNodes(
             workflowId,
@@ -81,6 +85,8 @@ export async function POST(request: NextRequest) {
             initialData: {
                 googleForm: formData,
             },
+
+            dedupeKey: body.responseId,
         });
 
         return NextResponse.json(

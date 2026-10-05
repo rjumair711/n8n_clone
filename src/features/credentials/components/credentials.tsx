@@ -126,6 +126,19 @@ const credentialLogos: Record<CredentialType, string> = {
     [CredentialType.AIRTABLE]: "/logos/airtable.svg",
     [CredentialType.POSTGRES]: "/logos/postgres.svg",
     [CredentialType.WHATSAPP]: "/logos/whatsapp.svg",
+    [CredentialType.HTTP_BASIC_AUTH]: "/logos/http.svg",
+    [CredentialType.HTTP_HEADER_AUTH]: "/logos/http.svg",
+    [CredentialType.HTTP_BEARER_AUTH]: "/logos/http.svg",
+    [CredentialType.GOOGLE_OAUTH2]: "/logos/google.svg",
+    [CredentialType.OPENAI_COMPATIBLE]: "/logos/chat-model.svg",
+    [CredentialType.TWILIO]: "/logos/twilio.svg",
+    [CredentialType.JIRA]: "/logos/jira.svg",
+    [CredentialType.HUBSPOT]: "/logos/hubspot.svg",
+    [CredentialType.MYSQL]: "/logos/mysql.svg",
+    [CredentialType.RESEND]: "/logos/resend.svg",
+    [CredentialType.SENDGRID]: "/logos/sendgrid.svg",
+    [CredentialType.SALESFORCE]: "/logos/salesforce.svg",
+    [CredentialType.SSH]: "/logos/ssh.svg",
 }
 
 export const CredentialItem = ({

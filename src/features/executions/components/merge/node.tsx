@@ -6,10 +6,7 @@ import { memo, useState } from "react";
 import { MergeDialog, MergeFormValues } from "./dialog";
 import { Merge } from "lucide-react";
 
-type MergeNodeData = {
-  mode?: "any" | "all";
-  variableName?: string;
-};
+type MergeNodeData = Partial<MergeFormValues>;
 
 type MergeNodeType = Node<MergeNodeData>;
 

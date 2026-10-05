@@ -37,6 +37,8 @@ model User {
   accounts               Account[]
   workflows              Workflow[]
   credentials            Credential[]
+  apiKeys                ApiKey[]
+  workflowFiles          WorkflowFile[]
   plan                   SubscriptionPlan @default(FREE)
   trialEndsAt            DateTime?
   workflowCount          Int              @default(0)
@@ -120,6 +122,19 @@ enum CredentialType {
   AIRTABLE
   POSTGRES
   WHATSAPP
+  HTTP_BASIC_AUTH
+  HTTP_HEADER_AUTH
+  HTTP_BEARER_AUTH
+  GOOGLE_OAUTH2
+  OPENAI_COMPATIBLE
+  TWILIO
+  JIRA
+  HUBSPOT
+  MYSQL
+  RESEND
+  SENDGRID
+  SALESFORCE
+  SSH
 }
 
 model Workflow {
@@ -133,6 +148,7 @@ model Workflow {
   user        User         @relation(fields: [userId], references: [id], onDelete: Cascade)
   nodes       Node[]
   connections Connection[]
+  triggerStates TriggerState[]
 }
 
 enum NodeType {
@@ -172,6 +188,43 @@ enum NodeType {
   AIRTABLE
   POSTGRES
   WHATSAPP
+  RESPOND_TO_WEBHOOK
+  ERROR_TRIGGER
+  STOP_AND_ERROR
+  TELEGRAM_TRIGGER
+  WHATSAPP_TRIGGER
+  GMAIL
+  SPLIT_OUT
+  AGGREGATE
+  SORT
+  LIMIT
+  REMOVE_DUPLICATES
+  SUMMARIZE
+  EXECUTE_WORKFLOW
+  EXECUTE_WORKFLOW_TRIGGER
+  CHAT_MODEL
+  GMAIL_TRIGGER
+  STRUCTURED_OUTPUT_PARSER
+  TEXT_CLASSIFIER
+  INFORMATION_EXTRACTOR
+  VECTOR_STORE
+  MCP_CLIENT_TOOL
+  EDIT_FIELDS
+  TWILIO
+  JIRA
+  HUBSPOT
+  MYSQL
+  RESEND
+  SENDGRID
+  TYPEFORM_TRIGGER
+  RSS_READ
+  RSS_FEED_TRIGGER
+  GOOGLE_DRIVE
+  PDF_GENERATOR
+  CONVERT_TO_FILE
+  EXTRACT_FROM_FILE
+  SALESFORCE
+  SSH
 }
 
 model Node {
@@ -247,6 +300,14 @@ model Execution {
   // How the run was started: manual, manual-test, chat, schedule, webhook...
   triggerSource String?
 
+  // Set by the Respond to Webhook node; the webhook route waits for it
+  webhookResponse Json?
+
+  // What the run started with, so it can be retried: the trigger node type
+  // and the data that trigger received
+  trigger   String?
+  inputData Json?
+
   nodes ExecutionNode[]
 }
 
@@ -301,4 +362,119 @@ model AgentMemory {
   @@index([userId])
   @@index([sessionId])
   @@map("agent_memory")
+}
+
+// What a polling trigger (Gmail Trigger) has already seen. Kept outside the
+// Node row because saving a workflow recreates its nodes.
+model TriggerState {
+  id         String   @id @default(cuid())
+  workflowId String
+  workflow   Workflow @relation(fields: [workflowId], references: [id], onDelete: Cascade)
+  nodeId     String   @unique
+  state      Json     @default("{}")
+  updatedAt  DateTime @updatedAt
+
+  @@index([workflowId])
+}
+
+// One chunk of text and its embedding, written by the Vector Store node
+model VectorDocument {
+  id         String   @id @default(cuid())
+  userId     String
+  collection String
+  content    String   @db.Text
+  metadata   Json?
+  embedding  Float[]
+  createdAt  DateTime @default(now())
+
+  @@index([userId, collection])
+  @@map("vector_document")
+}
+
+// Keys for the public API (/api/v1). Only a hash of the key is stored.
+model ApiKey {
+  id         String    @id @default(cuid())
+  name       String
+  // First characters of the key, shown in the list so keys can be told apart
+  prefix     String
+  keyHash    String    @unique
+  userId     String
+  user       User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt  DateTime  @default(now())
+  lastUsedAt DateTime?
+
+  @@index([userId])
+  @@map("api_key")
+}
+
+// Fixed-window request counters for the public webhook and API routes
+model RateLimit {
+  key         String   @id
+  count       Int      @default(0)
+  windowStart DateTime @default(now())
+
+  @@map("rate_limit")
+}
+
+// A file made or fetched by a workflow (a generated PDF, a download).
+// Workflow data only carries a reference to it: { id, fileName, mimeType, size }.
+model WorkflowFile {
+  id          String   @id @default(cuid())
+  userId      String
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  // The run that created it, when there was one
+  executionId String?
+  fileName    String
+  mimeType    String
+  size        Int
+  data        Bytes
+  createdAt   DateTime @default(now())
+
+  @@index([userId])
+  @@index([createdAt])
+  @@map("workflow_file")
+}
+
+// One row per event a webhook or polling trigger has already accepted.
+// Providers re-send events (Stripe, WhatsApp, Telegram...); the unique key
+// makes the second delivery a no-op instead of a second run.
+model WebhookDelivery {
+  id          String   @id @default(cuid())
+  workflowId  String
+  // The trigger node type the event arrived at
+  source      String
+  // The provider's id for the event, or the caller's Idempotency-Key
+  key         String
+  executionId String?
+  createdAt   DateTime @default(now())
+
+  @@unique([workflowId, source, key])
+  @@index([createdAt])
+  @@map("webhook_delivery")
+}
+
+// A ready-made workflow published by an admin. Using one copies its nodes
+// and connections into a new workflow of the user. Credentials and secrets
+// are removed when the template is saved.
+model WorkflowTemplate {
+  id          String           @id @default(cuid())
+  name        String
+  description String           @db.Text
+  category    String           @default("General")
+  // The cheapest plan that may use it
+  minPlan     SubscriptionPlan @default(FREE)
+  // Hidden from the gallery while false
+  published   Boolean          @default(true)
+  // [{ id, type, position, data }] and [{ fromNodeId, toNodeId, fromOutput, toInput }]
+  nodes       Json
+  connections Json
+  // The node types it contains, for the badges on its card
+  nodeTypes   String[]
+  useCount    Int              @default(0)
+  createdById String
+  createdAt   DateTime         @default(now())
+  updatedAt   DateTime         @updatedAt
+
+  @@index([published, category])
+  @@map("workflow_template")
 }

@@ -15,9 +15,14 @@ const nextConfig: NextConfig = {
   devIndicators: false,
 
   // The Code node sandbox loads a .wasm file at runtime; keep it out of the bundle
-  serverExternalPackages: ["quickjs-emscripten"],
+  // ssh2 loads optional native add-ons at runtime
+  serverExternalPackages: ["quickjs-emscripten", "ssh2"],
   outputFileTracingIncludes: {
-    "/api/inngest": ["./node_modules/@jitl/quickjs-*/**/*"],
+    "/api/inngest": [
+      "./node_modules/@jitl/quickjs-*/**/*",
+      // The PDF Generator reads its fonts from disk at runtime
+      "./assets/fonts/*.ttf",
+    ],
   },
 };
 

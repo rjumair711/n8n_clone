@@ -1,9 +1,10 @@
 import { NodeExecutor } from "../../types";
+import { renderEscapedTemplate } from "@/features/executions/lib/templates";
 import { NonRetriableError } from "inngest";
 import { google } from "googleapis";
 import Handlebars from "handlebars";
 import prisma from "@/lib/db";
-import { decrypt } from "@/lib/encryption";
+import { getGoogleAuth } from "@/lib/google-oauth";
 import { GoogleCalendarNodeData } from "./node"; // Import your type from node.tsx
 
 export const googleCalendarExecutor: NodeExecutor<GoogleCalendarNodeData> = async ({
@@ -41,18 +42,11 @@ export const googleCalendarExecutor: NodeExecutor<GoogleCalendarNodeData> = asyn
         throw new NonRetriableError("Google Calendar node: Credential not found");
     }
 
-    // Parse service account
-    let serviceAccount: { clientEmail: string; privateKey: string; projectId: string; };
-    try {
-        serviceAccount = JSON.parse(decrypt(credential.value));
-    } catch {
-        throw new NonRetriableError("Google Calendar node: Invalid credential format");
-    }
 
     // Resolve dynamic variables via Handlebars safely
     const compile = (template?: string) => {
         if (!template) return "";
-        return Handlebars.compile(template)(context);
+        return renderEscapedTemplate(template, context);
     };
 
     const resolvedCalendarId = compile(data.calendarId) || "primary";
@@ -65,14 +59,10 @@ export const googleCalendarExecutor: NodeExecutor<GoogleCalendarNodeData> = asyn
     try {
         // Run the appropriate Google API step based on the operation selection
         const result = await step.run(`${operation}-calendar-event`, async () => {
-            const auth = new google.auth.GoogleAuth({
-                credentials: {
-                    client_email: serviceAccount.clientEmail,
-                    private_key: serviceAccount.privateKey.replace(/\\n/g, "\n"),
-                    project_id: serviceAccount.projectId,
-                },
-                scopes: ["https://www.googleapis.com/auth/calendar.events"],
-            });
+            // A Google account (OAuth) or a service account
+            const auth = getGoogleAuth("Google Calendar", credential, [
+                "https://www.googleapis.com/auth/calendar.events",
+            ]);
 
             const calendar = google.calendar({ version: "v3", auth });
 

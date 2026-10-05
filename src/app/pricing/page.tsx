@@ -49,9 +49,7 @@ const plans = [
       "100k+ executions",
       "WhatsApp integration",
       "AI Agents",
-      "Browser automation",
       "API access",
-      "Team collaboration",
     ],
   },
 ];

@@ -1,8 +1,10 @@
 import type { NodeExecutor } from "@/features/executions/types";
+import { renderEscapedTemplate } from "@/features/executions/lib/templates";
 import { NonRetriableError } from "inngest";
 import Handlebars from "handlebars";
 import { decode } from "html-entities";
 import ky from "ky";
+import { assertPublicUrl } from "@/lib/ssrf";
 
 Handlebars.registerHelper("json", (context) => {
   const jsonString = JSON.stringify(context, null, 2);
@@ -44,9 +46,7 @@ export const slackExecutor: NodeExecutor<SlackData> = async ({
   }
 
   // Parse handlebars variables
-  const rawContent = Handlebars.compile(
-    data.content
-  )(context);
+  const rawContent = renderEscapedTemplate(data.content, context);
 
   const content = decode(rawContent);
 
@@ -56,7 +56,11 @@ export const slackExecutor: NodeExecutor<SlackData> = async ({
       "slack-webhook",
       async () => {
 
+        // The URL is typed in by the user: never call into a private network
+        await assertPublicUrl(data.webhookUrl!);
+
         await ky.post(data.webhookUrl!, {
+          redirect: "error",
           json: {
             content,
           },

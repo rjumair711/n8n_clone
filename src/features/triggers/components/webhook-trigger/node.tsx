@@ -7,6 +7,12 @@ import { Webhook } from "lucide-react"
 
 type WebhookTriggerNodeData = {
     secret?: string;
+    responseMode?: string;
+}
+
+const RESPONSE_MODE_LABELS: Record<string, string> = {
+    lastNode: "Responds when the last node finishes",
+    responseNode: "Responds with a Respond to Webhook node",
 }
 
 type WebhookTriggerNodeType = Node<WebhookTriggerNodeData>
@@ -28,6 +34,16 @@ export const WebhookTriggerNode = memo((props: NodeProps<WebhookTriggerNodeType>
         )
     }
 
+    const handleResponseModeChange = (responseMode: string) => {
+        setNodes((nodes) =>
+            nodes.map((node) =>
+                node.id === props.id
+                    ? { ...node, data: { ...node.data, responseMode } }
+                    : node
+            )
+        )
+    }
+
     const handleOpenSettings = () => setDialogOpen(true)
     return (
         <>
@@ -36,12 +52,17 @@ export const WebhookTriggerNode = memo((props: NodeProps<WebhookTriggerNodeType>
                 onOpenChange={setDialogOpen}
                 secret={props.data?.secret}
                 onSecretChange={handleSecretChange}
+                responseMode={props.data?.responseMode}
+                onResponseModeChange={handleResponseModeChange}
             />
             <BaseTriggerNode
                 {...props}
                 icon={Webhook}
                 name="Webhook"
-                description="When an HTTP request is received"
+                description={
+                    RESPONSE_MODE_LABELS[props.data?.responseMode || ""] ||
+                    "When an HTTP request is received"
+                }
                 status={nodeStatus.status}
                 onSettings={handleOpenSettings}
                 onDoubleClick={handleOpenSettings}

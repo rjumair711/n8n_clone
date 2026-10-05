@@ -3,10 +3,12 @@
 import { useEffect } from "react"
 import { useQueryClient } from "@tanstack/react-query"
 import {
+    Code2Icon,
     CreditCardIcon,
     FolderOpenIcon,
     HistoryIcon,
     KeyIcon,
+    LayoutTemplateIcon,
     LogOutIcon,
     SparklesIcon,
 } from "lucide-react"
@@ -36,8 +38,10 @@ const menuItems = [
         title: "Main",
         items: [
             { id: "workflows", title: "Workflows", icon: FolderOpenIcon, url: "/workflows" },
+            { id: "templates", title: "Templates", icon: LayoutTemplateIcon, url: "/templates" },
             { id: "credentials", title: "Credentials", icon: KeyIcon, url: "/credentials" },
             { id: "executions", title: "Executions", icon: HistoryIcon, url: "/executions" },
+            { id: "api-keys", title: "API Keys", icon: Code2Icon, url: "/api-keys" },
         ],
     },
 ]

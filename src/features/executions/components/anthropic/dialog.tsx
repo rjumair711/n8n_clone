@@ -163,12 +163,12 @@ export const AnthropicDialog = ({
                                 <FormItem>
                                     <FormLabel>Model (Optional)</FormLabel>
                                     <FormControl>
-                                        <Input placeholder="claude-3-5-sonnet"
+                                        <Input placeholder="claude-sonnet-5-5"
                                             {...field}
                                         />
                                     </FormControl>
                                     <FormDescription>
-                                        Leave empty to use claude-3-5-sonnet. This is also the
+                                        Leave empty to use claude-sonnet-5-5. This is also the
                                         model an AI Agent uses when this node is connected
                                         to its Chat Model port.
                                     </FormDescription>
