@@ -9,6 +9,17 @@ export const TRIGGER_SOURCES = {
     WEBHOOK: "webhook",
     STRIPE: "stripe",
     GOOGLE_FORM: "google-form",
+    TELEGRAM: "telegram",
+    WHATSAPP: "whatsapp",
+    GMAIL: "gmail",
+    TYPEFORM: "typeform",
+    RSS: "rss",
+    // Started by a call to the public API (/api/v1)
+    API: "api",
+    // Started by an Error Trigger after another execution failed
+    ERROR: "error",
+    // Started by an Execute Workflow node
+    WORKFLOW: "workflow",
 } as const;
 
 const LABELS: Record<string, string> = {
@@ -19,6 +30,14 @@ const LABELS: Record<string, string> = {
     [TRIGGER_SOURCES.WEBHOOK]: "Webhook",
     [TRIGGER_SOURCES.STRIPE]: "Stripe",
     [TRIGGER_SOURCES.GOOGLE_FORM]: "Google Form",
+    [TRIGGER_SOURCES.TELEGRAM]: "Telegram",
+    [TRIGGER_SOURCES.WHATSAPP]: "WhatsApp",
+    [TRIGGER_SOURCES.GMAIL]: "Gmail",
+    [TRIGGER_SOURCES.TYPEFORM]: "Typeform",
+    [TRIGGER_SOURCES.RSS]: "RSS Feed",
+    [TRIGGER_SOURCES.API]: "API",
+    [TRIGGER_SOURCES.ERROR]: "Error Trigger",
+    [TRIGGER_SOURCES.WORKFLOW]: "Another workflow",
 };
 
 // Executions created before the column existed have no source
@@ -33,4 +52,11 @@ export const TRIGGER_TYPE_SOURCES: Record<string, string> = {
     WEBHOOK_TRIGGER: TRIGGER_SOURCES.WEBHOOK,
     STRIPE_TRIGGER: TRIGGER_SOURCES.STRIPE,
     GOOGLE_FORM_TRIGGER: TRIGGER_SOURCES.GOOGLE_FORM,
+    TELEGRAM_TRIGGER: TRIGGER_SOURCES.TELEGRAM,
+    WHATSAPP_TRIGGER: TRIGGER_SOURCES.WHATSAPP,
+    GMAIL_TRIGGER: TRIGGER_SOURCES.GMAIL,
+    TYPEFORM_TRIGGER: TRIGGER_SOURCES.TYPEFORM,
+    RSS_FEED_TRIGGER: TRIGGER_SOURCES.RSS,
+    ERROR_TRIGGER: TRIGGER_SOURCES.ERROR,
+    EXECUTE_WORKFLOW_TRIGGER: TRIGGER_SOURCES.WORKFLOW,
 };

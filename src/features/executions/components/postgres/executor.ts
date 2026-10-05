@@ -1,6 +1,7 @@
 import type { NodeExecutor } from "@/features/executions/types";
 import { NonRetriableError } from "inngest";
 import { Client } from "pg";
+import { assertPublicHost } from "@/lib/ssrf";
 import { renderTemplate } from "../../lib/templates";
 import { loadCredentialSecret, parseJsonField } from "../../lib/integration";
 
@@ -131,6 +132,16 @@ export const postgresExecutor: NodeExecutor<PostgresData> = async ({
     const result = await step.run(
       `postgres-${nodeId}-${data.operation}`,
       async () => {
+        // The host comes from the user: never connect into a private
+        // network (allowed with ALLOW_PRIVATE_NETWORK_REQUESTS=true)
+        let host = "";
+        try {
+          host = new URL(connectionString).hostname;
+        } catch {
+          // Not a URL (key=value form): pg reports what is wrong with it
+        }
+        if (host) await assertPublicHost(host);
+
         const client = new Client({
           connectionString,
           connectionTimeoutMillis: CONNECT_TIMEOUT_MS,

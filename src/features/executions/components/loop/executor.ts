@@ -17,17 +17,23 @@ type LoopData = {
 export const loopExecutor: NodeExecutor<LoopData> = async ({
   data,
   context,
+  items: incomingItems,
 }) => {
-  if (!data.itemsPath) {
-    throw new NonRetriableError("Loop node requires the path to a list");
+  const itemsPath = data.itemsPath?.trim();
+
+  if (!itemsPath && !incomingItems) {
+    throw new NonRetriableError(
+      "Loop node requires the path to a list, or a list node connected before it"
+    );
   }
 
   const variableName = data.variableName?.trim() || "loop";
-  const value = getValueByPath(context, data.itemsPath);
+  // Without a path the loop runs over the items a list node sent here
+  const value = itemsPath ? getValueByPath(context, itemsPath) : incomingItems;
 
   if (!Array.isArray(value)) {
     throw new NonRetriableError(
-      `Loop node: "${data.itemsPath}" is not a list`
+      `Loop node: "${itemsPath}" is not a list`
     );
   }
 

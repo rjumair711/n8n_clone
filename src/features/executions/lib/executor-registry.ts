@@ -35,6 +35,46 @@ import { githubExecutor } from '../components/github/executor';
 import { airtableExecutor } from '../components/airtable/executor';
 import { postgresExecutor } from '../components/postgres/executor';
 import { whatsappExecutor } from '../components/whatsapp/executor';
+import {
+  contextTriggerExecutor,
+  executeWorkflowExecutor,
+  respondToWebhookExecutor,
+  stopAndErrorExecutor,
+} from '../components/core/executors';
+import {
+  aggregateExecutor,
+  limitExecutor,
+  removeDuplicatesExecutor,
+  sortExecutor,
+  splitOutExecutor,
+  summarizeExecutor,
+} from '../components/data/executors';
+import { gmailExecutor } from '../components/gmail/executor';
+import { chatModelExecutor } from '../components/chat-model/executor';
+import {
+  informationExtractorExecutor,
+  textClassifierExecutor,
+  vectorStoreExecutor,
+} from '../components/ai/executors';
+import { mcpClientExecutor } from '../components/ai/mcp';
+import { salesforceExecutor } from '../components/apps/salesforce';
+import { sshExecutor } from '../components/apps/ssh';
+import {
+  convertToFileExecutor,
+  extractFromFileExecutor,
+  googleDriveExecutor,
+  pdfGeneratorExecutor,
+} from '../components/files/executors';
+import {
+  editFieldsExecutor,
+  hubspotExecutor,
+  jiraExecutor,
+  mysqlExecutor,
+  resendExecutor,
+  rssReadExecutor,
+  sendgridExecutor,
+  twilioExecutor,
+} from '../components/apps/executors';
 
 export const executorRegistry: Record<NodeType, NodeExecutor<any>> = {
   [NodeType.MANUAL_TRIGGER]: manualTriggerExecutor,
@@ -73,6 +113,44 @@ export const executorRegistry: Record<NodeType, NodeExecutor<any>> = {
   [NodeType.AIRTABLE]: airtableExecutor,
   [NodeType.POSTGRES]: postgresExecutor,
   [NodeType.WHATSAPP]: whatsappExecutor,
+  [NodeType.RESPOND_TO_WEBHOOK]: respondToWebhookExecutor,
+  [NodeType.ERROR_TRIGGER]: contextTriggerExecutor,
+  [NodeType.STOP_AND_ERROR]: stopAndErrorExecutor,
+  [NodeType.TELEGRAM_TRIGGER]: contextTriggerExecutor,
+  [NodeType.WHATSAPP_TRIGGER]: contextTriggerExecutor,
+  [NodeType.GMAIL]: gmailExecutor,
+  [NodeType.SPLIT_OUT]: splitOutExecutor,
+  [NodeType.AGGREGATE]: aggregateExecutor,
+  [NodeType.SORT]: sortExecutor,
+  [NodeType.LIMIT]: limitExecutor,
+  [NodeType.REMOVE_DUPLICATES]: removeDuplicatesExecutor,
+  [NodeType.SUMMARIZE]: summarizeExecutor,
+  [NodeType.EXECUTE_WORKFLOW]: executeWorkflowExecutor,
+  [NodeType.EXECUTE_WORKFLOW_TRIGGER]: contextTriggerExecutor,
+  [NodeType.CHAT_MODEL]: chatModelExecutor,
+  [NodeType.GMAIL_TRIGGER]: contextTriggerExecutor,
+  // Only read by the AI Agent it is plugged into
+  [NodeType.STRUCTURED_OUTPUT_PARSER]: contextTriggerExecutor,
+  [NodeType.TEXT_CLASSIFIER]: textClassifierExecutor,
+  [NodeType.INFORMATION_EXTRACTOR]: informationExtractorExecutor,
+  [NodeType.VECTOR_STORE]: vectorStoreExecutor,
+  [NodeType.MCP_CLIENT_TOOL]: mcpClientExecutor,
+  [NodeType.EDIT_FIELDS]: editFieldsExecutor,
+  [NodeType.TWILIO]: twilioExecutor,
+  [NodeType.JIRA]: jiraExecutor,
+  [NodeType.HUBSPOT]: hubspotExecutor,
+  [NodeType.MYSQL]: mysqlExecutor,
+  [NodeType.RESEND]: resendExecutor,
+  [NodeType.SENDGRID]: sendgridExecutor,
+  [NodeType.TYPEFORM_TRIGGER]: contextTriggerExecutor,
+  [NodeType.RSS_READ]: rssReadExecutor,
+  [NodeType.RSS_FEED_TRIGGER]: contextTriggerExecutor,
+  [NodeType.GOOGLE_DRIVE]: googleDriveExecutor,
+  [NodeType.PDF_GENERATOR]: pdfGeneratorExecutor,
+  [NodeType.CONVERT_TO_FILE]: convertToFileExecutor,
+  [NodeType.EXTRACT_FROM_FILE]: extractFromFileExecutor,
+  [NodeType.SALESFORCE]: salesforceExecutor,
+  [NodeType.SSH]: sshExecutor,
 }
 
 export const getExecutor = (type: NodeType): NodeExecutor<any> => {

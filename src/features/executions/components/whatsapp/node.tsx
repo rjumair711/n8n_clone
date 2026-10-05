@@ -15,6 +15,7 @@ export const whatsappConfig: IntegrationConfig = {
   operations: [
     { value: "send_text", label: "Send Text Message" },
     { value: "send_template", label: "Send Template Message" },
+    { value: "send_document", label: "Send File (Document, Image, Video, Audio)" },
   ],
   fields: [
     {
@@ -41,6 +42,21 @@ export const whatsappConfig: IntegrationConfig = {
         "Free text only reaches users who messaged you in the last 24 hours; otherwise send a template.",
       required: true,
       operations: ["send_text"],
+    },
+    {
+      name: "file",
+      label: "File",
+      placeholder: "pdf.file",
+      description:
+        "A file variable: a file made by PDF Generator, Convert to File, Google Drive or an HTTP Request download. Like text, it only reaches users who messaged you in the last 24 hours.",
+      required: true,
+      operations: ["send_document"],
+    },
+    {
+      name: "caption",
+      label: "Caption",
+      placeholder: "Your invoice for order {{webhook.body.orderId}}",
+      operations: ["send_document"],
     },
     {
       name: "templateName",

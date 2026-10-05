@@ -68,7 +68,14 @@ interface Props {
 }
 
 export const GoogleCalendarDialog = ({ open, onOpenChange, onSubmit, defaultValues = {} }: Props) => {
-  const { data: credentials, isLoading } = useCredentialsByType(CredentialType.GOOGLE_CALENDAR);
+  // Either a service account or a Google account connected with OAuth
+  const serviceAccounts = useCredentialsByType(CredentialType.GOOGLE_CALENDAR);
+  const googleAccounts = useCredentialsByType(CredentialType.GOOGLE_OAUTH2);
+  const credentials = [
+    ...(googleAccounts.data ?? []),
+    ...(serviceAccounts.data ?? []),
+  ];
+  const isLoading = serviceAccounts.isLoading || googleAccounts.isLoading;
 
   const form = useForm<GoogleCalendarFormValues>({
     resolver: zodResolver(formSchema),

@@ -1,7 +1,4 @@
 import { tool, type ModelMessage, type ToolSet } from "ai";
-import { createOpenAI } from "@ai-sdk/openai";
-import { createAnthropic } from "@ai-sdk/anthropic";
-import { createGoogleGenerativeAI } from "@ai-sdk/google";
 import { NonRetriableError } from "inngest";
 import prisma from "@/lib/db";
 import { decrypt } from "@/lib/encryption";
@@ -22,6 +19,18 @@ import {
   uniqueToolName,
 } from "@/features/executions/lib/agent-tools";
 import { AGENT_DEFAULT_MAX_ITERATIONS, runAgentLoop } from "./agent-loop";
+import {
+  DEFAULT_MODELS,
+  MODEL_NODE_PROVIDERS,
+  buildLanguageModel,
+  type ModelProvider as Provider,
+} from "@/features/executions/lib/connected-model";
+import { extractJson } from "@/features/executions/lib/ai-fields";
+import {
+  buildMcpTools,
+  loadMcpSecret,
+  type McpClientData,
+} from "@/features/executions/components/ai/mcp";
 
 export type AIAgentData = {
   // "auto": read the prompt from the previous node (chatInput), like n8n's
@@ -40,21 +49,6 @@ export type AIAgentData = {
   credentialId?: string;
   modelName?: string;
   systemPrompt?: string;
-};
-
-type Provider = "OPENAI" | "ANTHROPIC" | "GEMINI";
-
-const MODEL_NODE_PROVIDERS: Record<string, Provider> = {
-  OPENAI: "OPENAI",
-  ANTHROPIC: "ANTHROPIC",
-  GEMINI: "GEMINI",
-};
-
-// Same defaults the standalone model nodes use
-const DEFAULT_MODELS: Record<Provider, string> = {
-  OPENAI: "gpt-4o-mini",
-  ANTHROPIC: "claude-3-5-sonnet",
-  GEMINI: "gemini-2.5-flash",
 };
 
 const DEFAULT_SYSTEM_MESSAGE = "You are a helpful assistant";
@@ -97,6 +91,8 @@ export const aiAgentExecutor: NodeExecutor<AIAgentData> = async ({
   step,
   allNodes,
   connections,
+  executionId,
+  callDepth,
 }) => {
   const maxIterations =
     Number(data.maxIterations) || AGENT_DEFAULT_MAX_ITERATIONS;
@@ -109,6 +105,7 @@ export const aiAgentExecutor: NodeExecutor<AIAgentData> = async ({
 
   let modelNode: NodeWithCredential | undefined;
   let memoryNode: NodeWithCredential | undefined;
+  let parserNode: NodeWithCredential | undefined;
   const toolNodes: NodeWithCredential[] = [];
 
   for (const edge of incomingEdges) {
@@ -117,7 +114,9 @@ export const aiAgentExecutor: NodeExecutor<AIAgentData> = async ({
 
     const handle = (edge.toInput || "").toLowerCase();
 
-    if (handle.includes("tool")) {
+    if (handle.includes("parser")) {
+      parserNode ??= sourceNode;
+    } else if (handle.includes("tool")) {
       toolNodes.push(sourceNode);
     } else if (
       handle.includes("model") ||
@@ -141,6 +140,12 @@ export const aiAgentExecutor: NodeExecutor<AIAgentData> = async ({
   const provider: Provider | undefined = modelNode
     ? MODEL_NODE_PROVIDERS[modelNode.type]
     : data.provider;
+
+  if (provider === "COMPATIBLE" && !modelData.model?.trim()) {
+    throw new NonRetriableError(
+      "AI Agent: the connected Chat Model node has no model set"
+    );
+  }
 
   if (!provider) {
     throw new NonRetriableError(
@@ -193,9 +198,28 @@ export const aiAgentExecutor: NodeExecutor<AIAgentData> = async ({
     );
   }
 
-  const system =
+  const baseSystem =
     renderTemplate(data.systemMessage ?? data.systemPrompt, context).trim() ||
     DEFAULT_SYSTEM_MESSAGE;
+
+  // Structured Output Parser: the final answer has to be JSON in the shape
+  // of the example (or JSON Schema) given on the parser node
+  const outputFormat = parserNode
+    ? renderTemplate(
+        (parserNode.data as { jsonExample?: string } | null)?.jsonExample,
+        context
+      ).trim()
+    : "";
+
+  if (parserNode && !outputFormat) {
+    throw new NonRetriableError(
+      "AI Agent: the connected Structured Output Parser has no JSON example"
+    );
+  }
+
+  const system = parserNode
+    ? `${baseSystem}\n\nIMPORTANT: Your final answer must be a single JSON value and nothing else: no explanation, no markdown fences. It must have exactly this structure:\n${outputFormat}`
+    : baseSystem;
 
   // =========================================================================
   // 4. MEMORY: previous turns of this session become real chat messages
@@ -260,7 +284,30 @@ export const aiAgentExecutor: NodeExecutor<AIAgentData> = async ({
   const tools: ToolSet = {};
   const takenNames = new Set<string>();
 
+  // MCP servers bring their own tools; they are connected inside the
+  // agent's step below because the connection is live
+  const mcpNodes = toolNodes.filter(
+    (node) => node.type === NodeType.MCP_CLIENT_TOOL
+  );
+
+  const mcpServers: { data: McpClientData; secret: string }[] = [];
+  for (const mcpNode of mcpNodes) {
+    const mcpData = (mcpNode.data ?? {}) as McpClientData;
+
+    mcpServers.push({
+      data: mcpData,
+      secret: await loadMcpSecret({
+        step,
+        userId,
+        nodeId: mcpNode.id,
+        data: mcpData,
+      }),
+    });
+  }
+
   for (const toolNode of toolNodes) {
+    if (toolNode.type === NodeType.MCP_CLIENT_TOOL) continue;
+
     const executor = executorRegistry[toolNode.type as NodeType];
     if (!executor) continue;
 
@@ -290,6 +337,9 @@ export const aiAgentExecutor: NodeExecutor<AIAgentData> = async ({
             connections,
             step: inlineStep,
             context: toolContext,
+            executionId,
+            callDepth,
+            inline: true,
           });
 
           // Hand back only what the tool produced, not the whole context
@@ -324,21 +374,33 @@ export const aiAgentExecutor: NodeExecutor<AIAgentData> = async ({
     try {
       const apiKey = decrypt(credential.value).trim();
 
-      const model =
-        provider === "OPENAI"
-          ? createOpenAI({ apiKey })(modelName)
-          : provider === "ANTHROPIC"
-            ? createAnthropic({ apiKey })(modelName)
-            : createGoogleGenerativeAI({ apiKey })(modelName);
+      const model = buildLanguageModel(provider, apiKey, modelName, modelData);
+
+      const allTools: ToolSet = { ...tools };
+
+      for (const server of mcpServers) {
+        try {
+          Object.assign(
+            allTools,
+            await buildMcpTools({ ...server, context, takenNames })
+          );
+        } catch (error: any) {
+          throw new NonRetriableError(
+            `AI Agent: could not load the tools of the MCP server (${error?.message || "unknown error"})`
+          );
+        }
+      }
 
       return await runAgentLoop({
         model,
         system,
         messages,
-        tools,
+        tools: allTools,
         maxIterations,
       });
     } catch (error: any) {
+      if (error instanceof NonRetriableError) throw error;
+
       console.error(`[AI Agent Error]: Failed to communicate with ${provider}`, error);
 
       // Stop immediately and mark the AI Agent node as FAILED
@@ -347,6 +409,20 @@ export const aiAgentExecutor: NodeExecutor<AIAgentData> = async ({
       );
     }
   });
+
+  // With an output parser the answer is data, not text
+  let finalOutput: unknown = agentResult.output;
+
+  if (parserNode) {
+    finalOutput = extractJson(agentResult.output);
+
+    if (finalOutput === undefined) {
+      throw new NonRetriableError(
+        "AI Agent: the model's answer does not fit the required output format. Answer was: " +
+          agentResult.output.slice(0, 300)
+      );
+    }
+  }
 
   // =========================================================================
   // 7. SAVE THIS TURN TO MEMORY
@@ -377,7 +453,7 @@ export const aiAgentExecutor: NodeExecutor<AIAgentData> = async ({
   }
 
   const agentOutput = {
-    output: agentResult.output,
+    output: finalOutput,
     // Kept for workflows that referenced {{aiAgentOutput.response}}
     response: agentResult.output,
     ...(data.returnIntermediateSteps
@@ -391,6 +467,6 @@ export const aiAgentExecutor: NodeExecutor<AIAgentData> = async ({
     ...context,
     [targetOutputKey]: agentOutput,
     // n8n exposes the answer as `output`
-    output: agentResult.output,
+    output: finalOutput,
   };
 };

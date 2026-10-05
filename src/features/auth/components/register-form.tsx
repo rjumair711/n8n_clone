@@ -70,9 +70,17 @@ export function RegisterForm() {
                 name: values.email,
                 email: values.email,
                 password: values.password,
+                callbackURL: "/workflows",
             },
             {
-                onSuccess: () => {
+                onSuccess: (ctx) => {
+                    // No session yet: the address has to be confirmed first
+                    if (!ctx.data?.token) {
+                        toast.success("Check your inbox: we sent you a link to confirm your email address.")
+                        router.push("/login");
+                        return;
+                    }
+
                     router.push("/workflows");
                 },
                 onError: (ctx) => {

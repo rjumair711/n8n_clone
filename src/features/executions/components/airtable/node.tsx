@@ -66,7 +66,7 @@ export const airtableConfig: IntegrationConfig = {
 };
 
 export const AirtableNode = createIntegrationNode(airtableConfig, (data) => {
-  const operation = airtableConfig.operations.find(
+  const operation = airtableConfig.operations?.find(
     (option) => option.value === data.operation
   )?.label;
 

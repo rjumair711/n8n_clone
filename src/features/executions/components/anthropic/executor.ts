@@ -1,4 +1,5 @@
 import type { NodeExecutor } from "@/features/executions/types";
+import { renderEscapedTemplate } from "@/features/executions/lib/templates";
 import { NonRetriableError } from "inngest";
 import { createAnthropic } from "@ai-sdk/anthropic";
 import Handlebars from "handlebars";
@@ -56,14 +57,10 @@ export const AnthropicExecutor: NodeExecutor<
 
   // Compile prompts
   const systemPrompt = data.systemPrompt
-    ? Handlebars.compile(
-        data.systemPrompt
-      )(context)
+    ? renderEscapedTemplate(data.systemPrompt, context)
     : "You are a helpful assistant.";
 
-  const userPrompt = Handlebars.compile(
-    data.userPrompt
-  )(context);
+  const userPrompt = renderEscapedTemplate(data.userPrompt, context);
 
   // Fetch credential
   const credential = await step.run(
@@ -96,7 +93,7 @@ export const AnthropicExecutor: NodeExecutor<
       generateText,
       {
         model: anthropic(
-          data.model || "claude-3-5-sonnet"
+          data.model || "claude-sonnet-5-5"
         ),
 
         system: systemPrompt,

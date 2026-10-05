@@ -4,7 +4,13 @@ import { geminiChannel } from "./channels/gemini";
 import { inngest } from "./client";
 import { NonRetriableError } from "inngest";
 import { CronExpressionParser } from "cron-parser";
-import { buildGraph, runWorkflowGraph } from "./engine";
+import { buildGraph, getActiveOutputs, runWorkflowGraph } from "./engine";
+import {
+  ALL_OUTPUTS,
+  runNodeForItems,
+  type NodeRunResult,
+  type StreamItem,
+} from "./items";
 import {
   ExecutionStatus,
   NodeType,
@@ -13,6 +19,8 @@ import {
 
 import { getExecutor } from "@/features/executions/lib/executor-registry";
 import { TRIGGER_SOURCES } from "@/config/trigger-sources";
+import { startWorkflowExecution } from "./utils";
+import { ensureExpressionEngine } from "@/features/executions/lib/expressions";
 import type {
   NodeWithCredential,
   WorkflowContext,
@@ -49,6 +57,22 @@ import { dateTimeChannel } from "./channels/datetime";
 import { textFormatterChannel } from "./channels/textformatter";
 
 const toJson = (value: unknown) => value as Prisma.InputJsonValue;
+
+// Per-node error handling, saved in the node's data by the canvas toolbar
+type NodeErrorSettings = {
+  onError?: "stop" | "continue";
+  retryOnFail?: boolean;
+  maxTries?: number;
+  waitBetweenTries?: number;
+};
+
+const RETRY_DEFAULT_TRIES = 3;
+const RETRY_MAX_TRIES = 5;
+const RETRY_DEFAULT_WAIT_MS = 1000;
+const RETRY_MAX_WAIT_MS = 5000;
+
+// Nodes whose whole purpose is to fail the run
+const ALWAYS_STOP_TYPES = new Set<string>([NodeType.STOP_AND_ERROR]);
 
 // =========================================================================
 // 1. ENGINE EXECUTOR: Runs a single execution instance from start to finish
@@ -138,11 +162,16 @@ export const executeWorkflow =
       const workflowId = event.data.workflowId;
       const executionId = event.data.executionId;
 
-      if (!inngestEventId || !workflowId || !executionId) {
+      // Runs started with step.invoke (Execute Workflow) may have no event id
+      if (!workflowId || !executionId) {
         throw new NonRetriableError(
           "Workflow ID or execution ID is missing"
         );
       }
+
+      // {{ $json... }} expressions are evaluated synchronously while nodes
+      // render their fields, so the sandbox has to be loaded first
+      await ensureExpressionEngine();
 
       // Everything that touches the database runs inside a step. Inngest
       // re-runs this function body after every step, so writes made outside
@@ -163,9 +192,16 @@ export const executeWorkflow =
           );
         }
 
+        // The trigger and its data are kept so the run can be retried
         await prisma.execution.update({
           where: { id: found.id },
-          data: { inngestEventId },
+          data: {
+            ...(inngestEventId ? { inngestEventId } : {}),
+            trigger: event.data.trigger ?? null,
+            inputData: toJson(
+              event.data.InitialData || event.data.initialData || {}
+            ),
+          },
         });
 
         return {
@@ -178,7 +214,7 @@ export const executeWorkflow =
       // PREPARE WORKFLOW
       // =========================================
 
-      const { allNodes, connections, userId, userPlan, trialEndsAt } = await step.run(
+      const { allNodes, connections, userId, userPlan, trialEndsAt, workflowName } = await step.run(
         "prepare-workflow",
         async () => {
           const workflow = await prisma.workflow.findUniqueOrThrow({
@@ -205,6 +241,7 @@ export const executeWorkflow =
             allNodes: workflow.nodes,
             connections: workflow.connections, // We need this to trace cables!
             userId: workflow.userId,
+            workflowName: workflow.name,
             userPlan: workflow.user.plan,
             trialEndsAt: workflow.user.trialEndsAt,
           };
@@ -267,8 +304,11 @@ export const executeWorkflow =
       const runNode = async (
         node: (typeof allNodes)[number],
         context: WorkflowContext,
-        meta: { inputs: { active: number; total: number } }
-      ): Promise<WorkflowContext> => {
+        meta: {
+          inputs: { active: number; total: number };
+          items: StreamItem[] | null;
+        }
+      ): Promise<NodeRunResult> => {
         // Paid-plan nodes stop the run with a message the user can act on
         const requiredPlan = getRequiredPlanForNode(
           node.type,
@@ -302,21 +342,70 @@ export const executeWorkflow =
           }
         );
 
-        let output: WorkflowContext;
+        const settings: NodeErrorSettings = ALWAYS_STOP_TYPES.has(node.type)
+          ? {}
+          : ((node.data ?? {}) as NodeErrorSettings);
 
-        try {
-          output = await executor({
-            data: node.data as Record<string, unknown>,
-            nodeId: node.id,
-            credential: node.credentialId,
-            userId,
-            context,
-            step,
-            allNodes: allNodes as unknown as NodeWithCredential[],    // Agent uses this to find the OpenAI/Gemini config
-            connections: connections as any, // Agent uses this to see what is plugged into its target handles
-            inputs: meta.inputs,
-          });
-        } catch (error) {
+        // Like n8n's "Retry On Fail": the first try plus the retries
+        const maxTries = settings.retryOnFail
+          ? Math.min(
+              Math.max(Number(settings.maxTries) || RETRY_DEFAULT_TRIES, 2),
+              RETRY_MAX_TRIES
+            )
+          : 1;
+
+        const waitBetweenTries = Math.min(
+          Math.max(
+            Number(settings.waitBetweenTries ?? RETRY_DEFAULT_WAIT_MS) || 0,
+            0
+          ),
+          RETRY_MAX_WAIT_MS
+        );
+
+        let output: NodeRunResult | undefined;
+        let failure: unknown;
+
+        for (let attempt = 1; attempt <= maxTries; attempt++) {
+          try {
+            // Runs the executor once, or once per item when a list node
+            // upstream sent items here
+            output = await runNodeForItems({
+              node,
+              context,
+              items: meta.items,
+              getActiveOutputs,
+              execute: (runContext, runItems) =>
+                executor({
+                  data: node.data as Record<string, unknown>,
+                  nodeId: node.id,
+                  credential: node.credentialId,
+                  userId,
+                  context: runContext,
+                  step,
+                  allNodes: allNodes as unknown as NodeWithCredential[],    // Agent uses this to find the OpenAI/Gemini config
+                  connections: connections as any, // Agent uses this to see what is plugged into its target handles
+                  inputs: meta.inputs,
+                  items: runItems,
+                  executionId: execution.id,
+                  callDepth: Number(event.data.callDepth) || 0,
+                }),
+            });
+            failure = undefined;
+            break;
+          } catch (error) {
+            failure = error;
+
+            if (attempt < maxTries && waitBetweenTries > 0) {
+              await step.sleep(
+                `node-retry-wait-${node.id}-${attempt}`,
+                waitBetweenTries
+              );
+            }
+          }
+        }
+
+        if (failure !== undefined || !output) {
+          const error = failure;
           const errorMessage =
             error instanceof Error
               ? error.message
@@ -328,6 +417,45 @@ export const executeWorkflow =
               : undefined;
 
           console.error(`Node failed: ${node.id}`, error);
+
+          // "On Error: Continue": the node is marked as failed, the run goes
+          // on and later nodes can read {{error.message}}
+          if (settings.onError === "continue") {
+            await step.run(`node-continued-${node.id}`, async () => {
+              const started = await prisma.executionNode.findUnique({
+                where: { id: nodeExecutionId },
+                select: { startedAt: true },
+              });
+
+              const completedAt = new Date();
+
+              await prisma.executionNode.update({
+                where: { id: nodeExecutionId },
+                data: {
+                  status: ExecutionStatus.FAILED,
+                  error: errorMessage,
+                  errorStack: errorStack,
+                  completedAt,
+                  durationMs: started
+                    ? completedAt.getTime() - started.startedAt.getTime()
+                    : undefined,
+                },
+              });
+            });
+
+            return {
+              context: {
+                ...context,
+                error: {
+                  message: errorMessage,
+                  nodeId: node.id,
+                  nodeType: node.type,
+                },
+              },
+              // The items go on to the next node as they arrived
+              outputItems: meta.items ? { [ALL_OUTPUTS]: meta.items } : null,
+            };
+          }
 
           await step.run(`node-failed-${node.id}`, async () => {
             const started = await prisma.executionNode.findUnique({
@@ -364,10 +492,55 @@ export const executeWorkflow =
             });
           });
 
+          // Error Trigger: a failure starts the workflows that listen for
+          // it. A failing error workflow does not trigger another one.
+          if (event.data.trigger !== NodeType.ERROR_TRIGGER) {
+            await step.run(`error-trigger-${node.id}`, async () => {
+              const listeners = await prisma.node.findMany({
+                where: {
+                  type: NodeType.ERROR_TRIGGER,
+                  workflow: { userId },
+                },
+                select: { workflowId: true, data: true },
+              });
+
+              // By default an Error Trigger catches failures of its own
+              // workflow; with scope "all" it catches every workflow's
+              const targets = new Set(
+                listeners
+                  .filter(
+                    (listener) =>
+                      listener.workflowId === workflowId ||
+                      (listener.data as { scope?: string } | null)?.scope ===
+                        "all"
+                  )
+                  .map((listener) => listener.workflowId)
+              );
+
+              for (const targetWorkflowId of targets) {
+                await startWorkflowExecution({
+                  workflowId: targetWorkflowId,
+                  trigger: NodeType.ERROR_TRIGGER,
+                  initialData: {
+                    execution: {
+                      id: execution.id,
+                      error: { message: errorMessage, stack: errorStack },
+                      lastNodeExecuted: node.type,
+                      lastNodeId: node.id,
+                    },
+                    workflow: { id: workflowId, name: workflowName },
+                  },
+                });
+              }
+            });
+          }
+
           throw new NonRetriableError(
             `Node ${node.id} failed: ${errorMessage}`
           );
         }
+
+        const finalOutput = output;
 
         await step.run(`node-finish-${node.id}`, async () => {
           const started = await prisma.executionNode.findUnique({
@@ -381,7 +554,7 @@ export const executeWorkflow =
             where: { id: nodeExecutionId },
             data: {
               status: ExecutionStatus.SUCCESS,
-              output: toJson(output),
+              output: toJson(finalOutput.context),
               completedAt,
               durationMs: started
                 ? completedAt.getTime() - started.startedAt.getTime()
@@ -390,7 +563,7 @@ export const executeWorkflow =
           });
         });
 
-        return output;
+        return finalOutput;
       };
 
       // =========================================

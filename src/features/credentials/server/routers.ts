@@ -85,15 +85,24 @@ export const credentialsRouter = createTRPCRouter({
             value: z.string().min(1, "Value is required"),
         })
         )
-        .mutation(({ ctx, input }) => {
+        .mutation(async ({ ctx, input }) => {
             const { id, name, type, value } = input;
+
+            const existing = await prisma.credential.findUniqueOrThrow({
+                where: { id, userId: ctx.auth.user.id },
+            });
+
+            // The edit form is filled with the stored (encrypted) value. When
+            // it comes back unchanged, only the name changed: encrypting it
+            // again would destroy the secret.
+            const unchanged = value === existing.value;
 
             return prisma.credential.update({
                 where: { id, userId: ctx.auth.user.id },
                 data: {
                     name,
-                    type,
-                    value: encrypt(value)
+                    type: unchanged ? existing.type : type,
+                    ...(unchanged ? {} : { value: encrypt(value) }),
                 }
             })
         }),

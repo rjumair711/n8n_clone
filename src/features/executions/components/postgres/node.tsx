@@ -67,7 +67,7 @@ export const PostgresNode = createIntegrationNode(postgresConfig, (data) => {
     return data.query ? `${data.query.slice(0, 40)}...` : undefined;
   }
 
-  const operation = postgresConfig.operations.find(
+  const operation = postgresConfig.operations?.find(
     (option) => option.value === data.operation
   )?.label;
 

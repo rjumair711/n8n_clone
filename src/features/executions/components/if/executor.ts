@@ -1,4 +1,5 @@
 import { NodeExecutor } from "../../types";
+import { renderTemplate } from "@/features/executions/lib/templates";
 import { NonRetriableError } from "inngest";
 import Handlebars from "handlebars";
 import { evaluateCondition, getValueByPath } from "../../lib/conditions";
@@ -38,7 +39,7 @@ export const ifExecutor: NodeExecutor<IfData> = async ({
     // The comparison value may reference other variables: {{order.minimum}}
     const expectedValue =
       value && value.includes("{{")
-        ? Handlebars.compile(value, { noEscape: true })(context)
+        ? renderTemplate(value, context)
         : value;
 
     const passed = evaluateCondition(actualValue, operator, expectedValue);

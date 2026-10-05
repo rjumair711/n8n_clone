@@ -11,6 +11,8 @@ interface WorkflowNodeProps {
     showToolbar?: boolean;
     onDelete?: () => void;
     onSettings?: () => void;
+    // Extra toolbar buttons, shown between Settings and Delete
+    extraActions?: ReactNode;
     name?: string;
     description?: string;
 }
@@ -20,6 +22,7 @@ export function WorkflowNode({
 showToolbar = true,
     onDelete,
     onSettings,
+    extraActions,
     name,
     description
 }: WorkflowNodeProps) {
@@ -30,6 +33,7 @@ showToolbar = true,
                     <Button size="sm" variant="ghost" onClick={onSettings}>
                         <SettingsIcon className="size-4" />
                     </Button>
+                    {extraActions}
                     <Button size="sm" variant="ghost" onClick={onDelete}>
                         <TrashIcon className="size-4" />
                     </Button>

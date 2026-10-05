@@ -29,7 +29,8 @@ const DEFAULT_MAX_ITERATIONS = 100;
 const HARD_MAX_ITERATIONS = 200;
 
 const formSchema = z.object({
-  itemsPath: z.string().min(1, "The path to a list is required"),
+  // Empty: loop over the items of the list node connected before the loop
+  itemsPath: z.string(),
   variableName: z
     .string()
     .min(1, "Variable name is required")

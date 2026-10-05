@@ -1,6 +1,7 @@
 import { findTriggerNodes, startWorkflowExecution } from "@/inngest/utils";
 import { verifyStripeSignature } from "@/lib/webhook-security";
 import { type NextRequest, NextResponse } from "next/server";
+import { rateLimitResponse } from "@/lib/rate-limit";
 import { NodeType } from "@prisma/client";
 
 export async function POST(request: NextRequest) {
@@ -20,6 +21,9 @@ export async function POST(request: NextRequest) {
                 { status: 400 }
             );
         }
+
+        const limited = await rateLimitResponse(`stripe:${workflowId}`);
+        if (limited) return limited;
 
         const triggerNodes = await findTriggerNodes(
             workflowId,
@@ -85,6 +89,9 @@ export async function POST(request: NextRequest) {
             initialData: {
                 stripe: stripeData,
             },
+
+            // Stripe re-sends an event until it gets a 2xx answer
+            dedupeKey: body.id,
         });
 
         return NextResponse.json(

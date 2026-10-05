@@ -7,6 +7,7 @@ import {
   parseJsonField,
   toIntegrationError,
 } from "../../lib/integration";
+import { loadFiles, resolveFileId } from "../files/executors";
 
 type WhatsappData = {
   variableName?: string;
@@ -18,6 +19,9 @@ type WhatsappData = {
   templateName?: string;
   languageCode?: string;
   templateParamsJson?: string;
+  // send_document: a file variable, and an optional caption
+  file?: string;
+  caption?: string;
 };
 
 const GRAPH_API_VERSION = "v21.0";
@@ -50,8 +54,16 @@ export const whatsappExecutor: NodeExecutor<WhatsappData> = async ({
   }
 
   let payload: Record<string, unknown>;
+  // send_document: the file is uploaded to Meta first, then sent by its id
+  let documentId: string | null = null;
+  const caption = renderTemplate(data.caption, context).trim();
 
   switch (data.operation) {
+    case "send_document":
+      documentId = resolveFileId("WhatsApp", context, data.file);
+      payload = {};
+      break;
+
     case "send_text": {
       const body = renderTemplate(data.message, context).trim();
       if (!body) {
@@ -122,6 +134,49 @@ export const whatsappExecutor: NodeExecutor<WhatsappData> = async ({
     const result = await step.run(
       `whatsapp-${nodeId}-${data.operation}`,
       async () => {
+        if (documentId) {
+          const [file] = await loadFiles("WhatsApp", [documentId], userId);
+
+          const form = new FormData();
+          form.set("messaging_product", "whatsapp");
+          form.set("type", file.mimeType);
+          form.set(
+            "file",
+            new Blob([new Uint8Array(file.data)], { type: file.mimeType }),
+            file.fileName
+          );
+
+          const media: any = await ky
+            .post(
+              `https://graph.facebook.com/${GRAPH_API_VERSION}/${phoneNumberId}/media`,
+              {
+                headers: { Authorization: `Bearer ${token}` },
+                body: form,
+                timeout: 60_000,
+              }
+            )
+            .json();
+
+          // Pictures, video and audio show inline; everything else is a document
+          const kind = file.mimeType.startsWith("image/")
+            ? "image"
+            : file.mimeType.startsWith("video/")
+              ? "video"
+              : file.mimeType.startsWith("audio/")
+                ? "audio"
+                : "document";
+
+          payload = {
+            type: kind,
+            [kind]: {
+              id: media.id,
+              ...(kind === "document" ? { filename: file.fileName } : {}),
+              // Audio messages cannot carry a caption
+              ...(caption && kind !== "audio" ? { caption } : {}),
+            },
+          };
+        }
+
         const response: any = await ky
           .post(
             `https://graph.facebook.com/${GRAPH_API_VERSION}/${phoneNumberId}/messages`,

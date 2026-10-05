@@ -24,6 +24,7 @@ const formSchema = z.object({
     chatId: z.string().min(1, "Chat ID or Channel Username is required"),
     text: z.string().min(1, "Message text is required"),
     parseMode: z.enum(["HTML", "MarkdownV2", "None"]).default("None"),
+    file: z.string().optional(),
 })
 
 export type TelegramFormValues = z.infer<typeof formSchema>;
@@ -53,6 +54,7 @@ export const TelegramDialog = ({
             chatId: defaultValues.chatId || "",
             text: defaultValues.text || "",
             parseMode: defaultValues.parseMode || "None",
+            file: defaultValues.file || "",
         }
     })
 
@@ -64,6 +66,7 @@ export const TelegramDialog = ({
                 chatId: defaultValues.chatId || "",
                 text: defaultValues.text || "",
                 parseMode: defaultValues.parseMode || "None",
+                file: defaultValues.file || "",
             });
         }
     }, [open, defaultValues, form])
@@ -197,6 +200,24 @@ export const TelegramDialog = ({
                                     </FormControl>
                                     <FormDescription>
                                         Message syntax fields handle standard dynamic Handlebars string tags.
+                                    </FormDescription>
+                                    <FormMessage />
+                                </FormItem>
+                            )}
+                        />
+
+                        <FormField
+                            control={form.control}
+                            name="file"
+                            render={({ field }) => (
+                                <FormItem>
+                                    <FormLabel>Attach File (Optional)</FormLabel>
+                                    <FormControl>
+                                        <Input placeholder="pdf.file" {...field} />
+                                    </FormControl>
+                                    <FormDescription>
+                                        A file variable. The file is sent as a document with the
+                                        message as its caption (up to 1024 characters).
                                     </FormDescription>
                                     <FormMessage />
                                 </FormItem>

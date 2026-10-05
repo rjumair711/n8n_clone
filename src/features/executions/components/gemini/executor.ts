@@ -1,4 +1,5 @@
 import type { NodeExecutor } from "@/features/executions/types";
+import { renderEscapedTemplate } from "@/features/executions/lib/templates";
 import { NonRetriableError } from "inngest";
 import { createGoogleGenerativeAI } from "@ai-sdk/google";
 import Handlebars from "handlebars";
@@ -40,10 +41,10 @@ export const geminiExecutor: NodeExecutor<GeminiData> = async ({
   // 2. TEMPLATE COMPILATION
   // ==========================================
   const systemPrompt = data.systemPrompt
-    ? Handlebars.compile(data.systemPrompt)(context)
+    ? renderEscapedTemplate(data.systemPrompt, context)
     : "You are a helpful assistant.";
 
-  const userPrompt = Handlebars.compile(data.userPrompt)(context);
+  const userPrompt = renderEscapedTemplate(data.userPrompt, context);
 
   // ==========================================
   // 3. CREDENTIAL RETRIEVAL

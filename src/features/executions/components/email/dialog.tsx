@@ -28,6 +28,7 @@ const formSchema = z.object({
   subject: z.string().min(1, "Subject is required"),
   body: z.string().min(1, "Body is required"),
   credentialId: z.string().min(1, "Credential is required"),
+  attachments: z.string().optional(),
 });
 
 export type EmailFormValues = z.infer<typeof formSchema>;
@@ -56,6 +57,7 @@ export const EmailDialog = ({
       subject: defaultValues.subject || "",
       body: defaultValues.body || "",
       credentialId: defaultValues.credentialId || "",
+      attachments: defaultValues.attachments || "",
     },
   });
 
@@ -66,6 +68,7 @@ export const EmailDialog = ({
         subject: defaultValues.subject || "",
         body: defaultValues.body || "",
         credentialId: defaultValues.credentialId || "",
+        attachments: defaultValues.attachments || "",
       });
     }
   }, [open, defaultValues, form]);
@@ -156,6 +159,25 @@ export const EmailDialog = ({
                       className="min-h-[120px] font-mono text-sm"
                     />
                   </FormControl>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+
+            <FormField
+              control={form.control}
+              name="attachments"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Attachments (Optional)</FormLabel>
+                  <FormControl>
+                    <Input {...field} placeholder="pdf.file, report.file" />
+                  </FormControl>
+                  <p className="text-sm text-muted-foreground">
+                    File variables, comma-separated: files made by PDF
+                    Generator, Convert to File, Google Drive or an HTTP
+                    Request download.
+                  </p>
                   <FormMessage />
                 </FormItem>
               )}

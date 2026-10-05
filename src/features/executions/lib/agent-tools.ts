@@ -12,6 +12,10 @@ export type AIParameter = {
 const FROM_AI_PATTERN =
   /\{\{\{?\s*\$?fromAI\s+(["'])(.+?)\1(?:\s+(["'])(.*?)\3)?(?:\s+(["'])(.*?)\5)?\s*\}?\}\}/g;
 
+// n8n's call form: {{ $fromAI('key', 'description', 'type') }}
+const FROM_AI_CALL_PATTERN =
+  /\$fromAI\(\s*(["'])(.+?)\1(?:\s*,\s*(["'])(.*?)\3)?(?:\s*,\s*(["'])(.*?)\5)?/g;
+
 // {{ai.key}}
 const AI_PATH_PATTERN = /\{\{\{?[^}]*?\bai\.([A-Za-z_][A-Za-z0-9_]*)/g;
 
@@ -37,7 +41,10 @@ export const extractAIParameters = (nodeData: unknown): AIParameter[] => {
   const parameters = new Map<string, AIParameter>();
 
   for (const text of strings) {
-    for (const match of text.matchAll(FROM_AI_PATTERN)) {
+    for (const match of [
+      ...text.matchAll(FROM_AI_PATTERN),
+      ...text.matchAll(FROM_AI_CALL_PATTERN),
+    ]) {
       const key = match[2];
       const type = PARAMETER_TYPES.includes(match[6])
         ? (match[6] as AIParameterType)
@@ -109,6 +116,26 @@ const TOOL_LABELS: Record<string, string> = {
   AIRTABLE: "Airtable",
   POSTGRES: "Postgres",
   WHATSAPP: "WhatsApp",
+  GMAIL: "Gmail",
+  TWILIO: "Twilio",
+  JIRA: "Jira",
+  HUBSPOT: "HubSpot",
+  SALESFORCE: "Salesforce",
+  SSH: "SSH Command",
+  MYSQL: "MySQL",
+  RESEND: "Resend",
+  SENDGRID: "SendGrid",
+  EDIT_FIELDS: "Edit Fields",
+  GOOGLE_DRIVE: "Google Drive",
+  PDF_GENERATOR: "PDF Generator",
+  CONVERT_TO_FILE: "Convert to File",
+  EXTRACT_FROM_FILE: "Extract from File",
+  RSS_READ: "RSS Read",
+  VECTOR_STORE: "Knowledge Base",
+  INFORMATION_EXTRACTOR: "Information Extractor",
+  EXECUTE_WORKFLOW: "Call Workflow",
+  SPLIT_OUT: "Split Out",
+  REMOVE_DUPLICATES: "Remove Duplicates",
 };
 
 export const getToolLabel = (nodeType: string) =>

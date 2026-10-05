@@ -1,18 +1,22 @@
 // email/executor.ts
 
 import { EMAIL_CHANNEL_NAME, emailChannel } from "@/inngest/channels/email";
+import { renderEscapedTemplate } from "@/features/executions/lib/templates";
 import { NodeExecutor } from "../../types";
 import { NonRetriableError } from "inngest";
 import nodemailer from "nodemailer";
 import prisma from "@/lib/db";
 import { decrypt } from "@/lib/encryption";
 import Handlebars from "handlebars";
+import { loadFiles, resolveFileIds } from "../files/executors";
 
 type EmailData = {
   recipient?: string;
   subject?: string;
   body?: string;
   credentialId?: string;
+  // Comma-separated file variables, e.g. "pdf.file"
+  attachments?: string;
 };
 
 export const emailExecutor: NodeExecutor<EmailData> = async ({
@@ -86,9 +90,10 @@ export const emailExecutor: NodeExecutor<EmailData> = async ({
   const { host, port, user, pass, fromName } = smtpConfig;
 
   // Parse variables
-  const recipient = Handlebars.compile(data.recipient)(context);
-  const subject = Handlebars.compile(data.subject)(context);
-  const body = Handlebars.compile(data.body)(context);
+  const recipient = renderEscapedTemplate(data.recipient, context);
+  const subject = renderEscapedTemplate(data.subject, context);
+  const body = renderEscapedTemplate(data.body, context);
+  const attachmentIds = resolveFileIds("Email", context, data.attachments);
 
   // Create transporter
   const transporter = nodemailer.createTransport({
@@ -109,6 +114,13 @@ export const emailExecutor: NodeExecutor<EmailData> = async ({
       to: recipient,
       subject,
       html: body,
+      attachments: (await loadFiles("Email", attachmentIds, userId)).map(
+        (file) => ({
+          filename: file.fileName,
+          content: file.data,
+          contentType: file.mimeType,
+        })
+      ),
     });
 
     // Success event

@@ -1,8 +1,10 @@
 import type { NodeExecutor } from "@/features/executions/types";
+import { renderEscapedTemplate } from "@/features/executions/lib/templates";
 import { NonRetriableError } from "inngest";
 import Handlebars from "handlebars";
 import { decode } from "html-entities";
 import ky from "ky";
+import { assertPublicUrl } from "@/lib/ssrf";
 
 Handlebars.registerHelper("json", (context) => {
   const jsonString = JSON.stringify(
@@ -52,18 +54,14 @@ export const discordExecutor: NodeExecutor<
 
   // Compile content
   const rawContent =
-    Handlebars.compile(
-      data.content
-    )(context);
+    renderEscapedTemplate(data.content, context);
 
   const content = decode(rawContent);
 
   // Optional username
   const username = data.username
     ? decode(
-        Handlebars.compile(
-          data.username
-        )(context)
+        renderEscapedTemplate(data.username, context)
       )
     : undefined;
 
@@ -73,9 +71,13 @@ export const discordExecutor: NodeExecutor<
       "discord-webhook",
       async () => {
 
+        // The URL is typed in by the user: never call into a private network
+        await assertPublicUrl(data.webhookUrl!);
+
         await ky.post(
           data.webhookUrl!,
           {
+            redirect: "error",
             json: {
               content:
                 content.slice(0, 2000),

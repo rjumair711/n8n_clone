@@ -54,6 +54,19 @@ const credentialTypeOptions = [
   { value: CredentialType.AIRTABLE, label: "Airtable", logo: "/logos/airtable.svg" },
   { value: CredentialType.POSTGRES, label: "Postgres", logo: "/logos/postgres.svg" },
   { value: CredentialType.WHATSAPP, label: "WhatsApp", logo: "/logos/whatsapp.svg" },
+  { value: CredentialType.GOOGLE_OAUTH2, label: "Google Account (Gmail, Drive, Sheets, Calendar)", logo: "/logos/google.svg" },
+  { value: CredentialType.OPENAI_COMPATIBLE, label: "Chat Model API Key (OpenRouter, Groq, DeepSeek...)", logo: "/logos/chat-model.svg" },
+  { value: CredentialType.TWILIO, label: "Twilio", logo: "/logos/twilio.svg" },
+  { value: CredentialType.RESEND, label: "Resend", logo: "/logos/resend.svg" },
+  { value: CredentialType.SENDGRID, label: "SendGrid", logo: "/logos/sendgrid.svg" },
+  { value: CredentialType.JIRA, label: "Jira", logo: "/logos/jira.svg" },
+  { value: CredentialType.HUBSPOT, label: "HubSpot", logo: "/logos/hubspot.svg" },
+  { value: CredentialType.SALESFORCE, label: "Salesforce Account", logo: "/logos/salesforce.svg" },
+  { value: CredentialType.MYSQL, label: "MySQL", logo: "/logos/mysql.svg" },
+  { value: CredentialType.SSH, label: "SSH (Server Login)", logo: "/logos/ssh.svg" },
+  { value: CredentialType.HTTP_HEADER_AUTH, label: "HTTP Header Auth", logo: "/logos/http.svg" },
+  { value: CredentialType.HTTP_BEARER_AUTH, label: "HTTP Bearer Auth", logo: "/logos/http.svg" },
+  { value: CredentialType.HTTP_BASIC_AUTH, label: "HTTP Basic Auth", logo: "/logos/http.svg" },
 ];
 
 // Everything the form shows for a credential type. Add a type here and the
@@ -147,6 +160,94 @@ const credentialFieldConfig: Record<CredentialType, {
     secretPlaceholder: "Cloud API access token",
     help: "A permanent System User token from Meta Business with the whatsapp_business_messaging permission.",
   },
+  [CredentialType.GOOGLE_OAUTH2]: {
+    namePlaceholder: "My Google Account",
+    defaultName: "Google account",
+    secretLabel: "Google Account",
+    secretPlaceholder: "",
+  },
+  [CredentialType.OPENAI_COMPATIBLE]: {
+    namePlaceholder: "My OpenRouter Key",
+    defaultName: "Chat model credential",
+    secretLabel: "API Key",
+    secretPlaceholder: "sk-or-..., gsk_..., sk-...",
+    help: "The API key of the provider you pick in the Chat Model node. Ollama needs no key: type any text.",
+  },
+  [CredentialType.TWILIO]: {
+    namePlaceholder: "My Twilio Account",
+    defaultName: "Twilio credential",
+    secretLabel: "Account SID and Auth Token",
+    secretPlaceholder: "ACxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx:your-auth-token",
+    help: "Written as AccountSID:AuthToken. Both are on the Twilio Console dashboard.",
+  },
+  [CredentialType.RESEND]: {
+    namePlaceholder: "My Resend Key",
+    defaultName: "Resend credential",
+    secretLabel: "API Key",
+    secretPlaceholder: "re_...",
+    help: "Create one at resend.com under API Keys.",
+  },
+  [CredentialType.SENDGRID]: {
+    namePlaceholder: "My SendGrid Key",
+    defaultName: "SendGrid credential",
+    secretLabel: "API Key",
+    secretPlaceholder: "SG....",
+    help: "Create one in SendGrid under Settings > API Keys with Mail Send access.",
+  },
+  [CredentialType.JIRA]: {
+    namePlaceholder: "My Jira Account",
+    defaultName: "Jira credential",
+    secretLabel: "Email and API Token",
+    secretPlaceholder: "you@company.com:your-api-token",
+    help: "Written as email:token. Create the token at id.atlassian.com under Security > API tokens.",
+  },
+  [CredentialType.HUBSPOT]: {
+    namePlaceholder: "My HubSpot Account",
+    defaultName: "HubSpot credential",
+    secretLabel: "Private App Access Token",
+    secretPlaceholder: "pat-...",
+    help: "Create a private app in HubSpot settings with the CRM contacts and deals scopes, and copy its access token.",
+  },
+  [CredentialType.SALESFORCE]: {
+    namePlaceholder: "My Salesforce Org",
+    defaultName: "Salesforce account",
+    secretLabel: "Salesforce Account",
+    secretPlaceholder: "",
+  },
+  [CredentialType.SSH]: {
+    namePlaceholder: "My VPS",
+    defaultName: "SSH credential",
+    secretLabel: "SSH Login",
+    secretPlaceholder: "",
+  },
+  [CredentialType.MYSQL]: {
+    namePlaceholder: "My MySQL Database",
+    defaultName: "MySQL credential",
+    secretLabel: "Connection String",
+    secretPlaceholder: "mysql://user:password@host:3306/database",
+    help: "Use a database user that only has the permissions your workflows need.",
+  },
+  [CredentialType.HTTP_HEADER_AUTH]: {
+    namePlaceholder: "My API Key Header",
+    defaultName: "Header Auth credential",
+    secretLabel: "Header (Name: value)",
+    secretPlaceholder: "X-API-Key: your-key",
+    help: "Written as Name: value. The HTTP Request node sends it as a request header.",
+  },
+  [CredentialType.HTTP_BEARER_AUTH]: {
+    namePlaceholder: "My API Token",
+    defaultName: "Bearer Auth credential",
+    secretLabel: "Bearer Token",
+    secretPlaceholder: "The token, without the word Bearer",
+    help: "Sent as Authorization: Bearer <token>.",
+  },
+  [CredentialType.HTTP_BASIC_AUTH]: {
+    namePlaceholder: "My API Login",
+    defaultName: "Basic Auth credential",
+    secretLabel: "Username and Password",
+    secretPlaceholder: "username:password",
+    help: "Written as username:password.",
+  },
 };
 
 interface CredentialFormProps {
@@ -175,6 +276,16 @@ export const CredentialForm = ({ initialData }: CredentialFormProps) => {
   });
 
   const selectedType = form.watch("type");
+  const isGoogleOAuth = selectedType === CredentialType.GOOGLE_OAUTH2;
+  const isSalesforce = selectedType === CredentialType.SALESFORCE;
+  // These are connected by signing in, not by pasting a secret
+  const isOAuth = isGoogleOAuth || isSalesforce;
+
+  // The Google sign-in sends the user back here when it fails
+  const [oauthError, setOauthError] = React.useState<string | null>(null);
+  React.useEffect(() => {
+    setOauthError(new URLSearchParams(window.location.search).get("oauthError"));
+  }, []);
 
   // SMTP fields
   const [smtpFields, setSmtpFields] = React.useState({
@@ -187,6 +298,33 @@ export const CredentialForm = ({ initialData }: CredentialFormProps) => {
     privateKey: "",
     projectId: "",
   });
+
+  // SSH: the server and the login are saved together
+  const [sshFields, setSshFields] = React.useState({
+    host: "",
+    port: "22",
+    username: "",
+    authType: "privateKey",
+    password: "",
+    privateKey: "",
+    passphrase: "",
+    hostFingerprint: "",
+  });
+  const isSsh = selectedType === CredentialType.SSH;
+  // An existing credential's secret is never sent back to the form, so the
+  // fields are only filled when creating one or replacing it
+  const sshComplete =
+    !!sshFields.host.trim() &&
+    !!sshFields.username.trim() &&
+    (sshFields.authType === "privateKey"
+      ? !!sshFields.privateKey.trim()
+      : !!sshFields.password);
+
+  React.useEffect(() => {
+    if (isSsh && sshComplete) {
+      form.setValue("value", JSON.stringify(sshFields), { shouldValidate: true });
+    }
+  }, [sshFields, isSsh, sshComplete, form]);
 
   // Sync SMTP → form value
   React.useEffect(() => {
@@ -212,8 +350,18 @@ export const CredentialForm = ({ initialData }: CredentialFormProps) => {
 
     const isGoogleServiceAccount = selectedType === CredentialType.GOOGLE_SHEETS || selectedType === CredentialType.GOOGLE_CALENDAR;
 
+    if (isSsh && !isEdit && !sshComplete) {
+      form.setError("value", {
+        message: "Host, username and a password or private key are required",
+      });
+      return;
+    }
+
     const finalValue =
-      selectedType === CredentialType.SMTP
+      isSsh
+        ? // Editing without retyping the login keeps the stored one
+          sshComplete ? JSON.stringify(sshFields) : values.value
+        : selectedType === CredentialType.SMTP
         ? JSON.stringify(smtpFields)
         : isGoogleServiceAccount
           ? JSON.stringify(serviceAccountFields)
@@ -398,7 +546,160 @@ export const CredentialForm = ({ initialData }: CredentialFormProps) => {
               )}
 
               {/* API key / Token entry field for Notion, Telegram, and LLMs */}
-              {selectedType !== CredentialType.SMTP && !isGoogleServiceAccountType && (
+              {/* Google account: the secret comes from Google's sign-in, not from a field */}
+              {isGoogleOAuth && (
+                <div className="space-y-3 rounded-md border p-4 bg-muted/20">
+                  <h3 className="text-sm font-medium">Google Account</h3>
+                  {isEdit ? (
+                    <p className="text-xs text-muted-foreground">
+                      This Google account is connected. You can rename the
+                      credential here; to connect a different account, create
+                      a new credential.
+                    </p>
+                  ) : (
+                    <>
+                      <p className="text-xs text-muted-foreground">
+                        Sign in with Google to let your workflows use Gmail,
+                        Google Drive, Google Sheets and Google Calendar for
+                        that account. You can remove the access at
+                        any time under myaccount.google.com/permissions.
+                      </p>
+                      <Button type="button" variant="outline" asChild>
+                        <a href={`/api/oauth/google/start?name=${encodeURIComponent(form.watch("name") || "")}`}>
+                          <Image src="/logos/google.svg" alt="Google" width={16} height={16} />
+                          Sign in with Google
+                        </a>
+                      </Button>
+                    </>
+                  )}
+                  {oauthError && (
+                    <p className="text-sm text-destructive">{oauthError}</p>
+                  )}
+                </div>
+              )}
+
+              {/* SSH: server address and login */}
+              {isSsh && (
+                <div className="space-y-4 rounded-md border p-4 bg-muted/20">
+                  <div className="space-y-1">
+                    <h3 className="text-sm font-medium">Server Login</h3>
+                    <p className="text-xs text-muted-foreground">
+                      {isEdit
+                        ? "The saved login is not shown. Fill the fields in again to replace it, or leave them empty to only rename the credential."
+                        : "Use a user that can only do what your workflows need, not root."}
+                    </p>
+                  </div>
+                  <div className="grid grid-cols-3 gap-4">
+                    <div className="col-span-2 space-y-2">
+                      <label className="text-xs font-medium">Host</label>
+                      <Input placeholder="server.example.com" value={sshFields.host}
+                        onChange={(e) => setSshFields({ ...sshFields, host: e.target.value })} />
+                    </div>
+                    <div className="space-y-2">
+                      <label className="text-xs font-medium">Port</label>
+                      <Input placeholder="22" value={sshFields.port}
+                        onChange={(e) => setSshFields({ ...sshFields, port: e.target.value })} />
+                    </div>
+                  </div>
+                  <div className="space-y-2">
+                    <label className="text-xs font-medium">Username</label>
+                    <Input placeholder="deploy" value={sshFields.username}
+                      onChange={(e) => setSshFields({ ...sshFields, username: e.target.value })} />
+                  </div>
+                  <div className="space-y-2">
+                    <label className="text-xs font-medium">Authentication</label>
+                    <Select
+                      value={sshFields.authType}
+                      onValueChange={(authType) => setSshFields({ ...sshFields, authType })}
+                    >
+                      <SelectTrigger className="w-full">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="privateKey">Private Key</SelectItem>
+                        <SelectItem value="password">Password</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  {sshFields.authType === "privateKey" ? (
+                    <>
+                      <div className="space-y-2">
+                        <label className="text-xs font-medium">Private Key</label>
+                        <Textarea
+                          placeholder={"-----BEGIN OPENSSH PRIVATE KEY-----\n...\n-----END OPENSSH PRIVATE KEY-----"}
+                          className="min-h-[120px] font-mono text-xs"
+                          value={sshFields.privateKey}
+                          onChange={(e) => setSshFields({ ...sshFields, privateKey: e.target.value })}
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <label className="text-xs font-medium">Passphrase (optional)</label>
+                        <Input type="password" value={sshFields.passphrase}
+                          onChange={(e) => setSshFields({ ...sshFields, passphrase: e.target.value })} />
+                      </div>
+                    </>
+                  ) : (
+                    <div className="space-y-2">
+                      <label className="text-xs font-medium">Password</label>
+                      <Input type="password" value={sshFields.password}
+                        onChange={(e) => setSshFields({ ...sshFields, password: e.target.value })} />
+                    </div>
+                  )}
+                  <div className="space-y-2">
+                    <label className="text-xs font-medium">Host Key Fingerprint (optional)</label>
+                    <Input placeholder="SHA256:..." className="font-mono text-xs" value={sshFields.hostFingerprint}
+                      onChange={(e) => setSshFields({ ...sshFields, hostFingerprint: e.target.value })} />
+                    <p className="text-xs text-muted-foreground">
+                      From <code>ssh-keygen -lf /etc/ssh/ssh_host_ed25519_key.pub</code> on
+                      the server. When set, a server showing a different key is refused.
+                    </p>
+                  </div>
+                  {form.formState.errors.value && (
+                    <p className="text-sm text-destructive">
+                      {form.formState.errors.value.message}
+                    </p>
+                  )}
+                </div>
+              )}
+
+              {/* Salesforce account: connected by signing in to the org */}
+              {isSalesforce && (
+                <div className="space-y-3 rounded-md border p-4 bg-muted/20">
+                  <h3 className="text-sm font-medium">Salesforce Account</h3>
+                  {isEdit ? (
+                    <p className="text-xs text-muted-foreground">
+                      This Salesforce org is connected. You can rename the
+                      credential here; to connect a different org, create a
+                      new credential.
+                    </p>
+                  ) : (
+                    <>
+                      <p className="text-xs text-muted-foreground">
+                        Sign in to Salesforce to let your workflows read and
+                        change records in that org with your permissions.
+                      </p>
+                      <div className="flex flex-wrap gap-2">
+                        <Button type="button" variant="outline" asChild>
+                          <a href={`/api/oauth/salesforce/start?name=${encodeURIComponent(form.watch("name") || "")}`}>
+                            <Image src="/logos/salesforce.svg" alt="Salesforce" width={16} height={16} />
+                            Connect Salesforce
+                          </a>
+                        </Button>
+                        <Button type="button" variant="ghost" asChild>
+                          <a href={`/api/oauth/salesforce/start?environment=sandbox&name=${encodeURIComponent(form.watch("name") || "")}`}>
+                            Connect a sandbox
+                          </a>
+                        </Button>
+                      </div>
+                    </>
+                  )}
+                  {oauthError && (
+                    <p className="text-sm text-destructive">{oauthError}</p>
+                  )}
+                </div>
+              )}
+
+              {selectedType !== CredentialType.SMTP && !isGoogleServiceAccountType && !isOAuth && !isSsh && (
                 <FormField
                   control={form.control}
                   name="value"
@@ -424,9 +725,11 @@ export const CredentialForm = ({ initialData }: CredentialFormProps) => {
               )}
 
               <div className="flex gap-4">
-                <Button type="submit" disabled={createCredential.isPending || updateCredential.isPending}>
-                  {isEdit ? "Update" : "Create"}
-                </Button>
+                {(isEdit || !isOAuth) && (
+                  <Button type="submit" disabled={createCredential.isPending || updateCredential.isPending}>
+                    {isEdit ? "Update" : "Create"}
+                  </Button>
+                )}
                 <Button type="button" variant="outline" asChild>
                   <Link href="/credentials" prefetch>Cancel</Link>
                 </Button>

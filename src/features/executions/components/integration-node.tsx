@@ -3,6 +3,8 @@
 import { Node, NodeProps, useReactFlow } from "@xyflow/react";
 import { BaseExecutionNode } from "@/features/executions/components/base-execution-node";
 import { memo, useState } from "react";
+import { BaseTriggerNode } from "@/features/triggers/components/base-trigger-node";
+import { useNodeStatus } from "../hooks/use-node-status";
 import {
   IntegrationDialog,
   type IntegrationConfig,
@@ -22,6 +24,7 @@ export const createIntegrationNode = (
   const IntegrationNode = memo((props: NodeProps<IntegrationNodeType>) => {
     const [dialogOpen, setDialogOpen] = useState(false);
     const { setNodes } = useReactFlow();
+    const nodeStatus = useNodeStatus(props.id);
 
     const handleOpenSettings = () => setDialogOpen(true);
 
@@ -44,13 +47,21 @@ export const createIntegrationNode = (
 
     const nodeData = props.data || {};
 
-    const operationLabel = config.operations.find(
+    const operationLabel = config.operations?.find(
       (option) => option.value === nodeData.operation
     )?.label;
 
-    const description = !nodeData.credentialId
-      ? "Not Configured"
-      : describe?.(nodeData) || operationLabel || "Configured";
+    const credentialType = config.credentialTypeFor
+      ? config.credentialTypeFor(nodeData)
+      : config.credentialType;
+
+    const description =
+      credentialType && !nodeData.credentialId
+        ? "Not Configured"
+        : describe?.(nodeData) ||
+          operationLabel ||
+          config.summary ||
+          "Configured";
 
     return (
       <>
@@ -61,15 +72,30 @@ export const createIntegrationNode = (
           onSubmit={handleSubmit}
           defaultValues={nodeData}
         />
-        <BaseExecutionNode
-          {...props}
-          id={props.id}
-          icon={config.logo}
-          name={config.label}
-          description={description}
-          onSettings={handleOpenSettings}
-          onDoubleClick={handleOpenSettings}
-        />
+        {config.trigger ? (
+          <BaseTriggerNode
+            {...props}
+            id={props.id}
+            icon={config.logo}
+            name={config.label}
+            description={description}
+            status={nodeStatus.status}
+            onSettings={handleOpenSettings}
+            onDoubleClick={handleOpenSettings}
+          />
+        ) : (
+          <BaseExecutionNode
+            {...props}
+            id={props.id}
+            icon={config.logo}
+            name={config.label}
+            description={description}
+            subInputs={config.subInputs}
+            outputs={config.getOutputs?.(nodeData)}
+            onSettings={handleOpenSettings}
+            onDoubleClick={handleOpenSettings}
+          />
+        )}
       </>
     );
   });

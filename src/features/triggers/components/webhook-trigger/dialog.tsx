@@ -9,12 +9,15 @@ import { useParams } from "next/navigation";
 import { useEffect } from "react";
 import { toast } from "sonner";
 import { generateSecret } from "@/lib/generate-secret";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 
 interface Props {
     open: boolean;
     onOpenChange: (open: boolean) => void;
     secret?: string;
     onSecretChange: (secret: string) => void;
+    responseMode?: string;
+    onResponseModeChange: (responseMode: string) => void;
 }
 
 export const WebhookTriggerDialog = ({
@@ -22,6 +25,8 @@ export const WebhookTriggerDialog = ({
     onOpenChange,
     secret,
     onSecretChange,
+    responseMode,
+    onResponseModeChange,
 }: Props) => {
 
     const params = useParams()
@@ -115,6 +120,30 @@ export const WebhookTriggerDialog = ({
                             Send it in the <code>x-webhook-secret</code> header,
                             or as a <code>?secret=</code> query parameter.
                             Requests without it are rejected.
+                        </p>
+                    </div>
+                    <div className="space-y-2">
+                        <Label htmlFor="webhook-respond">
+                            Respond
+                        </Label>
+                        <Select
+                            value={responseMode || "immediately"}
+                            onValueChange={onResponseModeChange}
+                        >
+                            <SelectTrigger id="webhook-respond" className="w-full">
+                                <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                                <SelectItem value="immediately">Immediately</SelectItem>
+                                <SelectItem value="lastNode">When Last Node Finishes</SelectItem>
+                                <SelectItem value="responseNode">Using &apos;Respond to Webhook&apos; Node</SelectItem>
+                            </SelectContent>
+                        </Select>
+                        <p className="text-sm text-muted-foreground">
+                            Immediately answers with the execution ID while the
+                            workflow runs in the background. The other two keep
+                            the request open (up to about 25 seconds) and return
+                            the workflow&apos;s data.
                         </p>
                     </div>
                     <div className="rounded-lg bg-muted p-4 space-y-3">

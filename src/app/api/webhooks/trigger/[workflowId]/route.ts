@@ -2,6 +2,15 @@ import { findTriggerNodes, startWorkflowExecution } from "@/inngest/utils";
 import { type NextRequest, NextResponse } from "next/server";
 import { NodeType } from "@prisma/client";
 import { secretsMatch } from "@/lib/webhook-security";
+import { rateLimitResponse } from "@/lib/rate-limit";
+import {
+    WEBHOOK_RESPONSE_MODES,
+    waitForWebhookResponse,
+    type WebhookResponseMode,
+} from "@/lib/webhook-response";
+
+// The request stays open while the workflow prepares its response
+export const maxDuration = 60;
 
 const readBody = async (request: NextRequest): Promise<unknown> => {
     if (request.method === "GET" || request.method === "HEAD") {
@@ -32,6 +41,10 @@ async function handler(
         const { workflowId } = await params;
         const url = new URL(request.url);
 
+        // Before the secret check, so guessing secrets is throttled too
+        const limited = await rateLimitResponse(`webhook:${workflowId}`);
+        if (limited) return limited;
+
         const triggerNodes = await findTriggerNodes(
             workflowId,
             NodeType.WEBHOOK_TRIGGER
@@ -54,13 +67,13 @@ async function handler(
             url.searchParams.get("secret") ||
             "";
 
-        const authorized = triggerNodes.some((node) => {
+        const triggerNode = triggerNodes.find((node) => {
             const secret = (node.data as { secret?: string } | null)?.secret;
 
             return !!secret && secretsMatch(provided, secret);
         });
 
-        if (!authorized) {
+        if (!triggerNode) {
             return NextResponse.json(
                 {
                     success: false,
@@ -104,7 +117,37 @@ async function handler(
                     body,
                 },
             },
+
+            // Optional: a caller that retries can send the same key again
+            // without starting the workflow twice
+            dedupeKey:
+                request.headers.get("idempotency-key") ||
+                request.headers.get("x-idempotency-key"),
         });
+
+        if (execution.duplicate) {
+            return NextResponse.json(
+                {
+                    success: true,
+                    duplicate: true,
+                    executionId: execution.id || null,
+                },
+                { status: 200 }
+            );
+        }
+
+        const configuredMode = (
+            triggerNode.data as { responseMode?: WebhookResponseMode } | null
+        )?.responseMode;
+
+        const responseMode =
+            configuredMode && WEBHOOK_RESPONSE_MODES.includes(configuredMode)
+                ? configuredMode
+                : "immediately";
+
+        if (responseMode !== "immediately") {
+            return await waitForWebhookResponse(execution.id, responseMode);
+        }
 
         return NextResponse.json(
             { success: true, executionId: execution.id },

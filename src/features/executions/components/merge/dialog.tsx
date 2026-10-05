@@ -33,6 +33,11 @@ import {
 
 const formSchema = z.object({
   mode: z.enum(["any", "all"]),
+  combine: z.enum(["none", "append", "byKey", "byPosition"]),
+  listA: z.string().optional(),
+  listB: z.string().optional(),
+  keyA: z.string().optional(),
+  keyB: z.string().optional(),
   variableName: z
     .string()
     .min(1, "Variable name is required")
@@ -40,6 +45,32 @@ const formSchema = z.object({
       message:
         "Variable name must start with a letter or underscore and contain only letters, numbers, and underscores",
     }),
+}).superRefine((values, ctx) => {
+  if (values.combine === "none") return;
+
+  // Append can join the items of the connected branches without naming them
+  const namesOptional =
+    values.combine === "append" && !values.listA?.trim() && !values.listB?.trim();
+
+  for (const name of ["listA", "listB"] as const) {
+    if (!namesOptional && !values[name]?.trim()) {
+      ctx.addIssue({ code: "custom", path: [name], message: "Pick the list to combine" });
+    }
+  }
+
+  if (values.combine === "byKey" && !values.keyA?.trim()) {
+    ctx.addIssue({ code: "custom", path: ["keyA"], message: "Field to match is required" });
+  }
+});
+
+const getValues = (defaultValues: Partial<MergeFormValues>): MergeFormValues => ({
+  mode: defaultValues.mode || "any",
+  variableName: defaultValues.variableName || "merge",
+  combine: defaultValues.combine || "none",
+  listA: defaultValues.listA || "",
+  listB: defaultValues.listB || "",
+  keyA: defaultValues.keyA || "",
+  keyB: defaultValues.keyB || "",
 });
 
 export type MergeFormValues = z.infer<typeof formSchema>;
@@ -59,18 +90,14 @@ export const MergeDialog = ({
 }: Props) => {
   const form = useForm<MergeFormValues>({
     resolver: zodResolver(formSchema),
-    defaultValues: {
-      mode: defaultValues.mode || "any",
-      variableName: defaultValues.variableName || "merge",
-    },
+    defaultValues: getValues(defaultValues),
   });
+
+  const watchCombine = form.watch("combine");
 
   useEffect(() => {
     if (open) {
-      form.reset({
-        mode: defaultValues.mode || "any",
-        variableName: defaultValues.variableName || "merge",
-      });
+      form.reset(getValues(defaultValues));
     }
   }, [open, defaultValues, form]);
 
@@ -125,6 +152,101 @@ export const MergeDialog = ({
                 </FormItem>
               )}
             />
+
+            <FormField
+              control={form.control}
+              name="combine"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Combine Lists</FormLabel>
+                  <Select onValueChange={field.onChange} value={field.value}>
+                    <FormControl>
+                      <SelectTrigger className="w-full">
+                        <SelectValue />
+                      </SelectTrigger>
+                    </FormControl>
+
+                    <SelectContent>
+                      <SelectItem value="none">Do not combine lists</SelectItem>
+                      <SelectItem value="append">Append: all items of both lists</SelectItem>
+                      <SelectItem value="byKey">Combine by matching field</SelectItem>
+                      <SelectItem value="byPosition">Combine by position</SelectItem>
+                    </SelectContent>
+                  </Select>
+                  <FormDescription>
+                    Optionally join two lists from the branches into one,
+                    available as {`{{${form.watch("variableName") || "merge"}.items}}`}.
+                  </FormDescription>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+
+            {watchCombine !== "none" && (
+              <>
+                <FormField
+                  control={form.control}
+                  name="listA"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>List A</FormLabel>
+                      <FormControl>
+                        <Input placeholder="customers.httpResponse.data" {...field} />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+                <FormField
+                  control={form.control}
+                  name="listB"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>List B</FormLabel>
+                      <FormControl>
+                        <Input placeholder="orders.httpResponse.data" {...field} />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+              </>
+            )}
+
+            {watchCombine === "byKey" && (
+              <>
+                <FormField
+                  control={form.control}
+                  name="keyA"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Field To Match in List A</FormLabel>
+                      <FormControl>
+                        <Input placeholder="id" {...field} />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+                <FormField
+                  control={form.control}
+                  name="keyB"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Field To Match in List B (Optional)</FormLabel>
+                      <FormControl>
+                        <Input placeholder="customerId" {...field} />
+                      </FormControl>
+                      <FormDescription>
+                        Leave empty when the field has the same name in both
+                        lists. Only items found in both lists are kept.
+                      </FormDescription>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+              </>
+            )}
 
             <FormField
               control={form.control}

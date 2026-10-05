@@ -44,7 +44,14 @@ interface Props {
 }
 
 export const GoogleSheetsDialog = ({ open, onOpenChange, onSubmit, defaultValues = {} }: Props) => {
-  const { data: credentials, isLoading } = useCredentialsByType(CredentialType.GOOGLE_SHEETS);
+  // Either a service account or a Google account connected with OAuth
+  const serviceAccounts = useCredentialsByType(CredentialType.GOOGLE_SHEETS);
+  const googleAccounts = useCredentialsByType(CredentialType.GOOGLE_OAUTH2);
+  const credentials = [
+    ...(googleAccounts.data ?? []),
+    ...(serviceAccounts.data ?? []),
+  ];
+  const isLoading = serviceAccounts.isLoading || googleAccounts.isLoading;
 
   const form = useForm<GoogleSheetsFormValues>({
     resolver: zodResolver(formSchema),

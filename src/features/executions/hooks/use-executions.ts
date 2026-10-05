@@ -1,7 +1,8 @@
 
 
 import { useTRPC } from "@/trpc/client"
-import { useSuspenseQuery } from "@tanstack/react-query"
+import { useMutation, useQueryClient, useSuspenseQuery } from "@tanstack/react-query"
+import { toast } from "sonner";
 import { useExecutionsParams } from "./use-executions-params";
 
 /**
@@ -25,3 +26,22 @@ export const useSuspenseExecution = (id: string) => {
     return useSuspenseQuery(trpc.executions.getOne.queryOptions({ id }))
 }
 
+
+/**
+ * Hook to run an execution again with the same starting data
+ */
+
+export const useRetryExecution = () => {
+    const trpc = useTRPC()
+    const queryClient = useQueryClient()
+
+    return useMutation(trpc.executions.retry.mutationOptions({
+        onSuccess: () => {
+            toast.success("Execution started again")
+            queryClient.invalidateQueries(trpc.executions.getMany.queryOptions({}))
+        },
+        onError: (error) => {
+            toast.error(error.message)
+        },
+    }))
+}
