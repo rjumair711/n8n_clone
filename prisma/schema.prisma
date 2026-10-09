@@ -400,6 +400,10 @@ model ApiKey {
   keyHash    String    @unique
   userId     String
   user       User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  // What the key may do; see src/lib/api-key-scopes.ts
+  scopes     String[]  @default([])
+  // The key stops working after this moment; null means it never expires
+  expiresAt  DateTime?
   createdAt  DateTime  @default(now())
   lastUsedAt DateTime?
 

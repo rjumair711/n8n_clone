@@ -4,7 +4,7 @@ import { authenticateApiRequest } from "@/lib/api-keys";
 
 // GET /api/v1/executions?workflowId=...&limit=20: recent executions
 export async function GET(request: NextRequest) {
-    const auth = await authenticateApiRequest(request);
+    const auth = await authenticateApiRequest(request, "executions:read");
     if ("response" in auth) return auth.response;
 
     const query = new URL(request.url).searchParams;

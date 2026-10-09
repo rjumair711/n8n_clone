@@ -17,7 +17,7 @@ export async function POST(
     request: NextRequest,
     { params }: { params: Promise<{ workflowId: string }> }
 ) {
-    const auth = await authenticateApiRequest(request);
+    const auth = await authenticateApiRequest(request, "workflows:execute");
     if ("response" in auth) return auth.response;
 
     const { workflowId } = await params;

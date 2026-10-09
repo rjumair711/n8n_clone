@@ -2,12 +2,14 @@
 
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { formatDistanceToNow } from "date-fns";
-import { CopyIcon, KeyRoundIcon, PlusIcon, TrashIcon } from "lucide-react";
+import { format, formatDistanceToNow } from "date-fns";
+import { CopyIcon, KeyRoundIcon, PlusIcon } from "lucide-react";
 import Link from "next/link";
 import { toast } from "sonner";
 import { useTRPC } from "@/trpc/client";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
 import {
     Card,
     CardContent,
@@ -33,6 +35,12 @@ import {
     TableHeader,
     TableRow,
 } from "@/components/ui/table";
+import {
+    API_SCOPES,
+    API_SCOPE_DESCRIPTIONS,
+    type ApiScope,
+    isKeyExpired,
+} from "@/lib/api-key-scopes";
 
 const copy = async (value: string, label: string) => {
     try {
@@ -51,6 +59,11 @@ export const ApiKeys = () => {
 
     const [createOpen, setCreateOpen] = useState(false);
     const [name, setName] = useState("");
+    const [scopes, setScopes] = useState<ApiScope[]>([...API_SCOPES]);
+    // A date like 2026-12-31; empty for a key that never expires
+    const [expiresOn, setExpiresOn] = useState("");
+    // The key waiting for "Revoke" to be confirmed
+    const [revoking, setRevoking] = useState<{ id: string; name: string } | null>(null);
     // Shown once, right after the key is created
     const [newKey, setNewKey] = useState<string | null>(null);
 
@@ -71,7 +84,8 @@ export const ApiKeys = () => {
     const removeKey = useMutation(
         trpc.apiKeys.remove.mutationOptions({
             onSuccess: () => {
-                toast.success("API key deleted");
+                toast.success("API key revoked");
+                setRevoking(null);
                 refresh();
             },
             onError: (error) => toast.error(error.message),
@@ -83,8 +97,17 @@ export const ApiKeys = () => {
         if (!open) {
             setNewKey(null);
             setName("");
+            setScopes([...API_SCOPES]);
+            setExpiresOn("");
         }
     };
+
+    const toggleScope = (scope: ApiScope, checked: boolean) =>
+        setScopes((current) =>
+            checked ? [...current, scope] : current.filter((item) => item !== scope)
+        );
+
+    const today = new Date().toISOString().slice(0, 10);
 
     const baseUrl = process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000";
     const example = `curl -X POST "${baseUrl}/api/v1/workflows/<workflowId>/execute" \\
@@ -93,7 +116,7 @@ export const ApiKeys = () => {
   -d '{"customer":"Ali"}'`;
 
     return (
-        <div className="mx-auto w-full max-w-3xl space-y-6 p-4 md:p-8">
+        <div className="mx-auto w-full max-w-5xl space-y-6 p-4 md:p-8">
             <Card className="shadow-none">
                 <CardHeader className="flex flex-row items-start justify-between gap-4">
                     <div className="space-y-1.5">
@@ -136,8 +159,10 @@ export const ApiKeys = () => {
                                 <TableRow>
                                     <TableHead>Name</TableHead>
                                     <TableHead>Key</TableHead>
+                                    <TableHead>Scopes</TableHead>
                                     <TableHead>Created</TableHead>
                                     <TableHead>Last used</TableHead>
+                                    <TableHead>Expires</TableHead>
                                     <TableHead />
                                 </TableRow>
                             </TableHeader>
@@ -146,7 +171,20 @@ export const ApiKeys = () => {
                                     <TableRow key={apiKey.id}>
                                         <TableCell className="font-medium">{apiKey.name}</TableCell>
                                         <TableCell className="font-mono text-xs">
-                                            {apiKey.prefix}...
+                                            {apiKey.prefix}…
+                                        </TableCell>
+                                        <TableCell>
+                                            <div className="flex flex-wrap gap-1">
+                                                {apiKey.scopes.length ? (
+                                                    apiKey.scopes.map((scope) => (
+                                                        <Badge key={scope} variant="secondary" className="font-mono text-[11px]">
+                                                            {scope}
+                                                        </Badge>
+                                                    ))
+                                                ) : (
+                                                    <span className="text-muted-foreground">None</span>
+                                                )}
+                                            </div>
                                         </TableCell>
                                         <TableCell>
                                             {formatDistanceToNow(new Date(apiKey.createdAt), { addSuffix: true })}
@@ -156,15 +194,26 @@ export const ApiKeys = () => {
                                                 ? formatDistanceToNow(new Date(apiKey.lastUsedAt), { addSuffix: true })
                                                 : "Never"}
                                         </TableCell>
+                                        <TableCell>
+                                            {!apiKey.expiresAt ? (
+                                                "Never"
+                                            ) : isKeyExpired(apiKey.expiresAt) ? (
+                                                <span className="font-medium text-destructive">
+                                                    Expired {format(new Date(apiKey.expiresAt), "d MMM yyyy")}
+                                                </span>
+                                            ) : (
+                                                format(new Date(apiKey.expiresAt), "d MMM yyyy")
+                                            )}
+                                        </TableCell>
                                         <TableCell className="text-right">
                                             <Button
-                                                size="icon"
-                                                variant="ghost"
-                                                title="Delete key"
+                                                size="sm"
+                                                variant="outline"
+                                                className="text-destructive hover:text-destructive"
                                                 disabled={removeKey.isPending}
-                                                onClick={() => removeKey.mutate({ id: apiKey.id })}
+                                                onClick={() => setRevoking({ id: apiKey.id, name: apiKey.name })}
                                             >
-                                                <TrashIcon className="size-4" />
+                                                Revoke
                                             </Button>
                                         </TableCell>
                                     </TableRow>
@@ -187,19 +236,29 @@ export const ApiKeys = () => {
                     <ul className="space-y-2 text-muted-foreground">
                         <li>
                             <code className="text-foreground">GET /api/v1/workflows</code> lists your workflows.
+                            Scope <code>workflows:read</code>.
                         </li>
                         <li>
                             <code className="text-foreground">POST /api/v1/workflows/:id/execute</code> runs a
                             workflow from its manual trigger. The JSON body becomes the
                             run&apos;s variables, so <code>{"{{customer}}"}</code> works in its nodes.
+                            Scope <code>workflows:execute</code>.
                         </li>
                         <li>
                             <code className="text-foreground">GET /api/v1/executions/:id</code> returns the
-                            status and, once finished, the output.
+                            status and, once finished, the output. Scope <code>executions:read</code>.
                         </li>
                         <li>
                             <code className="text-foreground">GET /api/v1/executions?workflowId=...</code> lists
-                            recent executions.
+                            recent executions. Scope <code>executions:read</code>.
+                        </li>
+                        <li>
+                            <code className="text-foreground">POST /api/v1/executions/:id/retry</code> runs an
+                            execution again with the same starting data. Scope <code>executions:retry</code>.
+                        </li>
+                        <li>
+                            A key without the scope a route needs gets <code>403</code>; an expired or
+                            revoked key gets <code>401</code>.
                         </li>
                     </ul>
                     <pre className="overflow-x-auto rounded-lg bg-muted p-4 text-xs">{example}</pre>
@@ -213,7 +272,7 @@ export const ApiKeys = () => {
                         <DialogDescription>
                             {newKey
                                 ? "This is the only time the key is shown. Store it somewhere safe."
-                                : "Give the key a name so you can tell your keys apart."}
+                                : "Name the key, and give it only the scopes its job needs."}
                         </DialogDescription>
                     </DialogHeader>
 
@@ -234,7 +293,9 @@ export const ApiKeys = () => {
                             className="space-y-4"
                             onSubmit={(event) => {
                                 event.preventDefault();
-                                if (name.trim()) createKey.mutate({ name });
+                                if (name.trim() && scopes.length) {
+                                    createKey.mutate({ name, scopes, expiresOn });
+                                }
                             }}
                         >
                             <div className="space-y-2">
@@ -247,8 +308,40 @@ export const ApiKeys = () => {
                                     autoFocus
                                 />
                             </div>
+                            <div className="space-y-2">
+                                <Label>Scopes</Label>
+                                {API_SCOPES.map((scope) => (
+                                    <label key={scope} className="flex items-center gap-2 text-sm">
+                                        <Checkbox
+                                            checked={scopes.includes(scope)}
+                                            onCheckedChange={(checked) => toggleScope(scope, checked === true)}
+                                        />
+                                        <code className="text-xs">{scope}</code>
+                                        <span className="text-muted-foreground">
+                                            {API_SCOPE_DESCRIPTIONS[scope]}
+                                        </span>
+                                    </label>
+                                ))}
+                            </div>
+                            <div className="space-y-2">
+                                <Label htmlFor="api-key-expiry">Expiry date (Optional)</Label>
+                                <Input
+                                    id="api-key-expiry"
+                                    type="date"
+                                    min={today}
+                                    value={expiresOn}
+                                    onChange={(event) => setExpiresOn(event.target.value)}
+                                />
+                                <p className="text-sm text-muted-foreground">
+                                    The key stops working at the end of this day (UTC). Leave
+                                    empty for a key that never expires.
+                                </p>
+                            </div>
                             <DialogFooter>
-                                <Button type="submit" disabled={!name.trim() || createKey.isPending}>
+                                <Button
+                                    type="submit"
+                                    disabled={!name.trim() || !scopes.length || createKey.isPending}
+                                >
                                     Create key
                                 </Button>
                             </DialogFooter>
@@ -262,6 +355,31 @@ export const ApiKeys = () => {
                             </Button>
                         </DialogFooter>
                     )}
+                </DialogContent>
+            </Dialog>
+
+            <Dialog open={!!revoking} onOpenChange={(open) => !open && setRevoking(null)}>
+                <DialogContent>
+                    <DialogHeader>
+                        <DialogTitle>Revoke this API key?</DialogTitle>
+                        <DialogDescription>
+                            &quot;{revoking?.name}&quot; stops working at once, and this cannot
+                            be undone.
+                        </DialogDescription>
+                    </DialogHeader>
+                    <DialogFooter>
+                        <Button type="button" variant="outline" onClick={() => setRevoking(null)}>
+                            Cancel
+                        </Button>
+                        <Button
+                            type="button"
+                            variant="destructive"
+                            disabled={removeKey.isPending}
+                            onClick={() => revoking && removeKey.mutate({ id: revoking.id })}
+                        >
+                            Revoke key
+                        </Button>
+                    </DialogFooter>
                 </DialogContent>
             </Dialog>
         </div>

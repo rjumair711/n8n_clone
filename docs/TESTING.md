@@ -250,6 +250,22 @@ curl -X POST -H "Authorization: Bearer <key>" "$APP/api/v1/executions/<execution
 
 **Expect:** a list, then `202` with an `executionId`, then the execution with `status` and `output`, then a new execution id. A wrong key gives `401`.
 
+**Key storage, scopes, expiry and revoking**
+
+| # | Do | Expect |
+|---|-----|--------|
+| 1 | New API key: all four scopes are ticked and Expiry date is empty. Create it | the full key is shown once with a copy button; after **Done** the list shows only the prefix (`rxj_` and 6 characters), the four scopes, Created, Last used `Never`, Expires `Never` |
+| 2 | Call `GET /api/v1/workflows` with it, reload the page | Last used shows "less than a minute ago" |
+| 3 | New key `read only` with only `workflows:read` and `executions:read`. Run the `execute` and the `retry` curl commands with it | `403` and `This API key is missing the scope 'workflows:execute'` (then `'executions:retry'`). The two `GET` commands work |
+| 4 | New key with only `workflows:execute`: run `GET /api/v1/workflows` | `403` naming `workflows:read` |
+| 5 | In the New API key dialog untick every scope | **Create key** is disabled |
+| 6 | New key with Expiry date today | the list shows today's date under Expires and the key works. (To see it expire without waiting, set `expiresAt` of the row in `api_key` to a past time: every call gives `401` "This API key has expired." and the list shows **Expired** in red) |
+| 7 | Click **Revoke** on a key, then **Revoke key** | the row disappears and that key gives `401` at once. **Cancel** leaves it alone |
+| 8 | Set `API_RATE_LIMIT_PER_MINUTE=5` in `.env`, restart, call `GET /api/v1/workflows` 6 times in a minute with one key, then once with another key | the 6th call gives `429` with a `Retry-After` header; the other key still works |
+| 9 | Look at the `api_key` table | `keyHash` is 64 hex characters and no column holds the key itself |
+
+After `npx prisma migrate deploy`: a key created before this change still works on all five routes and shows all four scopes.
+
 ## T12. Sign-in
 
 - Register a new email with a password. **Expect:** a "check your inbox" message, a verification email, and login only works after clicking the link. (Needs `RESEND_API_KEY`; without it, sign-up logs you in directly.)

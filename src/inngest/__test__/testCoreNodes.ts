@@ -2002,6 +2002,105 @@ const main = async () => {
     assert.equal(templateData.isAdminEmail("owner@example.com"), false);
   });
 
+  // ------------------------------------------------------------- API KEYS
+  console.log("API keys");
+
+  const apiScopes = await import("@/lib/api-key-scopes");
+  const { generateApiKey, hashApiKey } = await import("@/lib/api-keys");
+
+  await test("only a SHA-256 hash and a short prefix of a key are kept", () => {
+    const first = generateApiKey();
+    const second = generateApiKey();
+
+    assert.match(first.key, /^rxj_[0-9a-f]{64}$/);
+    assert.notEqual(first.key, second.key);
+    assert.match(first.keyHash, /^[0-9a-f]{64}$/);
+    assert.equal(first.keyHash, hashApiKey(first.key));
+    // SHA-256, checked against the published test vector for "abc"
+    assert.equal(
+      hashApiKey("abc"),
+      "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"
+    );
+    // The prefix recognises a key in the list but is far too short to use
+    assert.equal(first.prefix, first.key.slice(0, 10));
+    assert.notEqual(first.keyHash, first.key.slice(4));
+  });
+
+  await test("a key only does what its scopes allow, and the error names the scope", () => {
+    const { API_SCOPES, hasScope, missingScopeMessage, normalizeScopes } = apiScopes;
+
+    assert.deepEqual([...API_SCOPES], ["workflows:read", "workflows:execute", "executions:read", "executions:retry"]);
+
+    const readOnly = ["workflows:read", "executions:read"];
+    assert.equal(hasScope(readOnly, "workflows:read"), true);
+    assert.equal(hasScope(readOnly, "workflows:execute"), false);
+    assert.equal(hasScope(readOnly, "executions:retry"), false);
+    // A key with no scopes can do nothing; one scope does not imply another
+    for (const scope of API_SCOPES) assert.equal(hasScope([], scope), false);
+    assert.equal(hasScope(["workflows:execute"], "workflows:read"), false);
+    assert.equal(hasScope(["workflows:*", "*"], "workflows:read"), false);
+
+    assert.match(missingScopeMessage("executions:retry"), /missing the scope 'executions:retry'/);
+
+    assert.deepEqual(
+      normalizeScopes(["executions:read", "admin", "workflows:read", "executions:read", 7]),
+      ["workflows:read", "executions:read"]
+    );
+  });
+
+  await test("a key stops working after its expiry date", () => {
+    const { isKeyExpired, parseExpiryDate } = apiScopes;
+    const now = new Date("2026-10-09T12:00:00Z");
+
+    assert.equal(isKeyExpired(null, now), false);
+    assert.equal(isKeyExpired(undefined, now), false);
+    assert.equal(isKeyExpired(new Date("2026-10-09T12:00:01Z"), now), false);
+    assert.equal(isKeyExpired(new Date("2026-10-09T12:00:00Z"), now), true);
+    assert.equal(isKeyExpired("2026-10-08T23:59:59.999Z", now), true);
+
+    assert.equal(parseExpiryDate("", now), null);
+    assert.equal(parseExpiryDate(undefined, now), null);
+    // Works for the whole of the chosen day
+    assert.equal(parseExpiryDate("2026-10-09", now)?.toISOString(), "2026-10-09T23:59:59.999Z");
+    assert.equal(parseExpiryDate(" 2027-01-31 ", now)?.toISOString(), "2027-01-31T23:59:59.999Z");
+    assert.throws(() => parseExpiryDate("2026-10-08", now), /in the future/);
+    assert.throws(() => parseExpiryDate("2027-02-31", now), /date like/);
+    assert.throws(() => parseExpiryDate("next week", now), /date like/);
+    assert.throws(() => parseExpiryDate("2027-1-5", now), /date like/);
+  });
+
+  await test("every /api/v1 route asks for a scope", async () => {
+    const { readdirSync, readFileSync } = await import("node:fs");
+    const { join } = await import("node:path");
+
+    const routes: string[] = [];
+    const walk = (directory: string) => {
+      for (const entry of readdirSync(directory, { withFileTypes: true })) {
+        const path = join(directory, entry.name);
+        if (entry.isDirectory()) walk(path);
+        else if (entry.name === "route.ts") routes.push(path);
+      }
+    };
+    walk(join(process.cwd(), "src/app/api/v1"));
+
+    assert.ok(routes.length >= 5);
+
+    const used = new Set<string>();
+    for (const route of routes) {
+      const source = readFileSync(route, "utf8");
+      const calls = [...source.matchAll(/authenticateApiRequest\(request, "([^"]+)"\)/g)];
+      const handlers = [...source.matchAll(/export async function (GET|POST|PUT|PATCH|DELETE)/g)];
+
+      assert.ok(handlers.length > 0, route);
+      assert.equal(calls.length, handlers.length, `${route}: every handler must check a scope`);
+      for (const call of calls) {
+        assert.ok((apiScopes.API_SCOPES as readonly string[]).includes(call[1]), `${route}: ${call[1]}`);
+        used.add(call[1]);
+      }
+    }
+    assert.deepEqual([...used].sort(), [...apiScopes.API_SCOPES].sort());
+  });
+
   console.log(`\n${passed} checks passed`);
 };
 

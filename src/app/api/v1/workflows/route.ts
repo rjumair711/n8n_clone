@@ -4,7 +4,7 @@ import { authenticateApiRequest } from "@/lib/api-keys";
 
 // GET /api/v1/workflows: the caller's workflows
 export async function GET(request: NextRequest) {
-    const auth = await authenticateApiRequest(request);
+    const auth = await authenticateApiRequest(request, "workflows:read");
     if ("response" in auth) return auth.response;
 
     const workflows = await prisma.workflow.findMany({

@@ -353,6 +353,7 @@ Supported credential types:
 * **Webhook responses** are served with a sandbox policy so a workflow cannot run scripts on the app's origin.
 * **Sign-in:** email verification for password sign-ups, password reset by email, Google and GitHub sign-in.
 * **Sandboxed code:** the Code node and `{{ $json }}` expressions run in QuickJS with no access to Node, the network or the filesystem.
+* **SQL injection:** in the Postgres and MySQL nodes, values belong in **Query Parameters** (a JSON array, one value per `$1` or `?`), which accepts expressions such as `["{{webhook.body.email}}"]` and never mixes them into the SQL. An "Execute Query" whose query text contains a `{{ }}` expression shows a warning in the editor and is refused when the workflow runs, unless the node's **Allow expressions in query text (unsafe)** option is on (off by default). Nodes that already had expressions in their query before this rule keep working: the migration switches the option on for them.
 * **SSH:** the server address is part of the credential, so a saved key can only be used against that server. Private and local addresses are refused, a command has a time limit (30 seconds, up to 120) and an output limit, and the node is not unlocked by the free trial. Use `{{shellQuote value}}` for anything that comes from outside the workflow, such as webhook data, so it cannot be read as extra commands.
 
 ---
@@ -361,13 +362,21 @@ Supported credential types:
 
 Create a key under **API Keys** (Pro plan or free trial) and send it as `Authorization: Bearer <key>` or `X-API-Key: <key>`.
 
-| Endpoint | Description |
-| -------- | ----------- |
-| `GET /api/v1/workflows` | List your workflows |
-| `POST /api/v1/workflows/:id/execute` | Run a workflow from its manual trigger; the JSON body becomes the run's variables |
-| `GET /api/v1/executions/:id` | Status and, once finished, the output |
-| `GET /api/v1/executions?workflowId=...` | Recent executions |
-| `POST /api/v1/executions/:id/retry` | Run an execution again with the same starting data |
+| Endpoint | Scope | Description |
+| -------- | ----- | ----------- |
+| `GET /api/v1/workflows` | `workflows:read` | List your workflows |
+| `POST /api/v1/workflows/:id/execute` | `workflows:execute` | Run a workflow from its manual trigger; the JSON body becomes the run's variables |
+| `GET /api/v1/executions/:id` | `executions:read` | Status and, once finished, the output |
+| `GET /api/v1/executions?workflowId=...` | `executions:read` | Recent executions |
+| `POST /api/v1/executions/:id/retry` | `executions:retry` | Run an execution again with the same starting data |
+
+**API keys**
+
+* The full key is shown once, when it is created. Only its SHA-256 hash and a short prefix (`rxj_ab12cd…`) are stored, so a key cannot be read back from the app or the database.
+* Each key has **scopes** and an optional **expiry date** (the key works until the end of that day, UTC). A request to a route whose scope the key lacks gets `403` with the name of the missing scope; an expired, revoked or unknown key gets `401`.
+* Each key may make `API_RATE_LIMIT_PER_MINUTE` requests per minute (default 120); after that it gets `429` with a `Retry-After` header.
+* The **API Keys** page lists every key with its prefix, scopes, created, last used and expiry, and a **Revoke** button that stops the key at once.
+* Keys created before scopes existed keep every scope and have no expiry.
 
 ```bash
 curl -X POST "$APP_URL/api/v1/workflows/<workflowId>/execute" \
@@ -378,7 +387,6 @@ curl -X POST "$APP_URL/api/v1/workflows/<workflowId>/execute" \
 
 ---
 
-* **SQL injection:** in the Postgres and MySQL nodes, values belong in **Query Parameters** (a JSON array, one value per `$1` or `?`), which accepts expressions such as `["{{webhook.body.email}}"]` and never mixes them into the SQL. An "Execute Query" whose query text contains a `{{ }}` expression shows a warning in the editor and is refused when the workflow runs, unless the node's **Allow expressions in query text (unsafe)** option is on (off by default). Nodes that already had expressions in their query before this rule keep working: the migration switches the option on for them.
 # 💳 SaaS Billing & Subscription System
 
 RXJ includes a complete SaaS monetization architecture powered by Polar.
@@ -482,7 +490,7 @@ NODE_OPTIONS=--max-old-space-size=8192 npx tsc --noEmit
 | `REQUIRE_EMAIL_VERIFICATION` | Set to `false` to switch verification off |
 | `POLAR_*` | Billing (access token, product IDs, webhook secret, success URL) |
 | `ALLOW_PRIVATE_NETWORK_REQUESTS` | `true` lets workflows reach private addresses (self-hosting only) |
-| `WEBHOOK_RATE_LIMIT_PER_MINUTE`, `API_RATE_LIMIT_PER_MINUTE` | Request limits, default 120 |
+| `WEBHOOK_RATE_LIMIT_PER_MINUTE`, `API_RATE_LIMIT_PER_MINUTE` | Requests per minute for one workflow's webhook URL, and for one API key. Default 120 each |
 | `WEBHOOK_RESPONSE_TIMEOUT_MS` | How long a webhook waits for the workflow's response, default 25000 |
 | `MAX_ITEMS_PER_NODE` | Items one node may process in a list, default 100 |
 | `MAX_FILE_SIZE_MB`, `MAX_USER_STORAGE_MB`, `FILE_RETENTION_DAYS` | Workflow file limits, defaults 10, 200 and 7 |
