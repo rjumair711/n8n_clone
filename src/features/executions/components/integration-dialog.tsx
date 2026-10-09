@@ -20,6 +20,7 @@ import {
 } from "@/components/ui/form";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
+import { Switch } from "@/components/ui/switch";
 import { Button } from "@/components/ui/button";
 import { useEffect } from "react";
 import { useCredentialsByType } from "@/features/credentials/hooks/use-credentials";
@@ -40,8 +41,9 @@ import { useParams } from "next/navigation";
 export type IntegrationField = {
   name: string;
   label: string;
-  // "workflow" lists the user's other workflows
-  type?: "text" | "textarea" | "select" | "workflow";
+  // "workflow" lists the user's other workflows; "switch" is an on/off
+  // option saved as "true" or "false"
+  type?: "text" | "textarea" | "select" | "workflow" | "switch";
   placeholder?: string;
   description?: string;
   options?: { value: string; label: string }[];
@@ -49,6 +51,8 @@ export type IntegrationField = {
   defaultValue?: string;
   // Show the field only for these operations (all operations when omitted)
   operations?: string[];
+  // A warning shown under the field while it returns text
+  warning?: (value: string) => string | undefined;
 };
 
 // Describes an integration node's settings; the dialog is generated from it
@@ -372,7 +376,30 @@ export const IntegrationDialog = ({
                 key={definition.name}
                 control={form.control}
                 name={definition.name}
-                render={({ field }) => (
+                render={({ field }) =>
+                  definition.type === "switch" ? (
+                  <FormItem className="rounded-lg border p-3 bg-muted/20">
+                    <div className="flex flex-row items-center justify-between gap-4">
+                      <div className="space-y-0.5">
+                        <FormLabel>{definition.label}</FormLabel>
+                        {definition.description && (
+                          <FormDescription>
+                            {definition.description}
+                          </FormDescription>
+                        )}
+                      </div>
+                      <FormControl>
+                        <Switch
+                          checked={field.value === "true"}
+                          onCheckedChange={(checked) =>
+                            field.onChange(checked ? "true" : "false")
+                          }
+                        />
+                      </FormControl>
+                    </div>
+                    <FormMessage />
+                  </FormItem>
+                  ) : (
                   <FormItem>
                     <FormLabel>
                       {definition.label}
@@ -420,9 +447,15 @@ export const IntegrationDialog = ({
                     {definition.description && (
                       <FormDescription>{definition.description}</FormDescription>
                     )}
+                    {definition.warning?.(field.value ?? "") && (
+                      <p className="text-sm font-medium text-amber-600 dark:text-amber-500">
+                        {definition.warning(field.value ?? "")}
+                      </p>
+                    )}
                     <FormMessage />
                   </FormItem>
-                )}
+                  )
+                }
               />
             ))}
 

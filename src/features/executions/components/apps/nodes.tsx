@@ -4,6 +4,11 @@ import { CredentialType } from "@prisma/client";
 import { PencilRuler, Rss } from "lucide-react";
 import { createIntegrationNode } from "../integration-node";
 import type { IntegrationConfig, IntegrationField } from "../integration-dialog";
+import {
+  ALLOW_QUERY_EXPRESSIONS_LABEL,
+  QUERY_EXPRESSION_WARNING,
+  hasQueryExpressions,
+} from "../../lib/sql-expressions";
 
 const operationLabel = (config: IntegrationConfig, value?: string) =>
   config.operations?.find((option) => option.value === value)?.label;
@@ -418,13 +423,25 @@ export const mysqlConfig: IntegrationConfig = {
         "Use ? for values and list them in Query Parameters, so they are never pasted into the SQL.",
       required: true,
       operations: ["execute_query"],
+      warning: (value) =>
+        hasQueryExpressions(value) ? QUERY_EXPRESSION_WARNING : undefined,
     },
     {
       name: "paramsJson",
       label: "Query Parameters",
       type: "textarea",
       placeholder: '["{{webhook.body.email}}"]',
-      description: "A JSON array with one value per ? placeholder.",
+      description:
+        'A JSON array with one value per ? placeholder. Expressions are safe here: ["{{webhook.body.email}}", {{webhook.body.id}}].',
+      operations: ["execute_query"],
+    },
+    {
+      name: "allowQueryExpressions",
+      label: ALLOW_QUERY_EXPRESSIONS_LABEL,
+      type: "switch",
+      defaultValue: "false",
+      description:
+        "Off: a query with {{ }} expressions in its text is refused when the workflow runs. Turn it on only when the values can never come from outside, such as a table name you set yourself.",
       operations: ["execute_query"],
     },
     {

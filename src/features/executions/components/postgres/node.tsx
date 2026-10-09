@@ -3,6 +3,11 @@
 import { CredentialType } from "@prisma/client";
 import { createIntegrationNode } from "../integration-node";
 import type { IntegrationConfig } from "../integration-dialog";
+import {
+  ALLOW_QUERY_EXPRESSIONS_LABEL,
+  QUERY_EXPRESSION_WARNING,
+  hasQueryExpressions,
+} from "../../lib/sql-expressions";
 
 export const postgresConfig: IntegrationConfig = {
   label: "Postgres",
@@ -26,13 +31,25 @@ export const postgresConfig: IntegrationConfig = {
         "Use $1, $2... for values and list them in Query Parameters, so they are never pasted into the SQL.",
       required: true,
       operations: ["execute_query"],
+      warning: (value) =>
+        hasQueryExpressions(value) ? QUERY_EXPRESSION_WARNING : undefined,
     },
     {
       name: "paramsJson",
       label: "Query Parameters",
       type: "textarea",
       placeholder: '["{{webhook.body.email}}"]',
-      description: "A JSON array with one value per $1, $2... placeholder.",
+      description:
+        'A JSON array with one value per $1, $2... placeholder. Expressions are safe here: ["{{webhook.body.email}}", {{webhook.body.id}}].',
+      operations: ["execute_query"],
+    },
+    {
+      name: "allowQueryExpressions",
+      label: ALLOW_QUERY_EXPRESSIONS_LABEL,
+      type: "switch",
+      defaultValue: "false",
+      description:
+        "Off: a query with {{ }} expressions in its text is refused when the workflow runs. Turn it on only when the values can never come from outside, such as a table name you set yourself.",
       operations: ["execute_query"],
     },
     {

@@ -1155,6 +1155,130 @@ const main = async () => {
     );
   });
 
+  const sqlExpressions = await import("@/features/executions/lib/sql-expressions");
+  const sqlSafety = await import("@/features/executions/lib/sql-safety");
+  const { postgresExecutor } = await import(
+    "@/features/executions/components/postgres/executor"
+  );
+
+  await test("expressions in SQL query text are detected", () => {
+    const { hasQueryExpressions } = sqlExpressions;
+
+    for (const query of [
+      "SELECT * FROM users WHERE email = '{{webhook.body.email}}'",
+      "SELECT * FROM users WHERE id = {{ $json.id }}",
+      "SELECT * FROM {{table}} LIMIT 1",
+      "DELETE FROM t WHERE id = {{{raw}}}",
+      'SELECT {{$fromAI "column" "the column"}} FROM t',
+      "SELECT *\nFROM t\nWHERE id = {{\n  $json.items.map((i) => { return i.id })[0]\n}}",
+    ]) {
+      assert.equal(hasQueryExpressions(query), true, query);
+    }
+
+    for (const query of [
+      "SELECT * FROM users WHERE email = $1",
+      "SELECT * FROM users WHERE email = ? LIMIT 10",
+      `SELECT '{"a": {"b": 1}}'::jsonb`,
+      "SELECT '{1,2}'::int[], '{}'::text[]",
+      "SELECT 'an unclosed {{ is only text'",
+      "",
+    ]) {
+      assert.equal(hasQueryExpressions(query), false, query);
+    }
+    assert.equal(hasQueryExpressions(undefined), false);
+
+    // On only when it was switched on; nodes saved before it existed are off
+    assert.equal(sqlExpressions.allowsQueryExpressions("true"), true);
+    assert.equal(sqlExpressions.allowsQueryExpressions(true), true);
+    for (const value of [undefined, "", "false", false, "yes", 1]) {
+      assert.equal(sqlExpressions.allowsQueryExpressions(value), false);
+    }
+  });
+
+  await test("a query with expressions in its text is rejected unless the node allows it", async () => {
+    const context = { webhook: { body: { email: "x' OR '1'='1", id: 7 } } };
+    const query = "SELECT * FROM users WHERE email = '{{webhook.body.email}}'";
+
+    for (const label of ["Postgres", "MySQL"]) {
+      assert.throws(
+        () => sqlSafety.resolveQueryText(label, { query }, context),
+        new RegExp(`${label} node: the query text contains .* expressions.*Query Parameters.*Allow expressions in query text \\(unsafe\\)`)
+      );
+      assert.throws(
+        () => sqlSafety.resolveQueryText(label, { query, allowQueryExpressions: "false" }, context),
+        /query text contains/
+      );
+      // The author's own choice: the text is rendered as before
+      assert.equal(
+        sqlSafety.resolveQueryText(label, { query, allowQueryExpressions: "true" }, context),
+        "SELECT * FROM users WHERE email = 'x' OR '1'='1'"
+      );
+    }
+
+    // Without expressions the text is sent as written, option or not
+    assert.equal(
+      sqlSafety.resolveQueryText("Postgres", { query: "  SELECT * FROM users WHERE email = $1  " }, context),
+      "SELECT * FROM users WHERE email = $1"
+    );
+    assert.equal(
+      sqlSafety.resolveQueryText("Postgres", { query: "SELECT 'a {{ b'" }, context),
+      "SELECT 'a {{ b'"
+    );
+    assert.throws(() => sqlSafety.resolveQueryText("MySQL", { query: "  " }, context), /Query is required/);
+
+    // Both nodes refuse before they look for a credential or connect
+    const data = { variableName: "db", operation: "execute_query", query };
+    await assert.rejects(postgresExecutor({ ...baseParams, context, data }), /Postgres node: the query text contains/);
+    await assert.rejects(mysqlExecutor({ ...baseParams, context, data }), /MySQL node: the query text contains/);
+    // MySQL nodes saved without an operation run Execute Query
+    await assert.rejects(
+      mysqlExecutor({ ...baseParams, context, data: { variableName: "db", query } }),
+      /MySQL node: the query text contains/
+    );
+    // With the option on they get as far as the missing credential
+    await assert.rejects(
+      postgresExecutor({ ...baseParams, context, data: { ...data, allowQueryExpressions: "true" } }),
+      /Credential is required/
+    );
+    await assert.rejects(
+      mysqlExecutor({ ...baseParams, context, data: { ...data, allowQueryExpressions: "true" } }),
+      /Credential is required/
+    );
+    // The other operations never used the query text
+    await assert.rejects(
+      postgresExecutor({ ...baseParams, context, data: { ...data, operation: "select_rows", table: "users" } }),
+      /Credential is required/
+    );
+  });
+
+  await test("Query Parameters take expressions and keep each value whole", () => {
+    const context = {
+      webhook: { body: { email: `a"b'; DROP TABLE users; --`, id: 7, note: "line 1\nline 2" } },
+      ids: [1, 2],
+    };
+    const params = (text?: string) => sqlSafety.resolveQueryParameters("Postgres", text, context);
+
+    assert.deepEqual(params(undefined), []);
+    assert.deepEqual(params("  "), []);
+    assert.deepEqual(params('[42, "plain", true, null]'), [42, "plain", true, null]);
+
+    // Quotes and line breaks in a value stay inside that one value
+    assert.deepEqual(
+      params('["{{webhook.body.email}}", "{{ $json.webhook.body.note }}", "id-{{webhook.body.id}}"]'),
+      [`a"b'; DROP TABLE users; --`, "line 1\nline 2", "id-7"]
+    );
+    // Numbers and whole lists, written without quotes
+    assert.deepEqual(params("[{{webhook.body.id}}, {{json ids}}]"), [7, [1, 2]]);
+    assert.deepEqual(params("{{json ids}}"), [1, 2]);
+
+    assert.throws(() => params('{"a": 1}'), /Query Parameters must be a JSON array/);
+    assert.throws(() => params("[{{webhook.body.missing}}"), /Invalid JSON in the Query Parameters field/);
+    assert.throws(
+      () => sqlSafety.resolveQueryParameters("MySQL", "{{webhook.body.id}}", context),
+      /MySQL node: Query Parameters must be a JSON array/
+    );
+  });
+
   await test("database hosts on a private network are refused", async () => {
     for (const host of ["localhost", "127.0.0.1", "10.0.0.5", "db.internal", "[::1]", "169.254.169.254"]) {
       await assert.rejects(assertPublicHost(host), /not allowed/, host);

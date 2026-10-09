@@ -18,6 +18,7 @@ import {
   type IncludeMode,
 } from "../../lib/edit-fields";
 import { parseFieldList } from "../../lib/list-ops";
+import { resolveQueryParameters, resolveQueryText } from "../../lib/sql-safety";
 import { loadFiles, resolveFileIds } from "../files/executors";
 
 type AppData = {
@@ -749,22 +750,16 @@ export const mysqlExecutor: NodeExecutor<AppData> = async ({
   let values: unknown[] = [];
 
   switch (operation) {
-    case "execute_query": {
-      // Templates in the SQL itself are rendered, but values should go
-      // through Query Parameters to avoid SQL injection
-      sql = required("query", "Query");
-
-      const rawParams = field("paramsJson");
-      if (rawParams) {
-        values = parseJsonField<unknown[]>("MySQL", "Query Parameters", rawParams);
-        if (!Array.isArray(values)) {
-          throw new NonRetriableError(
-            "MySQL node: Query Parameters must be a JSON array"
-          );
-        }
-      }
+    case "execute_query":
+      // Expressions in the SQL itself are refused unless the node allows
+      // them; values go through Query Parameters, which mysql2 escapes
+      sql = resolveQueryText(
+        "MySQL",
+        { query: data.query, allowQueryExpressions: data.allowQueryExpressions },
+        context
+      );
+      values = resolveQueryParameters("MySQL", data.paramsJson, context);
       break;
-    }
 
     case "select_rows":
       sql = `SELECT * FROM ${quoteMysqlIdentifier(required("table", "Table"))} LIMIT ?`;

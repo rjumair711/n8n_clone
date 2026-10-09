@@ -292,8 +292,8 @@ Limits: 10 MB per file (`MAX_FILE_SIZE_MB`), 200 MB stored per user (`MAX_USER_S
 | Jira             | Create issue, get issue, search with JQL, add comment (Jira Cloud)        |
 | HubSpot          | Create, get, update and search contacts; create deals                     |
 | Salesforce       | Query with SOQL, and create, get, update and delete records of any object |
-| Postgres         | Run parameterised SQL, select rows, insert rows                           |
-| MySQL            | Run parameterised SQL, select rows, insert rows (MySQL and MariaDB)       |
+| Postgres         | Run parameterised SQL, select rows, insert rows. Expressions go in Query Parameters, not in the query text |
+| MySQL            | Run parameterised SQL, select rows, insert rows (MySQL and MariaDB). Same rule for expressions |
 
 ---
 
@@ -378,6 +378,7 @@ curl -X POST "$APP_URL/api/v1/workflows/<workflowId>/execute" \
 
 ---
 
+* **SQL injection:** in the Postgres and MySQL nodes, values belong in **Query Parameters** (a JSON array, one value per `$1` or `?`), which accepts expressions such as `["{{webhook.body.email}}"]` and never mixes them into the SQL. An "Execute Query" whose query text contains a `{{ }}` expression shows a warning in the editor and is refused when the workflow runs, unless the node's **Allow expressions in query text (unsafe)** option is on (off by default). Nodes that already had expressions in their query before this rule keep working: the migration switches the option on for them.
 # 💳 SaaS Billing & Subscription System
 
 RXJ includes a complete SaaS monetization architecture powered by Polar.
