@@ -4,6 +4,7 @@ import { Client } from "pg";
 import { assertPublicHost } from "@/lib/ssrf";
 import { renderTemplate } from "../../lib/templates";
 import { loadCredentialSecret, parseJsonField } from "../../lib/integration";
+import { resolveQueryParameters, resolveQueryText } from "../../lib/sql-safety";
 
 type PostgresData = {
   variableName?: string;
@@ -11,6 +12,7 @@ type PostgresData = {
   operation?: string;
   query?: string;
   paramsJson?: string;
+  allowQueryExpressions?: string;
   table?: string;
   limit?: string;
   rowJson?: string;
@@ -47,26 +49,11 @@ export const postgresExecutor: NodeExecutor<PostgresData> = async ({
 
   switch (data.operation) {
     case "execute_query": {
-      // Templates in the SQL itself are rendered, but values should go
-      // through Query Parameters to avoid SQL injection
-      text = renderTemplate(data.query, context).trim();
-      if (!text) {
-        throw new NonRetriableError("Postgres node: Query is required");
-      }
-
-      const rawParams = renderTemplate(data.paramsJson, context).trim();
-      if (rawParams) {
-        values = parseJsonField<unknown[]>(
-          "Postgres",
-          "Query Parameters",
-          rawParams
-        );
-        if (!Array.isArray(values)) {
-          throw new NonRetriableError(
-            "Postgres node: Query Parameters must be a JSON array"
-          );
-        }
-      }
+      // Expressions in the SQL itself are refused unless the node allows
+      // them; values go through Query Parameters, which pg sends apart
+      // from the SQL
+      text = resolveQueryText("Postgres", data, context);
+      values = resolveQueryParameters("Postgres", data.paramsJson, context);
       break;
     }
 

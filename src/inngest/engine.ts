@@ -46,6 +46,9 @@ const AGENT_SUPPLY_TYPES = new Set([
   "OPENAI",
   "ANTHROPIC",
   "CHAT_MODEL",
+  "DEEPSEEK",
+  "KIMI",
+  "QWEN",
   "BUFFER_MEMORY",
 ]);
 

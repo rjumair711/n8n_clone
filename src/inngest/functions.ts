@@ -55,6 +55,8 @@ import { notionChannel } from "./channels/notion";
 import { telegramChannel } from "./channels/telegram";
 import { dateTimeChannel } from "./channels/datetime";
 import { textFormatterChannel } from "./channels/textformatter";
+import { createRunRedactor } from "@/lib/execution-redaction";
+import { redactString } from "@/lib/redaction";
 
 const toJson = (value: unknown) => value as Prisma.InputJsonValue;
 
@@ -106,8 +108,12 @@ export const executeWorkflow =
             where: { id: executionId },
             data: {
               status: ExecutionStatus.FAILED,
-              error: event.data.error?.message ?? "Unknown workflow error",
-              errorStack: event.data.error?.stack,
+              error: redactString(
+                event.data.error?.message ?? "Unknown workflow error"
+              ),
+              errorStack: event.data.error?.stack
+                ? redactString(event.data.error.stack)
+                : undefined,
               completedAt: new Date(),
               durationMs: Date.now() - new Date(exec.startedAt).getTime(), // Capture total duration on global failure
             },
@@ -184,6 +190,7 @@ export const executeWorkflow =
       const execution = await step.run("init-execution", async () => {
         const found = await prisma.execution.findUnique({
           where: { id: executionId },
+          include: { workflow: { select: { saveExecutionData: true } } },
         });
 
         if (!found || found.workflowId !== workflowId) {
@@ -192,15 +199,20 @@ export const executeWorkflow =
           );
         }
 
-        // The trigger and its data are kept so the run can be retried
+        // The trigger and its data are kept so the run can be retried,
+        // unless the workflow is set to "Don't save node input/output"
         await prisma.execution.update({
           where: { id: found.id },
           data: {
             ...(inngestEventId ? { inngestEventId } : {}),
             trigger: event.data.trigger ?? null,
-            inputData: toJson(
-              event.data.InitialData || event.data.initialData || {}
-            ),
+            ...(found.workflow.saveExecutionData
+              ? {
+                  inputData: toJson(
+                    event.data.InitialData || event.data.initialData || {}
+                  ),
+                }
+              : {}),
           },
         });
 
@@ -214,7 +226,16 @@ export const executeWorkflow =
       // PREPARE WORKFLOW
       // =========================================
 
-      const { allNodes, connections, userId, userPlan, trialEndsAt, workflowName } = await step.run(
+      const {
+        allNodes,
+        connections,
+        userId,
+        userPlan,
+        trialEndsAt,
+        workflowName,
+        saveExecutionData,
+        credentialValues,
+      } = await step.run(
         "prepare-workflow",
         async () => {
           const workflow = await prisma.workflow.findUniqueOrThrow({
@@ -222,22 +243,27 @@ export const executeWorkflow =
               id: workflowId,
             },
             include: {
-              nodes: {
-                include: {
-                  credential: true,
-                },
-              },
+              // Nodes only: each executor loads its own credential, by id
+              // and owner, when it runs
+              nodes: true,
               connections: true,
               user: {
                 select: {
                   plan: true, // Dynamically fetch user's subscription tier
                   trialEndsAt: true,
+                  // Still encrypted. Used to keep their values out of what
+                  // is stored about the run.
+                  credentials: { select: { value: true } },
                 },
               },
             },
           });
 
           return {
+            saveExecutionData: workflow.saveExecutionData,
+            credentialValues: workflow.user.credentials.map(
+              (credential) => credential.value
+            ),
             allNodes: workflow.nodes,
             connections: workflow.connections, // We need this to trace cables!
             userId: workflow.userId,
@@ -247,6 +273,12 @@ export const executeWorkflow =
           };
         }
       );
+
+      // What is stored about the run goes through this first. The run
+      // itself always works with the real data. Runs that started before
+      // this existed have neither value in their saved step result.
+      const redactor = createRunRedactor(credentialValues ?? []);
+      const saveNodeData = saveExecutionData !== false;
 
       // =========================================
       // DYNAMIC PLAN LIMIT CHECK
@@ -334,7 +366,9 @@ export const executeWorkflow =
                 nodeName: node.name,
                 nodeType: node.type,
                 status: ExecutionStatus.RUNNING,
-                input: toJson(context),
+                ...(saveNodeData
+                  ? { input: toJson(redactor.data(context)) }
+                  : {}),
               },
             });
 
@@ -416,7 +450,12 @@ export const executeWorkflow =
               ? error.stack
               : undefined;
 
-          console.error(`Node failed: ${node.id}`, error);
+          // What is stored, logged and sent on: an API's error text can
+          // repeat the key or header it was given
+          const savedErrorMessage = redactor.text(errorMessage);
+          const savedErrorStack = redactor.text(errorStack);
+
+          console.error(`Node failed: ${node.id}`, savedErrorStack ?? savedErrorMessage);
 
           // "On Error: Continue": the node is marked as failed, the run goes
           // on and later nodes can read {{error.message}}
@@ -433,8 +472,8 @@ export const executeWorkflow =
                 where: { id: nodeExecutionId },
                 data: {
                   status: ExecutionStatus.FAILED,
-                  error: errorMessage,
-                  errorStack: errorStack,
+                  error: savedErrorMessage,
+                  errorStack: savedErrorStack,
                   completedAt,
                   durationMs: started
                     ? completedAt.getTime() - started.startedAt.getTime()
@@ -469,8 +508,8 @@ export const executeWorkflow =
               where: { id: nodeExecutionId },
               data: {
                 status: ExecutionStatus.FAILED,
-                error: errorMessage,
-                errorStack: errorStack,
+                error: savedErrorMessage,
+                errorStack: savedErrorStack,
                 completedAt,
                 durationMs: started
                   ? completedAt.getTime() - started.startedAt.getTime()
@@ -482,8 +521,8 @@ export const executeWorkflow =
               where: { id: execution.id },
               data: {
                 status: ExecutionStatus.FAILED,
-                error: errorMessage,
-                errorStack: errorStack,
+                error: savedErrorMessage,
+                errorStack: savedErrorStack,
                 completedAt,
                 durationMs:
                   completedAt.getTime() -
@@ -524,7 +563,7 @@ export const executeWorkflow =
                   initialData: {
                     execution: {
                       id: execution.id,
-                      error: { message: errorMessage, stack: errorStack },
+                      error: { message: savedErrorMessage, stack: savedErrorStack },
                       lastNodeExecuted: node.type,
                       lastNodeId: node.id,
                     },
@@ -536,7 +575,7 @@ export const executeWorkflow =
           }
 
           throw new NonRetriableError(
-            `Node ${node.id} failed: ${errorMessage}`
+            `Node ${node.id} failed: ${savedErrorMessage}`
           );
         }
 
@@ -554,7 +593,9 @@ export const executeWorkflow =
             where: { id: nodeExecutionId },
             data: {
               status: ExecutionStatus.SUCCESS,
-              output: toJson(finalOutput.context),
+              ...(saveNodeData
+                ? { output: toJson(redactor.data(finalOutput.context)) }
+                : {}),
               completedAt,
               durationMs: started
                 ? completedAt.getTime() - started.startedAt.getTime()
@@ -598,7 +639,9 @@ export const executeWorkflow =
             data: {
               status: ExecutionStatus.SUCCESS,
               completedAt,
-              output: toJson(context),
+              ...(saveNodeData
+                ? { output: toJson(redactor.result(context)) }
+                : {}),
               durationMs:
                 completedAt.getTime() -
                 new Date(execution.startedAt).getTime(), // Total successful roundtrip time

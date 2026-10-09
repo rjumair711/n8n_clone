@@ -167,6 +167,14 @@ export const ExecutionView = ({
                     </div>
                 )}
 
+                {execution.dataDeletedAt && (
+                    <p className="mt-6 text-sm text-muted-foreground">
+                        The data of this execution was deleted after your
+                        retention period. Its status and error are kept until
+                        the end of the month.
+                    </p>
+                )}
+
                 {execution.output && (
                     <div className="mt-6 p-4 bg-muted rounded-md">
                         <p className="text-sm font-medium mb-2">Output</p>

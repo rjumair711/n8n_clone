@@ -153,7 +153,7 @@ export const extractFromFileConfig: IntegrationConfig = {
     { value: "json", label: "Extract from JSON" },
     { value: "text", label: "Extract from Text File" },
   ],
-  hint: "CSV and Excel: rows at {{json <name>.items}}, and each row as {{item.columnName}} in the next nodes. PDF, Word and text: {{<name>.text}} (PDF also has <name>.pages). JSON: {{json <name>.data}}. Scanned PDFs are pictures and have no text; old .xls and .doc files are not supported.",
+  hint: "CSV and Excel: rows at {{json <name>.items}}, and each row as {{item.columnName}} in the next nodes. PDF, Word and text: {{<name>.text}} (PDF also has <name>.pages; only the first 200 pages are read). JSON: {{json <name>.data}}. Scanned PDFs are pictures and have no text; old .xls and .doc files are not supported.",
   fields: [
     fileField(),
     {
@@ -183,6 +183,14 @@ export const extractFromFileConfig: IntegrationConfig = {
         { value: "comma", label: "Comma" },
         { value: "semicolon", label: "Semicolon" },
       ],
+      operations: ["csv"],
+    },
+    {
+      name: "maxRows",
+      label: "Max Rows",
+      placeholder: "10000",
+      description:
+        "Read at most this many rows. Leave empty for the most allowed (10,000 unless the server sets CSV_MAX_ROWS). When the file has more, <name>.truncated is true.",
       operations: ["csv"],
     },
   ],

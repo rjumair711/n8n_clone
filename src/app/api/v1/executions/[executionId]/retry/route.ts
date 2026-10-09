@@ -7,7 +7,7 @@ export async function POST(
     request: NextRequest,
     { params }: { params: Promise<{ executionId: string }> }
 ) {
-    const auth = await authenticateApiRequest(request);
+    const auth = await authenticateApiRequest(request, "executions:retry");
     if ("response" in auth) return auth.response;
 
     const { executionId } = await params;

@@ -8,6 +8,7 @@ import {
   type SshConnection,
 } from "@/lib/ssh";
 import { renderTemplate } from "../../lib/templates";
+import { renderAgentShellCommand } from "../../lib/agent-shell-quoting";
 import { loadCredentialSecret } from "../../lib/integration";
 
 type SshData = {
@@ -31,13 +32,21 @@ export const sshExecutor: NodeExecutor<SshData> = async ({
   userId,
   context,
   step,
+  inline,
 }) => {
   if (!data.variableName) {
     throw new NonRetriableError("SSH node: Variable name is missing");
   }
 
   const variableName = data.variableName;
-  const command = renderTemplate(data.command, context).trim();
+
+  // As an AI Agent tool the model fills in the $fromAI values, so they are
+  // quoted for the shell automatically
+  const command = (
+    inline
+      ? renderAgentShellCommand(data.command, context)
+      : renderTemplate(data.command, context)
+  ).trim();
 
   if (!command) {
     throw new NonRetriableError("SSH node: Command is required");

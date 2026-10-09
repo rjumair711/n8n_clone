@@ -4,6 +4,7 @@ const NODE_LABELS: Record<string, string> = {
     HTTP_REQUEST: "HTTP Request",
     AI_AGENT: "AI Agent",
     OPENAI: "OpenAI",
+    DEEPSEEK: "DeepSeek",
     BUFFER_MEMORY: "Memory",
     CODE: "JavaScript Code",
     IF: "IF",

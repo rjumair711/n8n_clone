@@ -13,15 +13,22 @@ import { renderTemplate } from "@/features/executions/lib/templates";
 import {
   buildToolInputSchema,
   extractAIParameters,
+  getBlockedToolsMessage,
   getDefaultToolDescription,
   getDefaultToolName,
   sanitizeToolName,
   uniqueToolName,
 } from "@/features/executions/lib/agent-tools";
-import { AGENT_DEFAULT_MAX_ITERATIONS, runAgentLoop } from "./agent-loop";
+import {
+  AGENT_DEFAULT_MAX_ITERATIONS,
+  AGENT_DEFAULT_MAX_TOOL_CALLS,
+  AgentToolCallLimitError,
+  runAgentLoop,
+} from "./agent-loop";
 import {
   DEFAULT_MODELS,
   MODEL_NODE_PROVIDERS,
+  getModelNodeData,
   buildLanguageModel,
   type ModelProvider as Provider,
 } from "@/features/executions/lib/connected-model";
@@ -39,6 +46,11 @@ export type AIAgentData = {
   text?: string;
   systemMessage?: string;
   maxIterations?: number;
+  // Tool calls in one run, over all iterations
+  maxToolCalls?: number;
+  // Off unless the author switched it on: SSH, raw SQL, deletes, Execute
+  // Workflow
+  allowDangerousTools?: boolean;
   returnIntermediateSteps?: boolean;
   variableName?: string;
   // Name / description the model sees for each connected tool node
@@ -96,6 +108,10 @@ export const aiAgentExecutor: NodeExecutor<AIAgentData> = async ({
 }) => {
   const maxIterations =
     Number(data.maxIterations) || AGENT_DEFAULT_MAX_ITERATIONS;
+  const maxToolCalls = Math.max(
+    Math.floor(Number(data.maxToolCalls)) || AGENT_DEFAULT_MAX_TOOL_CALLS,
+    1
+  );
   const targetOutputKey = data.variableName?.trim() || "aiAgentOutput";
 
   // =========================================================================
@@ -132,10 +148,25 @@ export const aiAgentExecutor: NodeExecutor<AIAgentData> = async ({
     // Anything else is the main "flow-in" connection, which is not a tool
   }
 
+  // Checked before anything else runs: a dangerous tool is only usable when
+  // the workflow's author allowed it on this agent
+  const blockedTools = getBlockedToolsMessage(
+    toolNodes.map((node) => ({
+      type: node.type,
+      data: node.data,
+      name: data.toolSettings?.[node.id]?.name,
+    })),
+    data.allowDangerousTools
+  );
+
+  if (blockedTools) {
+    throw new NonRetriableError(blockedTools);
+  }
+
   // =========================================================================
   // 2. CHAT MODEL
   // =========================================================================
-  const modelData = (modelNode?.data ?? {}) as Record<string, any>;
+  const modelData = getModelNodeData(modelNode);
 
   const provider: Provider | undefined = modelNode
     ? MODEL_NODE_PROVIDERS[modelNode.type]
@@ -397,9 +428,14 @@ export const aiAgentExecutor: NodeExecutor<AIAgentData> = async ({
         messages,
         tools: allTools,
         maxIterations,
+        maxToolCalls,
       });
     } catch (error: any) {
       if (error instanceof NonRetriableError) throw error;
+
+      if (error instanceof AgentToolCallLimitError) {
+        throw new NonRetriableError(error.message);
+      }
 
       console.error(`[AI Agent Error]: Failed to communicate with ${provider}`, error);
 

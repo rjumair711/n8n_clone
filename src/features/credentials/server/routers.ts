@@ -6,7 +6,30 @@ import { CredentialType } from "@prisma/client"
 import { encrypt } from "@/lib/encryption";
 import { PLAN_LIMITS } from "@/config/plans";
 import { TRPCError } from "@trpc/server";
+import { assertOwnership } from "@/lib/ownership";
 
+// What the browser may see of a credential. "value" (the encrypted secret)
+// is never selected, so it cannot be sent by accident.
+export const SAFE_CREDENTIAL_FIELDS = {
+    id: true,
+    name: true,
+    type: true,
+    createdAt: true,
+    updatedAt: true,
+} as const;
+
+
+// Every procedure that takes a credential id starts here: one that does not
+// exist and one that belongs to someone else are the same "not found"
+const getOwnedCredential = async (id: string, userId: string) =>
+    assertOwnership(
+        await prisma.credential.findUnique({
+            where: { id },
+            select: { ...SAFE_CREDENTIAL_FIELDS, userId: true },
+        }),
+        userId,
+        "Credential"
+    );
 
 export const credentialsRouter = createTRPCRouter({
 
@@ -60,6 +83,7 @@ export const credentialsRouter = createTRPCRouter({
 
                     value: encrypt(value),
                 },
+                select: SAFE_CREDENTIAL_FIELDS,
             });
         }),
 
@@ -67,12 +91,15 @@ export const credentialsRouter = createTRPCRouter({
     // DELETE CREDENTIAL
     remove: protectedProcedure
         .input(z.object({ id: z.string() }))
-        .mutation(({ ctx, input }) => {
+        .mutation(async ({ ctx, input }) => {
+            await getOwnedCredential(input.id, ctx.auth.user.id);
+
             return prisma.credential.delete({
                 where: {
                     id: input.id,
                     userId: ctx.auth.user.id
-                }
+                },
+                select: SAFE_CREDENTIAL_FIELDS,
             })
         }),
 
@@ -82,38 +109,42 @@ export const credentialsRouter = createTRPCRouter({
             id: z.string(),
             name: z.string().min(1, "Name is required"),
             type: z.enum(CredentialType),
-            value: z.string().min(1, "Value is required"),
+            // The saved secret is never sent to the form. Empty or left out
+            // means "keep it"; anything else replaces it.
+            value: z.string().optional(),
         })
         )
         .mutation(async ({ ctx, input }) => {
             const { id, name, type, value } = input;
 
-            const existing = await prisma.credential.findUniqueOrThrow({
-                where: { id, userId: ctx.auth.user.id },
-            });
+            // Without a new secret the type stays too: the saved secret
+            // belongs to the type it was entered for
+            const replaceSecret = !!value;
 
-            // The edit form is filled with the stored (encrypted) value. When
-            // it comes back unchanged, only the name changed: encrypting it
-            // again would destroy the secret.
-            const unchanged = value === existing.value;
+            await getOwnedCredential(id, ctx.auth.user.id);
 
             return prisma.credential.update({
                 where: { id, userId: ctx.auth.user.id },
                 data: {
                     name,
-                    type: unchanged ? existing.type : type,
-                    ...(unchanged ? {} : { value: encrypt(value) }),
-                }
+                    ...(replaceSecret ? { type, value: encrypt(value) } : {}),
+                },
+                select: SAFE_CREDENTIAL_FIELDS,
             })
         }),
 
-    // UPDATE ONE
+    // GET ONE
     getOne: protectedProcedure
         .input(z.object({ id: z.string() }))
-        .query(({ ctx, input }) => {
-            return prisma.credential.findUniqueOrThrow({
-                where: { id: input.id, userId: ctx.auth.user.id },
-            })
+        .query(async ({ ctx, input }) => {
+            // The owner id was only needed for the check
+            const { userId: _owner, ...credential } = await getOwnedCredential(
+                input.id,
+                ctx.auth.user.id
+            )
+
+            // All the form learns about the secret: that one is saved
+            return { ...credential, hasSecret: true }
         }),
 
     // UPDATE MANY
@@ -145,6 +176,7 @@ export const credentialsRouter = createTRPCRouter({
                     orderBy: {
                         updatedAt: "desc"
                     },
+                    select: SAFE_CREDENTIAL_FIELDS,
                 }),
                 prisma.credential.count({
                     where: {
@@ -185,6 +217,7 @@ export const credentialsRouter = createTRPCRouter({
                 orderBy: {
                     updatedAt: "desc",
                 },
+                select: SAFE_CREDENTIAL_FIELDS,
             })
             return credentials;
         }),

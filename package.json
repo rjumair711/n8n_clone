@@ -11,6 +11,7 @@
     "ngrok:dev": "dotenv -- cmd /c C:\\ngrok\\ngrok.exe http --url=%NGROK_URL% 3000",
     "format": "biome format --write",
     "inngest:dev": "inngest-cli dev",
+    "rotate-encryption-key": "tsx scripts/rotate-encryption-key.ts",
     "dev:all": "npm-run-all -p dev inngest:dev ngrok:dev"
   },
   "dependencies": {

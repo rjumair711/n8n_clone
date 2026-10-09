@@ -16,9 +16,10 @@ import { getValueByPath } from "../../lib/conditions";
 import {
   isTextMimeType,
   mimeTypeForName,
-  parseCsv,
+  parseCsvLimited,
   toCsv,
 } from "../../lib/file-formats";
+import { CSV_MAX_ROWS, FileLimitError } from "../../lib/file-limits";
 import { PDF_PAGE_SIZES, generatePdf, type PdfPageSize } from "../../lib/pdf";
 import {
   extractDocxText,
@@ -302,21 +303,30 @@ export const extractFromFileExecutor: NodeExecutor<FileNodeData> = async ({
           `Extract from File node: "${fileName}" could not be read as ${expected}. Pick the operation that matches the file.`
         );
 
+      // A file over one of the limits says so; anything else the parser
+      // rejects means the file is not of that type
+      const readError = (error: unknown, expected: string) =>
+        error instanceof FileLimitError
+          ? new NonRetriableError(
+              `Extract from File node: "${fileName}" was not read: ${error.message}.`
+            )
+          : wrongType(expected);
+
       if (operation === "pdf") {
         try {
           const extracted = await extractPdfText(bytes);
 
           return { ...extracted, fileName };
-        } catch {
-          throw wrongType("a PDF");
+        } catch (error) {
+          throw readError(error, "a PDF");
         }
       }
 
       if (operation === "docx") {
         try {
           return { ...(await extractDocxText(bytes)), fileName };
-        } catch {
-          throw wrongType("a Word (.docx) document");
+        } catch (error) {
+          throw readError(error, "a Word (.docx) document");
         }
       }
 
@@ -332,7 +342,7 @@ export const extractFromFileExecutor: NodeExecutor<FileNodeData> = async ({
           if (/no sheet/i.test(String(error?.message))) {
             throw new NonRetriableError(`Extract from File node: ${error.message}`);
           }
-          throw wrongType("an Excel (.xlsx) workbook");
+          throw readError(error, "an Excel (.xlsx) workbook");
         }
 
         return { ...sheet, count: sheet.items.length, fileName };
@@ -362,12 +372,20 @@ export const extractFromFileExecutor: NodeExecutor<FileNodeData> = async ({
       }
 
       if (operation === "csv") {
-        const items = parseCsv(text, {
+        // "Max Rows" of the node, never more than the server's limit
+        const requested = Number(renderTemplate(data.maxRows, context).trim());
+        const maxRows =
+          Number.isFinite(requested) && requested >= 1
+            ? Math.min(Math.floor(requested), CSV_MAX_ROWS)
+            : CSV_MAX_ROWS;
+
+        const { items, truncated } = parseCsvLimited(text, {
           delimiter: data.delimiter === "semicolon" ? ";" : ",",
           header: data.header !== "no",
+          maxRows,
         });
 
-        return { items, count: items.length, fileName: reference.fileName };
+        return { items, count: items.length, truncated, fileName: reference.fileName };
       }
 
       return { text, fileName: reference.fileName };

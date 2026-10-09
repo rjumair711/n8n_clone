@@ -142,18 +142,3 @@ export const canUseTemplate = (
 ) =>
   PLAN_ORDER.indexOf(userPlan) >= PLAN_ORDER.indexOf(minPlan) ||
   (!!trialEndsAt && new Date(trialEndsAt) > new Date());
-
-/**
- * Admins are listed in ADMIN_EMAILS (comma-separated). Only they can
- * publish, edit and delete templates.
- */
-export const isAdminEmail = (email: string | null | undefined) => {
-  if (!email) return false;
-
-  const admins = (process.env.ADMIN_EMAILS || "")
-    .split(",")
-    .map((entry) => entry.trim().toLowerCase())
-    .filter(Boolean);
-
-  return admins.includes(email.trim().toLowerCase());
-};

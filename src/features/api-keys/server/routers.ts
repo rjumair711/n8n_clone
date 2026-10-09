@@ -3,6 +3,12 @@ import { createTRPCRouter, protectedProcedure } from "@/trpc/init";
 import { TRPCError } from "@trpc/server";
 import z from "zod";
 import { generateApiKey, hasApiAccess } from "@/lib/api-keys";
+import { assertOwnership } from "@/lib/ownership";
+import {
+    API_SCOPES,
+    normalizeScopes,
+    parseExpiryDate,
+} from "@/lib/api-key-scopes";
 
 const MAX_API_KEYS = 10;
 
@@ -21,6 +27,8 @@ export const apiKeysRouter = createTRPCRouter({
                 id: true,
                 name: true,
                 prefix: true,
+                scopes: true,
+                expiresAt: true,
                 createdAt: true,
                 lastUsedAt: true,
             },
@@ -31,7 +39,14 @@ export const apiKeysRouter = createTRPCRouter({
 
     // The key itself is only returned here, once
     create: protectedProcedure
-        .input(z.object({ name: z.string().trim().min(1, "Name is required").max(60) }))
+        .input(
+            z.object({
+                name: z.string().trim().min(1, "Name is required").max(60),
+                scopes: z.array(z.enum(API_SCOPES)).min(1, "Pick at least one scope"),
+                // A date like 2026-12-31; empty for a key that never expires
+                expiresOn: z.string().trim().optional(),
+            })
+        )
         .mutation(async ({ ctx, input }) => {
             const user = await prisma.user.findUniqueOrThrow({
                 where: { id: ctx.auth.user.id },
@@ -51,14 +66,31 @@ export const apiKeysRouter = createTRPCRouter({
             if (count >= MAX_API_KEYS) {
                 throw new TRPCError({
                     code: "BAD_REQUEST",
-                    message: `You can have up to ${MAX_API_KEYS} API keys. Delete one first.`,
+                    message: `You can have up to ${MAX_API_KEYS} API keys. Revoke one first.`,
+                });
+            }
+
+            let expiresAt: Date | null;
+            try {
+                expiresAt = parseExpiryDate(input.expiresOn);
+            } catch (error) {
+                throw new TRPCError({
+                    code: "BAD_REQUEST",
+                    message: (error as Error).message,
                 });
             }
 
             const { key, keyHash, prefix } = generateApiKey();
 
             const created = await prisma.apiKey.create({
-                data: { name: input.name, keyHash, prefix, userId: user.id },
+                data: {
+                    name: input.name,
+                    keyHash,
+                    prefix,
+                    scopes: normalizeScopes(input.scopes),
+                    expiresAt,
+                    userId: user.id,
+                },
             });
 
             return { id: created.id, name: created.name, key };
@@ -67,6 +99,15 @@ export const apiKeysRouter = createTRPCRouter({
     remove: protectedProcedure
         .input(z.object({ id: z.string() }))
         .mutation(async ({ ctx, input }) => {
+            assertOwnership(
+                await prisma.apiKey.findUnique({
+                    where: { id: input.id },
+                    select: { userId: true },
+                }),
+                ctx.auth.user.id,
+                "API key"
+            );
+
             await prisma.apiKey.delete({
                 where: { id: input.id, userId: ctx.auth.user.id },
             });

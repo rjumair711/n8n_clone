@@ -44,6 +44,8 @@ model User {
   workflowCount          Int              @default(0)
   executionsUsed         Int              @default(0)
   hasCompletedOnboarding Boolean          @default(false)
+  // "Execution data retention": 7, 30 or 90 days
+  executionRetentionDays Int              @default(30)
 
   @@unique([email])
   @@map("user")
@@ -135,6 +137,9 @@ enum CredentialType {
   SENDGRID
   SALESFORCE
   SSH
+  DEEPSEEK
+  KIMI
+  QWEN
 }
 
 model Workflow {
@@ -144,6 +149,8 @@ model Workflow {
   updatedAt   DateTime     @updatedAt
   executions  Execution[]
   active      Boolean      @default(false)
+  // False for "Don't save node input/output": only status and errors are kept
+  saveExecutionData Boolean @default(true)
   userId      String
   user        User         @relation(fields: [userId], references: [id], onDelete: Cascade)
   nodes       Node[]
@@ -225,6 +232,9 @@ enum NodeType {
   EXTRACT_FROM_FILE
   SALESFORCE
   SSH
+  DEEPSEEK
+  KIMI
+  QWEN
 }
 
 model Node {
@@ -307,6 +317,10 @@ model Execution {
   // and the data that trigger received
   trigger   String?
   inputData Json?
+
+  // Set when the retention cleanup removed this execution's data and node
+  // logs and kept only the row
+  dataDeletedAt DateTime?
 
   nodes ExecutionNode[]
 }
@@ -400,6 +414,10 @@ model ApiKey {
   keyHash    String    @unique
   userId     String
   user       User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  // What the key may do; see src/lib/api-key-scopes.ts
+  scopes     String[]  @default([])
+  // The key stops working after this moment; null means it never expires
+  expiresAt  DateTime?
   createdAt  DateTime  @default(now())
   lastUsedAt DateTime?
 

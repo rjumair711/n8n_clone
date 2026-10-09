@@ -11,6 +11,16 @@ import { PLAN_LIMITS, getRequiredPlanForNode } from "@/config/plans";
 import { TRIGGER_SOURCES } from "@/config/trigger-sources";
 import { TESTABLE_TRIGGERS, TRIGGER_LABELS, buildTestPayload } from "./test-payloads";
 import { syncTelegramWebhooks } from "@/lib/telegram";
+import { assertOwnership } from "@/lib/ownership";
+
+// Every procedure that takes a workflow id starts here: a workflow that does
+// not exist and one that belongs to someone else are the same "not found"
+const getOwnedWorkflow = async (id: string, userId: string) =>
+    assertOwnership(
+        await prisma.workflow.findUnique({ where: { id } }),
+        userId,
+        "Workflow"
+    );
 
 export const workflowsRouter = createTRPCRouter({
 
@@ -33,12 +43,7 @@ export const workflowsRouter = createTRPCRouter({
                     id: ctx.auth.user.id,
                 },
             });
-            const workflow = await prisma.workflow.findUniqueOrThrow({
-                where: {
-                    id: input.id,
-                    userId: ctx.auth.user.id,
-                },
-            });
+            const workflow = await getOwnedWorkflow(input.id, ctx.auth.user.id);
 
             // Runs use the saved workflow, so the trigger has to be saved too
             const triggerType = input.chat ? NodeType.CHAT_TRIGGER : input.trigger;
@@ -234,7 +239,9 @@ export const workflowsRouter = createTRPCRouter({
     // DELETE WORKFLOW
     remove: protectedProcedure
         .input(z.object({ id: z.string() }))
-        .mutation(({ ctx, input }) => {
+        .mutation(async ({ ctx, input }) => {
+            await getOwnedWorkflow(input.id, ctx.auth.user.id);
+
             return prisma.workflow.delete({
                 where: {
                     id: input.id,
@@ -246,7 +253,9 @@ export const workflowsRouter = createTRPCRouter({
     // UPDATE WORKFLOW NAME
     updateName: protectedProcedure
         .input(z.object({ id: z.string(), name: z.string().min(1) }))
-        .mutation(({ ctx, input }) => {
+        .mutation(async ({ ctx, input }) => {
+            await getOwnedWorkflow(input.id, ctx.auth.user.id);
+
             return prisma.workflow.update({
                 where: {
                     id: input.id,
@@ -256,18 +265,29 @@ export const workflowsRouter = createTRPCRouter({
             })
         }),
 
+    // "Don't save node input/output": only status and errors are kept
+    setSaveExecutionData: protectedProcedure
+        .input(z.object({ id: z.string(), save: z.boolean() }))
+        .mutation(async ({ ctx, input }) => {
+            await getOwnedWorkflow(input.id, ctx.auth.user.id);
+
+            return prisma.workflow.update({
+                where: {
+                    id: input.id,
+                    userId: ctx.auth.user.id
+                },
+                data: { saveExecutionData: input.save },
+                select: { id: true, name: true, saveExecutionData: true },
+            })
+        }),
+
     // ACTIVATE / DEACTIVATE WORKFLOW
     // Only active workflows run from schedules and webhooks. Manual runs and
     // the chat panel always work, so a workflow can be tested while inactive.
     setActive: protectedProcedure
         .input(z.object({ id: z.string(), active: z.boolean() }))
         .mutation(async ({ ctx, input }) => {
-            await prisma.workflow.findUniqueOrThrow({
-                where: {
-                    id: input.id,
-                    userId: ctx.auth.user.id
-                },
-            })
+            await getOwnedWorkflow(input.id, ctx.auth.user.id);
 
             // Telegram Trigger: the bot's webhook is registered on activation
             // and removed on deactivation, like n8n does
@@ -321,12 +341,46 @@ export const workflowsRouter = createTRPCRouter({
         .mutation(async ({ ctx, input }) => {
             const { id, nodes, edges } = input;
 
-            const workflow = await prisma.workflow.findUniqueOrThrow({
-                where: {
-                    id: input.id,
-                    userId: ctx.auth.user.id
-                },
-            })
+            const workflow = await getOwnedWorkflow(input.id, ctx.auth.user.id);
+
+            // A node is only linked to a credential of the same user. An id
+            // that is someone else's, or of a credential that was deleted,
+            // is not linked. (When a node runs, its executor looks the
+            // credential up by id and owner anyway.)
+            const linkedIds = nodes.flatMap((node) => node.credentialId ?? []);
+            const ownCredentialIds = new Set(
+                linkedIds.length === 0
+                    ? []
+                    : (
+                        await prisma.credential.findMany({
+                            where: { id: { in: linkedIds }, userId: ctx.auth.user.id },
+                            select: { id: true },
+                        })
+                    ).map((credential) => credential.id)
+            );
+
+            // A connection may only join two nodes of this workflow
+            const nodeIds = new Set(nodes.map((node) => node.id));
+            if (edges.some((edge) => !nodeIds.has(edge.source) || !nodeIds.has(edge.target))) {
+                throw new TRPCError({
+                    code: "BAD_REQUEST",
+                    message: "A connection points at a node that is not in this workflow.",
+                });
+            }
+
+            // Node ids come from the editor. One that is already used in
+            // another workflow would attach this save to that workflow's node.
+            const taken = await prisma.node.findFirst({
+                where: { id: { in: [...nodeIds] }, workflowId: { not: id } },
+                select: { id: true },
+            });
+            if (taken) {
+                throw new TRPCError({
+                    code: "BAD_REQUEST",
+                    message: "A node id is already used by another workflow. Reload the editor and try again.",
+                });
+            }
+
             // Transaction to ensure consistency
             const saved = await prisma.$transaction(async (tx) => {
                 // Delete existing nodes and connections (cascade deletes connections)
@@ -343,7 +397,10 @@ export const workflowsRouter = createTRPCRouter({
                         type: node.type as NodeType,
                         position: node.position,
                         data: node.data || {},
-                        credentialId: node.credentialId,
+                        credentialId:
+                            node.credentialId && ownCredentialIds.has(node.credentialId)
+                                ? node.credentialId
+                                : null,
                     }))
                 })
 
@@ -390,10 +447,14 @@ export const workflowsRouter = createTRPCRouter({
     getOne: protectedProcedure
         .input(z.object({ id: z.string() }))
         .query(async ({ ctx, input }) => {
-            const workflow = await prisma.workflow.findUniqueOrThrow({
-                where: { id: input.id, userId: ctx.auth.user.id },
-                include: { nodes: true, connections: true },
-            })
+            const workflow = assertOwnership(
+                await prisma.workflow.findUnique({
+                    where: { id: input.id },
+                    include: { nodes: true, connections: true },
+                }),
+                ctx.auth.user.id,
+                "Workflow"
+            )
             // Transform server nodes to react-flow compatible nodes
             const nodes: Node[] = workflow.nodes.map((node) => ({
                 id: node.id,
@@ -416,6 +477,7 @@ export const workflowsRouter = createTRPCRouter({
                 id: workflow.id,
                 name: workflow.name,
                 active: workflow.active,
+                saveExecutionData: workflow.saveExecutionData,
                 nodes,
                 edges
             }

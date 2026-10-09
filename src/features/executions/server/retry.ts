@@ -2,6 +2,7 @@ import { ExecutionStatus, type Prisma } from "@prisma/client";
 import prisma from "@/lib/db";
 import { sendWorkflowExecution } from "@/inngest/utils";
 import { PLAN_LIMITS } from "@/config/plans";
+import { NotFoundError, assertOwnership } from "@/lib/ownership";
 
 export class RetryError extends Error {
     constructor(
@@ -21,22 +22,36 @@ export class RetryError extends Error {
  * to send it again.
  */
 export const retryExecution = async (executionId: string, userId: string) => {
-    const execution = await prisma.execution.findFirst({
-        // Scoped to the owner
-        where: { id: executionId, workflow: { userId } },
+    const found = await prisma.execution.findUnique({
+        where: { id: executionId },
         select: {
             id: true,
             status: true,
             workflowId: true,
             trigger: true,
             inputData: true,
+            dataDeletedAt: true,
             triggerSource: true,
-            workflow: { select: { user: { select: { plan: true } } } },
+            workflow: {
+                select: { userId: true, user: { select: { plan: true } } },
+            },
         },
     });
 
-    if (!execution) {
-        throw new RetryError("Execution not found.", "not_found");
+    let execution: NonNullable<typeof found>;
+    try {
+        execution = assertOwnership(
+            found,
+            userId,
+            "Execution",
+            (owned) => owned.workflow.userId
+        );
+    } catch (error) {
+        // Another user's execution is "not found", like one that is missing
+        if (error instanceof NotFoundError) {
+            throw new RetryError(error.message, "not_found");
+        }
+        throw error;
     }
 
     if (execution.status === ExecutionStatus.RUNNING) {
@@ -46,6 +61,16 @@ export const retryExecution = async (executionId: string, userId: string) => {
     if (!execution.trigger) {
         throw new RetryError(
             "This execution cannot be retried: it ran before its starting data was being kept.",
+            "not_retryable"
+        );
+    }
+
+    // Without the starting data the run would silently start from nothing
+    if (execution.inputData === null) {
+        throw new RetryError(
+            execution.dataDeletedAt
+                ? "This execution cannot be retried: its data was deleted after the retention period."
+                : "This execution cannot be retried: its workflow is set not to save run data.",
             "not_retryable"
         );
     }

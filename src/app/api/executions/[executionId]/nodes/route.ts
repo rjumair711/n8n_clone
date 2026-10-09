@@ -1,7 +1,8 @@
-import prisma from "@/lib/db";
 import { auth } from "@/lib/auth";
 import { headers } from "next/headers";
 import { NextResponse } from "next/server";
+import { notFoundResponse } from "@/lib/ownership";
+import { getOwnedExecutionNodes } from "@/features/executions/server/nodes";
 
 export async function GET(
   req: Request,
@@ -26,23 +27,13 @@ export async function GET(
 
   const { executionId } = await params;
 
-  // Node logs contain the workflow data, so only the owner may read them
-  const executionNodes =
-    await prisma.executionNode.findMany({
-      where: {
-        executionId,
-
-        execution: {
-          workflow: {
-            userId: session.user.id,
-          },
-        },
-      },
-
-      orderBy: {
-        startedAt: "asc",
-      },
-    });
-
-  return NextResponse.json(executionNodes);
+  try {
+    return NextResponse.json(
+      await getOwnedExecutionNodes(executionId, session.user.id)
+    );
+  } catch (error) {
+    const response = notFoundResponse(error);
+    if (response) return response;
+    throw error;
+  }
 }

@@ -4,6 +4,7 @@
 // https://docs.sentry.io/platforms/javascript/guides/nextjs/
 
 import * as Sentry from "@sentry/nextjs";
+import { redactForSentry } from "./src/lib/redaction";
 
 Sentry.init({
   dsn: "https://b9e51a0f783724171c76397b7177ede0@o4509519524200448.ingest.us.sentry.io/4510924234948608",
@@ -21,4 +22,10 @@ Sentry.init({
   // Enable sending user PII (Personally Identifiable Information)
   // https://docs.sentry.io/platforms/javascript/guides/nextjs/configuration/options/#sendDefaultPii
   sendDefaultPii: true,
+
+  // Secrets are taken out of everything before it leaves the app: errors,
+  // traces (which include AI prompts and answers) and logs
+  beforeSend: (event) => redactForSentry(event),
+  beforeSendTransaction: (event) => redactForSentry(event),
+  beforeSendLog: (log) => redactForSentry(log),
 });
