@@ -525,6 +525,137 @@ export const ChatModelNode = createIntegrationNode(chatModelConfig, (data) =>
 );
 
 // =========================================================================
+// DEEPSEEK, KIMI, QWEN (Chat Model nodes locked to one provider)
+// =========================================================================
+const createProviderModelConfig = ({
+  label,
+  description,
+  logo,
+  credentialType,
+  defaultVariableName,
+  defaultModel,
+  modelDescription,
+  regions,
+}: {
+  label: string;
+  description: string;
+  logo: string;
+  credentialType: CredentialType;
+  defaultVariableName: string;
+  defaultModel: string;
+  modelDescription: string;
+  // Base URLs for providers that keep separate accounts per region
+  regions?: { value: string; label: string }[];
+}): IntegrationConfig => {
+  const regionField: IntegrationField[] = regions
+    ? [
+        {
+          name: "baseUrl",
+          label: "Region",
+          type: "select",
+          defaultValue: regions[0].value,
+          options: regions,
+          description:
+            "Where your account was created. An API key only works in its own region.",
+          required: true,
+        },
+      ]
+    : [];
+
+  return {
+    label,
+    description: `${description} Connect it to an AI Agent's Chat Model port, or run it as a step with a prompt.`,
+    logo,
+    credentialType,
+    credentialLabel: `${label} Credential`,
+    defaultVariableName,
+    hint: "The answer is at {{<name>.text}}. The prompts are only used when the node runs as a step; an AI Agent brings its own.",
+    fields: [
+      {
+        name: "model",
+        label: "Model",
+        placeholder: defaultModel,
+        defaultValue: defaultModel,
+        description: modelDescription,
+        required: true,
+      },
+      ...regionField,
+      {
+        name: "systemPrompt",
+        label: "System Prompt",
+        type: "textarea",
+        placeholder: "You are a helpful assistant.",
+      },
+      {
+        name: "userPrompt",
+        label: "User Prompt",
+        type: "textarea",
+        placeholder: "Summarize this: {{webhook.body.text}}",
+      },
+    ],
+  };
+};
+
+export const deepseekConfig = createProviderModelConfig({
+  label: "DeepSeek",
+  description: "DeepSeek's low-cost chat models.",
+  logo: "/logos/deepseek.svg",
+  credentialType: CredentialType.DEEPSEEK,
+  defaultVariableName: "deepseek",
+  defaultModel: "deepseek-chat",
+  modelDescription:
+    "The model's ID as platform.deepseek.com lists it, for example deepseek-chat.",
+});
+
+export const DeepSeekNode = createIntegrationNode(deepseekConfig, (data) =>
+  data.model ? `DeepSeek: ${data.model}` : undefined
+);
+
+export const kimiConfig = createProviderModelConfig({
+  label: "Kimi",
+  description: "Kimi chat models from Moonshot AI.",
+  logo: "/logos/kimi.svg",
+  credentialType: CredentialType.KIMI,
+  defaultVariableName: "kimi",
+  defaultModel: "moonshot-v1-8k",
+  modelDescription:
+    "The model's ID as the Moonshot AI platform lists it, for example moonshot-v1-8k.",
+  regions: [
+    { value: "https://api.moonshot.ai/v1", label: "International (moonshot.ai)" },
+    { value: "https://api.moonshot.cn/v1", label: "China (moonshot.cn)" },
+  ],
+});
+
+export const KimiNode = createIntegrationNode(kimiConfig, (data) =>
+  data.model ? `Kimi: ${data.model}` : undefined
+);
+
+export const qwenConfig = createProviderModelConfig({
+  label: "Qwen",
+  description: "Qwen chat models from Alibaba Cloud Model Studio.",
+  logo: "/logos/qwen.svg",
+  credentialType: CredentialType.QWEN,
+  defaultVariableName: "qwen",
+  defaultModel: "qwen-plus",
+  modelDescription:
+    "The model's ID as Alibaba Cloud Model Studio lists it, for example qwen-plus or qwen-turbo.",
+  regions: [
+    {
+      value: "https://dashscope-intl.aliyuncs.com/compatible-mode/v1",
+      label: "International (Singapore)",
+    },
+    {
+      value: "https://dashscope.aliyuncs.com/compatible-mode/v1",
+      label: "China (Beijing)",
+    },
+  ],
+});
+
+export const QwenNode = createIntegrationNode(qwenConfig, (data) =>
+  data.model ? `Qwen: ${data.model}` : undefined
+);
+
+// =========================================================================
 // TRIGGERS
 // =========================================================================
 export const errorTriggerConfig: IntegrationConfig = {

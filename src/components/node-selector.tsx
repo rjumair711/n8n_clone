@@ -285,6 +285,24 @@ const aiNodes: NodeTypeOption[] = [
         icon: "/logos/anthropic.svg"
     },
     {
+        type: NodeType.DEEPSEEK,
+        label: "DeepSeek",
+        description: "Low-cost DeepSeek models to generate text. Works as an AI Agent's Chat Model",
+        icon: "/logos/deepseek.svg"
+    },
+    {
+        type: NodeType.KIMI,
+        label: "Kimi",
+        description: "Low-cost Kimi models from Moonshot AI to generate text. Works as an AI Agent's Chat Model",
+        icon: "/logos/kimi.svg"
+    },
+    {
+        type: NodeType.QWEN,
+        label: "Qwen",
+        description: "Low-cost Qwen models from Alibaba Cloud to generate text. Works as an AI Agent's Chat Model",
+        icon: "/logos/qwen.svg"
+    },
+    {
         type: NodeType.AI_AGENT, 
         label: "AI Agent",
         description: "Tools Agent: a chat model that decides which connected tools to call",

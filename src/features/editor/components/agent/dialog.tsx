@@ -33,10 +33,19 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import {
+  TOOL_RISK_LABELS,
   getDefaultToolDescription,
   getDefaultToolName,
   getToolLabel,
+  getToolRisk,
+  type ToolRisk,
 } from "@/features/executions/lib/agent-tools";
+
+const RISK_STYLES: Record<ToolRisk, string> = {
+  read: "bg-emerald-100 text-emerald-800",
+  write: "bg-amber-100 text-amber-800",
+  dangerous: "bg-red-100 text-red-800",
+};
 
 const formSchema = z
   .object({
@@ -48,6 +57,12 @@ const formSchema = z
       .int()
       .min(1, "Must be at least 1")
       .max(50, "Cannot exceed 50"),
+    maxToolCalls: z
+      .number()
+      .int()
+      .min(1, "Must be at least 1")
+      .max(200, "Cannot exceed 200"),
+    allowDangerousTools: z.boolean(),
     returnIntermediateSteps: z.boolean(),
     variableName: z
       .string()
@@ -96,6 +111,9 @@ const getValues = (
     defaultValues.systemPrompt ??
     "You are a helpful assistant",
   maxIterations: defaultValues.maxIterations || 10,
+  maxToolCalls: defaultValues.maxToolCalls || 25,
+  // Off unless it was switched on, also for agents saved before it existed
+  allowDangerousTools: defaultValues.allowDangerousTools === true,
   returnIntermediateSteps: defaultValues.returnIntermediateSteps ?? false,
   variableName: defaultValues.variableName || "aiAgentOutput",
   toolSettings: defaultValues.toolSettings || {},
@@ -121,6 +139,11 @@ export const AIAgentDialog = ({
 
   const promptType = form.watch("promptType");
   const watchVariableName = form.watch("variableName") || "aiAgentOutput";
+  const allowDangerousTools = form.watch("allowDangerousTools");
+
+  const dangerousTools = tools.filter(
+    (tool) => getToolRisk(tool.type, tool.data) === "dangerous"
+  );
 
   const handleSubmit = (values: AIAgentFormValues) => {
     // Forget settings of tools that are no longer connected
@@ -247,8 +270,13 @@ export const AIAgentDialog = ({
                       key={tool.id}
                       className="p-4 border rounded-lg bg-muted/30 space-y-3"
                     >
-                      <p className="text-sm font-medium">
+                      <p className="text-sm font-medium flex items-center gap-2">
                         {getToolLabel(tool.type)}
+                        <span
+                          className={`rounded-full px-2 py-0.5 text-xs font-medium ${RISK_STYLES[getToolRisk(tool.type, tool.data)]}`}
+                        >
+                          {TOOL_RISK_LABELS[getToolRisk(tool.type, tool.data)]}
+                        </span>
                       </p>
 
                       <FormField
@@ -320,6 +348,68 @@ export const AIAgentDialog = ({
                     How many times the model may run before the agent stops.
                   </FormDescription>
                   <FormMessage />
+                </FormItem>
+              )}
+            />
+
+            <FormField
+              control={form.control}
+              name="maxToolCalls"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Max Tool Calls</FormLabel>
+                  <FormControl>
+                    <Input
+                      type="number"
+                      min={1}
+                      max={200}
+                      {...field}
+                      onChange={(event) =>
+                        field.onChange(event.target.valueAsNumber)
+                      }
+                    />
+                  </FormControl>
+                  <FormDescription>
+                    How many tool calls one run may make in total. The run
+                    fails when the model asks for more.
+                  </FormDescription>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+
+            <FormField
+              control={form.control}
+              name="allowDangerousTools"
+              render={({ field }) => (
+                <FormItem className="rounded-lg border p-3 bg-muted/20 space-y-2">
+                  <div className="flex flex-row items-center justify-between">
+                    <div className="space-y-0.5">
+                      <FormLabel>Allow dangerous tools</FormLabel>
+                      <FormDescription>
+                        Lets the agent use tools that run commands (SSH) or
+                        raw SQL, delete data, or start another workflow. The
+                        model decides when to call them, and text it reads
+                        can try to trick it.
+                      </FormDescription>
+                    </div>
+                    <FormControl>
+                      <Switch
+                        checked={field.value}
+                        onCheckedChange={field.onChange}
+                      />
+                    </FormControl>
+                  </div>
+                  {dangerousTools.length > 0 && !allowDangerousTools && (
+                    <p className="text-sm text-red-700">
+                      {dangerousTools
+                        .map((tool) => getToolLabel(tool.type))
+                        .join(", ")}{" "}
+                      {dangerousTools.length === 1 ? "is" : "are"} connected:
+                      the run will fail until this is switched on or the
+                      tool is disconnected.
+                    </p>
+                  )}
                 </FormItem>
               )}
             />

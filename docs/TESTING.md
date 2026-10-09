@@ -206,7 +206,18 @@ Ali Khan
 Total: 1300
 ```
 
-**Expect:** `pdf.file` has a `url`; opening it while signed in downloads a one-page PDF. Opening the same URL in a private window fails.
+**Expect:** `pdf.file` has a `url` that ends in `?expires=...&signature=...`; opening it downloads a one-page PDF.
+
+Download links:
+
+| # | Do | Expect |
+|---|-----|--------|
+| 1 | Open the `url` in a private window (not signed in) within 15 minutes | the PDF downloads. In the browser's network tab the response has `Content-Disposition: attachment`, `Content-Type: application/pdf` and `X-Content-Type-Options: nosniff` |
+| 2 | Change one character of `signature`, or the file id, or make `expires` larger, and open it in the private window | `403` "This download link is not valid." |
+| 3 | Open the original `url` in the private window after 15 minutes | `403` "This download link has expired." |
+| 4 | Open the expired `url`, or `/api/files/<id>` without the query, while signed in as the owner | the PDF downloads |
+| 5 | Open `/api/files/<id>` without the query in the private window | `401` |
+| 6 | Convert to File → text file named `page.html` with content `<script>alert(1)</script>`; open its `url` | the file downloads; no page opens and no script runs |
 
 Repeat with Title `رسید نمبر 42` and Content `محترم علی خان، آپ کا آرڈر (order) موصول ہو گیا ہے۔ کل رقم 1300 روپے ہے۔`. **Expect:** joined letters, right-to-left, dots in the right place, "(order)" and "1300" readable in the middle of the line.
 
@@ -222,7 +233,16 @@ Repeat with Title `رسید نمبر 42` and Content `محترم علی خان،
 
 **Expect:** the downloaded file opens in Excel with 10 rows; `extracted.count` is 10; `names.name` lists 10 names. Repeat with the CSV operations.
 
-**c) Reading a PDF.** Chain PDF Generator (a) → Extract from File (Operation `Extract Text from PDF`, File `pdf.file`). **Expect:** `extracted.text` contains "Invoice 42" and "Total: 1300".
+**c) Reading a PDF.** Chain PDF Generator (a) → Extract from File (Operation `Extract Text from PDF`, File `pdf.file`). **Expect:** `extracted.text` contains "Invoice 42" and "Total: 1300", `extracted.pages` and `extracted.pagesRead` are 1, and `extracted.truncated` is false.
+
+**d) Limits.** Each file is fetched with an HTTP Request node (Response Format `File`) and read with Extract from File.
+
+| # | File | Expect |
+|---|------|--------|
+| 1 | A CSV with 20 rows, Operation `Extract from CSV`, **Max Rows** `5` | `extracted.count` is 5 and `extracted.truncated` is true. With Max Rows empty: 20 rows, `truncated` false |
+| 2 | A PDF with more than 200 pages | `extracted.pages` is the real number, `extracted.pagesRead` is 200, `extracted.truncated` is true |
+| 3 | A "zip bomb" renamed to `.xlsx`: in a terminal, `python -c "import zipfile; z=zipfile.ZipFile('bomb.xlsx','w',zipfile.ZIP_DEFLATED); z.writestr('xl/a.bin', b'\0'*60_000_000); z.close()"` makes a 60 KB file that unpacks to 60 MB. Read it with `Extract from Excel (XLSX)` and with `Extract Text from Word (DOCX)` | the node fails at once with `"bomb.xlsx" was not read: the file unpacks to more than 50 MB, which is the limit.` |
+| 4 | A normal `.xlsx` and `.docx` | read as before |
 
 ## T10. Templates (needs both accounts)
 
@@ -265,6 +285,85 @@ curl -X POST -H "Authorization: Bearer <key>" "$APP/api/v1/executions/<execution
 | 9 | Look at the `api_key` table | `keyHash` is 64 hex characters and no column holds the key itself |
 
 After `npx prisma migrate deploy`: a key created before this change still works on all five routes and shows all four scopes.
+
+## T11b. Credential encryption and key rotation
+
+Use a test database, or back yours up first: steps 5 to 8 rewrite every credential.
+
+| # | Do | Expect |
+|---|-----|--------|
+| 1 | Create an OpenAI (or any API key) credential. Look at its row in the `Credential` table | `value` starts with `v1:` and does not contain the key |
+| 2 | Open the credential. In the browser's developer tools, look at the `credentials.getOne` and `credentials.getMany` responses | they have `id`, `name`, `type` and dates, and no `value`. The secret field is empty with the placeholder "A secret is saved. Leave empty to keep it" |
+| 3 | Change only the name and click Update. Run a workflow that uses the credential | the name changed and the workflow still works (the secret was kept) |
+| 4 | Type a new secret and click Update | workflows now use the new secret |
+| 5 | Edit an **SMTP** credential: change only the name | the Email node still sends. Fill in only Host and click Update: an error asks for host, user email and password |
+| 6 | Run `npx tsx scripts/rotate-encryption-key.ts --dry-run` | it prints how many credentials would be re-encrypted and changes nothing |
+| 7 | In `.env` set `ENCRYPTION_KEY_PREVIOUS` to the current key and `ENCRYPTION_KEY` to a new value, restart, and run a workflow that uses an old credential | it still works |
+| 8 | Run `npx tsx scripts/rotate-encryption-key.ts`, then run it again | first run: every credential re-encrypted. Second run: 0 re-encrypted, all "already current" |
+| 9 | Remove `ENCRYPTION_KEY_PREVIOUS`, restart, run the workflows again (API key, Google account, SMTP) | all still work |
+| 10 | Change one character of a `value` in the table and run a workflow that uses it | the node fails with "Could not decrypt the stored value"; no secret appears in the error |
+| 11 | With a Telegram Trigger workflow active before step 7: send the bot a message after step 7 | the workflow still starts. After step 9 it only starts once the workflow has been switched off and on again |
+
+## T11c. Redaction, retention and "Don't save node input/output"
+
+**Redaction.** Create a credential of type **HTTP Bearer Auth** with the value `my-secret-token-123`.
+
+Trigger manually → HTTP Request (Variable Name `http`, Method `POST`, URL `https://httpbin.org/anything`, Authentication `Bearer Auth` with that credential, Headers `X-Api-Key: abc12345`, Body `{"note": "key sk-abcdefghijklmnopqrstuvwx", "db": "postgresql://app:s3cr3t@db.example.com/main"}`) → Set Variable (name `copy`, value `{{http.data.headers.Authorization}}`).
+
+| # | Look at | Expect |
+|---|---------|--------|
+| 1 | The run | succeeds; httpbin received the real token (the request worked) |
+| 2 | Executions → the run → the HTTP Request node's output | `Authorization` and `X-Api-Key` are `[REDACTED]`; the body shows `key [REDACTED]` and `postgresql://app:[REDACTED]@db.example.com/main`; `my-secret-token-123` appears nowhere |
+| 3 | The Set Variable node's input and output | `[REDACTED]` where the token would be |
+| 4 | The execution's final Output | the credential value is `[REDACTED]`; `sk-abc...` in the echoed body is still there (the final output only has credential values removed) |
+| 5 | Change the HTTP Request URL to `https://httpbin.org/status/401` and add `?key=my-secret-token-123` to it; run | the run fails, and neither the error nor the stack trace shows the token |
+| 6 | Click **Retry** on a finished run | it runs again with the same starting data |
+
+**Don't save node input/output.** In the editor click the gear next to the Active switch and tick **Don't save node input/output**. Run the workflow.
+
+| # | Look at | Expect |
+|---|---------|--------|
+| 7 | The execution | status and duration are shown, each node is listed with its status, and there is no input, output or final Output |
+| 8 | Make a node fail and run again | the error message is shown (redacted) |
+| 9 | **Retry** on one of these runs | refused: "its workflow is set not to save run data" |
+| 10 | Untick the setting and run | data is saved again |
+
+**Retention.** On the **Executions** page the line **Execution data retention** shows `30 days`.
+
+| # | Do | Expect |
+|---|-----|--------|
+| 11 | Choose `7 days`, reload | it stays on 7 days |
+| 12 | In the database set `startedAt` of one finished execution to 10 days ago (still this month) and of another to 40 days ago. In the Inngest dev server open the function **execution-data-cleanup** and invoke it | the 40-day-old execution is gone. The 10-day-old one is still listed with its status, shows "The data of this execution was deleted after your retention period", has no node data, and cannot be retried |
+| 13 | Invoke the function again | nothing changes (it returns `deleted: 0, stripped: 0`) |
+| 14 | Set retention to `90 days`, set an execution to 40 days ago, invoke | it is kept |
+
+## T11d. Tenant isolation (one account cannot reach another's data)
+
+**The script.** It needs a database with all migrations applied (use a development one) and the app's `.env`. The app and Inngest do not have to be running.
+
+```bash
+npx tsx --env-file=.env --conditions=react-server scripts/test-tenant-isolation.ts --confirm
+```
+
+It creates two temporary users (emails ending in `@tenant-test.invalid`), gives user A a workflow, an execution with node logs, a credential, a file and an API key, and then, as user B:
+
+- calls every tRPC procedure that takes an id (`workflows`: getOne, updateName, update, setActive, setSaveExecutionData, execute, remove; `executions`: getOne, getLatestData, retry; `credentials`: getOne, update, remove; `apiKeys`: remove);
+- calls `/api/v1` with B's API key: `GET /executions/:id`, `POST /executions/:id/retry`, `POST /workflows/:id/execute`, `GET /executions?workflowId=`;
+- asks the loaders behind `GET /api/files/:id` and `GET /api/executions/:id/nodes` for A's file and node logs;
+- checks that B's lists contain nothing of A's, and that B's workflow cannot be linked to A's credential or connected to A's nodes.
+
+**Expect:** every line starts with `ok`, the last line is `N checks passed, 0 failed`, and the exit code is 0. Each attempt must be answered with 404, and A's records must be unchanged at the end. Both users and everything they own are deleted when it finishes, also when a check fails.
+
+**By hand, with two accounts** (two browsers, or one normal and one private window):
+
+| # | As user B | Expect |
+|---|-----------|--------|
+| 1 | Open `/workflows/<id of one of A's workflows>` | the editor's error view, never A's workflow |
+| 2 | Open `/executions/<id of one of A's executions>` and `/credentials/<id of one of A's credentials>` | the same |
+| 3 | Open `/api/files/<id of one of A's files>` and `/api/executions/<id of one of A's executions>/nodes` | `404` with `{"error":"File not found."}` / `{"error":"Execution not found."}` |
+| 4 | With B's API key: `curl -i -H "Authorization: Bearer <B's key>" "$APP/api/v1/executions/<A's execution id>"` | `404` |
+| 5 | The same with `"$APP/api/v1/executions?workflowId=<A's workflow id>"` and `-X POST "$APP/api/v1/workflows/<A's workflow id>/execute"` | `404` both times; no execution is started for A |
+| 6 | Open one of B's own workflows, executions and credentials | they work as before |
 
 ## T12. Sign-in
 

@@ -117,6 +117,9 @@ const credentialLogos: Record<CredentialType, string> = {
     [CredentialType.OPENAI]: "/logos/openai.svg",
     [CredentialType.ANTHROPIC]: "/logos/anthropic.svg",
     [CredentialType.GEMINI]: "/logos/gemini.svg",
+    [CredentialType.DEEPSEEK]: "/logos/deepseek.svg",
+    [CredentialType.KIMI]: "/logos/kimi.svg",
+    [CredentialType.QWEN]: "/logos/qwen.svg",
     [CredentialType.SMTP]: "/logos/smtp.jfif",
     [CredentialType.GOOGLE_SHEETS]: "/logos/googleSheet.png",
     [CredentialType.GOOGLE_CALENDAR]: "/logos/calender.png",
@@ -144,7 +147,8 @@ const credentialLogos: Record<CredentialType, string> = {
 export const CredentialItem = ({
     data,
 }: {
-    data: Credential
+    // What the server sends: never the secret
+    data: Pick<Credential, "id" | "name" | "type" | "createdAt" | "updatedAt">
 }) => {
     const removeCredential = useRemoveCredential()
     const handleRemove = () => {

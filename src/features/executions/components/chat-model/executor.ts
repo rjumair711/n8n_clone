@@ -5,7 +5,10 @@ import { generateText } from "ai";
 import { safeFetch } from "@/lib/ssrf";
 import { renderTemplate } from "../../lib/templates";
 import { loadCredentialSecret } from "../../lib/integration";
-import { getChatModelProvider } from "../../lib/chat-model-providers";
+import {
+  getChatModelProvider,
+  withDedicatedProvider,
+} from "../../lib/chat-model-providers";
 
 export type ChatModelData = {
   variableName?: string;
@@ -51,20 +54,29 @@ export const createCompatibleChatModel = (data: ChatModelData, apiKey: string) =
   }).chat(modelName);
 };
 
-export const chatModelExecutor: NodeExecutor<ChatModelData> = async ({
-  data,
+/**
+ * The executor for the Chat Model node, or for a node locked to one provider
+ * (DeepSeek, Kimi, Qwen) when `nodeType` is given.
+ */
+const createChatModelExecutor = (
+  label: string,
+  nodeType?: string
+): NodeExecutor<ChatModelData> => async ({
+  data: nodeData,
   nodeId,
   userId,
   context,
   step,
 }) => {
+  const data = nodeType ? withDedicatedProvider(nodeType, nodeData) : nodeData;
+
   if (!data.variableName) {
-    throw new NonRetriableError("Chat Model node: Variable name is missing");
+    throw new NonRetriableError(`${label} node: Variable name is missing`);
   }
 
   if (!data.userPrompt) {
     throw new NonRetriableError(
-      "Chat Model node: User Prompt is required when the node runs as a step. Connect it to an AI Agent's Chat Model port to use it as the agent's model instead."
+      `${label} node: User Prompt is required when the node runs as a step. Connect it to an AI Agent's Chat Model port to use it as the agent's model instead.`
     );
   }
 
@@ -73,7 +85,7 @@ export const chatModelExecutor: NodeExecutor<ChatModelData> = async ({
     stepId: `chat-model-${nodeId}-get-credential`,
     credentialId: data.credentialId,
     userId,
-    label: "Chat Model",
+    label,
   });
 
   const system =
@@ -106,6 +118,12 @@ export const chatModelExecutor: NodeExecutor<ChatModelData> = async ({
   } catch (error: any) {
     if (error instanceof NonRetriableError) throw error;
 
-    throw new NonRetriableError(`Chat Model node failed: ${error.message}`);
+    throw new NonRetriableError(`${label} node failed: ${error.message}`);
   }
 };
+
+export const chatModelExecutor = createChatModelExecutor("Chat Model");
+
+export const deepseekExecutor = createChatModelExecutor("DeepSeek", "DEEPSEEK");
+export const kimiExecutor = createChatModelExecutor("Kimi", "KIMI");
+export const qwenExecutor = createChatModelExecutor("Qwen", "QWEN");

@@ -3,6 +3,8 @@ import "server-only";
 import { NonRetriableError } from "inngest";
 import prisma from "./db";
 import { getAppUrl } from "./app-url";
+import { NotFoundError, assertOwnership } from "./ownership";
+import { buildFileDownloadUrl } from "./file-links";
 
 // Files do not travel in the workflow data (it is JSON, and Inngest caps
 // its size). They are stored here and the data carries this reference.
@@ -12,7 +14,9 @@ export type FileReference = {
   mimeType: string;
   // Bytes
   size: number;
-  // Download link for the signed-in owner
+  // Signed download link. It works for 15 minutes for anyone who has it;
+  // after that only for the signed-in owner. A new one is made every time
+  // a node loads the file.
   url: string;
 };
 
@@ -51,7 +55,7 @@ const toReference = (file: {
   fileName: file.fileName,
   mimeType: file.mimeType,
   size: file.size,
-  url: `${getAppUrl()}/api/files/${file.id}`,
+  url: buildFileDownloadUrl(getAppUrl(), file.id),
 });
 
 export const assertFileSize = (label: string, bytes: number) => {
@@ -113,6 +117,18 @@ export const saveWorkflowFile = async ({
 };
 
 /**
+ * The stored file behind a download link, for its owner only: a file id
+ * from another account is "not found" (NotFoundError), like one that does
+ * not exist.
+ */
+export const getOwnedWorkflowFile = async (fileId: string, userId: string) =>
+  assertOwnership(
+    await prisma.workflowFile.findUnique({ where: { id: fileId } }),
+    userId,
+    "File"
+  );
+
+/**
  * Loads a stored file. Scoped to its owner: a file id from another account
  * is "not found".
  */
@@ -121,9 +137,12 @@ export const loadWorkflowFile = async (
   fileId: string,
   userId: string
 ): Promise<{ reference: FileReference; data: Buffer }> => {
-  const file = await prisma.workflowFile.findFirst({
-    where: { id: fileId, userId },
-  });
+  let file: Awaited<ReturnType<typeof getOwnedWorkflowFile>> | null = null;
+  try {
+    file = await getOwnedWorkflowFile(fileId, userId);
+  } catch (error) {
+    if (!(error instanceof NotFoundError)) throw error;
+  }
 
   if (!file) {
     throw new NonRetriableError(

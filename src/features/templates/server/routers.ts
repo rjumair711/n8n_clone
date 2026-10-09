@@ -5,19 +5,21 @@ import z from "zod";
 import prisma from "@/lib/db";
 import { createTRPCRouter, protectedProcedure } from "@/trpc/init";
 import { PLAN_LIMITS } from "@/config/plans";
+import { isAdmin as isAdminUser } from "@/lib/admin";
+import { assertOwnership } from "@/lib/ownership";
 import {
     PLAN_NAMES,
     canUseTemplate,
     instantiateTemplate,
-    isAdminEmail,
     toTemplateData,
     type TemplateConnection,
     type TemplateNode,
 } from "../lib/template-data";
 
-// Publishing, editing and deleting templates is for the admins in ADMIN_EMAILS
+// Publishing, editing and deleting templates is for admins: a verified
+// account whose email is in ADMIN_EMAILS
 const adminProcedure = protectedProcedure.use(({ ctx, next }) => {
-    if (!isAdminEmail(ctx.auth.user.email)) {
+    if (!isAdminUser(ctx.auth.user)) {
         throw new TRPCError({
             code: "FORBIDDEN",
             message: "Only an admin can manage templates.",
@@ -41,7 +43,7 @@ export const templatesRouter = createTRPCRouter({
     // The gallery. Everyone sees every published template; `locked` says
     // whether the user's plan can use it. Admins also see unpublished ones.
     getMany: protectedProcedure.query(async ({ ctx }) => {
-        const isAdmin = isAdminEmail(ctx.auth.user.email);
+        const isAdmin = isAdminUser(ctx.auth.user);
 
         const user = await prisma.user.findUniqueOrThrow({
             where: { id: ctx.auth.user.id },
@@ -78,7 +80,7 @@ export const templatesRouter = createTRPCRouter({
     use: protectedProcedure
         .input(z.object({ id: z.string() }))
         .mutation(async ({ ctx, input }) => {
-            const isAdmin = isAdminEmail(ctx.auth.user.email);
+            const isAdmin = isAdminUser(ctx.auth.user);
 
             const template = await prisma.workflowTemplate.findFirst({
                 where: { id: input.id, ...(isAdmin ? {} : { published: true }) },
@@ -191,14 +193,14 @@ export const templatesRouter = createTRPCRouter({
         .mutation(async ({ ctx, input }) => {
             const { workflowId, ...fields } = input;
 
-            const workflow = await prisma.workflow.findFirst({
-                where: { id: workflowId, userId: ctx.auth.user.id },
-                include: { nodes: true, connections: true },
-            });
-
-            if (!workflow) {
-                throw new TRPCError({ code: "NOT_FOUND", message: "Workflow not found." });
-            }
+            const workflow = assertOwnership(
+                await prisma.workflow.findUnique({
+                    where: { id: workflowId },
+                    include: { nodes: true, connections: true },
+                }),
+                ctx.auth.user.id,
+                "Workflow"
+            );
 
             const data = toTemplateData(workflow.nodes, workflow.connections);
 
@@ -237,14 +239,14 @@ export const templatesRouter = createTRPCRouter({
             let content = {};
 
             if (workflowId) {
-                const workflow = await prisma.workflow.findFirst({
-                    where: { id: workflowId, userId: ctx.auth.user.id },
-                    include: { nodes: true, connections: true },
-                });
-
-                if (!workflow) {
-                    throw new TRPCError({ code: "NOT_FOUND", message: "Workflow not found." });
-                }
+                const workflow = assertOwnership(
+                    await prisma.workflow.findUnique({
+                        where: { id: workflowId },
+                        include: { nodes: true, connections: true },
+                    }),
+                    ctx.auth.user.id,
+                    "Workflow"
+                );
 
                 const data = toTemplateData(workflow.nodes, workflow.connections);
 

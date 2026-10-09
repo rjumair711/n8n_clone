@@ -44,10 +44,17 @@ export const toCsv = (rows: unknown[], delimiter = ","): string => {
 
 /**
  * Reads CSV into rows of cells. Handles quoted cells with commas, line
- * breaks and doubled quotes.
+ * breaks and doubled quotes. With `maxRows`, reading stops once that many
+ * rows (blank lines not counted) have been read.
  */
-export const parseCsvRows = (text: string, delimiter = ","): string[][] => {
+export const parseCsvRows = (
+  text: string,
+  delimiter = ",",
+  maxRows = Number.POSITIVE_INFINITY
+): string[][] => {
   const rows: string[][] = [];
+  // Rows that are not blank: only those count towards the limit
+  let kept = 0;
   let row: string[] = [];
   let cell = "";
   let quoted = false;
@@ -81,14 +88,18 @@ export const parseCsvRows = (text: string, delimiter = ","): string[][] => {
       if (char === "\r" && input[index + 1] === "\n") index++;
       row.push(cell);
       rows.push(row);
+      if (row.some((value) => value.trim() !== "")) kept++;
       row = [];
       cell = "";
+
+      // The rest of the file is not read at all
+      if (kept >= maxRows) break;
     } else {
       cell += char;
     }
   }
 
-  if (cell !== "" || row.length > 0) {
+  if (kept < maxRows && (cell !== "" || row.length > 0)) {
     row.push(cell);
     rows.push(row);
   }
@@ -98,14 +109,32 @@ export const parseCsvRows = (text: string, delimiter = ","): string[][] => {
 };
 
 /**
- * Reads CSV into objects keyed by the header row (or column1, column2...
- * when the file has no header).
+ * Reads at most `maxRows` data rows of a CSV file (the header row does not
+ * count) and says whether the file had more.
  */
-export const parseCsv = (
+export const parseCsvLimited = (
   text: string,
-  { delimiter = ",", header = true }: { delimiter?: string; header?: boolean } = {}
+  {
+    delimiter = ",",
+    header = true,
+    maxRows,
+  }: { delimiter?: string; header?: boolean; maxRows: number }
+): { items: Record<string, string>[]; truncated: boolean } => {
+  const limit = Math.max(Math.floor(maxRows), 1);
+  // One row more than asked for shows that the file goes on
+  const rows = parseCsvRows(text, delimiter, limit + (header ? 2 : 1));
+  const truncated = rows.length > limit + (header ? 1 : 0);
+
+  return {
+    items: csvRowsToObjects(truncated ? rows.slice(0, -1) : rows, header),
+    truncated,
+  };
+};
+
+const csvRowsToObjects = (
+  rows: string[][],
+  header: boolean
 ): Record<string, string>[] => {
-  const rows = parseCsvRows(text, delimiter);
   if (rows.length === 0) return [];
 
   const width = Math.max(...rows.map((row) => row.length));
@@ -118,6 +147,16 @@ export const parseCsv = (
     Object.fromEntries(columns.map((column, index) => [column, row[index] ?? ""]))
   );
 };
+
+/**
+ * Reads CSV into objects keyed by the header row (or column1, column2...
+ * when the file has no header).
+ */
+export const parseCsv = (
+  text: string,
+  { delimiter = ",", header = true }: { delimiter?: string; header?: boolean } = {}
+): Record<string, string>[] =>
+  csvRowsToObjects(parseCsvRows(text, delimiter), header);
 
 // ============================================================================
 // FILE NAMES AND TYPES

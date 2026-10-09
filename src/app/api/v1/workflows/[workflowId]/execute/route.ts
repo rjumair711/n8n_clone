@@ -2,6 +2,7 @@ import { type NextRequest, NextResponse } from "next/server";
 import { ExecutionStatus, NodeType } from "@prisma/client";
 import prisma from "@/lib/db";
 import { apiError, authenticateApiRequest } from "@/lib/api-keys";
+import { NotFoundError, assertOwnership } from "@/lib/ownership";
 import { sendWorkflowExecution } from "@/inngest/utils";
 import { PLAN_LIMITS } from "@/config/plans";
 import { TRIGGER_SOURCES } from "@/config/trigger-sources";
@@ -22,10 +23,11 @@ export async function POST(
 
     const { workflowId } = await params;
 
-    const workflow = await prisma.workflow.findFirst({
-        where: { id: workflowId, userId: auth.user.id },
+    const found = await prisma.workflow.findUnique({
+        where: { id: workflowId },
         select: {
             id: true,
+            userId: true,
             nodes: {
                 where: { type: NodeType.MANUAL_TRIGGER },
                 select: { id: true },
@@ -33,7 +35,13 @@ export async function POST(
         },
     });
 
-    if (!workflow) return apiError(404, "Workflow not found.");
+    let workflow: NonNullable<typeof found>;
+    try {
+        workflow = assertOwnership(found, auth.user.id, "Workflow");
+    } catch (error) {
+        if (error instanceof NotFoundError) return apiError(404, error.message);
+        throw error;
+    }
 
     if (workflow.nodes.length === 0) {
         return apiError(

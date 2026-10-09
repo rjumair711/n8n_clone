@@ -12,8 +12,10 @@ import {
   createCompatibleChatModel,
   type ChatModelData,
 } from "../components/chat-model/executor";
+import { withDedicatedProvider } from "./chat-model-providers";
 
-// "COMPATIBLE" is the Chat Model node: OpenRouter, Groq, Ollama and so on
+// "COMPATIBLE" is the Chat Model node (OpenRouter, Groq, Ollama and so on)
+// and the DeepSeek, Kimi and Qwen nodes built on it
 export type ModelProvider = "OPENAI" | "ANTHROPIC" | "GEMINI" | "COMPATIBLE";
 
 // Node types that can be plugged into a Chat Model port
@@ -22,7 +24,22 @@ export const MODEL_NODE_PROVIDERS: Record<string, ModelProvider> = {
   ANTHROPIC: "ANTHROPIC",
   GEMINI: "GEMINI",
   CHAT_MODEL: "COMPATIBLE",
+  DEEPSEEK: "COMPATIBLE",
+  KIMI: "COMPATIBLE",
+  QWEN: "COMPATIBLE",
 };
+
+// A model node's settings, with the provider of a DeepSeek, Kimi or Qwen
+// node filled in
+export const getModelNodeData = (
+  modelNode?: Pick<NodeWithCredential, "type" | "data">
+): Record<string, any> =>
+  modelNode
+    ? withDedicatedProvider(
+        modelNode.type,
+        (modelNode.data ?? {}) as Record<string, any>
+      )
+    : {};
 
 // Same defaults the standalone model nodes use
 export const DEFAULT_MODELS: Record<ModelProvider, string> = {
@@ -102,12 +119,12 @@ export const loadConnectedModel = async ({
 
   if (!modelNode) {
     throw new NonRetriableError(
-      `${label} node: connect a chat model (OpenAI, Anthropic, Gemini or Chat Model) to its Model port`
+      `${label} node: connect a chat model (OpenAI, Anthropic, Gemini, DeepSeek, Kimi, Qwen or Chat Model) to its Model port`
     );
   }
 
   const provider = MODEL_NODE_PROVIDERS[modelNode.type as NodeType];
-  const modelData = (modelNode.data ?? {}) as Record<string, any>;
+  const modelData = getModelNodeData(modelNode);
 
   const modelName: string =
     modelData.model?.trim() || modelData.modelName?.trim() || DEFAULT_MODELS[provider];

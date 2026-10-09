@@ -5,9 +5,10 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { SidebarTrigger } from '@/components/ui/sidebar'
 import { Switch } from '@/components/ui/switch'
-import { useSetWorkflowActive, useSuspenseWorkflow, useUpdateWorkflow, useUpdateWorkflowName } from '@/features/workflows/hooks/use-workflows'
+import { useSetSaveExecutionData, useSetWorkflowActive, useSuspenseWorkflow, useUpdateWorkflow, useUpdateWorkflowName } from '@/features/workflows/hooks/use-workflows'
+import { DropdownMenu, DropdownMenuCheckboxItem, DropdownMenuContent, DropdownMenuLabel, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
 import { useAtomValue } from 'jotai'
-import { SaveIcon, Workflow } from 'lucide-react'
+import { SaveIcon, SettingsIcon, Workflow } from 'lucide-react'
 import Link from 'next/link'
 import { useEffect, useRef, useState } from 'react'
 import { editorAtom } from '../store/atoms'
@@ -44,6 +45,43 @@ export const EditorSaveButton = ({ workflowId }: { workflowId: string }) => {
     )
 }
 
+// Workflow settings. "Don't save node input/output" is for workflows that
+// handle data which should not be kept: only status and errors are stored.
+export const EditorSettingsMenu = ({ workflowId }: { workflowId: string }) => {
+    const { data: workflow } = useSuspenseWorkflow(workflowId)
+    const setSaveExecutionData = useSetSaveExecutionData()
+
+    return (
+        <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+                <Button size="icon" variant="ghost" title="Workflow settings" className='ml-auto'>
+                    <SettingsIcon className='size-4' />
+                </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className='w-80'>
+                <DropdownMenuLabel>Workflow settings</DropdownMenuLabel>
+                <DropdownMenuCheckboxItem
+                    checked={!workflow.saveExecutionData}
+                    disabled={setSaveExecutionData.isPending}
+                    onCheckedChange={(dontSave) =>
+                        setSaveExecutionData.mutate({ id: workflowId, save: !dontSave })
+                    }
+                    className='items-start'
+                >
+                    <div className='space-y-1'>
+                        <div>Don&apos;t save node input/output</div>
+                        <p className='text-xs text-muted-foreground'>
+                            Runs keep only their status and errors. They cannot be
+                            retried, and a webhook that answers &quot;when the last node
+                            finishes&quot; gets an empty answer.
+                        </p>
+                    </div>
+                </DropdownMenuCheckboxItem>
+            </DropdownMenuContent>
+        </DropdownMenu>
+    )
+}
+
 // Schedules and webhooks only fire while the workflow is active
 export const EditorActiveToggle = ({ workflowId }: { workflowId: string }) => {
     const { data: workflow } = useSuspenseWorkflow(workflowId)
@@ -51,7 +89,7 @@ export const EditorActiveToggle = ({ workflowId }: { workflowId: string }) => {
 
     return (
         <label
-            className='ml-auto flex items-center gap-2 text-sm cursor-pointer select-none'
+            className='flex items-center gap-2 text-sm cursor-pointer select-none'
             title='Active workflows run from their schedule and webhook triggers'
         >
             <span className={workflow.active ? 'font-medium' : 'text-muted-foreground'}>
@@ -166,6 +204,7 @@ export const EditorHeader = ({ workflowId }: { workflowId: string }) => {
             <SidebarTrigger />
             <div className='flex flex-row items-center justify-between gap-x-4 w-full'>
                 <EditorBreadcrumbs workflowId={workflowId} />
+                <EditorSettingsMenu workflowId={workflowId} />
                 <EditorActiveToggle workflowId={workflowId} />
                 <EditorSaveButton workflowId={workflowId} />
             </div>

@@ -3,6 +3,7 @@ import { createTRPCRouter, protectedProcedure } from "@/trpc/init";
 import { TRPCError } from "@trpc/server";
 import z from "zod";
 import { generateApiKey, hasApiAccess } from "@/lib/api-keys";
+import { assertOwnership } from "@/lib/ownership";
 import {
     API_SCOPES,
     normalizeScopes,
@@ -98,6 +99,15 @@ export const apiKeysRouter = createTRPCRouter({
     remove: protectedProcedure
         .input(z.object({ id: z.string() }))
         .mutation(async ({ ctx, input }) => {
+            assertOwnership(
+                await prisma.apiKey.findUnique({
+                    where: { id: input.id },
+                    select: { userId: true },
+                }),
+                ctx.auth.user.id,
+                "API key"
+            );
+
             await prisma.apiKey.delete({
                 where: { id: input.id, userId: ctx.auth.user.id },
             });

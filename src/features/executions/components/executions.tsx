@@ -10,6 +10,11 @@ import { Execution, ExecutionStatus } from "@prisma/client"
 import { useSuspenseExecutions } from "../hooks/use-executions"
 import { CheckCircle2Icon, ClockIcon, Loader2Icon, XCircleIcon } from "lucide-react"
 import { formatTriggerSource } from "@/config/trigger-sources"
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
+import { toast } from "sonner"
+import { useTRPC } from "@/trpc/client"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+import { RETENTION_DAY_OPTIONS } from "@/lib/execution-retention"
 
 
 
@@ -29,14 +34,57 @@ export const ExecutionsList = () => {
 }
 
 
+// The user setting "Execution data retention"
+export const ExecutionRetentionSetting = () => {
+    const trpc = useTRPC()
+    const queryClient = useQueryClient()
+    const { data } = useQuery(trpc.executions.getRetention.queryOptions())
+
+    const setRetention = useMutation(
+        trpc.executions.setRetention.mutationOptions({
+            onSuccess: (saved) => {
+                toast.success(`Execution data is kept for ${saved.days} days`)
+                queryClient.invalidateQueries(trpc.executions.getRetention.queryOptions())
+            },
+            onError: (error) => toast.error(error.message),
+        })
+    )
+
+    return (
+        <div className="flex flex-wrap items-center gap-2 text-sm">
+            <span className="font-medium">Execution data retention</span>
+            <Select
+                value={data ? String(data.days) : undefined}
+                disabled={!data || setRetention.isPending}
+                onValueChange={(days) => setRetention.mutate({ days: Number(days) })}
+            >
+                <SelectTrigger size="sm" className="w-28">
+                    <SelectValue placeholder="..." />
+                </SelectTrigger>
+                <SelectContent>
+                    {RETENTION_DAY_OPTIONS.map((days) => (
+                        <SelectItem key={days} value={String(days)}>
+                            {days} days
+                        </SelectItem>
+                    ))}
+                </SelectContent>
+            </Select>
+            <span className="text-muted-foreground">
+                Older executions and their node data are deleted every night.
+            </span>
+        </div>
+    )
+}
+
 export const ExecutionsHeader = () => {
     return (
-        <>
+        <div className="space-y-3">
             <EntityHeader
                 title="Executions"
                 description="View your workflow execution history"
             />
-        </>
+            <ExecutionRetentionSetting />
+        </div>
     )
 }
 

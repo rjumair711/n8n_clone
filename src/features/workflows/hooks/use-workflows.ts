@@ -96,6 +96,32 @@ export const useSetWorkflowActive = () => {
 }
 
 /**
+ * Hook for the workflow setting "Don't save node input/output"
+ */
+
+export const useSetSaveExecutionData = () => {
+
+    const queryClient = useQueryClient()
+    const trpc = useTRPC()
+
+    return useMutation(trpc.workflows.setSaveExecutionData.mutationOptions({
+        onSuccess: (data) => {
+            toast.success(
+                data.saveExecutionData
+                    ? `"${data.name}" saves node input and output again`
+                    : `"${data.name}" no longer saves node input and output`
+            )
+            queryClient.invalidateQueries(
+                trpc.workflows.getOne.queryOptions({ id: data.id })
+            )
+        },
+        onError: (error) => {
+            toast.error(`Failed to update workflow: ${error.message}`)
+        }
+    }))
+}
+
+/**
  * Hook to update a workflow name
  */
 

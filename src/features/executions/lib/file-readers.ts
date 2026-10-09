@@ -1,6 +1,13 @@
 // Readers and writers for document formats (PDF, Word, Excel). Their
 // libraries are large, so each is loaded only when a workflow needs it.
 
+import {
+  FileLimitError,
+  PDF_MAX_PAGES,
+  PDF_TIME_LIMIT_MS,
+  inspectZip,
+} from "./file-limits";
+
 const MAX_SHEET_ROWS = 5000;
 const MAX_TEXT_CHARACTERS = 500_000;
 
@@ -11,27 +18,101 @@ const clip = (text: string) =>
 
 /**
  * The text of a PDF. Scanned documents are images and have no text to read.
+ *
+ * Only the first `maxPages` pages are read (200), and the whole extraction
+ * has a time limit: a PDF built to keep the parser busy fails with a
+ * FileLimitError instead of holding up the run.
  */
-export const extractPdfText = async (data: Uint8Array) => {
-  const { extractText, getDocumentProxy } = await import("unpdf");
+export const extractPdfText = async (
+  data: Uint8Array,
+  {
+    maxPages = PDF_MAX_PAGES,
+    timeLimitMs = PDF_TIME_LIMIT_MS,
+  }: { maxPages?: number; timeLimitMs?: number } = {}
+) => {
+  const { getDocumentProxy } = await import("unpdf");
+
+  const deadline = Date.now() + timeLimitMs;
+
+  // Each step of the parser gets what is left of the time
+  const withinTimeLimit = async <T,>(work: Promise<T>): Promise<T> => {
+    const tooSlow = () =>
+      new FileLimitError(
+        `reading the PDF took longer than ${Math.round(timeLimitMs / 1000)} seconds, which is the limit`
+      );
+    const remaining = deadline - Date.now();
+
+    if (remaining <= 0) {
+      // Nobody waits for it any more; its outcome must not go unhandled
+      work.catch(() => {});
+      throw tooSlow();
+    }
+
+    let timer: ReturnType<typeof setTimeout> | undefined;
+
+    try {
+      return await Promise.race([
+        work,
+        new Promise<never>((_, reject) => {
+          timer = setTimeout(() => reject(tooSlow()), remaining);
+        }),
+      ]);
+    } finally {
+      clearTimeout(timer);
+    }
+  };
 
   // The parser takes ownership of the bytes it is given
-  const document = await getDocumentProxy(new Uint8Array(data));
-  const result = await extractText(document, { mergePages: false });
+  const document = await withinTimeLimit(getDocumentProxy(new Uint8Array(data)));
 
-  const pages = (result.text as string[]).map((page) => page.trim());
+  try {
+    const totalPages = document.numPages;
+    const pagesRead = Math.min(totalPages, maxPages);
+    const pages: string[] = [];
 
-  return {
-    ...clip(pages.join("\n\n").trim()),
-    pages: result.totalPages,
-    pageTexts: pages.slice(0, 200),
-  };
+    for (let pageNumber = 1; pageNumber <= pagesRead; pageNumber++) {
+      const content = await withinTimeLimit(
+        document.getPage(pageNumber).then((page) => page.getTextContent())
+      );
+
+      pages.push(
+        (content.items as { str?: string; hasEOL?: boolean }[])
+          .filter((item) => item.str != null)
+          .map((item) => item.str + (item.hasEOL ? "\n" : ""))
+          .join("")
+          .trim()
+      );
+    }
+
+    const clipped = clip(pages.join("\n\n").trim());
+
+    return {
+      text: clipped.text,
+      // Cut off after the page limit or the text limit
+      truncated: clipped.truncated || totalPages > pagesRead,
+      pages: totalPages,
+      pagesRead,
+      pageTexts: pages,
+    };
+  } finally {
+    // Frees the parser's memory, where the document offers a way to
+    const closable = document as unknown as {
+      destroy?: () => Promise<unknown>;
+      cleanup?: () => Promise<unknown>;
+    };
+    void Promise.resolve()
+      .then(() => closable.destroy?.() ?? closable.cleanup?.())
+      .catch(() => {});
+  }
 };
 
 /**
  * The text of a Word .docx document, one paragraph per line.
  */
 export const extractDocxText = async (data: Buffer) => {
+  // A .docx is a ZIP archive: checked for size before it is unpacked
+  inspectZip(data);
+
   const mammoth = await import("mammoth");
   const result = await mammoth.extractRawText({ buffer: data });
 
@@ -64,6 +145,9 @@ export const readXlsx = async (
   data: Buffer,
   { sheet, header = true }: { sheet?: string; header?: boolean } = {}
 ) => {
+  // An .xlsx is a ZIP archive: checked for size before it is unpacked
+  inspectZip(data);
+
   const ExcelJS = (await import("exceljs")).default;
   const workbook = new ExcelJS.Workbook();
 

@@ -5,6 +5,7 @@ import { workflowCronHeartbeat } from "../../../inngest/functions";
 import { gmailTriggerPoll } from "@/inngest/gmail-trigger";
 import { rssTriggerPoll } from "@/inngest/rss-trigger";
 import { workflowFilesCleanup } from "@/inngest/files-cleanup";
+import { executionDataCleanup } from "@/inngest/execution-cleanup";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -20,6 +21,7 @@ const handler = serve({
     gmailTriggerPoll,
     rssTriggerPoll,
     workflowFilesCleanup,
+    executionDataCleanup,
   ],
 });
 

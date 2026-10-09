@@ -50,7 +50,12 @@ import {
   summarizeExecutor,
 } from '../components/data/executors';
 import { gmailExecutor } from '../components/gmail/executor';
-import { chatModelExecutor } from '../components/chat-model/executor';
+import {
+  chatModelExecutor,
+  deepseekExecutor,
+  kimiExecutor,
+  qwenExecutor,
+} from '../components/chat-model/executor';
 import {
   informationExtractorExecutor,
   textClassifierExecutor,
@@ -128,6 +133,9 @@ export const executorRegistry: Record<NodeType, NodeExecutor<any>> = {
   [NodeType.EXECUTE_WORKFLOW]: executeWorkflowExecutor,
   [NodeType.EXECUTE_WORKFLOW_TRIGGER]: contextTriggerExecutor,
   [NodeType.CHAT_MODEL]: chatModelExecutor,
+  [NodeType.DEEPSEEK]: deepseekExecutor,
+  [NodeType.KIMI]: kimiExecutor,
+  [NodeType.QWEN]: qwenExecutor,
   [NodeType.GMAIL_TRIGGER]: contextTriggerExecutor,
   // Only read by the AI Agent it is plugged into
   [NodeType.STRUCTURED_OUTPUT_PARSER]: contextTriggerExecutor,

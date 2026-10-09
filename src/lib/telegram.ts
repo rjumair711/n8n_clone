@@ -51,10 +51,28 @@ export const getTelegramWebhookUrl = (workflowId: string) =>
  * every update, which proves the request comes from Telegram. Derived from
  * the app's key, so nothing has to be stored on the node.
  */
-export const getTelegramWebhookSecret = (workflowId: string) =>
-  createHmac("sha256", process.env.ENCRYPTION_KEY || "")
+const deriveTelegramWebhookSecret = (key: string, workflowId: string) =>
+  createHmac("sha256", key)
     .update(`telegram-webhook:${workflowId}`)
     .digest("hex");
+
+export const getTelegramWebhookSecret = (workflowId: string) =>
+  deriveTelegramWebhookSecret(process.env.ENCRYPTION_KEY || "", workflowId);
+
+/**
+ * The secrets to accept from Telegram: the current one, and while
+ * ENCRYPTION_KEY_PREVIOUS is set also the one from before the key was
+ * changed. A webhook registered with the old key keeps working until the
+ * workflow is activated again, which registers it with the new one.
+ */
+export const getAcceptedTelegramWebhookSecrets = (workflowId: string) => {
+  const previous = process.env.ENCRYPTION_KEY_PREVIOUS;
+
+  return [
+    getTelegramWebhookSecret(workflowId),
+    ...(previous ? [deriveTelegramWebhookSecret(previous, workflowId)] : []),
+  ];
+};
 
 /**
  * Points the bots of a workflow's Telegram Trigger nodes at this app when

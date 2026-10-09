@@ -146,6 +146,161 @@ export const getToolLabel = (nodeType: string) =>
     .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
     .join(" ");
 
+// =========================================================================
+// RISK LEVELS
+// =========================================================================
+// What a node can do when the model decides to call it. The model acts on
+// text it has read (a web page, an email, a chat message), and that text may
+// try to give it orders, so the tools that can do real damage are off unless
+// the workflow's author allows them.
+//
+//   read       looks something up; changes nothing
+//   write      sends a message, or creates or changes a record
+//   dangerous  runs commands or raw SQL, deletes, or starts another workflow
+export type ToolRisk = "read" | "write" | "dangerous";
+
+export const TOOL_RISK_LABELS: Record<ToolRisk, string> = {
+  read: "Read",
+  write: "Write",
+  dangerous: "Dangerous",
+};
+
+// Dangerous whatever they are set up to do
+const DANGEROUS_TOOL_TYPES: Record<string, string> = {
+  SSH: "it runs commands on a server",
+  EXECUTE_WORKFLOW: "it starts another workflow",
+};
+
+// Only compute or look things up, inside the workflow or from a fixed source
+const READ_TOOL_TYPES = new Set([
+  "CALCULATOR",
+  "DATE_TIME",
+  "TEXT_FORMATTER",
+  "CODE",
+  "EDIT_FIELDS",
+  "SET_VARIABLE",
+  "FILTER",
+  "IF",
+  "SWITCH",
+  "MERGE",
+  "SPLIT_OUT",
+  "AGGREGATE",
+  "SORT",
+  "LIMIT",
+  "REMOVE_DUPLICATES",
+  "SUMMARIZE",
+  "RSS_READ",
+  "EXTRACT_FROM_FILE",
+  "CONVERT_TO_FILE",
+  "PDF_GENERATOR",
+  "INFORMATION_EXTRACTOR",
+  "TEXT_CLASSIFIER",
+  "OPENAI",
+  "ANTHROPIC",
+  "GEMINI",
+  "DEEPSEEK",
+  "KIMI",
+  "QWEN",
+  "CHAT_MODEL",
+]);
+
+const SQL_TOOL_TYPES = new Set(["POSTGRES", "MYSQL"]);
+
+// The operation a node runs when none was saved
+const DEFAULT_OPERATIONS: Record<string, string> = {
+  MYSQL: "execute_query",
+  VECTOR_STORE: "search",
+  GOOGLE_DRIVE: "search_files",
+  SALESFORCE: "query",
+};
+
+const DELETE_OPERATION = /(^|_)(delete|remove|drop|truncate|destroy|purge|trash)(_|$)/i;
+const READ_OPERATION =
+  /^(get|list|search|find|read|select|query|lookup|fetch|download|retrieve|count)(_|$)/i;
+
+const READ_HTTP_METHODS = new Set(["GET", "HEAD", "OPTIONS"]);
+
+/**
+ * The risk level of a node used as an AI Agent tool, and for dangerous
+ * tools the reason, for the error message.
+ */
+export const describeToolRisk = (
+  nodeType: string,
+  nodeData: Record<string, unknown> = {}
+): { risk: ToolRisk; reason?: string } => {
+  if (DANGEROUS_TOOL_TYPES[nodeType]) {
+    return { risk: "dangerous", reason: DANGEROUS_TOOL_TYPES[nodeType] };
+  }
+
+  const operation = String(
+    nodeData.operation || DEFAULT_OPERATIONS[nodeType] || ""
+  ).trim();
+
+  if (SQL_TOOL_TYPES.has(nodeType) && (!operation || operation === "execute_query")) {
+    return { risk: "dangerous", reason: "it runs raw SQL" };
+  }
+
+  if (nodeType === "HTTP_REQUEST") {
+    const method = String(nodeData.method || "GET").trim().toUpperCase();
+
+    if (READ_HTTP_METHODS.has(method)) return { risk: "read" };
+
+    // A method the model picks could be DELETE
+    return method === "DELETE" || method.includes("{{")
+      ? { risk: "dangerous", reason: "it can send DELETE requests" }
+      : { risk: "write" };
+  }
+
+  if (READ_TOOL_TYPES.has(nodeType)) return { risk: "read" };
+
+  if (DELETE_OPERATION.test(operation)) {
+    return { risk: "dangerous", reason: "it deletes data" };
+  }
+
+  if (READ_OPERATION.test(operation)) return { risk: "read" };
+
+  // Sending, creating and updating, and anything not known to be harmless
+  return { risk: "write" };
+};
+
+export const getToolRisk = (
+  nodeType: string,
+  nodeData: Record<string, unknown> = {}
+): ToolRisk => describeToolRisk(nodeType, nodeData).risk;
+
+/**
+ * The message for a run that has a dangerous tool connected while "Allow
+ * dangerous tools" is off, or null when every tool may be used.
+ */
+export const getBlockedToolsMessage = (
+  tools: { type: string; data?: unknown; name?: string }[],
+  allowDangerousTools: boolean | undefined
+): string | null => {
+  if (allowDangerousTools === true) return null;
+
+  const blocked = tools.flatMap((tool) => {
+    const { risk, reason } = describeToolRisk(
+      tool.type,
+      (tool.data ?? {}) as Record<string, unknown>
+    );
+
+    if (risk !== "dangerous") return [];
+
+    const label = getToolLabel(tool.type);
+    const name = tool.name?.trim();
+
+    return [
+      `${name && name !== label ? `"${name}" (${label})` : `"${label}"`}: ${reason}`,
+    ];
+  });
+
+  if (blocked.length === 0) return null;
+
+  const one = blocked.length === 1;
+
+  return `AI Agent: dangerous tool${one ? "" : "s"} connected (${blocked.join("; ")}). The model decides when to call a tool, and text it reads can try to trick it. Turn on "Allow dangerous tools" in the AI Agent's settings to let it use ${one ? "this tool" : "these tools"}, or disconnect ${one ? "it" : "them"}.`;
+};
+
 // Providers only accept [a-zA-Z0-9_-]{1,64} as a tool name
 export const sanitizeToolName = (name: string) =>
   name

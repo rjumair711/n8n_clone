@@ -6,7 +6,18 @@ import superjson from "superjson"
 import { polarClient } from '@/lib/polar';
 
 
-export const createTRPCContext = cache(async () => {
+type Session = NonNullable<Awaited<ReturnType<typeof auth.api.getSession>>>;
+
+export type TRPCContext = {
+  userId: string;
+  // Only set by server-side callers that already know who is calling (the
+  // tenant isolation script). Requests from the browser never set it: their
+  // context is made by createTRPCContext below, and the session is read
+  // from the request's cookies.
+  session?: Session;
+};
+
+export const createTRPCContext = cache(async (): Promise<TRPCContext> => {
   /**
    * @see: https://trpc.io/docs/server/context
    */
@@ -16,7 +27,7 @@ export const createTRPCContext = cache(async () => {
 // since it's not very descriptive.
 // For instance, the use of a t variable
 // is common in i18n libraries.
-const t = initTRPC.create({
+const t = initTRPC.context<TRPCContext>().create({
   /**
    * @see https://trpc.io/docs/server/data-transformers
    */
@@ -27,9 +38,11 @@ export const createTRPCRouter = t.router;
 export const createCallerFactory = t.createCallerFactory;
 export const baseProcedure = t.procedure;
 export const protectedProcedure = baseProcedure.use(async ({ ctx, next }) => {
-  const session = await auth.api.getSession({
-    headers: await headers(),
-  })
+  const session =
+    ctx.session ??
+    (await auth.api.getSession({
+      headers: await headers(),
+    }))
 
   if (!session) {
     throw new TRPCError({

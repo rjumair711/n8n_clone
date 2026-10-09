@@ -36,7 +36,9 @@ const formSchema = z.object({
   // with an empty name gets a default name instead of an error
   name: z.string(),
   type: z.nativeEnum(CredentialType),
-  value: z.string().min(1, "Value is required"),
+  // Checked in onSubmit: required on create, and when editing an empty
+  // value keeps the saved secret
+  value: z.string(),
 });
 
 type FormValues = z.infer<typeof formSchema>;
@@ -45,6 +47,9 @@ const credentialTypeOptions = [
   { value: CredentialType.OPENAI, label: "OpenAI", logo: "/logos/openai.svg" },
   { value: CredentialType.ANTHROPIC, label: "Anthropic", logo: "/logos/anthropic.svg" },
   { value: CredentialType.GEMINI, label: "Gemini", logo: "/logos/gemini.svg" },
+  { value: CredentialType.DEEPSEEK, label: "DeepSeek", logo: "/logos/deepseek.svg" },
+  { value: CredentialType.KIMI, label: "Kimi (Moonshot AI)", logo: "/logos/kimi.svg" },
+  { value: CredentialType.QWEN, label: "Qwen (Alibaba Cloud)", logo: "/logos/qwen.svg" },
   { value: CredentialType.SMTP, label: "SMTP (Email)", logo: "/logos/smtp.jfif" },
   { value: CredentialType.GOOGLE_SHEETS, label: "Google Sheets", logo: "/logos/googleSheet.png" },
   { value: CredentialType.GOOGLE_CALENDAR, label: "Google Calendar", logo: "/logos/calender.png" },
@@ -99,6 +104,27 @@ const credentialFieldConfig: Record<CredentialType, {
     secretLabel: "API Key",
     secretPlaceholder: "AIza...",
     help: "Create one in Google AI Studio.",
+  },
+  [CredentialType.DEEPSEEK]: {
+    namePlaceholder: "My DeepSeek Key",
+    defaultName: "DeepSeek credential",
+    secretLabel: "API Key",
+    secretPlaceholder: "sk-...",
+    help: "Create one at platform.deepseek.com under API keys.",
+  },
+  [CredentialType.KIMI]: {
+    namePlaceholder: "My Kimi Key",
+    defaultName: "Kimi credential",
+    secretLabel: "API Key",
+    secretPlaceholder: "sk-...",
+    help: "Create one at platform.moonshot.ai (or platform.moonshot.cn for a China account) under API keys.",
+  },
+  [CredentialType.QWEN]: {
+    namePlaceholder: "My Qwen Key",
+    defaultName: "Qwen credential",
+    secretLabel: "API Key",
+    secretPlaceholder: "sk-...",
+    help: "Create one in Alibaba Cloud Model Studio under API keys.",
   },
   [CredentialType.SMTP]: {
     namePlaceholder: "My Gmail SMTP",
@@ -255,7 +281,8 @@ interface CredentialFormProps {
     id?: string;
     name: string;
     type: CredentialType;
-    value: string;
+    // The saved secret itself is never sent to the browser
+    hasSecret?: boolean;
   };
 }
 
@@ -268,9 +295,9 @@ export const CredentialForm = ({ initialData }: CredentialFormProps) => {
 
   const form = useForm<FormValues>({
     resolver: zodResolver(formSchema), // FIX: Removed 'as any' since types align perfectly now
-    defaultValues: initialData || {
-      name: "",
-      type: CredentialType.OPENAI,
+    defaultValues: {
+      name: initialData?.name ?? "",
+      type: initialData?.type ?? CredentialType.OPENAI,
       value: "",
     },
   });
@@ -311,6 +338,17 @@ export const CredentialForm = ({ initialData }: CredentialFormProps) => {
     hostFingerprint: "",
   });
   const isSsh = selectedType === CredentialType.SSH;
+  const smtpComplete =
+    !!smtpFields.host.trim() && !!smtpFields.user.trim() && !!smtpFields.pass;
+  const smtpTouched =
+    !!smtpFields.host || !!smtpFields.user || !!smtpFields.pass || !!smtpFields.fromName;
+  const serviceAccountComplete =
+    !!serviceAccountFields.clientEmail.trim() && !!serviceAccountFields.privateKey.trim();
+  const serviceAccountTouched =
+    Object.values(serviceAccountFields).some(Boolean);
+  const sshTouched =
+    !!sshFields.host || !!sshFields.username || !!sshFields.password ||
+    !!sshFields.privateKey || !!sshFields.passphrase || !!sshFields.hostFingerprint;
   // An existing credential's secret is never sent back to the form, so the
   // fields are only filled when creating one or replacing it
   const sshComplete =
@@ -350,22 +388,35 @@ export const CredentialForm = ({ initialData }: CredentialFormProps) => {
 
     const isGoogleServiceAccount = selectedType === CredentialType.GOOGLE_SHEETS || selectedType === CredentialType.GOOGLE_CALENDAR;
 
-    if (isSsh && !isEdit && !sshComplete) {
-      form.setError("value", {
-        message: "Host, username and a password or private key are required",
-      });
+    const isSmtp = selectedType === CredentialType.SMTP;
+
+    // For the types entered as several fields: whether they were filled in
+    // completely, and whether anything was typed at all
+    const [complete, touched, missing] = isSsh
+      ? [sshComplete, sshTouched, "Host, username and a password or private key are required"]
+      : isSmtp
+        ? [smtpComplete, smtpTouched, "Host, user email and password are required"]
+        : isGoogleServiceAccount
+          ? [serviceAccountComplete, serviceAccountTouched, "Client email and private key are required"]
+          : [!!values.value, !!values.value, "Value is required"];
+
+    // Creating needs the secret. Editing with nothing typed keeps the saved
+    // one; half-filled fields would replace it with something that cannot work.
+    if (!isOAuth && !complete && (!isEdit || touched)) {
+      form.setError("value", { message: missing });
       return;
     }
 
-    const finalValue =
-      isSsh
-        ? // Editing without retyping the login keeps the stored one
-          sshComplete ? JSON.stringify(sshFields) : values.value
-        : selectedType === CredentialType.SMTP
-        ? JSON.stringify(smtpFields)
-        : isGoogleServiceAccount
-          ? JSON.stringify(serviceAccountFields)
-          : values.value;
+    // Empty means "keep the saved secret" to the server
+    const finalValue = !complete
+      ? ""
+      : isSsh
+        ? JSON.stringify(sshFields)
+        : isSmtp
+          ? JSON.stringify(smtpFields)
+          : isGoogleServiceAccount
+            ? JSON.stringify(serviceAccountFields)
+            : values.value;
 
     const finalName = values.name.trim() || fieldConfig.defaultName;
 
@@ -463,6 +514,11 @@ export const CredentialForm = ({ initialData }: CredentialFormProps) => {
               {selectedType === CredentialType.SMTP && (
                 <div className="space-y-4 rounded-md border p-4 bg-muted/20">
                   <h3 className="text-sm font-medium">SMTP Settings</h3>
+                  {isEdit && (
+                    <p className="text-xs text-muted-foreground">
+                      The saved settings are not shown. Fill the fields in again to replace them, or leave them empty to only rename the credential.
+                    </p>
+                  )}
                   <div className="grid grid-cols-2 gap-4">
                     <div className="space-y-2">
                       <label className="text-xs font-medium">Host</label>
@@ -510,6 +566,11 @@ export const CredentialForm = ({ initialData }: CredentialFormProps) => {
                       </a>
                       , enable the {selectedType === CredentialType.GOOGLE_SHEETS ? "Google Sheets" : "Google Calendar"} API, and share your {selectedType === CredentialType.GOOGLE_SHEETS ? "sheet" : "calendar"} with the service account email.
                     </p>
+                    {isEdit && (
+                      <p className="text-xs text-muted-foreground">
+                        The saved service account is not shown. Fill the fields in again to replace it, or leave them empty to only rename the credential.
+                      </p>
+                    )}
                   </div>
 
                   <div className="space-y-2">
@@ -709,10 +770,20 @@ export const CredentialForm = ({ initialData }: CredentialFormProps) => {
                       <FormControl>
                         <Input
                           type="password"
-                          placeholder={fieldConfig.secretPlaceholder}
+                          autoComplete="off"
+                          placeholder={
+                            isEdit
+                              ? "A secret is saved. Leave empty to keep it"
+                              : fieldConfig.secretPlaceholder
+                          }
                           {...field}
                         />
                       </FormControl>
+                      {isEdit && (
+                        <p className="text-xs text-muted-foreground">
+                          The saved secret is never shown. Type a new one to replace it.
+                        </p>
+                      )}
                       {fieldConfig.help && (
                         <p className="text-xs text-muted-foreground">
                           {fieldConfig.help}
@@ -723,6 +794,13 @@ export const CredentialForm = ({ initialData }: CredentialFormProps) => {
                   )}
                 />
               )}
+
+              {(selectedType === CredentialType.SMTP || isGoogleServiceAccountType) &&
+                form.formState.errors.value && (
+                  <p className="text-sm text-destructive">
+                    {form.formState.errors.value.message}
+                  </p>
+                )}
 
               <div className="flex gap-4">
                 {(isEdit || !isOAuth) && (

@@ -1,5 +1,5 @@
 import { findTriggerNodes, startWorkflowExecution } from "@/inngest/utils";
-import { getTelegramWebhookSecret } from "@/lib/telegram";
+import { getAcceptedTelegramWebhookSecrets } from "@/lib/telegram";
 import { secretsMatch } from "@/lib/webhook-security";
 import { rateLimitResponse } from "@/lib/rate-limit";
 import { type NextRequest, NextResponse } from "next/server";
@@ -19,7 +19,11 @@ export async function POST(
     const provided =
         request.headers.get("x-telegram-bot-api-secret-token") || "";
 
-    if (!secretsMatch(provided, getTelegramWebhookSecret(workflowId))) {
+    const accepted = getAcceptedTelegramWebhookSecrets(workflowId).some(
+        (secret) => secretsMatch(provided, secret)
+    );
+
+    if (!accepted) {
         return NextResponse.json(
             { success: false, error: "Invalid secret token" },
             { status: 401 }

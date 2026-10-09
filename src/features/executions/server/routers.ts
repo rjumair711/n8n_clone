@@ -4,8 +4,44 @@ import { createTRPCRouter, protectedProcedure } from "@/trpc/init";
 import z from "zod";
 import { TRPCError } from "@trpc/server";
 import { RetryError, retryExecution } from "./retry";
+import { assertOwnership } from "@/lib/ownership";
+import {
+    RETENTION_DAY_OPTIONS,
+    normalizeRetentionDays,
+} from "@/lib/execution-retention";
 
 export const executionsRouter = createTRPCRouter({
+
+    // "Execution data retention": how long the user's execution data is kept
+    getRetention: protectedProcedure.query(async ({ ctx }) => {
+        const user = await prisma.user.findUniqueOrThrow({
+            where: { id: ctx.auth.user.id },
+            select: { executionRetentionDays: true },
+        });
+
+        return { days: normalizeRetentionDays(user.executionRetentionDays) };
+    }),
+
+    setRetention: protectedProcedure
+        .input(
+            z.object({
+                days: z
+                    .number()
+                    .refine(
+                        (days) => (RETENTION_DAY_OPTIONS as readonly number[]).includes(days),
+                        `Pick one of ${RETENTION_DAY_OPTIONS.join(", ")} days`
+                    ),
+            })
+        )
+        .mutation(async ({ ctx, input }) => {
+            const user = await prisma.user.update({
+                where: { id: ctx.auth.user.id },
+                data: { executionRetentionDays: input.days },
+                select: { executionRetentionDays: true },
+            });
+
+            return { days: normalizeRetentionDays(user.executionRetentionDays) };
+        }),
 
     // RUN AGAIN: same trigger, same starting data, current workflow
     retry: protectedProcedure
@@ -33,29 +69,44 @@ export const executionsRouter = createTRPCRouter({
     // UPDATE ONE
     getOne: protectedProcedure
         .input(z.object({ id: z.string() }))
-        .query(({ ctx, input }) => {
-            return prisma.execution.findUniqueOrThrow({
-                where: {
-                    id: input.id,
-                    workflow: {
-                        userId: ctx.auth.user.id
-                    }
-                },
-                include: {
-                    workflow: {
-                        select: {
-                            id: true,
-                            name: true
+        .query(async ({ ctx, input }) => {
+            const { workflow, ...execution } = assertOwnership(
+                await prisma.execution.findUnique({
+                    where: { id: input.id },
+                    include: {
+                        workflow: {
+                            select: {
+                                id: true,
+                                name: true,
+                                userId: true,
+                            }
                         }
                     }
-                }
-            })
+                }),
+                ctx.auth.user.id,
+                "Execution",
+                (found) => found.workflow.userId
+            )
+
+            return {
+                ...execution,
+                workflow: { id: workflow.id, name: workflow.name },
+            }
         }),
 
     // Data of the workflow's most recent run, for the editor's variable picker
     getLatestData: protectedProcedure
         .input(z.object({ workflowId: z.string() }))
         .query(async ({ ctx, input }) => {
+            assertOwnership(
+                await prisma.workflow.findUnique({
+                    where: { id: input.workflowId },
+                    select: { userId: true },
+                }),
+                ctx.auth.user.id,
+                "Workflow"
+            )
+
             const execution = await prisma.execution.findFirst({
                 where: {
                     workflowId: input.workflowId,
