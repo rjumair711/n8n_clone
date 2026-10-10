@@ -6,6 +6,8 @@ import prisma from "@/lib/db";
 import { encrypt } from "@/lib/encryption";
 import { secretsMatch } from "@/lib/webhook-security";
 import { PLAN_LIMITS } from "@/config/plans";
+import { describeAuditTarget } from "@/lib/audit-actions";
+import { recordAudit } from "@/lib/audit-log";
 import {
     GOOGLE_OAUTH_STATE_COOKIE,
     createGoogleOAuthClient,
@@ -105,7 +107,7 @@ export async function GET(request: NextRequest) {
             scope: tokens.scope ?? undefined,
         };
 
-        await prisma.credential.create({
+        const created = await prisma.credential.create({
             data: {
                 name:
                     saved.name?.trim() ||
@@ -114,6 +116,13 @@ export async function GET(request: NextRequest) {
                 value: encrypt(JSON.stringify(value)),
                 userId: user.id,
             },
+            select: { id: true, name: true, type: true },
+        });
+
+        await recordAudit({
+            userId: user.id,
+            action: "credential.created",
+            target: describeAuditTarget(`${created.type} credential`, created),
         });
 
         return finish("/credentials");

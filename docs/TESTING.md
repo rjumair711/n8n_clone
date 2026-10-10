@@ -490,6 +490,26 @@ Apply the migration first (`npx prisma migrate dev`).
 | 5 | Set only `TURNSTILE_SITE_KEY`, restart | the server log has "[RXJ] Only TURNSTILE_SITE_KEY is set..."; no widget, sign-up works |
 | 6 | With both keys set, open `/login` and sign in | no widget, sign-in works: only sign-up is checked |
 
+## T12d. Audit log
+
+Needs the `audit_log` migration applied (it is applied by the production deploy that follows the merge). Open **Settings** and look at the **Audit log** card after each step; the newest line is on top.
+
+| # | Do | Expect |
+|---|----|--------|
+| 1 | Sign out and sign in with the password | "Signed in", target `Password`, your IP address, "less than a minute ago" (hover for the exact time) |
+| 2 | Enter a wrong password once, then the right one | one new "Signed in" line only: failed attempts are not listed |
+| 3 | Sign in with Google or GitHub | "Signed in", target `Google` or `GitHub` |
+| 4 | Turn two-factor on (T12b), sign out, sign in with password and code | "Two-factor authentication turned on", then one "Signed in" with target `Password and two-factor code`. There is no separate line for the password step |
+| 5 | Sign in with a backup code; make new backup codes; turn two-factor off | "Signed in" with `Password and backup code`, "New backup codes made", "Two-factor authentication turned off" |
+| 6 | Create a credential, rename it, replace its secret, delete it | "Credential created", "Credential updated" ending in `name changed`, "Credential updated" ending in `secret replaced`, "Credential deleted"; each names the type, the name and the id. The secret appears nowhere |
+| 7 | Connect a Google account under Credentials | "Credential created" for a `GOOGLE_OAUTH2 credential` |
+| 8 | Activate a workflow, deactivate it, delete it | "Workflow activated", "Workflow deactivated", "Workflow deleted", each with the workflow's name and id |
+| 9 | Create an API key and revoke it | "API key created" and "API key revoked" with the key's name and its visible prefix, never the key |
+| 10 | As admin publish a template (T10), edit it, delete it; publish one with the secret-scan override | "Template published", "Template updated", "Template deleted"; the overridden one ends in `saved despite the secret scan` |
+| 11 | Sign in as the second account and open Settings | only that account's own lines |
+| 12 | Look at the `audit_log` table | one row per line, with `userId`, `action` (for example `credential.created`), `target`, `ipAddress`, `createdAt`. No column holds a secret |
+| 13 | With more than 50 lines, click **Show more** | 50 more appear |
+
 ---
 
 # Part 2: AI (needs one model API key)
@@ -627,6 +647,31 @@ The database is shared with production, so only rows 1 and 2 are run locally. Ro
 | 3 | Open a pull request and look at the build log of its preview deployment | the "Not a Vercel production build (VERCEL_ENV=preview)" line; `npx prisma migrate status` shows the same migrations as before |
 | 4 | Merge a pull request without a migration and look at the production build log | "Vercel production build: running prisma migrate deploy.", Prisma's "No pending migrations to apply.", then "The database is up to date." |
 | 5 | Merge a pull request that adds a migration | the production build log lists that migration as applied before `next build` starts; `npx prisma migrate status` afterwards says the schema is up to date |
+
+## T19d. Security headers
+
+Start the app and look at response headers, in the browser's network tab or with `curl -sI`.
+
+| # | Do | Expect |
+|---|----|--------|
+| 1 | `curl -sI http://localhost:3000/login` in development | `X-Frame-Options: DENY`, `X-Content-Type-Options: nosniff`, `Referrer-Policy: strict-origin-when-cross-origin`, a `Permissions-Policy` that starts with `accelerometer=(), camera=()`, and `Content-Security-Policy-Report-Only` starting with `default-src 'self'`. No `Strict-Transport-Security` and no enforcing `Content-Security-Policy` |
+| 2 | The same against the deployed app (or `npm run build && npm start`) | as 1, plus `Strict-Transport-Security: max-age=63072000; includeSubDomains`; the policy has no `'unsafe-eval'` and ends with a `report-uri` at `ingest.us.sentry.io` |
+| 3 | `curl -sI <app>/api/v1/workflows` | `X-Frame-Options: DENY` and `nosniff`; no `Content-Security-Policy-Report-Only` |
+| 4 | Download a workflow file through its signed link (T9) and look at the response | still `Content-Security-Policy: sandbox; default-src 'none'` and `Referrer-Policy: no-referrer`, as before |
+| 5 | Put `<iframe src="<app>/login"></iframe>` in a local HTML file and open it | the frame stays empty; the console says the page refused to be framed |
+| 6 | Use the app normally for a few minutes with the browser console open: sign up (with Turnstile on), build and run a workflow, open Settings | everything works. `[Report Only]` lines in the console are the policy's findings, not errors: note them, they are what to fix before the policy is enforced |
+
+## T19e. Continuous integration
+
+Seen on GitHub, after the branch is pushed.
+
+| # | Do | Expect |
+|---|----|--------|
+| 1 | Open a pull request | four checks start: **Type check**, **Core node tests**, **npm audit**, **Secret scan (gitleaks)** |
+| 2 | Look at **npm audit** | it fails for as long as `npm audit --audit-level=high` reports high or critical vulnerabilities; the log lists them. The other three do not depend on it |
+| 3 | In a throwaway branch add a line like `const key = "AKIAIOSFODNN7EXAMPLE2";` with a made-up AWS-style key to a file under `src/lib`, push | **Secret scan** fails and names the file and line. Delete the branch |
+| 4 | Break a type in a throwaway branch, push | **Type check** fails |
+| 5 | The Monday after merging | Dependabot opens its pull requests (repository → Insights → Dependency graph → Dependabot shows its last run) |
 
 ## T20. Apps (one simple call each)
 

@@ -14,7 +14,7 @@ change must be safe for production.
    app runs the old code until Vercel redeploys. New columns must be
    nullable or have a default. No renames or drops in the same task; if
    something must be removed, do it in a later task after the code
-   stops using it.
+   stops using it. 
 4. Data changes (UPDATE / INSERT / backfills) go inside the migration,
    must be idempotent (safe to run twice), and must be shown to me first.
 5. Before and after any migration, run `prisma migrate status` and a

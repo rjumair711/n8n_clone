@@ -4,6 +4,8 @@ import { TRPCError } from "@trpc/server";
 import z from "zod";
 import { generateApiKey, hasApiAccess } from "@/lib/api-keys";
 import { assertOwnership } from "@/lib/ownership";
+import { describeAuditTarget } from "@/lib/audit-actions";
+import { recordAudit } from "@/lib/audit-log";
 import {
     API_SCOPES,
     normalizeScopes,
@@ -93,16 +95,27 @@ export const apiKeysRouter = createTRPCRouter({
                 },
             });
 
+            await recordAudit({
+                userId: user.id,
+                action: "api_key.created",
+                // The prefix is what the key list shows. The key itself is
+                // only ever returned once, below.
+                target: describeAuditTarget("API key", {
+                    name: `${created.name} [${created.prefix}...]`,
+                    id: created.id,
+                }),
+            });
+
             return { id: created.id, name: created.name, key };
         }),
 
     remove: protectedProcedure
         .input(z.object({ id: z.string() }))
         .mutation(async ({ ctx, input }) => {
-            assertOwnership(
+            const apiKey = assertOwnership(
                 await prisma.apiKey.findUnique({
                     where: { id: input.id },
-                    select: { userId: true },
+                    select: { userId: true, name: true, prefix: true },
                 }),
                 ctx.auth.user.id,
                 "API key"
@@ -110,6 +123,15 @@ export const apiKeysRouter = createTRPCRouter({
 
             await prisma.apiKey.delete({
                 where: { id: input.id, userId: ctx.auth.user.id },
+            });
+
+            await recordAudit({
+                userId: ctx.auth.user.id,
+                action: "api_key.revoked",
+                target: describeAuditTarget("API key", {
+                    name: `${apiKey.name} [${apiKey.prefix}...]`,
+                    id: input.id,
+                }),
             });
 
             return { id: input.id };

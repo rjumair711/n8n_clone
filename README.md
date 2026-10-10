@@ -407,6 +407,20 @@ Supported credential types:
   * **Telegram:** activating a workflow registers the bot's webhook with a `secret_token`, and every update has to carry it in `X-Telegram-Bot-Api-Secret-Token`. The token is derived from `ENCRYPTION_KEY`; without that key no webhook is registered and no update is accepted.
   * **Polar:** both places Polar can post to verify its signature with `POLAR_WEBHOOK_SECRET`: the Better Auth plugin's `/api/auth/polar/webhooks` and `/api/webhooks/polar`. Without the secret the second answers 503 and changes nothing.
 * **Inngest:** in production (`NODE_ENV=production`) the server refuses to start without `INNGEST_SIGNING_KEY`, the key that proves a call to `/api/inngest` comes from Inngest. `next build` is not affected.
+* **Security headers** on every response (`src/config/security-headers.ts`, wired in `next.config.ts`):
+
+  | Header | Value | Where |
+  | ------ | ----- | ----- |
+  | `Strict-Transport-Security` | `max-age=63072000; includeSubDomains` | everywhere, in production only |
+  | `X-Frame-Options` | `DENY` | everywhere |
+  | `X-Content-Type-Options` | `nosniff` | everywhere |
+  | `Permissions-Policy` | camera, microphone, geolocation, payment, USB and the motion sensors switched off | everywhere |
+  | `Referrer-Policy` | `strict-origin-when-cross-origin` | pages (API routes that need one set their own) |
+  | `Content-Security-Policy-Report-Only` | the policy described below | pages |
+
+  * **The Content-Security-Policy is report-only.** Browsers report what it would block and block nothing. Reports go to the app's Sentry project, or to `CSP_REPORT_URI` if that is set. It allows the app's own origin, inline scripts and styles (Next.js and the UI libraries need them), images from any https address, connections to any https or wss address, and Cloudflare's Turnstile; it refuses plugins, foreign `<base>` and form targets, and being framed. The plan is to tighten it from the reports and then enforce it.
+  * **An embeddable route has one place to be allowed.** No page can be shown in a frame on another site. When an embeddable chat widget is added, its path prefix goes into `EMBEDDABLE_PATH_PREFIXES` in `src/config/security-headers.ts`; only those paths then lose `X-Frame-Options` and `frame-ancestors 'none'`, and the route sets which sites may embed it.
+  * `preload` is not in the HSTS header: it is hard to undo. Add it there once every subdomain is https for good.
 * **Duplicate deliveries:** an event a provider sends twice starts one run, not two (see below).
 * **Webhook responses** are served with a sandbox policy so a workflow cannot run scripts on the app's origin.
 * **Sign-in:** email verification for password sign-ups, password reset by email, Google and GitHub sign-in.
@@ -575,6 +589,15 @@ The **Settings** page (sidebar) holds two things.
 * **Sign-in lockout.** Ten wrong passwords for one account within 15 minutes lock password sign-in for that account for 15 minutes, whatever addresses the attempts came from. The answer is the same for addresses that have no account. The lock ends by itself after the 15 minutes, and a correct password then starts the count again; resetting the password does not lift it early. Google and GitHub sign-in are not affected. Anyone who knows an address can lock its password sign-in this way, which is the price of the rule.
 * **Sign-in rate limit.** Password and two-factor code attempts are limited per IP address (`SIGN_IN_RATE_LIMIT_PER_MINUTE`, default 20). The address is read from the proxy headers Better Auth trusts (`x-forwarded-for`), so the app has to run behind a proxy that sets it, as it does on Vercel.
 * **Passkeys** are not included: in the installed Better Auth (1.6) they are a separate package, `@better-auth/passkey`, which is not installed.
+* **Audit log.** The Settings page lists what happened on the account, latest first, with the time and the IP address it came from:
+  * credentials created, updated (saying whether the secret was replaced or only the name changed) and deleted, including Google and Salesforce accounts connected through their sign-in;
+  * workflows activated, deactivated and deleted;
+  * API keys created and revoked (by name and visible prefix);
+  * templates published, updated and deleted, saying when one was saved despite the secret scan;
+  * sign-ins, with how: password, password and two-factor code or backup code, Google, GitHub, or the email confirmation link. A password that still needs a two-factor code is not a sign-in until the code is accepted. Failed attempts are not listed;
+  * two-factor authentication turned on or off, and new backup codes.
+
+  Each line holds the action, a name and id of what it was done to, the address and the time; never a secret, a key or a password. Lines are only ever added: the app has no way to change or remove one, and they go when the account itself is deleted. Each user sees their own log. If a line cannot be written, the action it describes still succeeds and the failure is logged on the server.
 
 ## Limits against abuse
 
@@ -641,6 +664,21 @@ NODE_OPTIONS=--max-old-space-size=8192 npx tsc --noEmit
 
 Step-by-step workflows for testing every node by hand are in [`docs/TESTING.md`](docs/TESTING.md).
 
+## Continuous integration
+
+`.github/workflows/ci.yml` runs on every pull request and on every push to `main`. It has four jobs, each of which fails the run on its own:
+
+| Job | What it runs |
+| --- | ------------ |
+| Type check | `npx tsc --noEmit` (with the 8 GB heap the project needs) |
+| Core node tests | `npx tsx --conditions=react-server src/inngest/__test__/testCoreNodes.ts` |
+| npm audit | `npm audit --audit-level=high`: fails on a known vulnerability of high or critical severity in any dependency |
+| Secret scan | [gitleaks](https://github.com/gitleaks/gitleaks) over the commits of the push or pull request, with `.gitleaks.toml` |
+
+* The jobs only read the repository. None has the database address or any other secret of the app, and none migrates or deploys: `DATABASE_URL` in the workflow is a placeholder that `prisma generate` reads without connecting.
+* `.gitleaks.toml` uses gitleaks' own rules and skips two places that hold made-up secrets on purpose: `src/inngest/__test__/` and `docs/TESTING.md`. A real secret must never go into those.
+* `.github/dependabot.yml` has Dependabot open pull requests once a week: one for all minor and patch updates of npm packages, separate ones for major updates, security updates and GitHub Actions. They run through the same CI and are merged by hand, because a merge to `main` deploys.
+
 ## Deploying (Vercel)
 
 The live app on Vercel and local development use the **same** database, so the schema only changes in one controlled way.
@@ -676,6 +714,7 @@ The live app on Vercel and local development use the **same** database, so the s
 | `ALLOW_PRIVATE_NETWORK_REQUESTS` | `true` lets workflows reach every private address. Still works, but logs a warning: prefer `PRIVATE_NETWORK_ALLOWLIST` |
 | `WEBHOOK_RATE_LIMIT_PER_MINUTE`, `API_RATE_LIMIT_PER_MINUTE` | Requests per minute for one workflow's webhook URL, and for one API key. Default 120 each |
 | `TURNSTILE_SITE_KEY`, `TURNSTILE_SECRET_KEY` | Cloudflare Turnstile on the sign-up form. Both or neither: with neither the check is off |
+| `CSP_REPORT_URI` | Where browsers send Content-Security-Policy reports. Not set: the app's Sentry project |
 | `SIGN_IN_RATE_LIMIT_PER_MINUTE` | Password and two-factor code attempts per minute from one IP address, default 20 |
 | `WEBHOOK_RESPONSE_TIMEOUT_MS` | How long a webhook waits for the workflow's response, default 25000 |
 | `SANDBOX_MAX_OUTPUT_KB` | The most a Code node or one expression may return, in KB, default 1024 |

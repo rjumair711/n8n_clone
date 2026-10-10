@@ -1,5 +1,15 @@
 import { withSentryConfig } from "@sentry/nextjs";
 import type { NextConfig } from "next";
+import {
+  getSecurityHeaderRules,
+  getSentryCspReportUri,
+} from "./src/config/security-headers";
+
+// The DSN the Sentry configs use; public by design. Violations of the
+// report-only Content-Security-Policy are sent to the same Sentry project,
+// unless CSP_REPORT_URI names another endpoint.
+const SENTRY_DSN =
+  "https://b9e51a0f783724171c76397b7177ede0@o4509519524200448.ingest.us.sentry.io/4510924234948608";
 
 const nextConfig: NextConfig = {
 
@@ -13,6 +23,15 @@ const nextConfig: NextConfig = {
   },
 
   devIndicators: false,
+
+  // HSTS, X-Frame-Options, Referrer-Policy, Permissions-Policy and a
+  // report-only Content-Security-Policy. See src/config/security-headers.ts,
+  // also for where to make an exception for an embeddable route.
+  async headers() {
+    return getSecurityHeaderRules({
+      reportUri: process.env.CSP_REPORT_URI || getSentryCspReportUri(SENTRY_DSN),
+    });
+  },
 
   // The Code node sandbox loads a .wasm file at runtime; keep it out of the bundle
   // ssh2 loads optional native add-ons at runtime

@@ -1,0 +1,20 @@
+# Configuration for the gitleaks secret scan (.github/workflows/ci.yml).
+
+title = "RXJ gitleaks configuration"
+
+# Every rule gitleaks ships with
+[extend]
+useDefault = true
+
+# Places that hold made-up secrets on purpose. Nothing real belongs in
+# them: a real key added to one of these files would not be reported.
+[allowlist]
+description = "Example and test values that only look like secrets"
+paths = [
+    # Fake keys and tokens used to test redaction, the template secret scan
+    # and webhook signatures
+    '''^src/inngest/__test__/''',
+    # Example values in the manual test steps, and Cloudflare's public
+    # Turnstile test keys
+    '''^docs/TESTING\.md$''',
+]

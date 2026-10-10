@@ -8,6 +8,9 @@ import { assertOwnership } from "@/lib/ownership";
 import { createTRPCRouter, protectedProcedure } from "@/trpc/init";
 import { describeUserAgent } from "../lib/user-agent";
 
+// The most lines of the audit log the settings page can ask for at once
+const AUDIT_LOG_MAX_ROWS = 500;
+
 export const settingsRouter = createTRPCRouter({
     // What the Security section needs to know about the account
     getSecurity: protectedProcedure.query(async ({ ctx }) => {
@@ -52,6 +55,35 @@ export const settingsRouter = createTRPCRouter({
             isCurrent: session.id === ctx.auth.session.id,
         }));
     }),
+
+    // The account's own audit log, latest first. There is no procedure that
+    // changes or removes a line.
+    getAuditLog: protectedProcedure
+        .input(
+            z.object({
+                limit: z.number().int().min(1).max(AUDIT_LOG_MAX_ROWS).default(50),
+            })
+        )
+        .query(async ({ ctx, input }) => {
+            // One more than asked for says whether there is more to show
+            const rows = await prisma.auditLog.findMany({
+                where: { userId: ctx.auth.user.id },
+                orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+                take: input.limit + 1,
+                select: {
+                    id: true,
+                    action: true,
+                    target: true,
+                    ipAddress: true,
+                    createdAt: true,
+                },
+            });
+
+            return {
+                items: rows.slice(0, input.limit),
+                hasMore: rows.length > input.limit,
+            };
+        }),
 
     // Signs one other session out
     revokeSession: protectedProcedure

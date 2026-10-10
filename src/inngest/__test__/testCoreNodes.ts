@@ -3010,6 +3010,316 @@ const main = async () => {
     assert.equal(/secretKey/.test(page), false);
   });
 
+  // ------------------------------------- SECURITY HEADERS, CI AND AUDIT LOG
+  console.log("Security headers, CI and audit log");
+
+  await test("every response gets the security headers, with one place for an embeddable route", async () => {
+    const security = await import("@/config/security-headers");
+    const { readFileSync } = await import("node:fs");
+    const { join } = await import("node:path");
+
+    // How Next.js reads a `source`: the whole path has to match
+    const matches = (source: string, path: string) =>
+      new RegExp(`^${source.replace("/:path*", "(?:/.*)?")}$`).test(path);
+    const headersFor = (rules: ReturnType<typeof security.getSecurityHeaderRules>, path: string) =>
+      Object.fromEntries(
+        rules
+          .filter((rule) => matches(rule.source, path))
+          .flatMap((rule) => rule.headers.map((header) => [header.key, header.value]))
+      );
+
+    const rules = security.getSecurityHeaderRules({ production: true, reportUri: "https://reports.example/csp" });
+
+    for (const path of ["/", "/workflows", "/workflows/abc", "/login", "/apiary", "/settings"]) {
+      const headers = headersFor(rules, path);
+
+      assert.equal(headers["Strict-Transport-Security"], "max-age=63072000; includeSubDomains", path);
+      assert.equal(headers["X-Frame-Options"], "DENY", path);
+      assert.equal(headers["X-Content-Type-Options"], "nosniff", path);
+      assert.equal(headers["Referrer-Policy"], "strict-origin-when-cross-origin", path);
+      assert.match(headers["Permissions-Policy"], /camera=\(\), geolocation=\(\).*microphone=\(\), payment=\(\)/, path);
+      // Reported, not enforced
+      assert.equal(headers["Content-Security-Policy"], undefined, path);
+      assert.match(headers["Content-Security-Policy-Report-Only"], /^default-src 'self'; /, path);
+    }
+
+    const csp = headersFor(rules, "/workflows")["Content-Security-Policy-Report-Only"];
+    for (const directive of [
+      "default-src 'self'",
+      "script-src 'self' 'unsafe-inline' https://challenges.cloudflare.com",
+      "frame-src 'self' https://challenges.cloudflare.com",
+      "object-src 'none'",
+      "base-uri 'self'",
+      "form-action 'self'",
+      "frame-ancestors 'none'",
+      "report-uri https://reports.example/csp",
+    ]) {
+      assert.ok(csp.split("; ").includes(directive), directive);
+    }
+    assert.equal(/unsafe-eval/.test(csp), false);
+
+    // API routes: framing and sniffing are still refused; they keep their
+    // own Referrer-Policy and Content-Security-Policy where they set one
+    for (const path of ["/api", "/api/files/abc", "/api/webhooks/trigger/wf"]) {
+      const headers = headersFor(rules, path);
+
+      assert.equal(headers["X-Frame-Options"], "DENY", path);
+      assert.equal(headers["X-Content-Type-Options"], "nosniff", path);
+      assert.ok(headers["Strict-Transport-Security"], path);
+      assert.equal(headers["Referrer-Policy"], undefined, path);
+      assert.equal(headers["Content-Security-Policy-Report-Only"], undefined, path);
+    }
+
+    // Development: no HSTS, and React's dev tools may use eval
+    const development = security.getSecurityHeaderRules({ production: false });
+    const devHeaders = headersFor(development, "/workflows");
+    assert.equal(devHeaders["Strict-Transport-Security"], undefined);
+    assert.equal(devHeaders["X-Frame-Options"], "DENY");
+    assert.match(devHeaders["Content-Security-Policy-Report-Only"], /'unsafe-eval'/);
+    assert.equal(/report-uri/.test(devHeaders["Content-Security-Policy-Report-Only"]), false);
+
+    // The exception point: nothing is embeddable today...
+    assert.deepEqual(security.EMBEDDABLE_PATH_PREFIXES, []);
+    assert.equal(security.allPathsExcept([]), "/:path*");
+
+    // ...and a prefix added there, and only that, may be framed
+    const embeddable = security.getSecurityHeaderRules({ production: true, embeddablePrefixes: ["/embed"] });
+    for (const path of ["/embed", "/embed/chat/wf_1"]) {
+      const headers = headersFor(embeddable, path);
+
+      assert.equal(headers["X-Frame-Options"], undefined, path);
+      assert.equal(/frame-ancestors/.test(headers["Content-Security-Policy-Report-Only"]), false, path);
+      assert.match(headers["Content-Security-Policy-Report-Only"], /^default-src 'self'; /, path);
+      assert.ok(headers["Strict-Transport-Security"], path);
+      assert.equal(headers["X-Content-Type-Options"], "nosniff", path);
+    }
+    for (const path of ["/", "/workflows", "/embedded", "/workflows/embed", "/api/embed"]) {
+      assert.equal(headersFor(embeddable, path)["X-Frame-Options"], "DENY", path);
+    }
+    assert.match(headersFor(embeddable, "/embedded")["Content-Security-Policy-Report-Only"], /frame-ancestors 'none'/);
+
+    // Reports go to Sentry's endpoint for the project of the DSN
+    assert.equal(
+      security.getSentryCspReportUri("https://abc123@o1.ingest.us.sentry.io/456"),
+      "https://o1.ingest.us.sentry.io/api/456/security/?sentry_key=abc123"
+    );
+    for (const dsn of [undefined, "", "not a url", "http://abc@host/456", "https://host/456", "https://abc@host/project"]) {
+      assert.equal(security.getSentryCspReportUri(dsn), null, String(dsn));
+    }
+
+    const config = readFileSync(join(process.cwd(), "next.config.ts"), "utf8");
+    assert.match(config, /async headers\(\) \{\s*return getSecurityHeaderRules\(/);
+  });
+
+  await test("CI runs the type check, the tests, npm audit and gitleaks; Dependabot is set up", async () => {
+    const { readFileSync } = await import("node:fs");
+    const { join } = await import("node:path");
+    const read = (path: string) => readFileSync(join(process.cwd(), path), "utf8");
+
+    const workflow = read(".github/workflows/ci.yml");
+    for (const text of [
+      "pull_request:",
+      "branches: [main]",
+      "npx tsc --noEmit",
+      "npx tsx --conditions=react-server src/inngest/__test__/testCoreNodes.ts",
+      "npm audit --audit-level=high",
+      "gitleaks/gitleaks-action@",
+      "fetch-depth: 0",
+    ]) {
+      assert.ok(workflow.includes(text), text);
+    }
+    // Read-only, and nothing in it can reach or change the database
+    assert.match(workflow, /permissions:\s+contents: read/);
+    assert.equal(/prisma migrate|prisma db|VERCEL_ENV|secrets\.DATABASE_URL/.test(workflow), false);
+    assert.equal(/continue-on-error/.test(workflow), false);
+
+    const gitleaks = read(".gitleaks.toml");
+    assert.match(gitleaks, /useDefault = true/);
+
+    const dependabot = read(".github/dependabot.yml");
+    assert.match(dependabot, /package-ecosystem: npm/);
+    assert.match(dependabot, /package-ecosystem: github-actions/);
+    assert.match(dependabot, /interval: weekly/);
+  });
+
+  await test("audit log entries name the action, the target and the address, never a secret", async () => {
+    const audit = await import("@/lib/audit-actions");
+
+    assert.equal(audit.describeAuditTarget("Workflow", { name: "Daily report", id: "wf_1" }), 'Workflow "Daily report" (wf_1)');
+    assert.equal(audit.describeAuditTarget("Workflow", { id: "wf_1" }), "Workflow (wf_1)");
+    assert.equal(audit.describeAuditTarget("Workflow"), "Workflow");
+    // A name is kept on one line and cut to a sane length
+    assert.equal(audit.describeAuditTarget("Credential", { name: "  My\n key\t name ", id: "c1" }), 'Credential "My key name" (c1)');
+    assert.ok(audit.describeAuditTarget("Credential", { name: "x".repeat(5000), id: "c1" }).length <= 200);
+
+    const ip = (headers: Record<string, string>) => audit.getRequestIp(new Headers(headers));
+    assert.equal(ip({ "x-forwarded-for": "203.0.113.7, 10.0.0.1" }), "203.0.113.7");
+    assert.equal(ip({ "x-forwarded-for": " 2001:db8::1 " }), "2001:db8::1");
+    assert.equal(ip({ "x-real-ip": "198.51.100.4" }), "198.51.100.4");
+    assert.equal(ip({}), null);
+    assert.equal(audit.getRequestIp(null), null);
+    // Only an address is stored, not whatever the header was made to hold
+    assert.equal(ip({ "x-forwarded-for": "<script>alert(1)</script>" }), null);
+    assert.equal(ip({ "x-forwarded-for": "x".repeat(500) }), null);
+
+    for (const action of Object.keys(audit.AUDIT_ACTIONS)) {
+      assert.notEqual(audit.getAuditActionLabel(action), action, action);
+    }
+    assert.equal(audit.getAuditActionLabel("something.new"), "something.new");
+
+    // Every action the task asked for is recorded where it happens
+    const { readFileSync } = await import("node:fs");
+    const { join } = await import("node:path");
+    const read = (path: string) => readFileSync(join(process.cwd(), path), "utf8");
+
+    const recorded: [string, string[]][] = [
+      ["src/features/credentials/server/routers.ts", ["credential.created", "credential.updated", "credential.deleted"]],
+      ["src/app/api/oauth/google/callback/route.ts", ["credential.created"]],
+      ["src/app/api/oauth/salesforce/callback/route.ts", ["credential.created"]],
+      ["src/features/workflows/server/routers.ts", ["workflow.activated", "workflow.deactivated", "workflow.deleted"]],
+      ["src/features/api-keys/server/routers.ts", ["api_key.created", "api_key.revoked"]],
+      ["src/features/templates/server/routers.ts", ["template.published", "template.updated", "template.deleted"]],
+    ];
+    for (const [path, actions] of recorded) {
+      const source = read(path);
+      assert.match(source, /recordAudit\(\{/, path);
+      for (const action of actions) assert.ok(source.includes(`"${action}"`), `${path} records ${action}`);
+      // What is written about a target is its kind, name and id
+      for (const call of source.split("recordAudit({").slice(1)) {
+        const body = call.slice(0, call.indexOf("});"));
+        assert.equal(
+          /\bvalue\b|keyHash|\bkey[,:)]|password|refreshToken|encrypt\(|decrypt\(/.test(body.replace(/\/\/.*$/gm, "")),
+          false,
+          `${path}: ${body.slice(0, 80)}`
+        );
+      }
+    }
+
+    // Writing a line can never fail the action it is about
+    const writer = read("src/lib/audit-log.ts");
+    assert.match(writer, /try \{\s*await prisma\.auditLog\.create\(/);
+    assert.match(writer, /\} catch \(error\) \{\s*console\.error\(/);
+
+    // A user reads their own lines; nothing updates or deletes one
+    const settings = read("src/features/settings/server/routers.ts");
+    assert.match(settings, /prisma\.auditLog\.findMany\(\{\s*where: \{ userId: ctx\.auth\.user\.id \}/);
+    const sources = ["src/lib", "src/features", "src/app"];
+    const { readdirSync } = await import("node:fs");
+    const walk = (directory: string): string[] =>
+      readdirSync(join(process.cwd(), directory), { withFileTypes: true }).flatMap((entry) =>
+        entry.isDirectory()
+          ? walk(`${directory}/${entry.name}`)
+          : /\.tsx?$/.test(entry.name)
+            ? [`${directory}/${entry.name}`]
+            : []
+      );
+    for (const path of sources.flatMap(walk)) {
+      assert.equal(
+        /auditLog\.(update|updateMany|delete|deleteMany|upsert)\(/.test(read(path)),
+        false,
+        `${path} changes or deletes audit log lines`
+      );
+    }
+  });
+
+  await test("sign-ins and two-factor changes are told apart for the audit log", async () => {
+    const { getAuthAuditEvent } = await import("@/lib/audit-actions");
+    const user = { id: "user_1", twoFactorEnabled: false };
+    const withTwoFactor = { id: "user_1", twoFactorEnabled: true };
+    const session = (of: typeof user) => ({ user: of, session: { id: "s1" } });
+
+    // A password sign-in without two-factor
+    assert.deepEqual(
+      getAuthAuditEvent({ path: "/sign-in/email", returned: { token: "t" }, newSession: session(user) }),
+      { userId: "user_1", action: "auth.sign_in", target: "Password" }
+    );
+    // With two-factor the password alone is not a sign-in yet...
+    assert.equal(
+      getAuthAuditEvent({
+        path: "/sign-in/email",
+        returned: { twoFactorRedirect: true },
+        newSession: session(withTwoFactor),
+      }),
+      null
+    );
+    // ...the accepted code is
+    assert.deepEqual(
+      getAuthAuditEvent({ path: "/two-factor/verify-totp", returned: { token: "t" }, newSession: session(withTwoFactor) }),
+      { userId: "user_1", action: "auth.sign_in", target: "Password and two-factor code" }
+    );
+    assert.deepEqual(
+      getAuthAuditEvent({ path: "/two-factor/verify-backup-code", returned: { token: "t" }, newSession: session(withTwoFactor) })?.target,
+      "Password and backup code"
+    );
+
+    // A wrong password, a wrong code, a locked account: nothing
+    for (const path of ["/sign-in/email", "/two-factor/verify-totp", "/two-factor/disable", "/callback/:id"]) {
+      for (const statusCode of [400, 401, 403, 429, 500]) {
+        assert.equal(
+          getAuthAuditEvent({ path, returned: { statusCode }, newSession: session(user), priorSession: session(user) }),
+          null,
+          `${path} ${statusCode}`
+        );
+      }
+    }
+    assert.equal(getAuthAuditEvent({ path: "/sign-in/email", returned: { token: "t" }, newSession: null }), null);
+
+    // Google and GitHub: the callback redirects (302) and has started a session
+    assert.deepEqual(
+      getAuthAuditEvent({ path: "/callback/:id", returned: { statusCode: 302 }, newSession: session(user), provider: "google" }),
+      { userId: "user_1", action: "auth.sign_in", target: "Google" }
+    );
+    assert.equal(getAuthAuditEvent({ path: "/callback/:id", returned: { statusCode: 302 }, newSession: null, provider: "github" }), null);
+    assert.equal(
+      getAuthAuditEvent({ path: "/callback/:id", returned: { statusCode: 302 }, newSession: session(user), provider: "github" })?.target,
+      "GitHub"
+    );
+    // The provider is part of the URL: an unknown one is not copied into the log
+    assert.equal(
+      getAuthAuditEvent({ path: "/callback/:id", returned: { statusCode: 302 }, newSession: session(user), provider: "<b>x</b>" })?.target,
+      "Another account"
+    );
+
+    // The first code after setup, entered while signed in, turns two-factor on
+    assert.deepEqual(
+      getAuthAuditEvent({
+        path: "/two-factor/verify-totp",
+        returned: { token: "t" },
+        newSession: session(withTwoFactor),
+        priorSession: session(user),
+      }),
+      { userId: "user_1", action: "two_factor.enabled", target: null }
+    );
+    // A code entered while signed in with two-factor already on changes nothing
+    assert.equal(
+      getAuthAuditEvent({ path: "/two-factor/verify-totp", returned: { token: "t" }, priorSession: session(withTwoFactor) }),
+      null
+    );
+
+    assert.deepEqual(
+      getAuthAuditEvent({ path: "/two-factor/disable", returned: { status: true }, priorSession: session(withTwoFactor) }),
+      { userId: "user_1", action: "two_factor.disabled", target: null }
+    );
+    assert.deepEqual(
+      getAuthAuditEvent({ path: "/two-factor/generate-backup-codes", returned: { status: true }, priorSession: session(withTwoFactor) })?.action,
+      "two_factor.backup_codes_regenerated"
+    );
+    // Starting the setup is not a change yet, and without a session nothing is
+    assert.equal(getAuthAuditEvent({ path: "/two-factor/enable", returned: { totpURI: "x" }, priorSession: session(user) }), null);
+    assert.equal(getAuthAuditEvent({ path: "/two-factor/disable", returned: { status: true } }), null);
+
+    for (const path of ["/get-session", "/sign-out", "/sign-up/email", "/list-sessions", undefined]) {
+      assert.equal(getAuthAuditEvent({ path, returned: {}, newSession: session(user), priorSession: session(user) }), null, String(path));
+    }
+
+    // Recorded after the two-factor plugin has had its say
+    const { readFileSync } = await import("node:fs");
+    const { join } = await import("node:path");
+    const authSource = readFileSync(join(process.cwd(), "src/lib/auth.ts"), "utf8");
+    const plugins = authSource.slice(authSource.indexOf("  plugins: ["));
+    assert.ok(plugins.indexOf("twoFactor({") > 0 && plugins.indexOf("twoFactor({") < plugins.indexOf("auditLogPlugin,"));
+  });
+
   // ------------------------------------------------------------- API KEYS
   console.log("API keys");
 

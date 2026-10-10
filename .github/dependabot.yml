@@ -1,0 +1,27 @@
+# Dependabot opens pull requests for dependency updates. They go through the
+# same CI as any other pull request, and are merged by hand: a merge to main
+# deploys to production.
+
+version: 2
+
+updates:
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+    open-pull-requests-limit: 5
+    groups:
+      # One pull request for all minor and patch updates of the week.
+      # Major updates and security updates come separately.
+      minor-and-patch:
+        update-types:
+          - minor
+          - patch
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+    open-pull-requests-limit: 5
