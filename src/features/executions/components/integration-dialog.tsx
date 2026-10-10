@@ -38,6 +38,7 @@ import { useTRPC } from "@/trpc/client";
 import { useQuery } from "@tanstack/react-query";
 import { useParams } from "next/navigation";
 import { ChatModelField, type ChatModelNodeType } from "./chat-model-field";
+import { FallbackModelsField, cleanFallbackModels } from "./fallback-models-field";
 
 export type IntegrationField = {
   name: string;
@@ -46,7 +47,9 @@ export type IntegrationField = {
   // option saved as "true" or "false"
   // "model" is a chat model's ID: a text field with suggestions and a
   // "Load models" button (see chat-model-field.tsx)
-  type?: "text" | "textarea" | "select" | "workflow" | "switch" | "model";
+  // "fallbacks" is a Chat Model's ordered list of models to try next
+  // (see fallback-models-field.tsx), saved as a JSON string
+  type?: "text" | "textarea" | "select" | "workflow" | "switch" | "model" | "fallbacks";
   // For "model": the node the field belongs to
   modelNodeType?: ChatModelNodeType;
   // Other fields to set when this one changes, e.g. a provider preset
@@ -248,6 +251,13 @@ export const IntegrationDialog = ({
 
     if (!valid) return;
 
+    // Lines of a fallback list that were left without a model are dropped
+    for (const field of config.fields) {
+      if (field.type === "fallbacks") {
+        values[field.name] = cleanFallbackModels(values[field.name]);
+      }
+    }
+
     onSubmit?.(values);
     onOpenChange(false);
   };
@@ -427,6 +437,11 @@ export const IntegrationDialog = ({
                         provider={form.watch("provider")}
                         baseUrl={form.watch("baseUrl")}
                         credentialId={form.watch("credentialId")}
+                      />
+                    ) : definition.type === "fallbacks" ? (
+                      <FallbackModelsField
+                        value={field.value ?? ""}
+                        onChange={field.onChange}
                       />
                     ) : definition.type === "select" ? (
                       <Select

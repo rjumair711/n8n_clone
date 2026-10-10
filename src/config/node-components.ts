@@ -39,6 +39,7 @@ import { WhatsappNode } from '@/features/executions/components/whatsapp/node';
 import {
     AggregateNode,
     ChatModelNode,
+    ModelRouterNode,
     DeepSeekNode,
     KimiNode,
     QwenNode,
@@ -137,6 +138,7 @@ export const nodeComponents: NodeTypes = {
     [NodeType.EXECUTE_WORKFLOW]: ExecuteWorkflowNode,
     [NodeType.EXECUTE_WORKFLOW_TRIGGER]: ExecuteWorkflowTriggerNode,
     [NodeType.CHAT_MODEL]: ChatModelNode,
+    [NodeType.MODEL_ROUTER]: ModelRouterNode,
     [NodeType.DEEPSEEK]: DeepSeekNode,
     [NodeType.KIMI]: KimiNode,
     [NodeType.QWEN]: QwenNode,

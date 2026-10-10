@@ -150,7 +150,7 @@ Realtime workflow updates use:
 
 Works like the n8n AI Agent: a chat model that decides which tools to call and loops until it has an answer.
 
-* **Chat Model (required):** connect an OpenAI, Anthropic, Gemini, DeepSeek, Kimi, Qwen or Chat Model node to the Chat Model port; its credential and model are used.
+* **Chat Model (required):** connect an OpenAI, Anthropic, Gemini, DeepSeek, Kimi, Qwen or Chat Model node to the Chat Model port; its credential and model are used. A **Model Router** can be connected instead, to try a cheap model first (see below).
 * **Parser (optional):** a Structured Output Parser makes the agent answer with JSON in a structure you define; `{{output}}` becomes an object.
 * **Memory (optional):** a Buffer Memory node keeps the last N messages per session and replays them as real chat turns.
 * **Tools (optional):** any node connected to the Tools port becomes a tool. Give each one a name and description in the agent's settings. An MCP Client node adds all the tools of an MCP server; an Execute Workflow node makes another workflow a tool; a Vector Store node lets the agent search your documents.
@@ -222,10 +222,45 @@ The Chat Model node's **Provider** dropdown fills in the provider's base URL and
 * **Retired model IDs.** Providers retire models. Moonshot discontinued the `moonshot-v1` models (the Kimi node's old default) on 31 August 2026, and DeepSeek announced the end of the `deepseek-chat` and `deepseek-reasoner` names for 24 July 2026. A node saved with one of those keeps it, and its dialog says so and names a current model; the node is not switched on its own, because another model has another price.
 * The model IDs above are what each provider's documentation showed on 10 October 2026. They go out of date; Load models does not.
 
+### Fallback models
+
+A Chat Model node can name up to 5 **Fallback Models**: an ordered list of other models to try when its own model does not answer.
+
+* **When the next model is tried:** the model timed out (Fallback Timeout, 60 seconds by default), answered HTTP 429 or a 5xx error, or could not be reached. A wrong API key or a bad request (401, 400...) is **not** passed on to a fallback: that is a mistake in the settings, and the run fails with the provider's own error.
+* **Each line** has a model ID and, optionally, another provider preset and another credential. Left as they are, the node's own provider and credential are used, which is the usual case for a second model at the same provider. Another provider needs its own credential.
+* **Where it applies:** when the node runs as a step, and when it is the model of an AI Agent, a Text Classifier or an Information Extractor. In an agent's loop every call starts with the first model again.
+* **The last model** on the list has no time limit, because nothing can take over from it.
+* If every model fails, the error names each one and why: `all 3 models failed (openrouter / a: HTTP 429; groq / b: timeout; ...)`.
+
+The DeepSeek, Kimi, Qwen, OpenAI, Anthropic and Gemini nodes have no fallback list. Put them behind a Model Router, or use a Chat Model node.
+
+### Model Router
+
+A sub-node for the AI Agent's **Chat Model** port. Plug one model node into its **Cheap** port and another into its **Strong** port, and connect the router to the agent.
+
+* The agent asks the **cheap** model first.
+* The **strong** model takes over when the cheap one returns **any error** (also a wrong key) or takes longer than Cheap Model Timeout (120 seconds by default). If the cheap node is a Chat Model with fallbacks, a timeout, 429 or 5xx tries those first.
+* With a **Structured Output Parser** on the agent: when the cheap model's final answer does not have the required structure, the strong model answers instead (option "Switch when the output parser fails", on by default). The tools are **not** run a second time: the strong model is given the question, what the tools returned and the cheap model's draft. "Fails validation" means what it meant before: the answer is not JSON that can be read.
+* If the strong model fails too, the run fails as it would without a router.
+
+### Which model answered
+
+Nodes that can switch models say so in their output:
+
+| Field | Meaning |
+| ----- | ------- |
+| `modelUsed`, `providerUsed` | The model that gave the (final) answer |
+| `fallbackUsed` | `true` when a model other than the first choice answered at least one call |
+| `modelAttempts` | Every attempt in order: `{ provider, model, outcome }`, where outcome is `answered`, `timeout`, `connection error`, `HTTP 429`... The provider's error text is not kept here |
+| `modelRoute` | AI Agent with a Model Router only: `{ tier: "cheap" \| "strong", reason }` |
+
+They are on the Chat Model, DeepSeek, Kimi and Qwen nodes (`{{chatModel.modelUsed}}`) and on the AI Agent (`{{aiAgentOutput.modelUsed}}`); the Text Classifier and Information Extractor have `modelUsed` and `fallbackUsed`. Token usage and cost (see AI token usage and cost) are recorded per model that answered, each at its own price.
+
 ## AI nodes
 
 | Node | Description |
 | ---- | ----------- |
+| Model Router | Plugs into the AI Agent's Chat Model port: a cheap model first, a stronger one when it fails or its answer does not fit the parser |
 | Text Classifier | Sorts text into your categories with a connected model and continues on that category's output |
 | Information Extractor | Pulls named values (`name (type): description`) out of free text |
 | Structured Output Parser | Plugs into the AI Agent's Parser port to force a JSON structure |
@@ -591,11 +626,11 @@ Every call to a language or embedding model is written down with the tokens the 
 
 * **Price table.** An admin with two-factor on sets what each model costs under **Settings → AI model prices**: provider, model, and US dollars per million input, output and cached input tokens. Provider and model are matched exactly, ignoring case. The provider is `openai`, `anthropic`, `gemini`, the Chat Model preset (`openrouter`, `deepseek`, `kimi`...) or `custom`. The table starts empty; the card lists the models that ran without a price so they can be added with one click. Price changes are in the audit log.
 * **Cost** is worked out when the call is made, from the price at that moment. Changing a price later does not change calls already recorded. A model without a price shows as "No price": it is not counted as free and not counted as money.
-* **Execution view.** An execution's page has an **AI usage** table: one line per node and model with calls, tokens and cost, and the total of the run. An AI Agent's calls are one line.
+* **Execution view.** An execution's page has an **AI usage** table: one line per node and model with calls, tokens and cost, and the total of the run. An AI Agent's calls are one line per model that answered.
 * **Billing page.** **AI spend this month** shows the total since the 1st (UTC), the tokens, and the spend per workflow.
 * **Budgets (optional).** A monthly AI budget can be set for the account (Billing page) and for a workflow (editor → settings icon → **Monthly AI budget**). When the month's spend reaches a budget, the next node that calls a model stops the run with "Monthly AI budget reached..." until the budget is raised, removed, or the month ends. The check runs before each AI node, so the month can end slightly over the budget, by what the last node cost.
 
-The amounts are estimates for keeping an eye on spend. You pay your providers directly and their invoice is what counts: tokens written to a provider's cache are priced as normal input, an AI Agent run that fails halfway is not recorded, and a model without a price does not count towards a budget.
+The amounts are estimates for keeping an eye on spend. You pay your providers directly and their invoice is what counts: tokens written to a provider's cache are priced as normal input, and a model without a price does not count towards a budget.
 
 ---
 

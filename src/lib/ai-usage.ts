@@ -10,6 +10,10 @@ import {
     type TokenUsage,
 } from "./ai-cost";
 import prisma from "./db";
+import {
+    sumCallsByModel,
+    type ModelTracker,
+} from "@/features/executions/lib/model-fallback";
 
 // Where a model call was made. Taken from the executor's parameters.
 export type AiUsageScope = {
@@ -102,6 +106,17 @@ export const recordAiUsage = async ({
             "[RXJ] Could not record AI usage:",
             error instanceof Error ? error.message : error
         );
+    }
+};
+
+/**
+ * Writes down what a node's model calls used, one line per model that
+ * answered: with fallbacks or a Model Router that can be more than one, and
+ * each has its own price. Like recordAiUsage, it never throws.
+ */
+export const recordModelCalls = async (scope: AiUsageScope, tracker: ModelTracker) => {
+    for (const { provider, model, usage } of sumCallsByModel(tracker)) {
+        await recordAiUsage({ scope, provider, model, usage });
     }
 };
 

@@ -72,6 +72,7 @@ const RUN_ONCE_TYPES = new Set([
   "STOP_AND_ERROR",
   "BUFFER_MEMORY",
   "STRUCTURED_OUTPUT_PARSER",
+  "MODEL_ROUTER",
 ]);
 
 // Decide per item which output it leaves through; the item itself is

@@ -144,6 +144,8 @@ const baseExecutors: Record<NodeType, NodeExecutor<any>> = {
   [NodeType.GMAIL_TRIGGER]: contextTriggerExecutor,
   // Only read by the AI Agent it is plugged into
   [NodeType.STRUCTURED_OUTPUT_PARSER]: contextTriggerExecutor,
+  // Only read by the AI Agent it is plugged into, like a model node
+  [NodeType.MODEL_ROUTER]: contextTriggerExecutor,
   [NodeType.TEXT_CLASSIFIER]: textClassifierExecutor,
   [NodeType.INFORMATION_EXTRACTOR]: informationExtractorExecutor,
   [NodeType.VECTOR_STORE]: vectorStoreExecutor,

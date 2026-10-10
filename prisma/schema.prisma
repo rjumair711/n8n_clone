@@ -343,6 +343,7 @@ enum NodeType {
   DEEPSEEK
   KIMI
   QWEN
+  MODEL_ROUTER
 }
 
 model Node {

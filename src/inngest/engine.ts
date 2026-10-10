@@ -38,6 +38,8 @@ const SUB_PORT_HOST_TYPES = new Set([
   "AI_AGENT",
   "TEXT_CLASSIFIER",
   "INFORMATION_EXTRACTOR",
+  // Its Cheap and Strong ports take model nodes
+  "MODEL_ROUTER",
 ]);
 
 // Nodes the AI Agent reads as configuration instead of running as steps
@@ -49,6 +51,7 @@ const AGENT_SUPPLY_TYPES = new Set([
   "DEEPSEEK",
   "KIMI",
   "QWEN",
+  "MODEL_ROUTER",
   "BUFFER_MEMORY",
 ]);
 
