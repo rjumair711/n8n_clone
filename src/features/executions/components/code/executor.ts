@@ -2,10 +2,13 @@ import { codeChannel } from "@/inngest/channels/code";
 import { NodeExecutor } from "../../types";
 import { NonRetriableError } from "inngest";
 import { runInSandbox } from "../../lib/code-sandbox";
+import { resolveCodeTimeoutSeconds } from "../../lib/sandbox-limits";
 
 type CodeNodeExecutionData = {
   code?: string;
   variableName?: string;
+  // "Timeout (seconds)": 10 when not set, 60 at most
+  timeoutSeconds?: number | string;
 };
 
 export const codeNodeExecutor: NodeExecutor<CodeNodeExecutionData> = async ({
@@ -59,7 +62,8 @@ export const codeNodeExecutor: NodeExecutor<CodeNodeExecutionData> = async ({
               })
             ).catch(() => {});
           }
-        }
+        },
+        { timeoutMs: resolveCodeTimeoutSeconds(data.timeoutSeconds) * 1000 }
       );
 
       if (!outcome.success) {

@@ -522,7 +522,7 @@ const main = async () => {
     assert.throws(() => renderTemplate("{{ $json && require('fs') }}", data), /require/);
     assert.throws(
       () => renderTemplate("{{ (() => { while (true) {} })($json) }}", data),
-      /more than 250ms/
+      /more than 1 second/
     );
     // Blocks and object literals inside an expression
     assert.equal(
@@ -532,6 +532,174 @@ const main = async () => {
     assert.equal(renderTemplate('{{ ({ a: $json.user.age, b: "}}" }) }}', data), '{"a":30,"b":"}}"}');
     assert.equal(renderTemplate("{{{ $json.html }}} and {{json user.tags}}}", { ...data }), '<b>x</b> and [\n  "a",\n  "b"\n]}');
     // The sandbox is thrown away after each render
+    assert.equal(renderTemplate("{{ $json.user.name }}", data), "Ali");
+  });
+
+  const { runInSandbox } = await import("@/features/executions/lib/code-sandbox");
+  const sandboxLimits = await import("@/features/executions/lib/sandbox-limits");
+
+  await test("the sandbox limits are the documented ones", () => {
+    assert.equal(sandboxLimits.SANDBOX_MEMORY_LIMIT_MB, 64);
+    assert.ok(sandboxLimits.SANDBOX_MAX_STACK_KB > 0);
+    assert.equal(sandboxLimits.EXPRESSION_TIMEOUT_MS, 1000);
+
+    // The Code node's timeout: 10 seconds unless set, never more than 60
+    const seconds = sandboxLimits.resolveCodeTimeoutSeconds;
+    assert.equal(seconds(undefined), 10);
+    assert.equal(seconds(null), 10);
+    assert.equal(seconds(""), 10);
+    assert.equal(seconds("abc"), 10);
+    assert.equal(seconds(0), 10);
+    assert.equal(seconds(-5), 10);
+    assert.equal(seconds(NaN), 10);
+    assert.equal(seconds(25), 25);
+    assert.equal(seconds("30"), 30);
+    assert.equal(seconds(0.2), 1);
+    assert.equal(seconds(60), 60);
+    assert.equal(seconds(61), 60);
+    assert.equal(seconds(100000), 60);
+
+    assert.equal(sandboxLimits.getSandboxMaxOutputChars({}), 1024 * 1024);
+    assert.equal(sandboxLimits.getSandboxMaxOutputChars({ SANDBOX_MAX_OUTPUT_KB: "8" }), 8 * 1024);
+    assert.equal(sandboxLimits.getSandboxMaxOutputChars({ SANDBOX_MAX_OUTPUT_KB: "nope" }), 1024 * 1024);
+  });
+
+  await test("Code node: an infinite loop is stopped at the timeout", async () => {
+    for (const code of [
+      "while (true) {}",
+      // After an await the loop runs as a promise job: bounded all the same
+      "await null; while (true) {}",
+    ]) {
+      const started = Date.now();
+      const result = await runInSandbox(code, {}, undefined, { timeoutMs: 200 });
+
+      assert.equal(result.success, false, code);
+      assert.match((result as { error: string }).error, /^Script stopped: it ran for more than 200ms$/);
+      assert.ok(Date.now() - started < 3000, "stopped promptly");
+    }
+
+    assert.match(
+      ((await runInSandbox("while (true) {}", {}, undefined, { timeoutMs: 1000 })) as { error: string }).error,
+      /more than 1 second$/
+    );
+  });
+
+  await test("Code node: a huge allocation fails with a clear error and nothing else breaks", async () => {
+    for (const code of [
+      "let text = 'x'.repeat(1024); while (true) text += text; return text.length",
+      "return new ArrayBuffer(200 * 1024 * 1024).byteLength",
+      // Many allocations that are each well under the limit: QuickJS does
+      // not add these up by itself, the engine's memory maximum stops them
+      "const list = []; for (let i = 0; i < 400; i++) list.push(new Uint8Array(1024 * 1024)); return list.length",
+      "const list = []; for (let i = 0; i < 400; i++) list.push('x'.repeat(1024 * 1024) + i); return list.length",
+    ]) {
+      const result = await runInSandbox(code, {});
+
+      assert.equal(result.success, false, code);
+      assert.equal(
+        (result as { error: string }).error,
+        "Script stopped: it used more than the 64 MB of memory a script may use",
+        code
+      );
+    }
+
+    // Under the limit is fine, and the next run starts from nothing
+    assert.deepEqual(
+      await runInSandbox("return new Uint8Array(8 * 1024 * 1024).length", {}),
+      { success: true, data: 8 * 1024 * 1024, logs: [] }
+    );
+    assert.deepEqual(
+      await runInSandbox(
+        "const list = []; for (let i = 0; i < 50; i++) list.push(new Uint8Array(1024 * 1024)); return list.length",
+        {}
+      ),
+      { success: true, data: 50, logs: [] }
+    );
+
+    // With no memory left QuickJS may report nothing at all. That is only
+    // read as "out of memory" when the engine's memory really is full.
+    const describe = sandboxLimits.describeSandboxError;
+    assert.deepEqual(describe(null, 1000, true), {
+      detail: "it used more than the 64 MB of memory a script may use",
+      limit: true,
+    });
+    assert.deepEqual(describe(null, 1000, false), { detail: "the code threw null", limit: false });
+    assert.deepEqual(await runInSandbox("throw null", {}), {
+      success: false,
+      error: "the code threw null",
+      logs: [],
+    });
+    assert.deepEqual(await runInSandbox("return context.n + 1", { n: 1 }), {
+      success: true,
+      data: 2,
+      logs: [],
+    });
+  });
+
+  await test("Code node: endless recursion, oversized results and log floods are bounded", async () => {
+    const recursion = await runInSandbox("const again = () => again(); return again()", {});
+    assert.equal(recursion.success, false);
+    assert.match((recursion as { error: string }).error, /^Script stopped: .*stack overflow/);
+
+    // Ordinary recursion still works
+    assert.deepEqual(
+      await runInSandbox("const sum = (n) => (n === 0 ? 0 : n + sum(n - 1)); return sum(300)", {}),
+      { success: true, data: 45150, logs: [] }
+    );
+
+    const large = await runInSandbox("return 'x'.repeat(3 * 1024 * 1024)", {});
+    assert.equal(large.success, false);
+    assert.equal(
+      (large as { error: string }).error,
+      "Script stopped: its result is too large (3 MB, the limit is 1 MB)"
+    );
+
+    const fits = await runInSandbox("return 'x'.repeat(100)", {}, undefined, { maxOutputChars: 102 });
+    assert.equal(fits.success, true);
+    const over = await runInSandbox("return 'x'.repeat(100)", {}, undefined, { maxOutputChars: 101 });
+    assert.equal(over.success, false);
+
+    const seen: string[] = [];
+    const noisy = await runInSandbox(
+      "for (let i = 0; i < 1000; i++) console.log('line', i); console.log('y'.repeat(50000)); return 1",
+      {},
+      (_type, message) => seen.push(message)
+    );
+    assert.equal(noisy.success, true);
+    assert.equal(noisy.logs.length, sandboxLimits.SANDBOX_MAX_LOG_LINES + 1);
+    assert.match(noisy.logs.at(-1)!, /801 more log lines were not kept/);
+    assert.equal(seen.length, sandboxLimits.SANDBOX_MAX_LOG_LINES);
+
+    const longLine = await runInSandbox("console.log('y'.repeat(50000)); return 1", {});
+    assert.ok(longLine.logs[0].length < sandboxLimits.SANDBOX_MAX_LOG_CHARS + 100);
+    assert.match(longLine.logs[0], /cut, 50000 characters/);
+
+    // What the script throws is passed on as it was
+    assert.deepEqual(await runInSandbox("throw new Error('boom')", {}), {
+      success: false,
+      error: "Error: boom",
+      logs: [],
+    });
+  });
+
+  await test("expressions: memory, recursion and result size are bounded too", () => {
+    assert.throws(
+      () => renderTemplate("{{ (() => { let text = 'x'.repeat(1024); while (true) text += text; })($json) }}", data),
+      /failed: it used more than the 64 MB of memory/
+    );
+    assert.throws(
+      () => renderTemplate("{{ (() => { const list = []; for (;;) list.push(new Uint8Array(1024 * 1024)); })($json) }}", data),
+      /failed: it used more than the 64 MB of memory/
+    );
+    assert.throws(
+      () => renderTemplate("{{ (() => { const again = () => again(); return again(); })($json) }}", data),
+      /failed: .*stack overflow/
+    );
+    assert.throws(
+      () => renderTemplate("{{ $json.user.name.repeat(1024 * 1024) }}", data),
+      /failed: its result is too large \(3 MB, the limit is 1 MB\)/
+    );
+    // The engine is still usable afterwards
     assert.equal(renderTemplate("{{ $json.user.name }}", data), "Ali");
   });
 

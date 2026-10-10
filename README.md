@@ -388,7 +388,12 @@ Supported credential types:
 * **Duplicate deliveries:** an event a provider sends twice starts one run, not two (see below).
 * **Webhook responses** are served with a sandbox policy so a workflow cannot run scripts on the app's origin.
 * **Sign-in:** email verification for password sign-ups, password reset by email, Google and GitHub sign-in.
-* **Sandboxed code:** the Code node and `{{ $json }}` expressions run in QuickJS with no access to Node, the network or the filesystem.
+* **Sandboxed code:** the Code node and `{{ $json }}` expressions run in QuickJS with no access to Node, the network or the filesystem. Every run gets an engine of its own with these limits; going over one fails that node with a message that says which:
+  * **Memory:** 64 MB. Each Code node run has a WebAssembly memory of its own that cannot grow past that, and gives all of it back when the run ends; expressions share one such engine. (QuickJS's built-in limit alone only refuses a single allocation over the limit, not many small ones.)
+  * **Call depth:** a 128 KB stack, about 700 nested calls, so endless recursion ends as a "stack overflow" error.
+  * **Time:** a Code node is stopped after its **Timeout (seconds)** setting, 10 by default and 60 at most; one expression after 1 second.
+  * **Result size:** the JSON a Code node returns, and the result of one expression, may be 1 MB at most (`SANDBOX_MAX_OUTPUT_KB`). A Code node keeps at most 200 `console.log` lines of 10,000 characters each.
+  * The engine runs on the server's main thread, so a script that uses its whole timeout holds up other requests on that server for that long. Keep the timeout low unless a script really needs it.
 * **Credentials** are encrypted with AES-256-GCM and never sent to the browser; the key can be changed without losing them (see "Credential encryption and key rotation").
 * **Files:** download links are signed and expire after 15 minutes; files are always sent as attachments with `nosniff`; XLSX, DOCX, PDF and CSV files are checked against size, page, time and row limits before or while they are read (see "Files").
 * **Tenant isolation:** every workflow, execution, credential, file and API key belongs to one account. Anything that loads one of them by id goes through a single check, `assertOwnership` in `src/lib/ownership.ts`: a record that belongs to someone else gets the same `404` "not found" as one that does not exist, in the app, in `/api/v1` and on file download links. `scripts/test-tenant-isolation.ts` tries every such route as a second user (see `docs/TESTING.md`, T11d).
@@ -596,6 +601,7 @@ Step-by-step workflows for testing every node by hand are in [`docs/TESTING.md`]
 | `WEBHOOK_RATE_LIMIT_PER_MINUTE`, `API_RATE_LIMIT_PER_MINUTE` | Requests per minute for one workflow's webhook URL, and for one API key. Default 120 each |
 | `SIGN_IN_RATE_LIMIT_PER_MINUTE` | Password and two-factor code attempts per minute from one IP address, default 20 |
 | `WEBHOOK_RESPONSE_TIMEOUT_MS` | How long a webhook waits for the workflow's response, default 25000 |
+| `SANDBOX_MAX_OUTPUT_KB` | The most a Code node or one expression may return, in KB, default 1024 |
 | `MAX_ITEMS_PER_NODE` | Items one node may process in a list, default 100 |
 | `MAX_FILE_SIZE_MB`, `MAX_USER_STORAGE_MB`, `FILE_RETENTION_DAYS` | Workflow file limits, defaults 10, 200 and 7 |
 | `MAX_UNCOMPRESSED_FILE_MB`, `MAX_ZIP_ENTRIES` | What an XLSX or DOCX file may unpack to, defaults 50 and 2000 |

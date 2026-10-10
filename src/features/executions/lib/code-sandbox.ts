@@ -1,15 +1,25 @@
+import { shouldInterruptAfterDeadline } from "quickjs-emscripten";
+import { newSandboxEngine } from "./sandbox-engine";
 import {
-  getQuickJS,
-  shouldInterruptAfterDeadline,
-} from "quickjs-emscripten";
-
-const TIMEOUT_MS = 4000;
-const MEMORY_LIMIT_BYTES = 32 * 1024 * 1024;
-const MAX_STACK_BYTES = 512 * 1024;
+  CODE_TIMEOUT_DEFAULT_SECONDS,
+  SANDBOX_MAX_LOG_CHARS,
+  SANDBOX_MAX_LOG_LINES,
+  applySandboxLimits,
+  describeSandboxError,
+  getSandboxMaxOutputChars,
+  sandboxOutputMessage,
+} from "./sandbox-limits";
 
 export type SandboxResult =
   | { success: true; data: unknown; logs: string[] }
   | { success: false; error: string; logs: string[] };
+
+export type SandboxOptions = {
+  // How long the script may run. The Code node's setting, 10 seconds if unset
+  timeoutMs?: number;
+  // The most characters the JSON of the result may have
+  maxOutputChars?: number;
+};
 
 const formatLogArgs = (args: unknown[]) =>
   args
@@ -21,22 +31,49 @@ const formatLogArgs = (args: unknown[]) =>
  * own JavaScript engine with no access to Node (`process`, `require`, the
  * filesystem, the network), unlike Node's `vm` module which is not a
  * security boundary. Only `context` (a JSON copy) and `console` are exposed.
+ *
+ * The engine is limited in memory, stack depth, running time and in how
+ * much it may hand back (see sandbox-limits.ts). Going over a limit is an
+ * ordinary failed result, never an exception.
  */
 export const runInSandbox = async (
   code: string,
   context: unknown,
-  onLog?: (type: "LOG" | "ERROR", message: string) => void
+  onLog?: (type: "LOG" | "ERROR", message: string) => void,
+  options: SandboxOptions = {}
 ): Promise<SandboxResult> => {
   const logs: string[] = [];
+  let droppedLogs = 0;
 
-  const QuickJS = await getQuickJS();
-  const runtime = QuickJS.newRuntime();
+  const timeoutMs = options.timeoutMs ?? CODE_TIMEOUT_DEFAULT_SECONDS * 1000;
+  const maxOutputChars = options.maxOutputChars ?? getSandboxMaxOutputChars();
 
-  runtime.setMemoryLimit(MEMORY_LIMIT_BYTES);
-  runtime.setMaxStackSize(MAX_STACK_BYTES);
-  // Stops synchronous runaway code such as `while (true) {}`
+  // An engine of its own for every run: its memory cannot grow past the
+  // limit, and all of it is given back when the run is over
+  const engine = await newSandboxEngine();
+
+  // An error the script threw is passed on as it is; a limit says so
+  const fail = (error: unknown): SandboxResult => {
+    const { detail, limit } = describeSandboxError(
+      error,
+      timeoutMs,
+      engine.isMemoryFull()
+    );
+
+    return {
+      success: false,
+      error: limit ? `Script stopped: ${detail}` : detail,
+      logs,
+    };
+  };
+
+  const runtime = engine.quickjs.newRuntime();
+
+  applySandboxLimits(runtime);
+  // Stops synchronous runaway code such as `while (true) {}`. One deadline
+  // for the whole run: the script and the promise jobs it leaves behind.
   runtime.setInterruptHandler(
-    shouldInterruptAfterDeadline(Date.now() + TIMEOUT_MS)
+    shouldInterruptAfterDeadline(Date.now() + timeoutMs)
   );
 
   const vm = runtime.newContext();
@@ -49,7 +86,17 @@ export const runInSandbox = async (
       ["error", "ERROR"],
     ] as const) {
       const fnHandle = vm.newFunction(name, (...args) => {
-        const message = formatLogArgs(args.map((arg) => vm.dump(arg)));
+        // A script in a loop must not fill the server's memory with logs
+        if (logs.length >= SANDBOX_MAX_LOG_LINES) {
+          droppedLogs += 1;
+          return;
+        }
+
+        let message = formatLogArgs(args.map((arg) => vm.dump(arg)));
+        if (message.length > SANDBOX_MAX_LOG_CHARS) {
+          message = `${message.slice(0, SANDBOX_MAX_LOG_CHARS)}... (cut, ${message.length} characters)`;
+        }
+
         logs.push(`[${type}] ${message}`);
         onLog?.(type, message);
       });
@@ -75,7 +122,7 @@ delete globalThis.__contextJson;
     if (evaluated.error) {
       const error = vm.dump(evaluated.error);
       evaluated.error.dispose();
-      return { success: false, error: describeError(error), logs };
+      return fail(error);
     }
 
     const promiseHandle = evaluated.value;
@@ -87,7 +134,7 @@ delete globalThis.__contextJson;
     if (jobs.error) {
       const error = vm.dump(jobs.error);
       jobs.error.dispose();
-      return { success: false, error: describeError(error), logs };
+      return fail(error);
     }
 
     // Nothing inside the sandbox can resolve the promise later (no timers,
@@ -112,29 +159,43 @@ delete globalThis.__contextJson;
     if (result.error) {
       const error = vm.dump(result.error);
       result.error.dispose();
-      return { success: false, error: describeError(error), logs };
+      return fail(error);
+    }
+
+    // Measured while the text is still inside the sandbox: a result that is
+    // too large is never copied out
+    const lengthHandle = vm.getProp(result.value, "length");
+    const length = vm.getNumber(lengthHandle);
+    lengthHandle.dispose();
+
+    if (length > maxOutputChars) {
+      result.value.dispose();
+      return {
+        success: false,
+        error: `Script stopped: ${sandboxOutputMessage(length, maxOutputChars)}`,
+        logs,
+      };
     }
 
     const json = vm.dump(result.value) as string;
     result.value.dispose();
 
-    return { success: true, data: JSON.parse(json), logs };
-  } finally {
-    vm.dispose();
-    runtime.dispose();
-  }
-};
-
-const describeError = (error: unknown): string => {
-  if (error && typeof error === "object") {
-    const { name, message } = error as { name?: string; message?: string };
-
-    if (message === "interrupted") {
-      return `Script execution timed out (${TIMEOUT_MS}ms limit exceeded)`;
+    if (droppedLogs > 0) {
+      logs.push(`[LOG] ${droppedLogs} more log lines were not kept (the limit is ${SANDBOX_MAX_LOG_LINES})`);
     }
 
-    if (message) return name ? `${name}: ${message}` : message;
+    return { success: true, data: JSON.parse(json), logs };
+  } catch (error) {
+    // The engine itself gave up, which is what running out of memory can
+    // look like from outside
+    return fail(error);
+  } finally {
+    try {
+      vm.dispose();
+      runtime.dispose();
+    } catch {
+      // A run that hit its limits can leave the engine unable to tidy up.
+      // The runtime is dropped either way.
+    }
   }
-
-  return String(error);
 };

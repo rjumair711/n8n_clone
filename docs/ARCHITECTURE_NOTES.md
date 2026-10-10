@@ -534,16 +534,20 @@ Agent), `shellQuote` (for the SSH node), `json`.
 
 **n8n expressions** run in QuickJS compiled to WebAssembly, not in Node:
 
-- A new runtime per render, with a 32 MB memory limit, a 512 KB stack and a
-  250 ms time limit per expression (`expressions.ts:17-19`).
+- A new runtime per render, with a 64 MB memory limit, a 128 KB stack, a
+  1 s time limit per expression and a 1 MB limit on each result
+  (`sandbox-limits.ts`, shared with the Code node). The memory limit is
+  enforced by the maximum size of the engine's WebAssembly memory
+  (`sandbox-engine.ts`): expressions share one engine, each Code node run
+  makes its own.
 - The context enters as a JSON string, never as a live object. A prelude
   defines `$json`, `$input`, `$node` and the rest (`expressions.ts:53-113`).
 - No network, filesystem, timers or Node globals exist inside.
 - The engine must be loaded before rendering; `execute-workflow` awaits
   `ensureExpressionEngine()` first.
 
-**The Code node** uses the same sandbox with a 4 s limit
-(`code-sandbox.ts`). User code is wrapped in an async function, gets
+**The Code node** uses the same sandbox and limits, with a time limit of
+10 s by default that the node can raise to 60 s (`code-sandbox.ts`). User code is wrapped in an async function, gets
 `context` (a JSON copy) and `console`, and returns a JSON-serialisable value.
 
 ---

@@ -8,6 +8,7 @@ import { useNodeStatus } from "../../hooks/use-node-status";
 type CodeNodeData = {
   code?: string;
   variableName?: string;
+  timeoutSeconds?: number;
 };
 
 type CodeNodeType = Node<CodeNodeData>;
