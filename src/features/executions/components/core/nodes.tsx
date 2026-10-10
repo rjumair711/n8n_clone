@@ -16,7 +16,11 @@ import {
 import { createIntegrationNode } from "../integration-node";
 import type { IntegrationConfig, IntegrationField } from "../integration-dialog";
 import { SUMMARIZE_AGGREGATIONS } from "../../lib/list-ops";
-import { CHAT_MODEL_PROVIDERS } from "../../lib/chat-model-providers";
+import {
+  CHAT_MODEL_PROVIDERS,
+  getChatModelProvider,
+} from "../../lib/chat-model-providers";
+import type { ChatModelNodeType } from "../chat-model-field";
 
 // =========================================================================
 // RESPOND TO WEBHOOK
@@ -474,7 +478,7 @@ export const GmailNode = createIntegrationNode(gmailConfig, (data) =>
 export const chatModelConfig: IntegrationConfig = {
   label: "Chat Model",
   description:
-    "OpenRouter, Groq, DeepSeek, Mistral, Together, Ollama or any OpenAI-compatible API. Connect it to an AI Agent's Chat Model port, or run it as a step with a prompt.",
+    "OpenRouter, Groq, Together, Mistral, DeepSeek, Zhipu GLM, MiniMax, Doubao, Xiaomi MiMo, SiliconFlow, Ollama or any OpenAI-compatible API. Connect it to an AI Agent's Chat Model port, or run it as a step with a prompt.",
   logo: "/logos/chat-model.svg",
   credentialType: CredentialType.OPENAI_COMPATIBLE,
   credentialLabel: "API Key Credential",
@@ -488,20 +492,29 @@ export const chatModelConfig: IntegrationConfig = {
       defaultValue: "openrouter",
       required: true,
       options: CHAT_MODEL_PROVIDERS.map(({ value, label }) => ({ value, label })),
-    },
-    {
-      name: "model",
-      label: "Model",
-      placeholder: "openai/gpt-4o-mini, llama-3.3-70b-versatile, deepseek-chat...",
-      description: "The model's ID exactly as the provider lists it.",
-      required: true,
+      description:
+        "A preset fills in the provider's base URL and suggests its models. Pick Custom base URL for any other OpenAI-compatible API.",
+      // Another provider has another address and other models
+      sets: (provider) => ({
+        baseUrl: getChatModelProvider(provider)?.baseUrl ?? "",
+        model: "",
+      }),
     },
     {
       name: "baseUrl",
       label: "Base URL",
       placeholder: "https://api.example.com/v1",
       description:
-        "Required for Custom. For Ollama, the server's address if it is not http://localhost:11434/v1; a local address also has to be listed in PRIVATE_NETWORK_ALLOWLIST on the server (for the default: localhost:11434).",
+        "Filled in by the provider preset; empty means the preset's own. Type it for Custom base URL, or to change a preset's (for Ollama, the server's address if it is not http://localhost:11434/v1). A local address also has to be listed in PRIVATE_NETWORK_ALLOWLIST on the server (for Ollama's default: localhost:11434).",
+    },
+    {
+      name: "model",
+      label: "Model",
+      type: "model",
+      modelNodeType: "CHAT_MODEL",
+      description:
+        "The model's ID exactly as the provider lists it. Pick a suggestion, type one, or use Load models to get the provider's own list.",
+      required: true,
     },
     {
       name: "systemPrompt",
@@ -528,6 +541,7 @@ export const ChatModelNode = createIntegrationNode(chatModelConfig, (data) =>
 // DEEPSEEK, KIMI, QWEN (Chat Model nodes locked to one provider)
 // =========================================================================
 const createProviderModelConfig = ({
+  nodeType,
   label,
   description,
   logo,
@@ -537,6 +551,7 @@ const createProviderModelConfig = ({
   modelDescription,
   regions,
 }: {
+  nodeType: ChatModelNodeType;
   label: string;
   description: string;
   logo: string;
@@ -571,15 +586,18 @@ const createProviderModelConfig = ({
     defaultVariableName,
     hint: "The answer is at {{<name>.text}}. The prompts are only used when the node runs as a step; an AI Agent brings its own.",
     fields: [
+      // Before the model: the region decides which list "Load models" gets
+      ...regionField,
       {
         name: "model",
         label: "Model",
+        type: "model",
+        modelNodeType: nodeType,
         placeholder: defaultModel,
         defaultValue: defaultModel,
         description: modelDescription,
         required: true,
       },
-      ...regionField,
       {
         name: "systemPrompt",
         label: "System Prompt",
@@ -597,14 +615,15 @@ const createProviderModelConfig = ({
 };
 
 export const deepseekConfig = createProviderModelConfig({
+  nodeType: "DEEPSEEK",
   label: "DeepSeek",
   description: "DeepSeek's low-cost chat models.",
   logo: "/logos/deepseek.svg",
   credentialType: CredentialType.DEEPSEEK,
   defaultVariableName: "deepseek",
-  defaultModel: "deepseek-chat",
+  defaultModel: getChatModelProvider("deepseek")?.defaultModel ?? "deepseek-flash",
   modelDescription:
-    "The model's ID as platform.deepseek.com lists it, for example deepseek-chat.",
+    "The model's ID as platform.deepseek.com lists it, for example deepseek-flash or deepseek-v4-pro. Load models gets the current list.",
 });
 
 export const DeepSeekNode = createIntegrationNode(deepseekConfig, (data) =>
@@ -612,14 +631,15 @@ export const DeepSeekNode = createIntegrationNode(deepseekConfig, (data) =>
 );
 
 export const kimiConfig = createProviderModelConfig({
+  nodeType: "KIMI",
   label: "Kimi",
   description: "Kimi chat models from Moonshot AI.",
   logo: "/logos/kimi.svg",
   credentialType: CredentialType.KIMI,
   defaultVariableName: "kimi",
-  defaultModel: "moonshot-v1-8k",
+  defaultModel: getChatModelProvider("kimi")?.defaultModel ?? "kimi-k2.6",
   modelDescription:
-    "The model's ID as the Moonshot AI platform lists it, for example moonshot-v1-8k.",
+    "The model's ID as the Kimi platform lists it, for example kimi-k2.6 or kimi-k3. The moonshot-v1 models have been discontinued. Load models gets the current list.",
   regions: [
     { value: "https://api.moonshot.ai/v1", label: "International (moonshot.ai)" },
     { value: "https://api.moonshot.cn/v1", label: "China (moonshot.cn)" },
@@ -631,6 +651,7 @@ export const KimiNode = createIntegrationNode(kimiConfig, (data) =>
 );
 
 export const qwenConfig = createProviderModelConfig({
+  nodeType: "QWEN",
   label: "Qwen",
   description: "Qwen chat models from Alibaba Cloud Model Studio.",
   logo: "/logos/qwen.svg",
@@ -638,7 +659,7 @@ export const qwenConfig = createProviderModelConfig({
   defaultVariableName: "qwen",
   defaultModel: "qwen-plus",
   modelDescription:
-    "The model's ID as Alibaba Cloud Model Studio lists it, for example qwen-plus or qwen-turbo.",
+    "The model's ID as Alibaba Cloud Model Studio lists it, for example qwen-plus or qwen-turbo. Load models gets the current list.",
   regions: [
     {
       value: "https://dashscope-intl.aliyuncs.com/compatible-mode/v1",

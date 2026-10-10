@@ -37,13 +37,21 @@ import type { LucideIcon } from "lucide-react";
 import { useTRPC } from "@/trpc/client";
 import { useQuery } from "@tanstack/react-query";
 import { useParams } from "next/navigation";
+import { ChatModelField, type ChatModelNodeType } from "./chat-model-field";
 
 export type IntegrationField = {
   name: string;
   label: string;
   // "workflow" lists the user's other workflows; "switch" is an on/off
   // option saved as "true" or "false"
-  type?: "text" | "textarea" | "select" | "workflow" | "switch";
+  // "model" is a chat model's ID: a text field with suggestions and a
+  // "Load models" button (see chat-model-field.tsx)
+  type?: "text" | "textarea" | "select" | "workflow" | "switch" | "model";
+  // For "model": the node the field belongs to
+  modelNodeType?: ChatModelNodeType;
+  // Other fields to set when this one changes, e.g. a provider preset
+  // filling in its base URL
+  sets?: (value: string) => Record<string, string>;
   placeholder?: string;
   description?: string;
   options?: { value: string; label: string }[];
@@ -410,9 +418,27 @@ export const IntegrationDialog = ({
                         value={field.value}
                         onChange={field.onChange}
                       />
+                    ) : definition.type === "model" ? (
+                      <ChatModelField
+                        nodeType={definition.modelNodeType ?? "CHAT_MODEL"}
+                        value={field.value ?? ""}
+                        onChange={field.onChange}
+                        placeholder={definition.placeholder}
+                        provider={form.watch("provider")}
+                        baseUrl={form.watch("baseUrl")}
+                        credentialId={form.watch("credentialId")}
+                      />
                     ) : definition.type === "select" ? (
                       <Select
-                        onValueChange={field.onChange}
+                        onValueChange={(selected) => {
+                          field.onChange(selected);
+
+                          for (const [name, other] of Object.entries(
+                            definition.sets?.(selected) ?? {}
+                          )) {
+                            form.setValue(name, other, { shouldDirty: true });
+                          }
+                        }}
                         value={field.value}
                       >
                         <FormControl>

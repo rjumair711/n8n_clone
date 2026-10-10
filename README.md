@@ -186,10 +186,41 @@ These limits reduce the risk; they do not remove it. Give an agent only the tool
 | OpenAI | GPT models with dynamic prompts |
 | Anthropic | Claude models (default `claude-sonnet-5-5`) |
 | Gemini | Google Gemini models |
-| DeepSeek | DeepSeek models (default `deepseek-chat`) |
-| Kimi | Moonshot AI's Kimi models (default `moonshot-v1-8k`), international or China region |
+| DeepSeek | DeepSeek models (default `deepseek-flash`) |
+| Kimi | Moonshot AI's Kimi models (default `kimi-k2.6`), international or China region |
 | Qwen | Alibaba Cloud's Qwen models (default `qwen-plus`), international or China region |
-| Chat Model | Any OpenAI-compatible API: OpenRouter, Groq, DeepSeek, Mistral, Together, Ollama or a custom base URL |
+| Chat Model | Any OpenAI-compatible API, with a preset per provider (below) or a custom base URL |
+
+### Chat Model provider presets
+
+The Chat Model node's **Provider** dropdown fills in the provider's base URL and suggests its models. The list lives in `src/features/executions/lib/chat-model-providers.ts`.
+
+| Provider | Base URL | Suggested models |
+| -------- | -------- | ---------------- |
+| OpenRouter | `https://openrouter.ai/api/v1` | `~openai/gpt-sol-latest`, `~anthropic/claude-sonnet-latest` |
+| Groq | `https://api.groq.com/openai/v1` | use Load models |
+| Together AI | `https://api.together.ai/v1` | `MiniMaxAI/MiniMax-M3` |
+| Mistral | `https://api.mistral.ai/v1` | `mistral-small-latest`, `mistral-large-latest` |
+| DeepSeek | `https://api.deepseek.com` | `deepseek-flash`, `deepseek-v4-pro` |
+| Zhipu Z.ai (international) | `https://api.z.ai/api/paas/v4` | `glm-5.3`, `glm-5.3-flash`, `glm-5.2`, `glm-4.7`, `glm-4.7-flash`, `glm-4.5-flash` |
+| Zhipu BigModel (China) | `https://open.bigmodel.cn/api/paas/v4` | the same, and `glm-4-flash-250414` |
+| MiniMax (international) | `https://api.minimax.io/v1` | `MiniMax-M3`, `MiniMax-M2.7`, `MiniMax-M2.7-highspeed` |
+| MiniMax (China) | `https://api.minimaxi.com/v1` | `MiniMax-M2.7`, `MiniMax-M2.7-highspeed` |
+| ByteDance Volcengine Ark (Doubao) | `https://ark.cn-beijing.volces.com/api/v3` | `doubao-seed-2-0-pro-260215`, `doubao-seed-1-6-251015`, or an endpoint ID (`ep-...`) from the console |
+| Xiaomi MiMo | `https://api.xiaomimimo.com/v1` | `mimo-v2.6-pro` |
+| SiliconFlow (international) | `https://api.siliconflow.com/v1` | `Qwen/Qwen3-32B` |
+| SiliconFlow (China) | `https://api.siliconflow.cn/v1` | `deepseek-ai/DeepSeek-V4-Flash`, `moonshotai/Kimi-K2.7-Code` |
+| Kimi (Moonshot AI) | `https://api.moonshot.ai/v1` | `kimi-k2.6`, `kimi-k3`, `kimi-k2.7-code` |
+| Qwen (Alibaba Cloud) | `https://dashscope-intl.aliyuncs.com/compatible-mode/v1` | `qwen-plus`, `qwen-turbo` |
+| Ollama | `http://localhost:11434/v1` | use Load models |
+| Custom base URL | typed in | typed in |
+
+* **International and China platforms are separate.** Zhipu, MiniMax and SiliconFlow each run two platforms with their own accounts: an API key from one does not work on the other. Pick the preset of the platform the key came from.
+* **Load models** (on the Chat Model, DeepSeek, Kimi and Qwen nodes) asks the provider for its current list with the selected credential (`GET <base URL>/models`) and shows it to pick from. When that fails, for example because the provider has no such list or refuses the key, the reason is shown and the suggested models stay. The model field always accepts a typed ID. The request goes through the same guard against private addresses as the node itself.
+* **"Data processed in China"** appears under the model field when requests go to a provider's servers in mainland China: Zhipu BigModel, MiniMax (China), Volcengine Ark, SiliconFlow (China), DeepSeek, and the China region of the Kimi and Qwen nodes. It follows the address requests are sent to (`MAINLAND_CHINA_HOSTS` in the same file), so a custom base URL that is not on that list shows nothing, whatever country it is in.
+* **"Free"** marks models the provider offers at no charge: Zhipu's `glm-4.7-flash`, `glm-4.5-flash` (and `glm-4-flash-250414` on BigModel), and OpenRouter models whose ID ends in `:free`. The list is `src/config/free-models.ts` and nothing else: change that file to mark or unmark a model. Free tiers have rate limits, and providers change them: the provider's pricing page is what counts.
+* **Retired model IDs.** Providers retire models. Moonshot discontinued the `moonshot-v1` models (the Kimi node's old default) on 31 August 2026, and DeepSeek announced the end of the `deepseek-chat` and `deepseek-reasoner` names for 24 July 2026. A node saved with one of those keeps it, and its dialog says so and names a current model; the node is not switched on its own, because another model has another price.
+* The model IDs above are what each provider's documentation showed on 10 October 2026. They go out of date; Load models does not.
 
 ## AI nodes
 
@@ -360,7 +391,7 @@ Supported credential types:
 | DEEPSEEK      | DeepSeek node |
 | KIMI          | Kimi node     |
 | QWEN          | Qwen node     |
-| OPENAI_COMPATIBLE | Chat Model node (OpenRouter, Groq, DeepSeek, Ollama...) |
+| OPENAI_COMPATIBLE | Chat Model node (the API key of whichever provider preset is picked: OpenRouter, Groq, Zhipu, MiniMax, Ollama...) |
 | SMTP          | Email node    |
 | GOOGLE_OAUTH2 | Gmail, Gmail Trigger, Google Drive, Google Sheets, Google Calendar ("Sign in with Google") |
 | GOOGLE_SHEETS | Google Sheets (service account) |
