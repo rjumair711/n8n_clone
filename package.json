@@ -24,7 +24,7 @@
     "@pdf-lib/fontkit": "^1.1.1",
     "@polar-sh/better-auth": "^1.8.1",
     "@polar-sh/sdk": "^0.47.1",
-    "@prisma/client": "^6.19.2",
+    "@prisma/client": "^7.10.0",
     "@sentry/nextjs": "^10.39.0",
     "@tanstack/react-query": "^5.90.21",
     "@trpc/client": "^11.10.0",
