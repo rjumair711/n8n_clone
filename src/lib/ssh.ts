@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 import { lookup as dnsLookup } from "node:dns/promises";
 import { isIP } from "node:net";
 import { Client } from "ssh2";
-import { BlockedRequestError, isBlockedAddress, privateNetworkAllowed } from "./ssrf";
+import { BlockedRequestError, isRefusedPrivateAddress } from "./ssrf";
 
 // What an SSH credential holds (stored encrypted, as JSON). The host is part
 // of the credential on purpose: a saved key or password can only ever be
@@ -48,7 +48,11 @@ export const shellQuote = (value: unknown) =>
  * the name, means a DNS answer cannot change between the check and the
  * connection.
  */
-export const resolveSshAddress = async (host: string): Promise<string> => {
+export const resolveSshAddress = async (
+  host: string,
+  // For PRIVATE_NETWORK_ALLOWLIST entries that name a port
+  port?: number
+): Promise<string> => {
   const name = host.trim().replace(/^\[|\]$/g, "");
 
   if (!name || /[\s/@]/.test(name)) {
@@ -59,7 +63,7 @@ export const resolveSshAddress = async (host: string): Promise<string> => {
     ? name
     : (await dnsLookup(name, { verbatim: true })).address;
 
-  if (!privateNetworkAllowed() && isBlockedAddress(address)) {
+  if (isRefusedPrivateAddress(address, name, port)) {
     throw new BlockedRequestError(
       `Connections to private or local addresses are not allowed (${name})`
     );
@@ -96,7 +100,7 @@ export const runSshCommand = async (
     );
   }
 
-  const address = await resolveSshAddress(connection.host);
+  const address = await resolveSshAddress(connection.host, port);
 
   const timeoutMs =
     Math.min(Math.max(Number(timeoutSeconds) || SSH_DEFAULT_TIMEOUT_SECONDS, 1), SSH_MAX_TIMEOUT_SECONDS) *

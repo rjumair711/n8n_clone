@@ -1,16 +1,81 @@
 import { lookup as dnsLookup } from "node:dns";
 import { isIP } from "node:net";
 import { Agent, fetch as undiciFetch } from "undici";
+import { parseIPv4, parseIPv6 } from "./ip-address";
+import {
+  getPrivateNetworkAllowlist,
+  isAllowedAddress,
+  isAllowedHostname,
+} from "./private-network-allowlist";
 
 /**
  * Workflows fetch URLs chosen by users. Without a guard that lets anyone
  * reach the server's own network: cloud metadata (169.254.169.254), the
  * database, the Inngest dev server and so on. Requests are only allowed to
- * public addresses unless ALLOW_PRIVATE_NETWORK_REQUESTS=true (self-hosted
- * setups that need to call services on their own LAN, e.g. Ollama).
+ * public addresses, plus the private ones listed in
+ * PRIVATE_NETWORK_ALLOWLIST (self-hosted setups that need to call services
+ * on their own LAN, e.g. Ollama).
+ *
+ * ALLOW_PRIVATE_NETWORK_REQUESTS=true still switches the guard off for
+ * every private address. It is kept for existing setups; the allowlist is
+ * the safer way and a warning at startup says so.
  */
 export const privateNetworkAllowed = () =>
   process.env.ALLOW_PRIVATE_NETWORK_REQUESTS === "true";
+
+// Where a request is going, as far as it is known
+type Target = { hostname: string; port?: number };
+
+const hostOf = (hostname: string) => hostname.replace(/^\[|\]$/g, "");
+
+const portOf = (url: URL): number =>
+  url.port ? Number(url.port) : url.protocol === "https:" ? 443 : 80;
+
+/**
+ * Whether an address the request would connect to is refused: private or
+ * local, and not on the allowlist as itself, inside a listed range, or
+ * through the listed name the request was made to.
+ */
+const isRefusedAddress = (address: string, target: Target): boolean => {
+  if (!isBlockedAddress(address)) return false;
+
+  const allowlist = getPrivateNetworkAllowlist();
+
+  return !(
+    isAllowedAddress(allowlist, address, target.port) ||
+    isAllowedHostname(allowlist, target.hostname, target.port)
+  );
+};
+
+/**
+ * For code that resolves a name itself and connects to the address (SSH):
+ * whether that address may not be connected to.
+ */
+export const isRefusedPrivateAddress = (
+  address: string,
+  hostname: string,
+  port?: number
+): boolean =>
+  !privateNetworkAllowed() && isRefusedAddress(address, { hostname, port });
+
+/**
+ * Whether a host can be refused without DNS: an IP literal that is refused,
+ * or an obviously local name ("localhost", "*.internal").
+ *
+ * With an allowlist a local name is let through to the lookup: it may be
+ * listed itself, or resolve to a listed address ("localhost" for
+ * 127.0.0.1:11434). The lookup then refuses every address that is not.
+ */
+const isRefusedHost = (target: Target): boolean => {
+  const host = hostOf(target.hostname);
+
+  if (isIP(host)) return isRefusedAddress(host, { ...target, hostname: host });
+
+  return (
+    BLOCKED_HOSTNAMES.test(host) &&
+    getPrivateNetworkAllowlist().entries.length === 0
+  );
+};
 
 export class BlockedRequestError extends Error {
   constructor(message: string) {
@@ -18,15 +83,6 @@ export class BlockedRequestError extends Error {
     this.name = "BlockedRequestError";
   }
 }
-
-const parseIPv4 = (address: string): number[] | null => {
-  const parts = address.split(".");
-  if (parts.length !== 4) return null;
-
-  const octets = parts.map((part) => (/^\d{1,3}$/.test(part) ? Number(part) : -1));
-
-  return octets.every((octet) => octet >= 0 && octet <= 255) ? octets : null;
-};
 
 const isBlockedIPv4 = ([a, b, c]: number[]): boolean =>
   a === 0 || // "this" network
@@ -42,41 +98,6 @@ const isBlockedIPv4 = ([a, b, c]: number[]): boolean =>
   (a === 198 && b === 51 && c === 100) || // documentation
   (a === 203 && b === 0 && c === 113) || // documentation
   a >= 224; // multicast, reserved, broadcast
-
-// Expands an IPv6 address to its eight 16-bit groups
-const parseIPv6 = (address: string): number[] | null => {
-  let text = address.split("%")[0].toLowerCase();
-
-  // An embedded IPv4 tail (::ffff:1.2.3.4) becomes two groups
-  const tail = text.slice(text.lastIndexOf(":") + 1);
-  if (tail.includes(".")) {
-    const octets = parseIPv4(tail);
-    if (!octets) return null;
-
-    text =
-      text.slice(0, text.lastIndexOf(":") + 1) +
-      ((octets[0] << 8) | octets[1]).toString(16) +
-      ":" +
-      ((octets[2] << 8) | octets[3]).toString(16);
-  }
-
-  const halves = text.split("::");
-  if (halves.length > 2) return null;
-
-  const head = halves[0] ? halves[0].split(":") : [];
-  const rest = halves.length === 2 && halves[1] ? halves[1].split(":") : [];
-
-  const missing = 8 - head.length - rest.length;
-  if (halves.length === 2 ? missing < 0 : missing !== 0) return null;
-
-  const groups = [...head, ...Array(Math.max(missing, 0)).fill("0"), ...rest].map(
-    (group) => (/^[0-9a-f]{1,4}$/.test(group) ? parseInt(group, 16) : -1)
-  );
-
-  return groups.length === 8 && groups.every((group) => group >= 0)
-    ? groups
-    : null;
-};
 
 const isBlockedIPv6 = (groups: number[]): boolean => {
   const [first, second] = groups;
@@ -150,9 +171,9 @@ export const parsePublicUrl = (input: string): URL => {
 
   // WHATWG URL already normalises forms like 0x7f.1 or 2130706433 to dotted
   // IPv4, and wraps IPv6 literals in brackets
-  const host = url.hostname.replace(/^\[|\]$/g, "");
+  const host = hostOf(url.hostname);
 
-  if (isIP(host) ? isBlockedAddress(host) : BLOCKED_HOSTNAMES.test(host)) {
+  if (isRefusedHost({ hostname: host, port: portOf(url) })) {
     throw new BlockedRequestError(
       `Requests to private or local addresses are not allowed (${host})`
     );
@@ -168,20 +189,24 @@ type LookupCallback = (
 ) => void;
 
 // Runs when the socket connects, so the address that was checked is the
-// address that is used (a DNS answer cannot change in between)
+// address that is used (a DNS answer cannot change in between). `port` is
+// the port the connection is for, when it is known: allowlist entries with
+// a port only allow that one.
 const guardedLookup = (
   hostname: string,
   options: Record<string, unknown>,
-  callback: LookupCallback
+  callback: LookupCallback,
+  port?: number
 ) => {
   dnsLookup(hostname, { ...options, all: true }, (error, addresses) => {
     if (error) return callback(error);
 
     const list = addresses as { address: string; family: number }[];
 
+    // Every address of the answer has to pass: the connection may use any
     const blocked = privateNetworkAllowed()
       ? undefined
-      : list.find((entry) => isBlockedAddress(entry.address));
+      : list.find((entry) => isRefusedAddress(entry.address, { hostname, port }));
 
     if (blocked || list.length === 0) {
       return callback(
@@ -197,10 +222,40 @@ const guardedLookup = (
   });
 };
 
-let agent: Agent | undefined;
+// The lookup of a connection is not told its port, so there is an agent per
+// port that the allowlist names and one for every other port. Their number
+// is bounded by the allowlist, not by what users request.
+const ANY_OTHER_PORT = 0;
+const agents = new Map<number, Agent>();
 
-const getAgent = () => {
-  agent ??= new Agent({ connect: { lookup: guardedLookup as never } });
+const getAgent = (port: number) => {
+  const listed = getPrivateNetworkAllowlist().entries.some(
+    (entry) => entry.port === port
+  );
+  const key = listed ? port : ANY_OTHER_PORT;
+
+  let agent = agents.get(key);
+
+  if (!agent) {
+    agent = new Agent({
+      connect: {
+        lookup: ((
+          hostname: string,
+          options: Record<string, unknown>,
+          callback: LookupCallback
+        ) =>
+          guardedLookup(
+            hostname,
+            options,
+            callback,
+            // A port no entry names matches the same entries as no port
+            key === ANY_OTHER_PORT ? undefined : key
+          )) as never,
+      },
+    });
+    agents.set(key, agent);
+  }
+
   return agent;
 };
 
@@ -211,12 +266,17 @@ const getAgent = () => {
  */
 export const assertPublicUrl = async (input: string): Promise<URL> => {
   const url = parsePublicUrl(input);
-  const host = url.hostname.replace(/^\[|\]$/g, "");
+  const host = hostOf(url.hostname);
 
   if (privateNetworkAllowed() || isIP(host)) return url;
 
   await new Promise<void>((resolve, reject) => {
-    guardedLookup(host, {}, (error) => (error ? reject(error) : resolve()));
+    guardedLookup(
+      host,
+      {},
+      (error) => (error ? reject(error) : resolve()),
+      portOf(url)
+    );
   });
 
   return url;
@@ -244,7 +304,7 @@ export const safeFetch = async (
       headers: Object.fromEntries(headers),
       body: body as never,
       redirect: "manual",
-      dispatcher: getAgent(),
+      dispatcher: getAgent(portOf(url)),
     })) as unknown as Response;
 
     const location = response.headers.get("location");
@@ -288,14 +348,18 @@ export const safeFetch = async (
 
 /**
  * For connections that are not HTTP (database nodes): rejects a host name
- * or address that points into a private network.
+ * or address that points into a private network. Pass the port when it is
+ * known: without it only allowlist entries that name no port apply.
  */
-export const assertPublicHost = async (hostname: string): Promise<void> => {
+export const assertPublicHost = async (
+  hostname: string,
+  port?: number
+): Promise<void> => {
   if (privateNetworkAllowed()) return;
 
-  const host = hostname.replace(/^\[|\]$/g, "");
+  const host = hostOf(hostname);
 
-  if (isIP(host) ? isBlockedAddress(host) : BLOCKED_HOSTNAMES.test(host)) {
+  if (isRefusedHost({ hostname: host, port })) {
     throw new BlockedRequestError(
       `Connections to private or local addresses are not allowed (${host})`
     );
@@ -304,16 +368,20 @@ export const assertPublicHost = async (hostname: string): Promise<void> => {
   if (isIP(host)) return;
 
   await new Promise<void>((resolve, reject) => {
-    guardedLookup(host, {}, (error) =>
-      error
-        ? reject(
-            error instanceof BlockedRequestError
-              ? new BlockedRequestError(
-                  `Connections to private or local addresses are not allowed (${host})`
-                )
-              : error
-          )
-        : resolve()
+    guardedLookup(
+      host,
+      {},
+      (error) =>
+        error
+          ? reject(
+              error instanceof BlockedRequestError
+                ? new BlockedRequestError(
+                    `Connections to private or local addresses are not allowed (${host})`
+                  )
+                : error
+            )
+          : resolve(),
+      port
     );
   });
 };
