@@ -1,3 +1,0 @@
--- AlterEnum
-ALTER TYPE "NodeType" ADD VALUE IF NOT EXISTS 'SSH';
-ALTER TYPE "CredentialType" ADD VALUE IF NOT EXISTS 'SSH';
