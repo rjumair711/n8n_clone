@@ -46,9 +46,28 @@ model User {
   hasCompletedOnboarding Boolean          @default(false)
   // "Execution data retention": 7, 30 or 90 days
   executionRetentionDays Int              @default(30)
+  // Set by Better Auth's two-factor plugin once a code has been verified
+  twoFactorEnabled       Boolean?         @default(false)
+  twoFactors             TwoFactor[]
 
   @@unique([email])
   @@map("user")
+}
+
+// Better Auth's two-factor plugin: the TOTP secret and the backup codes of a
+// user, both encrypted by the plugin
+model TwoFactor {
+  id          String   @id
+  secret      String
+  backupCodes String
+  userId      String
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  // False until the first code from the authenticator app is accepted
+  verified    Boolean? @default(true)
+
+  @@index([secret])
+  @@index([userId])
+  @@map("two_factor")
 }
 
 model Session {

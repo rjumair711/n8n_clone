@@ -67,7 +67,11 @@ export function LoginForm() {
             password: values.password,
             callbackURL: "/workflows",
         }, {
-            onSuccess: () => {
+            onSuccess: (ctx) => {
+                // Two-factor is on: the auth client is already opening the
+                // page that asks for the code
+                if ((ctx.data as { twoFactorRedirect?: boolean } | null)?.twoFactorRedirect) return;
+
                 router.push("/workflows");
             },
             onError: (ctx) => {

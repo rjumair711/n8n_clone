@@ -62,6 +62,7 @@
     "nuqs": "^2.8.8",
     "pdf-lib": "^1.17.1",
     "pg": "^8.23.1",
+    "qrcode.react": "^4.2.0",
     "quickjs-emscripten": "^0.31.0",
     "radix-ui": "^1.4.3",
     "random-word-slugs": "^0.1.7",

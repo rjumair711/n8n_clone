@@ -5,7 +5,11 @@ import z from "zod";
 import prisma from "@/lib/db";
 import { createTRPCRouter, protectedProcedure } from "@/trpc/init";
 import { PLAN_LIMITS } from "@/config/plans";
-import { isAdmin as isAdminUser } from "@/lib/admin";
+import {
+    ADMIN_TWO_FACTOR_MESSAGE,
+    canUseAdminActions,
+    isAdmin as isAdminUser,
+} from "@/lib/admin";
 import { assertOwnership } from "@/lib/ownership";
 import {
     PLAN_NAMES,
@@ -25,6 +29,11 @@ const adminProcedure = protectedProcedure.use(({ ctx, next }) => {
             code: "FORBIDDEN",
             message: "Only an admin can manage templates.",
         });
+    }
+
+    // An admin account is worth stealing: it has to have two-factor on
+    if (!canUseAdminActions(ctx.auth.user)) {
+        throw new TRPCError({ code: "FORBIDDEN", message: ADMIN_TWO_FACTOR_MESSAGE });
     }
 
     return next();
@@ -73,6 +82,9 @@ export const templatesRouter = createTRPCRouter({
 
         return {
             isAdmin,
+            // An admin who has not turned two-factor on yet: the admin
+            // buttons are replaced by a note saying so
+            needsTwoFactor: isAdmin && !canUseAdminActions(ctx.auth.user),
             items: templates.map((template) => ({
                 ...template,
                 locked: !canUseTemplate(template.minPlan, user.plan, user.trialEndsAt),

@@ -10,6 +10,7 @@ import {
     KeyIcon,
     LayoutTemplateIcon,
     LogOutIcon,
+    SettingsIcon,
     SparklesIcon,
 } from "lucide-react"
 
@@ -42,6 +43,7 @@ const menuItems = [
             { id: "credentials", title: "Credentials", icon: KeyIcon, url: "/credentials" },
             { id: "executions", title: "Executions", icon: HistoryIcon, url: "/executions" },
             { id: "api-keys", title: "API Keys", icon: Code2Icon, url: "/api-keys" },
+            { id: "settings", title: "Settings", icon: SettingsIcon, url: "/settings" },
         ],
     },
 ]

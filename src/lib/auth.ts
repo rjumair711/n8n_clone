@@ -1,5 +1,15 @@
 import { betterAuth } from "better-auth"
 import { prismaAdapter } from "better-auth/adapters/prisma"
+import { APIError, createAuthMiddleware, getIp } from "better-auth/api"
+import { twoFactor } from "better-auth/plugins"
+import {
+  SIGN_IN_RATE_LIMIT,
+  clearFailedLogins,
+  getLoginLockSeconds,
+  loginLockedMessage,
+  recordFailedLogin,
+} from "./login-lockout"
+import { consumeRateLimit } from "./rate-limit"
 import prisma from "./db"
 // 💡 Added 'webhooks' to the import line below
 import { checkout, polar, portal, webhooks } from "@polar-sh/better-auth"
@@ -93,6 +103,18 @@ ${footer}`,
 const escapeHtml = (text: string) =>
   text.replace(/[&<>"']/g, (char) => `&#${char.charCodeAt(0)};`)
 
+const PASSWORD_SIGN_IN = "/sign-in/email"
+
+// Where a password or a two-factor code is being guessed at
+const isSignInAttempt = (path?: string) =>
+  path === PASSWORD_SIGN_IN || !!path?.startsWith("/two-factor/verify")
+
+const emailOf = (body: unknown) => {
+  const email = (body as { email?: unknown } | undefined)?.email
+
+  return typeof email === "string" && email.trim() ? email : null
+}
+
 export const auth = betterAuth({
   database: prismaAdapter(prisma, {
     provider: "postgresql",
@@ -119,6 +141,59 @@ export const auth = betterAuth({
   },
 
   trustedOrigins: getTrustedOrigins(),
+
+  hooks: {
+    before: createAuthMiddleware(async (ctx) => {
+      if (!isSignInAttempt(ctx.path)) return
+
+      // Per IP address: slows down guessing across many accounts
+      const ip = ctx.request ? getIp(ctx.request, ctx.context.options) : null
+
+      if (ip) {
+        const { allowed, retryAfterSeconds } = await consumeRateLimit(
+          `sign-in-ip:${ip}`,
+          SIGN_IN_RATE_LIMIT
+        )
+
+        if (!allowed) {
+          throw new APIError("TOO_MANY_REQUESTS", {
+            message: `Too many sign-in attempts. Try again in ${retryAfterSeconds} seconds.`,
+          })
+        }
+      }
+
+      // Per account: locked after too many wrong passwords, whatever the
+      // address they come from. Checked before the password is.
+      const email = ctx.path === PASSWORD_SIGN_IN ? emailOf(ctx.body) : null
+
+      if (email) {
+        const secondsLeft = await getLoginLockSeconds(email)
+
+        if (secondsLeft > 0) {
+          throw new APIError("TOO_MANY_REQUESTS", {
+            message: loginLockedMessage(secondsLeft),
+          })
+        }
+      }
+    }),
+    after: createAuthMiddleware(async (ctx) => {
+      if (ctx.path !== PASSWORD_SIGN_IN) return
+
+      const email = emailOf(ctx.body)
+      if (!email) return
+
+      const statusCode = (ctx.context.returned as { statusCode?: number } | undefined)
+        ?.statusCode
+
+      // 401 is a wrong email or password. Anything that is not an error, and
+      // "email not verified" (403), means the password was right.
+      if (statusCode === 401) {
+        await recordFailedLogin(email)
+      } else if (!statusCode || statusCode === 403) {
+        await clearFailedLogins(email)
+      }
+    }),
+  },
 
   emailAndPassword: {
     enabled: true,
@@ -171,6 +246,14 @@ export const auth = betterAuth({
     },
   },
   plugins: [
+    // Authenticator-app codes (TOTP) and backup codes. Asked for after the
+    // password; Google and GitHub sign-ins rely on the provider's own.
+    twoFactor({
+      issuer: "RXJ",
+      // Accounts that only sign in with Google or GitHub have no password
+      // to confirm with, and admins among them still have to enable it
+      allowPasswordless: true,
+    }),
     polar({
       client: polarClient,
       createCustomerOnSignUp: true,
