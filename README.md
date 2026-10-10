@@ -614,6 +614,24 @@ npx prisma migrate deploy   # apply the database migrations
 npm run dev:all             # Next.js + Inngest dev server + ngrok
 ```
 
+**A database set up before 10 October 2026.** The 38 migrations that existed until then were replaced by one, `20261010000000_baseline`, because the old history could not be replayed on an empty database. A new database needs nothing special: `migrate deploy` applies the baseline and everything after it. A database that already has the old history must be told once that the baseline is what it holds, or `migrate deploy` will try to create tables that exist:
+
+1. Make sure it was fully migrated with the old history, up to `20261009150000_execution_retention_and_save_setting`, and matches the schema of that time. If it stopped at an older migration, bring it up to date from a checkout made before the change first.
+2. Clear Prisma's migration history. This empties Prisma's own bookkeeping table and touches no application table:
+
+   ```bash
+   echo 'DELETE FROM "_prisma_migrations";' | npx prisma db execute --stdin --schema prisma/schema.prisma
+   ```
+
+3. Mark the baseline as applied, then apply what came after it:
+
+   ```bash
+   npx prisma migrate resolve --applied 20261010000000_baseline
+   npx prisma migrate deploy
+   ```
+
+`npx prisma migrate status` should then report "Database schema is up to date!".
+
 Run the checks that need no database or external service:
 
 ```bash
@@ -689,6 +707,7 @@ Also not built: a true n8n items model for every node from the trigger onward (i
 * Zustand
 * TanStack Query
 * Jotai
+* qrcode.react (the QR code for setting up two-factor authentication)
 
 ---
 
@@ -704,6 +723,7 @@ Also not built: a true n8n items model for every node from the trigger onward (i
 * Nodemailer
 * Resend (account emails)
 * QuickJS (sandboxed code and expressions)
+* disposable-email-domains-js (the list of throwaway email domains refused at sign-up)
 * fast-xml-parser (RSS and Atom feeds), mysql2 (MySQL node), ssh2 (SSH node)
 * pdf-lib, fontkit and bidi-js (PDF Generator), unpdf, mammoth and exceljs (reading PDF, Word and Excel files)
 * Noto Sans and Noto Naskh Arabic fonts (SIL Open Font License), bundled in `assets/fonts`
