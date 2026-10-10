@@ -585,6 +585,18 @@ Users can view:
 * current plan
 * remaining trial days
 
+## AI token usage and cost
+
+Every call to a language or embedding model is written down with the tokens the provider reported: input, output and cached input. This covers the AI Agent, the model nodes (OpenAI, Anthropic, Gemini, Chat Model, DeepSeek, Kimi, Qwen), the Text Classifier, the Information Extractor and the Vector Store's embeddings, also when one of them runs as an AI Agent tool. Only counts are stored, never prompts or answers, and they are kept after an execution's data is deleted so the month stays complete.
+
+* **Price table.** An admin with two-factor on sets what each model costs under **Settings → AI model prices**: provider, model, and US dollars per million input, output and cached input tokens. Provider and model are matched exactly, ignoring case. The provider is `openai`, `anthropic`, `gemini`, the Chat Model preset (`openrouter`, `deepseek`, `kimi`...) or `custom`. The table starts empty; the card lists the models that ran without a price so they can be added with one click. Price changes are in the audit log.
+* **Cost** is worked out when the call is made, from the price at that moment. Changing a price later does not change calls already recorded. A model without a price shows as "No price": it is not counted as free and not counted as money.
+* **Execution view.** An execution's page has an **AI usage** table: one line per node and model with calls, tokens and cost, and the total of the run. An AI Agent's calls are one line.
+* **Billing page.** **AI spend this month** shows the total since the 1st (UTC), the tokens, and the spend per workflow.
+* **Budgets (optional).** A monthly AI budget can be set for the account (Billing page) and for a workflow (editor → settings icon → **Monthly AI budget**). When the month's spend reaches a budget, the next node that calls a model stops the run with "Monthly AI budget reached..." until the budget is raised, removed, or the month ends. The check runs before each AI node, so the month can end slightly over the budget, by what the last node cost.
+
+The amounts are estimates for keeping an eye on spend. You pay your providers directly and their invoice is what counts: tokens written to a provider's cache are priced as normal input, an AI Agent run that fails halfway is not recorded, and a model without a price does not count towards a budget.
+
 ---
 
 # 🎯 Onboarding System

@@ -9,6 +9,8 @@ import type { NodeExecutor } from "@/features/executions/types";
 import { renderTemplate } from "../../lib/templates";
 import { loadCredentialSecret, parseJsonField } from "../../lib/integration";
 import { loadConnectedModel } from "../../lib/connected-model";
+import { embeddingUsage, normalizeUsage } from "@/lib/ai-cost";
+import { getAiUsageScope, recordAiUsage } from "@/lib/ai-usage";
 import {
   OTHER_CATEGORY_ID,
   extractJson,
@@ -44,6 +46,8 @@ export const textClassifierExecutor: NodeExecutor<TextClassifierData> = async ({
   step,
   allNodes,
   connections,
+  executionId,
+  workflowId,
 }) => {
   const variableName = data.variableName?.trim() || "classification";
   const categories = parseCategories(data.categories);
@@ -86,6 +90,13 @@ export const textClassifierExecutor: NodeExecutor<TextClassifierData> = async ({
         model: model.create(),
         system,
         prompt: text,
+      });
+
+      await recordAiUsage({
+        scope: getAiUsageScope({ userId, workflowId, executionId, nodeId, allNodes }),
+        provider: model.usageProvider,
+        model: model.modelName,
+        usage: normalizeUsage(result.totalUsage),
       });
 
       return result.text;
@@ -154,7 +165,17 @@ const coerceAttribute = (value: unknown, type: string): unknown => {
  */
 export const informationExtractorExecutor: NodeExecutor<
   InformationExtractorData
-> = async ({ data, nodeId, userId, context, step, allNodes, connections }) => {
+> = async ({
+  data,
+  nodeId,
+  userId,
+  context,
+  step,
+  allNodes,
+  connections,
+  executionId,
+  workflowId,
+}) => {
   const variableName = data.variableName?.trim() || "extracted";
   const attributes = parseAttributes(data.attributes);
 
@@ -196,6 +217,13 @@ export const informationExtractorExecutor: NodeExecutor<
         model: model.create(),
         system,
         prompt: text,
+      });
+
+      await recordAiUsage({
+        scope: getAiUsageScope({ userId, workflowId, executionId, nodeId, allNodes }),
+        provider: model.usageProvider,
+        model: model.modelName,
+        usage: normalizeUsage(result.totalUsage),
       });
 
       return result.text;
@@ -258,6 +286,16 @@ const MAX_CHUNKS_PER_INSERT = 200;
 const MAX_DOCUMENTS_PER_SEARCH = 5000;
 const MAX_TOP_K = 20;
 
+// The provider and model an embedding call is recorded and priced under
+const getEmbeddingUsageKey = (data: VectorStoreData) => {
+  const provider = data.embeddingProvider || "openai";
+
+  return {
+    provider: provider === "compatible" ? "custom" : provider,
+    model: data.embeddingModel?.trim() || DEFAULT_EMBEDDING_MODELS[provider] || "",
+  };
+};
+
 const createEmbeddingModel = (data: VectorStoreData, apiKey: string): EmbeddingModel => {
   const provider = data.embeddingProvider || "openai";
   const modelName =
@@ -307,8 +345,12 @@ export const vectorStoreExecutor: NodeExecutor<VectorStoreData> = async ({
   userId,
   context,
   step,
+  allNodes,
+  executionId,
+  workflowId,
 }) => {
   const variableName = data.variableName?.trim() || "vectorStore";
+  const usageScope = getAiUsageScope({ userId, workflowId, executionId, nodeId, allNodes });
   const operation = data.operation || "search";
   const collection = renderTemplate(data.collection, context).trim() || "default";
 
@@ -357,9 +399,16 @@ export const vectorStoreExecutor: NodeExecutor<VectorStoreData> = async ({
         : undefined;
 
       const result = await step.run(`vector-store-${nodeId}-insert`, async () => {
-        const { embeddings } = await embedMany({
+        const { embeddings, usage } = await embedMany({
           model: createEmbeddingModel(data, apiKey),
           values: chunks,
+        });
+
+        await recordAiUsage({
+          scope: usageScope,
+          ...getEmbeddingUsageKey(data),
+          kind: "embedding",
+          usage: embeddingUsage(usage),
         });
 
         await prisma.vectorDocument.createMany({
@@ -390,9 +439,16 @@ export const vectorStoreExecutor: NodeExecutor<VectorStoreData> = async ({
       );
 
       const result = await step.run(`vector-store-${nodeId}-search`, async () => {
-        const { embedding } = await embed({
+        const { embedding, usage } = await embed({
           model: createEmbeddingModel(data, apiKey),
           value: query,
+        });
+
+        await recordAiUsage({
+          scope: usageScope,
+          ...getEmbeddingUsageKey(data),
+          kind: "embedding",
+          usage: embeddingUsage(usage),
         });
 
         const documents = await prisma.vectorDocument.findMany({

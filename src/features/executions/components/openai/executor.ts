@@ -6,6 +6,8 @@ import Handlebars from "handlebars";
 import { generateText } from "ai";
 import prisma from "@/lib/db";
 import { decrypt } from "@/lib/encryption";
+import { normalizeUsage } from "@/lib/ai-cost";
+import { getAiUsageScope, recordAiUsage } from "@/lib/ai-usage";
 
 Handlebars.registerHelper("json", (context) => {
   const jsonString = JSON.stringify(
@@ -31,9 +33,13 @@ export const OpenAIExecutor: NodeExecutor<
   OpenAIData
 > = async ({
   data,
+  nodeId,
   userId,
   context,
   step,
+  allNodes,
+  executionId,
+  workflowId,
 }) => {
 
   // Validation
@@ -90,7 +96,20 @@ export const OpenAIExecutor: NodeExecutor<
 
     const { steps } = await step.ai.wrap(
       "openai-generate-text",
-      generateText,
+      // The call and its usage record are one step: a replayed run does
+      // not count the tokens twice
+      async (options: Parameters<typeof generateText>[0]) => {
+        const result = await generateText(options);
+
+        await recordAiUsage({
+          scope: getAiUsageScope({ userId, workflowId, executionId, nodeId, allNodes }),
+          provider: "openai",
+          model: data.model || "gpt-4o-mini",
+          usage: normalizeUsage(result.totalUsage),
+        });
+
+        return result;
+      },
       {
         model: openai(
           data.model || "gpt-4o-mini"

@@ -20,7 +20,7 @@ the instruction "build this workflow in the editor".
 ```bash
 npx prisma migrate deploy
 npm run dev:all
-npx tsx --conditions=react-server src/inngest/__test__/testCoreNodes.ts   # expect "137 checks passed"
+npx tsx --conditions=react-server src/inngest/__test__/testCoreNodes.ts   # expect "144 checks passed"
 ```
 
 Make a second account with a different email. Several checks need it.
@@ -575,6 +575,43 @@ Needs an API key for at least one provider; a free OpenRouter or Zhipu key is en
 | 5 | Add a new **DeepSeek** node | Model is `deepseek-flash`, the China line shows, and **Load models** works with a DeepSeek credential. Typing `deepseek-chat` shows the note about 24 July 2026 |
 | 6 | Add a new **Qwen** node | **Load models** works; the China line shows only for the China (Beijing) region |
 | 7 | Open a Kimi or DeepSeek node saved before this change | it still holds its old model ID and shows the note about it; nothing was changed for you |
+
+## T13c. Token usage, cost and AI budgets
+
+Needs one model API key, and an admin account (its email in `ADMIN_EMAILS`, verified, two-factor on) for the price table. The migration `ai_usage_cost` must be applied.
+
+**Usage and cost.**
+
+| # | Do | Expect |
+|---|----|--------|
+| 1 | As a normal user, open **Settings** | there is no "AI model prices" card |
+| 2 | As an admin without two-factor, open **Settings** | the card is there and says to turn on two-factor authentication |
+| 3 | Run a workflow with one model node (for example OpenAI with `gpt-4o-mini`), then open the execution's page | an **AI usage** table: the node's name, `openai / gpt-4o-mini`, 1 call, input and output tokens above 0, and "No price" as its cost. The note under it says 1 call has no price |
+| 4 | As the admin (two-factor on), open **Settings → AI model prices** | "No prices yet", and under "Used in the last 30 days without a price" a chip `openai / gpt-4o-mini (1)` |
+| 5 | Click the chip, type Input `0.15` and Output `0.6`, leave Cached input empty, **Save price** | the row appears with "same as input" for cached input and today's date. **Settings → Audit log** has "Model price saved" |
+| 6 | Open the execution from step 3 again | still "No price": calls already recorded keep what they were recorded with |
+| 7 | Run the workflow again and open the new execution | a cost such as `$0.000036`, equal to (input × 0.15 + output × 0.6) / 1,000,000, and the same amount as Total cost |
+| 8 | Run a workflow with an **AI Agent** that has a tool, a **Text Classifier** and a **Vector Store** (insert, then search) | one line per node: the agent's line is under the agent's name with all its calls summed, the classifier's under its own name, and the Vector Store's with the embedding model, output 0 |
+| 9 | Run a workflow without AI nodes | its execution page has no AI usage table |
+| 10 | Open **Billing** | **AI spend this month**: the total of the priced calls, the number of calls and tokens, a line about calls without a price, and the spend per workflow |
+| 11 | As the admin, **Edit** the price to Input `1`, save, then **Remove** it | the row changes, then goes; the audit log has "Model price saved" and "Model price deleted". Earlier executions still show their old cost |
+| 12 | As a normal user, call `aiUsage.savePrice` from the browser console or with curl | 403 "Only an admin can change model prices." |
+| 13 | Open another account's execution id at `/executions/<id>` | not found; its usage is never shown |
+
+**Budgets.** Set a price first, so calls have a cost.
+
+| # | Do | Expect |
+|---|----|--------|
+| 1 | In the editor, settings icon → **Monthly AI budget...** | a dialog with what the workflow spent this month and an empty field |
+| 2 | Type `abc`, then `0` | Save is disabled and a line says to type an amount of at least 0.01 |
+| 3 | Type `0.01`, **Save** (the workflow has already spent more than a cent; if not, run it until it has) | the toast confirms; the dialog shows "of $0.01" |
+| 4 | Run the workflow | it fails at the first AI node with "Monthly AI budget reached: the workflow "..." has spent ... on AI this month and its budget is $0.01. Raise or remove the budget in the workflow's settings, or wait until the 1st of next month (UTC)." Nodes before the AI node ran; the model was not called |
+| 5 | Open **Billing** | the workflow's line has a red bar and "budget reached" |
+| 6 | Run another workflow that has an AI node | it runs: a workflow's budget is its own |
+| 7 | **Remove** the workflow's budget, run it again | it runs |
+| 8 | On **Billing**, set the account's **Monthly AI budget** to `0.01` | the bar turns red. Every workflow now stops at its first AI node with "Monthly AI budget reached: your account has spent ..." A workflow without AI nodes still runs |
+| 9 | Give an AI Agent a model node as a tool and run it with the budget used up | the agent itself is stopped before it calls the model |
+| 10 | **Remove** the account budget | everything runs again |
 
 ## T14. Text Classifier and Information Extractor
 
