@@ -381,6 +381,41 @@ It creates two temporary users (emails ending in `@tenant-test.invalid`), gives 
 - On the login page use "Forgot your password?". **Expect:** an email with a link that lets you set a new password.
 - Rename an existing credential (change only its name, save). **Expect:** nodes using it still work.
 
+## T12b. Two-factor authentication, sessions and sign-in lockout
+
+Apply the migration first (`npx prisma migrate dev`). Use a password account, and an authenticator app on a phone.
+
+| # | Do | Expect |
+|---|----|--------|
+| 1 | Sidebar → **Settings** → **Turn on two-factor authentication**, confirm the password | a QR code, a setup key, ten backup codes and a code field. The badge still says **Off** |
+| 2 | Scan the QR code, enter the 6-digit code, **Turn on** | "Two-factor authentication is on" and the badge says **On**. A wrong code gives an error and stays off |
+| 3 | Sign out and sign in with the password | the `/two-factor` page asks for a code. The app's code opens `/workflows`; a wrong one gives an error |
+| 4 | Sign out, sign in, **Use a backup code**, enter one | signed in. The same backup code a second time is refused |
+| 5 | Sign in with **Do not ask on this device for 30 days** ticked, sign out, sign in again | no code is asked for on that browser |
+| 6 | **Settings** → **New backup codes**, confirm the password | ten new codes; an old one no longer works at sign-in |
+| 7 | **Turn off**, confirm the password | badge **Off**, and sign-in no longer asks for a code |
+| 8 | Sign in with a Google or GitHub account and turn two-factor on | no password is asked for, the rest is the same |
+
+**Sessions.** Sign in to the same account in a second browser (or a private window).
+
+| # | Do | Expect |
+|---|----|--------|
+| 1 | Open **Settings** in the first browser | both sessions are listed with device ("Chrome on Windows"), IP address and "Last active"; this one is marked **This device** and has no Sign out button |
+| 2 | **Sign out** on the other session, then reload the second browser | the row disappears; the second browser is on the login page |
+| 3 | Sign in again in the second browser, then **Sign out all other sessions** in the first | only **This device** is left and the button is disabled |
+
+**Lockout and rate limit.**
+
+| # | Do | Expect |
+|---|----|--------|
+| 1 | Enter a wrong password for one account 10 times (wait if "Too many sign-in attempts" appears: that is the per-IP limit) | attempts 1 to 10 say the email or password is invalid |
+| 2 | Try an 11th time, then with the **correct** password | both say "Too many failed sign-in attempts. Try again in 15 minutes." |
+| 3 | Do the same with an address that has no account | the same messages: the lock does not reveal whether an account exists |
+| 4 | In the database delete the row of `rate_limit` whose `key` starts with `login-fail:` (or wait 15 minutes), then sign in | works |
+| 5 | Set `SIGN_IN_RATE_LIMIT_PER_MINUTE=3`, restart, submit the login form 4 times within a minute | the 4th says "Too many sign-in attempts. Try again in N seconds." |
+
+**Admins need two-factor.** As an admin with two-factor **off**, open **Templates**. **Expect:** an amber note "Turn on two-factor authentication to publish, edit and delete templates" with a link to Settings, and no "New template", edit or delete buttons. Turn it on in Settings and go back: the buttons are there and publishing works. (The admin steps of T10 need it on.)
+
 ---
 
 # Part 2: AI (needs one model API key)

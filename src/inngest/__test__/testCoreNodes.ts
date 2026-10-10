@@ -2386,6 +2386,94 @@ const main = async () => {
     );
   });
 
+  // ------------------------------------------- TWO-FACTOR AND SESSIONS
+  console.log("Two-factor, sign-in lockout and sessions");
+
+  await test("admin actions need two-factor on top of being an admin", async () => {
+    const { canUseAdminActions } = await import("@/lib/admin");
+    process.env.ADMIN_EMAILS = "owner@example.com";
+
+    try {
+      const admin = { email: "owner@example.com", emailVerified: true };
+
+      assert.equal(canUseAdminActions({ ...admin, twoFactorEnabled: true }), true);
+      assert.equal(canUseAdminActions({ ...admin, twoFactorEnabled: false }), false);
+      assert.equal(canUseAdminActions({ ...admin, twoFactorEnabled: null }), false);
+      assert.equal(canUseAdminActions(admin), false);
+      // Two-factor does not make anyone an admin
+      assert.equal(
+        canUseAdminActions({ email: "someone@example.com", emailVerified: true, twoFactorEnabled: true }),
+        false
+      );
+      assert.equal(canUseAdminActions(null), false);
+    } finally {
+      delete process.env.ADMIN_EMAILS;
+    }
+
+    const { readFileSync } = await import("node:fs");
+    const { join } = await import("node:path");
+    const router = readFileSync(
+      join(process.cwd(), "src/features/templates/server/routers.ts"),
+      "utf8"
+    );
+    // The check sits in the procedure every admin action is built on
+    assert.match(router, /adminProcedure = protectedProcedure[\s\S]*?canUseAdminActions\(ctx\.auth\.user\)[\s\S]*?return next\(\)/);
+    for (const action of ["getSourceWorkflows", "create", "update", "remove"]) {
+      assert.match(router, new RegExp(`${action}: adminProcedure`), action);
+    }
+  });
+
+  await test("the sign-in lockout counts per account without storing the address", async () => {
+    const lockout = await import("@/lib/login-lockout");
+
+    assert.equal(lockout.LOGIN_MAX_FAILED_ATTEMPTS, 10);
+    assert.equal(lockout.LOGIN_LOCK_MINUTES, 15);
+
+    const key = lockout.loginAttemptKey("Owner@Example.com ");
+    assert.equal(key, lockout.loginAttemptKey("owner@example.com"));
+    assert.notEqual(key, lockout.loginAttemptKey("other@example.com"));
+    assert.match(key, /^login-fail:[0-9a-f]{64}$/);
+    assert.equal(key.includes("owner"), false);
+
+    assert.match(lockout.loginLockedMessage(900), /15 minutes/);
+    assert.match(lockout.loginLockedMessage(61), /2 minutes/);
+    assert.match(lockout.loginLockedMessage(5), /1 minute\./);
+  });
+
+  await test("a session's device is read from its user agent", async () => {
+    const { describeUserAgent } = await import("@/features/settings/lib/user-agent");
+
+    const cases: [string | null, string][] = [
+      ["Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/141.0.0.0 Safari/537.36", "Chrome on Windows"],
+      ["Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/141.0.0.0 Safari/537.36 Edg/141.0.0.0", "Edge on Windows"],
+      ["Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Safari/605.1.15", "Safari on macOS"],
+      ["Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Mobile/15E148 Safari/604.1", "Safari on iPhone"],
+      ["Mozilla/5.0 (Linux; Android 15; Pixel 9) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/141.0.0.0 Mobile Safari/537.36", "Chrome on Android"],
+      ["Mozilla/5.0 (X11; Linux x86_64; rv:143.0) Gecko/20100101 Firefox/143.0", "Firefox on Linux"],
+      ["curl/8.5.0", "Unknown device"],
+      ["", "Unknown device"],
+      [null, "Unknown device"],
+    ];
+
+    for (const [userAgent, expected] of cases) {
+      assert.equal(describeUserAgent(userAgent), expected, String(userAgent));
+    }
+  });
+
+  await test("sessions are listed and signed out by id, never by token", async () => {
+    const { readFileSync } = await import("node:fs");
+    const { join } = await import("node:path");
+    const router = readFileSync(
+      join(process.cwd(), "src/features/settings/server/routers.ts"),
+      "utf8"
+    );
+
+    // The list selects no token, and another account's session is "not found"
+    const list = router.slice(router.indexOf("getSessions"), router.indexOf("revokeSession:"));
+    assert.equal(/token/.test(list.replace(/\/\/.*/g, "")), false);
+    assert.match(router, /assertOwnership\(/);
+  });
+
   // ------------------------------------------------------------- API KEYS
   console.log("API keys");
 

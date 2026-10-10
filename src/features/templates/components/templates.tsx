@@ -12,6 +12,7 @@ import {
     SearchIcon,
     TrashIcon,
 } from "lucide-react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { useTRPC } from "@/trpc/client";
@@ -79,7 +80,10 @@ export const Templates = () => {
     const router = useRouter();
 
     const { data, isLoading } = useQuery(trpc.templates.getMany.queryOptions());
-    const isAdmin = !!data?.isAdmin;
+    // An admin without two-factor gets a note instead of the admin buttons:
+    // the server refuses those actions until it is turned on
+    const needsTwoFactor = !!data?.needsTwoFactor;
+    const isAdmin = !!data?.isAdmin && !needsTwoFactor;
 
     const [search, setSearch] = useState("");
     const [category, setCategory] = useState("All");
@@ -219,6 +223,15 @@ export const Templates = () => {
                     </Button>
                 )}
             </div>
+
+            {needsTwoFactor && (
+                <div className="rounded-md border border-amber-500/50 bg-amber-500/5 p-3 text-sm">
+                    Turn on two-factor authentication to publish, edit and delete templates.{" "}
+                    <Link href="/settings" className="underline underline-offset-4">
+                        Open Settings
+                    </Link>
+                </div>
+            )}
 
             <div className="flex flex-wrap items-center gap-3">
                 <div className="relative w-full max-w-xs">

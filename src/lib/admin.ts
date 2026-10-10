@@ -28,6 +28,18 @@ export const isAdmin = (user: AdminCandidate | null | undefined) => {
 };
 
 /**
+ * Admin actions (publishing, editing and deleting templates) also need
+ * two-factor authentication on the admin's account. Strictly true: a
+ * missing or null value does not count.
+ */
+export const canUseAdminActions = (
+  user: (AdminCandidate & { twoFactorEnabled?: boolean | null }) | null | undefined
+) => isAdmin(user) && user?.twoFactorEnabled === true;
+
+export const ADMIN_TWO_FACTOR_MESSAGE =
+  "Turn on two-factor authentication in Settings to manage templates.";
+
+/**
  * The warning to log at startup when password accounts cannot be verified,
  * or null when the setup is fine. Verification mail is sent with Resend.
  */

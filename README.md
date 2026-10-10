@@ -533,10 +533,21 @@ The **Templates** page is a gallery of ready-made workflows. "Use template" copi
 
 * **Publishing:** an admin builds a workflow, then picks it under **New template** and gives it a name, description, category and the plan it is available from. Editing a template can replace its content with the current version of a workflow; hidden templates are visible to admins only.
 * **Admins** are accounts whose email is in the `ADMIN_EMAILS` environment variable **and** is verified. Only they can publish, edit and delete templates. A Google or GitHub sign-in counts as verified; a password account has to confirm its email first, which needs `RESEND_API_KEY`. Without that key the server logs a warning at startup, and a password account using an admin address stays an ordinary user.
+* **Admins need two-factor authentication.** Publishing, editing and deleting templates is refused until the admin turns it on under **Settings**; until then the Templates page shows a note with a link there instead of the admin buttons.
 * **What a template never contains:** stored credentials, webhook and signing secrets, WhatsApp verify tokens and app secrets, Slack and Discord webhook URLs, and the workflow an Execute Workflow node pointed at. Anything typed into ordinary fields (a key pasted into a header, a prompt) is copied as it is.
 * **Secret scan:** before a template is published or updated, every field of every node is scanned for the secret shapes the log redaction knows (`sk-` keys, Bearer tokens, JWTs, AWS, Slack and GitHub tokens, passwords in URLs) and for hand-typed values in `Authorization`, `Cookie` and `X-API-Key` headers. Values made only of `{{ }}` expressions pass. If anything is found the template is not saved and the dialog lists the node and field (never the value). An admin can tick **I checked this, publish anyway** to save it regardless. Editing only a template's details scans its stored content again. The scan knows those shapes only, so a secret of another shape still has to be caught by reading the workflow.
 * **Plans:** each template has a minimum plan. Locked templates are shown with a lock and offer the upgrade. An active free trial opens every template, the same way it opens plan-locked nodes.
 * Using a template counts toward the plan's workflow limit, and workflows already made from a template do not change when the template is edited or deleted.
+
+## Account security
+
+The **Settings** page (sidebar) holds two things.
+
+* **Two-factor authentication.** Turning it on shows a QR code for an authenticator app (TOTP) and ten backup codes, and asks for a first code before it takes effect. From then on a password sign-in also asks for a code on `/two-factor`; a backup code works once in its place, and "Do not ask on this device for 30 days" skips the question on that browser. New backup codes can be made, and it can be turned off, after confirming the password. Accounts that only sign in with Google or GitHub have no password to confirm with and are not asked for a code at sign-in: for them the provider's own two-factor is what protects the sign-in.
+* **Active sessions.** Every signed-in browser with its device, IP address and when it was last active, with **Sign out** for one and **Sign out all other sessions**. "Last active" is when Better Auth last refreshed the session, which it does about once a day, not the last click.
+* **Sign-in lockout.** Ten wrong passwords for one account within 15 minutes lock password sign-in for that account for 15 minutes, whatever addresses the attempts came from. The answer is the same for addresses that have no account. The lock ends by itself after the 15 minutes, and a correct password then starts the count again; resetting the password does not lift it early. Google and GitHub sign-in are not affected. Anyone who knows an address can lock its password sign-in this way, which is the price of the rule.
+* **Sign-in rate limit.** Password and two-factor code attempts are limited per IP address (`SIGN_IN_RATE_LIMIT_PER_MINUTE`, default 20). The address is read from the proxy headers Better Auth trusts (`x-forwarded-for`), so the app has to run behind a proxy that sets it, as it does on Vercel.
+* **Passkeys** are not included: in the installed Better Auth (1.6) they are a separate package, `@better-auth/passkey`, which is not installed.
 
 ## Planned Improvements
 
@@ -583,6 +594,7 @@ Step-by-step workflows for testing every node by hand are in [`docs/TESTING.md`]
 | `POLAR_*` | Billing (access token, product IDs, webhook secret, success URL) |
 | `ALLOW_PRIVATE_NETWORK_REQUESTS` | `true` lets workflows reach private addresses (self-hosting only) |
 | `WEBHOOK_RATE_LIMIT_PER_MINUTE`, `API_RATE_LIMIT_PER_MINUTE` | Requests per minute for one workflow's webhook URL, and for one API key. Default 120 each |
+| `SIGN_IN_RATE_LIMIT_PER_MINUTE` | Password and two-factor code attempts per minute from one IP address, default 20 |
 | `WEBHOOK_RESPONSE_TIMEOUT_MS` | How long a webhook waits for the workflow's response, default 25000 |
 | `MAX_ITEMS_PER_NODE` | Items one node may process in a list, default 100 |
 | `MAX_FILE_SIZE_MB`, `MAX_USER_STORAGE_MB`, `FILE_RETENTION_DAYS` | Workflow file limits, defaults 10, 200 and 7 |
