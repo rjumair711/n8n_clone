@@ -49,9 +49,25 @@ model User {
   // Set by Better Auth's two-factor plugin once a code has been verified
   twoFactorEnabled       Boolean?         @default(false)
   twoFactors             TwoFactor[]
+  messageUsage           MessageUsage[]
 
   @@unique([email])
   @@map("user")
+}
+
+// How many messages a user sent on one day (UTC) through one channel
+// ("email", "whatsapp", "twilio", "telegram"), for the daily caps of
+// src/config/message-caps.ts
+model MessageUsage {
+  id      String   @id @default(cuid())
+  userId  String
+  user    User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  channel String
+  day     DateTime @db.Date
+  count   Int      @default(0)
+
+  @@unique([userId, channel, day])
+  @@map("message_usage")
 }
 
 // Better Auth's two-factor plugin: the TOTP secret and the backup codes of a

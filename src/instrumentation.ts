@@ -7,6 +7,10 @@ export async function register() {
     const { getAdminVerificationWarning } = await import("./lib/admin");
     const warning = getAdminVerificationWarning();
     if (warning) console.warn(warning);
+
+    const { getTurnstileWarning } = await import("./lib/turnstile");
+    const turnstileWarning = getTurnstileWarning();
+    if (turnstileWarning) console.warn(turnstileWarning);
   }
 
   if (process.env.NEXT_RUNTIME === "edge") {

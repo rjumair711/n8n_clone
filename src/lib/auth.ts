@@ -1,7 +1,9 @@
 import { betterAuth } from "better-auth"
 import { prismaAdapter } from "better-auth/adapters/prisma"
 import { APIError, createAuthMiddleware, getIp } from "better-auth/api"
-import { twoFactor } from "better-auth/plugins"
+import { captcha, twoFactor } from "better-auth/plugins"
+import { DISPOSABLE_EMAIL_MESSAGE, isDisposableEmail } from "./disposable-email"
+import { getTurnstileConfig } from "./turnstile"
 import {
   SIGN_IN_RATE_LIMIT,
   clearFailedLogins,
@@ -104,6 +106,10 @@ const escapeHtml = (text: string) =>
   text.replace(/[&<>"']/g, (char) => `&#${char.charCodeAt(0)};`)
 
 const PASSWORD_SIGN_IN = "/sign-in/email"
+const PASSWORD_SIGN_UP = "/sign-up/email"
+
+// Both keys set, or the check is off
+const turnstile = getTurnstileConfig()
 
 // Where a password or a two-factor code is being guessed at
 const isSignInAttempt = (path?: string) =>
@@ -123,6 +129,12 @@ export const auth = betterAuth({
   databaseHooks: {
     user: {
       create: {
+        // Every way an account is made, Google and GitHub sign-ins too
+        before: async (user) => {
+          if (isDisposableEmail(user.email)) {
+            throw new APIError("BAD_REQUEST", { message: DISPOSABLE_EMAIL_MESSAGE })
+          }
+        },
         after: async (user) => {
           await prisma.user.update({
             where: {
@@ -144,6 +156,15 @@ export const auth = betterAuth({
 
   hooks: {
     before: createAuthMiddleware(async (ctx) => {
+      // Refused before anything else happens, so the form gets this message
+      if (ctx.path === PASSWORD_SIGN_UP) {
+        const email = emailOf(ctx.body)
+
+        if (email && isDisposableEmail(email)) {
+          throw new APIError("BAD_REQUEST", { message: DISPOSABLE_EMAIL_MESSAGE })
+        }
+      }
+
       if (!isSignInAttempt(ctx.path)) return
 
       // Per IP address: slows down guessing across many accounts
@@ -254,6 +275,17 @@ export const auth = betterAuth({
       // to confirm with, and admins among them still have to enable it
       allowPasswordless: true,
     }),
+    // Cloudflare Turnstile on password sign-up, when its keys are set. The
+    // form sends the widget's answer in the x-captcha-response header.
+    ...(turnstile
+      ? [
+          captcha({
+            provider: "cloudflare-turnstile",
+            secretKey: turnstile.secretKey,
+            endpoints: [PASSWORD_SIGN_UP],
+          }),
+        ]
+      : []),
     polar({
       client: polarClient,
       createCustomerOnSignUp: true,

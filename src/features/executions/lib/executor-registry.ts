@@ -2,6 +2,9 @@ import { calculatorExecutor } from './../components/calculator/executor';
 import { stripeTriggerExecutor } from './../../triggers/components/stripe-trigger/executor';
 import { NodeType } from "@prisma/client";
 import { NodeExecutor } from "../types";
+import { getMessageSend } from "@/config/message-caps";
+import { consumeMessageQuota } from "@/lib/message-usage";
+import { renderTemplate } from "./templates";
 import { manualTriggerExecutor } from "@/features/triggers/components/manual-trigger/executor";
 import { httpRequestExecutor } from "../components/http-request/executor";
 import { googleFormTriggerExecutor } from "@/features/triggers/components/google-form-trigger/executor";
@@ -81,7 +84,7 @@ import {
   twilioExecutor,
 } from '../components/apps/executors';
 
-export const executorRegistry: Record<NodeType, NodeExecutor<any>> = {
+const baseExecutors: Record<NodeType, NodeExecutor<any>> = {
   [NodeType.MANUAL_TRIGGER]: manualTriggerExecutor,
   [NodeType.INITIAL]: manualTriggerExecutor,
   [NodeType.HTTP_REQUEST]: httpRequestExecutor,
@@ -160,6 +163,44 @@ export const executorRegistry: Record<NodeType, NodeExecutor<any>> = {
   [NodeType.SALESFORCE]: salesforceExecutor,
   [NodeType.SSH]: sshExecutor,
 }
+
+/**
+ * Nodes that send email, WhatsApp, Twilio or Telegram messages count each
+ * send against the user's daily cap before they run (see
+ * src/config/message-caps.ts). Done here so it holds wherever a node runs:
+ * in a workflow, once per item of a list, or as an AI Agent tool.
+ *
+ * The count is a step: when Inngest replays the run it is not counted again.
+ */
+const withMessageCap = (
+  type: NodeType,
+  executor: NodeExecutor<any>
+): NodeExecutor<any> => {
+  // Left as it is unless the node type can send at all (asked with a
+  // sending operation, for the nodes that also read)
+  if (!getMessageSend(type, { operation: "send_email" })) return executor;
+
+  return async (params) => {
+    const send = getMessageSend(type, params.data, (text) =>
+      renderTemplate(text, params.context)
+    );
+
+    if (send) {
+      await params.step.run(`message-cap-${params.nodeId}`, () =>
+        consumeMessageQuota(params.userId, send.channel, send.count)
+      );
+    }
+
+    return executor(params);
+  };
+};
+
+export const executorRegistry = Object.fromEntries(
+  Object.entries(baseExecutors).map(([type, executor]) => [
+    type,
+    withMessageCap(type as NodeType, executor),
+  ])
+) as Record<NodeType, NodeExecutor<any>>;
 
 export const getExecutor = (type: NodeType): NodeExecutor<any> => {
   const executor = executorRegistry[type];
