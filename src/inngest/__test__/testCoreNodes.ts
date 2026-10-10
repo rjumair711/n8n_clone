@@ -3320,6 +3320,200 @@ const main = async () => {
     assert.ok(plugins.indexOf("twoFactor({") > 0 && plugins.indexOf("twoFactor({") < plugins.indexOf("auditLogPlugin,"));
   });
 
+  // ------------------------------------------------ CHAT MODEL PROVIDERS
+  console.log("Chat model provider presets");
+
+  const chatProviders = await import("@/features/executions/lib/chat-model-providers");
+
+  await test("every provider preset has a base URL, and the ones asked for are there", () => {
+    const providers = chatProviders.CHAT_MODEL_PROVIDERS;
+    const values = providers.map((provider) => provider.value);
+
+    assert.equal(new Set(values).size, values.length, "values are unique");
+    assert.equal(new Set(providers.map((provider) => provider.label)).size, providers.length, "labels are unique");
+
+    const expected: Record<string, string> = {
+      zai: "https://api.z.ai/api/paas/v4",
+      bigmodel: "https://open.bigmodel.cn/api/paas/v4",
+      minimax: "https://api.minimax.io/v1",
+      "minimax-cn": "https://api.minimaxi.com/v1",
+      volcengine: "https://ark.cn-beijing.volces.com/api/v3",
+      "xiaomi-mimo": "https://api.xiaomimimo.com/v1",
+      siliconflow: "https://api.siliconflow.com/v1",
+      "siliconflow-cn": "https://api.siliconflow.cn/v1",
+      openrouter: "https://openrouter.ai/api/v1",
+      groq: "https://api.groq.com/openai/v1",
+      together: "https://api.together.ai/v1",
+      mistral: "https://api.mistral.ai/v1",
+      ollama: "http://localhost:11434/v1",
+      deepseek: "https://api.deepseek.com",
+      // Saved nodes use these values: they must not disappear
+      kimi: "https://api.moonshot.ai/v1",
+      qwen: "https://dashscope-intl.aliyuncs.com/compatible-mode/v1",
+      custom: "",
+    };
+
+    for (const [value, baseUrl] of Object.entries(expected)) {
+      assert.equal(chatProviders.getChatModelProvider(value)?.baseUrl, baseUrl, value);
+    }
+
+    for (const provider of providers) {
+      if (provider.value === "custom") continue;
+
+      const url = new URL(provider.baseUrl);
+      // Only a server on the user's own machine may be plain http
+      assert.equal(url.protocol, provider.value === "ollama" ? "http:" : "https:", provider.value);
+      assert.equal(provider.baseUrl.endsWith("/"), false, provider.value);
+      assert.equal(url.search + url.hash + url.username + url.password, "", provider.value);
+      assert.ok(provider.modelPlaceholder, provider.value);
+      assert.ok(Array.isArray(provider.models), provider.value);
+      assert.equal(new Set(provider.models).size, provider.models.length, provider.value);
+      if (provider.defaultModel) {
+        assert.ok(provider.models.includes(provider.defaultModel), `${provider.value} suggests its default`);
+      }
+    }
+  });
+
+  await test("a node's endpoint is its typed URL or region, else the preset's", () => {
+    const endpoint = chatProviders.resolveChatModelEndpoint;
+
+    assert.equal(endpoint({ provider: "groq" })?.baseUrl, "https://api.groq.com/openai/v1");
+    assert.equal(endpoint({ provider: "groq", baseUrl: "  " })?.baseUrl, "https://api.groq.com/openai/v1");
+    assert.equal(endpoint({ provider: "ollama", baseUrl: "http://10.0.0.5:11434/v1/" })?.baseUrl, "http://10.0.0.5:11434/v1");
+    assert.equal(endpoint({ provider: "custom", baseUrl: "https://llm.example.com/v1///" })?.baseUrl, "https://llm.example.com/v1");
+    assert.equal(endpoint({ provider: "custom" })?.baseUrl, "");
+    // A Chat Model node saved before it had a provider is an OpenRouter one
+    assert.equal(endpoint({})?.provider.value, "openrouter");
+    assert.equal(endpoint({ provider: "nope" }), null);
+
+    // The DeepSeek, Kimi and Qwen nodes: their provider, their region
+    const kimi = chatProviders.withDedicatedProvider("KIMI", { baseUrl: "https://api.moonshot.cn/v1" } as Record<string, any>);
+    assert.equal(endpoint(kimi)?.baseUrl, "https://api.moonshot.cn/v1");
+    assert.equal(endpoint(chatProviders.withDedicatedProvider("KIMI", {} as Record<string, any>))?.baseUrl, "https://api.moonshot.ai/v1");
+  });
+
+  await test("Kimi defaults to a current K2 model, and retired model IDs are pointed out", () => {
+    const kimi = chatProviders.withDedicatedProvider("KIMI", {} as Record<string, any>);
+    assert.equal(kimi.model, "kimi-k2.6");
+    assert.equal(kimi.provider, "kimi");
+    // A node that names a model keeps it, whatever it is
+    assert.equal(chatProviders.withDedicatedProvider("KIMI", { model: "moonshot-v1-8k" } as Record<string, any>).model, "moonshot-v1-8k");
+    assert.equal(chatProviders.withDedicatedProvider("DEEPSEEK", {} as Record<string, any>).model, "deepseek-flash");
+    assert.equal(chatProviders.withDedicatedProvider("QWEN", {} as Record<string, any>).model, "qwen-plus");
+
+    const note = chatProviders.getRetiredModelNote;
+    assert.match(note("kimi", "moonshot-v1-8k") ?? "", /discontinued this model on 31 August 2026\. Use a current one, for example kimi-k2\.6\./);
+    assert.match(note("kimi", " Kimi-K2-Turbo-Preview ") ?? "", /25 May 2026/);
+    assert.match(note("deepseek", "deepseek-chat") ?? "", /24 July 2026.*deepseek-flash/);
+    for (const [provider, model] of [["kimi", "kimi-k2.6"], ["kimi", "kimi-k3"], ["deepseek", "deepseek-flash"], ["openrouter", "moonshot-v1-8k"], [undefined, "x"], ["kimi", ""]] as const) {
+      assert.equal(note(provider, model), null, `${provider} ${model}`);
+    }
+    // No default is itself retired
+    for (const provider of chatProviders.CHAT_MODEL_PROVIDERS) {
+      for (const model of provider.models) assert.equal(note(provider.value, model), null, `${provider.value} ${model}`);
+    }
+  });
+
+  await test("the China note follows the address requests go to", () => {
+    const china = chatProviders.isProcessedInChina;
+    const baseUrlOf = (value: string) => chatProviders.getChatModelProvider(value)!.baseUrl;
+
+    for (const value of ["bigmodel", "minimax-cn", "volcengine", "siliconflow-cn", "deepseek"]) {
+      assert.equal(china(baseUrlOf(value)), true, value);
+    }
+    for (const value of ["zai", "minimax", "siliconflow", "openrouter", "groq", "together", "mistral", "ollama", "kimi", "qwen", "custom"]) {
+      assert.equal(china(baseUrlOf(value)), false, value);
+    }
+
+    // The region select of the Kimi and Qwen nodes
+    assert.equal(china("https://api.moonshot.cn/v1"), true);
+    assert.equal(china("https://dashscope.aliyuncs.com/compatible-mode/v1"), true);
+    assert.equal(china("https://dashscope-intl.aliyuncs.com/compatible-mode/v1"), false);
+
+    // By host, not by something that only contains the name
+    assert.equal(china("https://open.bigmodel.cn.example.com/v1"), false);
+    assert.equal(china("https://example.com/open.bigmodel.cn"), false);
+    assert.equal(china("https://eu.api.deepseek.com/v1"), true);
+    for (const text of ["", "not a url", null, undefined]) assert.equal(china(text), false, String(text));
+
+    assert.equal(chatProviders.CHINA_DATA_NOTE, "Data processed in China");
+  });
+
+  await test("free models come from the config file, not from the dialog", async () => {
+    const free = await import("@/config/free-models");
+
+    assert.equal(free.isFreeModel("bigmodel", "glm-4.7-flash"), true);
+    assert.equal(free.isFreeModel("bigmodel", "GLM-4-Flash-250414"), true);
+    assert.equal(free.isFreeModel("zai", " glm-4.5-flash "), true);
+    assert.equal(free.isFreeModel("openrouter", "meta-llama/some-model:free"), true);
+
+    // Paid models of the same family, and the same name at another provider
+    assert.equal(free.isFreeModel("bigmodel", "glm-5.3-flash"), false);
+    assert.equal(free.isFreeModel("zai", "glm-4.7"), false);
+    assert.equal(free.isFreeModel("zai", "glm-4-flash-250414"), false);
+    assert.equal(free.isFreeModel("siliconflow", "glm-4.7-flash"), false);
+    assert.equal(free.isFreeModel("groq", "anything:free"), false);
+    assert.equal(free.isFreeModel("openrouter", "openai/gpt-free-something"), false);
+    for (const [provider, model] of [[undefined, "glm-4.7-flash"], ["zai", ""], ["zai", null], ["custom", "x"]] as const) {
+      assert.equal(free.isFreeModel(provider, model), false, `${provider} ${model}`);
+    }
+
+    // Every listed provider exists, and its preset suggests its free models
+    for (const [provider, models] of Object.entries(free.FREE_MODELS)) {
+      const preset = chatProviders.getChatModelProvider(provider);
+      assert.ok(preset, provider);
+      assert.ok(models.some((model) => preset!.models.includes(model)), `${provider} suggests a free model`);
+    }
+    for (const provider of Object.keys(free.FREE_MODEL_SUFFIXES)) {
+      assert.ok(chatProviders.getChatModelProvider(provider), provider);
+    }
+
+    // The dialog asks the config; it names no model and no provider itself
+    const { readFileSync } = await import("node:fs");
+    const { join } = await import("node:path");
+    const field = readFileSync(join(process.cwd(), "src/features/executions/components/chat-model-field.tsx"), "utf8");
+    assert.match(field, /isFreeModel\(providerValue, model\)/);
+    assert.equal(/glm-|flash|:free|bigmodel|openrouter/i.test(field), false);
+  });
+
+  await test("a provider's model list is read in every shape it comes in", () => {
+    const parse = chatProviders.parseModelList;
+
+    assert.deepEqual(parse({ object: "list", data: [{ id: "b-model" }, { id: "a-model", owned_by: "x" }] }), ["a-model", "b-model"]);
+    assert.deepEqual(parse({ models: [{ name: "llama3.2:latest" }, { model: "qwen3" }] }), ["llama3.2:latest", "qwen3"]);
+    assert.deepEqual(parse(["one", "two", "one", " two "]), ["one", "two"]);
+    assert.deepEqual(parse({ data: [{ id: "ok" }, { id: 5 }, null, {}, { id: "" }, { id: "x".repeat(300) }] }), ["ok"]);
+    for (const body of [null, undefined, "text", 5, {}, { data: "no" }, { error: { message: "bad key" } }]) {
+      assert.deepEqual(parse(body), [], JSON.stringify(body));
+    }
+    assert.equal(parse({ data: Array.from({ length: 5000 }, (_, index) => ({ id: `m-${index}` })) }).length, 1000);
+  });
+
+  await test("Load models uses the node's own credential and never fails the dialog", async () => {
+    const { readFileSync } = await import("node:fs");
+    const { join } = await import("node:path");
+    const read = (path: string) => readFileSync(join(process.cwd(), path), "utf8");
+
+    const router = read("src/features/executions/server/chat-models.ts");
+    // The user's own credential, of the type the node uses, through the SSRF guard
+    assert.match(router, /assertOwnership\(/);
+    assert.match(router, /credential\.type !== CREDENTIAL_TYPES\[input\.nodeType\]/);
+    assert.match(router, /safeFetch\(`\$\{endpoint\.baseUrl\}\/models`/);
+    assert.equal(/[^e]fetch\(/.test(router.replace(/safeFetch\(/g, "")), false, "no unguarded fetch");
+    // Every failure comes back as the preset list with a reason
+    assert.ok((router.match(/fallback\(/g) ?? []).length >= 8);
+    assert.match(router, /redactString\(message, \{ secrets: apiKey \? \[apiKey\] : \[\] \}\)/);
+    // Nothing of the credential is returned
+    assert.equal(/return \{[^}]*(apiKey|credential)[^}]*\}/.test(router), false);
+
+    // The button is on all four nodes
+    const nodes = read("src/features/executions/components/core/nodes.tsx");
+    assert.match(nodes, /modelNodeType: "CHAT_MODEL"/);
+    assert.match(nodes, /modelNodeType: nodeType/);
+    for (const type of ["DEEPSEEK", "KIMI", "QWEN"]) assert.match(nodes, new RegExp(`nodeType: "${type}"`), type);
+    assert.match(read("src/features/executions/components/chat-model-field.tsx"), /Load models/);
+  });
+
   // ------------------------------------------------------------- API KEYS
   console.log("API keys");
 

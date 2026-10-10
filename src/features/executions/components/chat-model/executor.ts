@@ -6,7 +6,7 @@ import { safeFetch } from "@/lib/ssrf";
 import { renderTemplate } from "../../lib/templates";
 import { loadCredentialSecret } from "../../lib/integration";
 import {
-  getChatModelProvider,
+  resolveChatModelEndpoint,
   withDedicatedProvider,
 } from "../../lib/chat-model-providers";
 
@@ -26,14 +26,14 @@ export type ChatModelData = {
  * Agent when a Chat Model node is plugged into its Chat Model port.
  */
 export const createCompatibleChatModel = (data: ChatModelData, apiKey: string) => {
-  const provider = getChatModelProvider(data.provider || "openrouter");
-  if (!provider) {
+  const endpoint = resolveChatModelEndpoint(data);
+  if (!endpoint) {
     throw new NonRetriableError(
       `Chat Model node: Unsupported provider "${data.provider}"`
     );
   }
 
-  const baseURL = (data.baseUrl?.trim() || provider.baseUrl).replace(/\/+$/, "");
+  const { provider, baseUrl: baseURL } = endpoint;
   if (!baseURL) {
     throw new NonRetriableError("Chat Model node: Base URL is required");
   }
