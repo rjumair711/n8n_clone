@@ -1992,6 +1992,92 @@ const main = async () => {
     assert.equal(templateData.canUseTemplate("PRO", "FREE", expired), false);
   });
 
+  const { scanTemplateForSecrets } = await import("@/features/templates/lib/template-secrets");
+  const templateNode = (id: string, type: string, data: Record<string, unknown>) => ({
+    id,
+    type,
+    position: {},
+    data,
+  });
+
+  await test("the template scan finds typed-in secrets and says which node and field", () => {
+    const jwt = "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxMjM0NTY3ODkwIn0.abc123";
+    const findings = scanTemplateForSecrets([
+      templateNode("http", "HTTP_REQUEST", {
+        variableName: "callApi",
+        endpoint: "https://api.example.com",
+        headers: '{"Authorization": "Bearer abcdef123456", "Accept": "application/json"}',
+      }),
+      templateNode("agent", "AI_AGENT", {
+        systemMessage: "Use the key sk-proj-AbCdEfGhIjKlMnOp_QrStUv-123 when asked",
+        toolSettings: { tool_1: { description: `Send ${jwt}` } },
+      }),
+      templateNode("db", "POSTGRES", { query: "SELECT 1", note: "postgresql://app:s3cr3t@db.example.com/main" }),
+      templateNode("rows", "HTTP_REQUEST", {
+        headerRows: [
+          { name: "X-API-Key", value: "12345" },
+          { name: "Accept", value: "text/plain" },
+        ],
+        options: { headers: { Cookie: "session=abc123" } },
+      }),
+      templateNode("clean", "SLACK", { content: "Hello {{name}}" }),
+    ]);
+
+    const where = findings.map((finding) => `${finding.nodeId}:${finding.field}`);
+    assert.deepEqual(where, [
+      "http:headers",
+      "agent:systemMessage",
+      "agent:toolSettings.tool_1.description",
+      "db:note",
+      "rows:headerRows[0].value",
+      "rows:options.headers.Cookie",
+    ]);
+
+    assert.equal(findings[0].nodeType, "HTTP_REQUEST");
+    assert.equal(findings[0].nodeName, "callApi");
+    assert.match(findings[1].reason, /sk-/);
+    assert.match(findings[2].reason, /JSON Web Token/);
+    assert.match(findings[3].reason, /password in a URL/);
+    assert.match(findings[4].reason, /X-API-Key header/);
+    assert.match(findings[5].reason, /Cookie header/);
+
+    // The findings say where, never what
+    const json = JSON.stringify(findings);
+    for (const secret of ["abcdef123456", "sk-proj", jwt, "s3cr3t", "12345", "abc123"]) {
+      assert.equal(json.includes(secret), false, secret);
+    }
+  });
+
+  await test("the template scan passes expressions and ordinary text", () => {
+    const findings = scanTemplateForSecrets([
+      templateNode("http", "HTTP_REQUEST", {
+        headers: '{"Authorization": "Bearer {{ $json.token }}", "X-API-Key": "{{apiKey}}"}',
+        endpoint: "https://{{host}}/users?page=2",
+        body: "Authorization: Bearer {{token}}",
+        authHeaders: { Authorization: "Bearer {{ token }}", Cookie: "", "x-api-key": "{{ key }}" },
+        rows: [{ name: "Authorization", value: "{{ auth }}" }],
+      }),
+      templateNode("db", "POSTGRES", { query: "SELECT * FROM t WHERE id = $1", url: "postgresql://{{user}}:{{password}}@db/main" }),
+      templateNode("agent", "AI_AGENT", { systemMessage: "The bearer of this letter is at 10:30, mailto:someone@example.com" }),
+      templateNode("empty", "MANUAL_TRIGGER", {}),
+    ]);
+
+    assert.deepEqual(findings, []);
+  });
+
+  await test("saving a template scans it, and only an explicit confirmation gets past", async () => {
+    const { readFileSync } = await import("node:fs");
+    const { join } = await import("node:path");
+    const source = readFileSync(
+      join(process.cwd(), "src/features/templates/server/routers.ts"),
+      "utf8"
+    );
+
+    // Once when publishing and once when updating, each behind the confirmation
+    assert.equal(source.match(/scanTemplateForSecrets\(/g)?.length, 2);
+    assert.equal(source.match(/findings\.length > 0 && !confirmSecrets/g)?.length, 2);
+  });
+
   // -------------------------------------------------------------------------
   console.log("AI Agent tool safety");
 

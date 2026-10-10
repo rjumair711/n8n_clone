@@ -46,7 +46,9 @@ import {
 } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
+import { Checkbox } from "@/components/ui/checkbox";
 import { PLAN_NAMES } from "../lib/template-data";
+import type { TemplateSecretFinding } from "../lib/template-secrets";
 
 // Triggers and plumbing say little about what a template does
 const HIDDEN_BADGE_TYPES = new Set(["MANUAL_TRIGGER", "INITIAL", "SET_VARIABLE", "MERGE"]);
@@ -83,6 +85,20 @@ export const Templates = () => {
     const [category, setCategory] = useState("All");
     const [upgradeOpen, setUpgradeOpen] = useState(false);
     const [form, setForm] = useState<TemplateForm | null>(null);
+    // What the secret scan found when the last save was blocked, and whether
+    // the admin ticked "I checked this, publish anyway"
+    const [findings, setFindings] = useState<TemplateSecretFinding[] | null>(null);
+    const [confirmSecrets, setConfirmSecrets] = useState(false);
+
+    const clearFindings = () => {
+        setFindings(null);
+        setConfirmSecrets(false);
+    };
+
+    const openForm = (next: TemplateForm | null) => {
+        clearFindings();
+        setForm(next);
+    };
 
     // Only fetched for admins, when the dialog is open
     const { data: sourceWorkflows } = useQuery({
@@ -105,9 +121,18 @@ export const Templates = () => {
     );
 
     const saved = {
-        onSuccess: () => {
+        onSuccess: (
+            result: { saved: true } | { saved: false; findings: TemplateSecretFinding[] }
+        ) => {
+            // Blocked by the secret scan: the dialog stays open and lists why
+            if (!result.saved) {
+                setFindings(result.findings);
+                setConfirmSecrets(false);
+                return;
+            }
+
             toast.success("Template saved");
-            setForm(null);
+            openForm(null);
             refresh();
         },
         onError: (error: { message: string }) => toast.error(error.message),
@@ -154,6 +179,7 @@ export const Templates = () => {
             category: form.category,
             minPlan: form.minPlan,
             published: form.published,
+            ...(findings && confirmSecrets ? { confirmSecrets: true } : {}),
         };
 
         if (form.id) {
@@ -187,7 +213,7 @@ export const Templates = () => {
                     </p>
                 </div>
                 {isAdmin && (
-                    <Button onClick={() => setForm({ ...emptyForm })}>
+                    <Button onClick={() => openForm({ ...emptyForm })}>
                         <PlusIcon className="size-4" />
                         New template
                     </Button>
@@ -302,7 +328,7 @@ export const Templates = () => {
                                                 variant="ghost"
                                                 title="Edit template"
                                                 onClick={() =>
-                                                    setForm({
+                                                    openForm({
                                                         id: template.id,
                                                         workflowId: "",
                                                         name: template.name,
@@ -333,15 +359,16 @@ export const Templates = () => {
                 </div>
             )}
 
-            <Dialog open={!!form} onOpenChange={(open) => !open && setForm(null)}>
+            <Dialog open={!!form} onOpenChange={(open) => !open && openForm(null)}>
                 <DialogContent className="max-h-[90vh] overflow-y-auto">
                     <DialogHeader>
                         <DialogTitle>{form?.id ? "Edit template" : "New template"}</DialogTitle>
                         <DialogDescription>
                             A template is a copy of one of your workflows. Credentials,
                             webhook secrets and Slack or Discord webhook URLs are removed
-                            from the copy. Check the workflow for anything else private,
-                            such as keys typed into headers or prompts, before publishing.
+                            from the copy. The rest is scanned for keys, tokens and
+                            passwords typed into fields: if any are found, the template
+                            is not saved until you remove them or confirm.
                         </DialogDescription>
                     </DialogHeader>
 
@@ -353,6 +380,9 @@ export const Templates = () => {
                                     value={form.workflowId}
                                     onValueChange={(workflowId) => {
                                         const picked = sourceWorkflows?.find((workflow) => workflow.id === workflowId);
+
+                                        // Found in the workflow picked before
+                                        clearFindings();
 
                                         setForm({
                                             ...form,
@@ -448,15 +478,58 @@ export const Templates = () => {
                                     onCheckedChange={(published) => setForm({ ...form, published })}
                                 />
                             </div>
+
+                            {findings && (
+                                <div className="space-y-3 rounded-md border border-destructive/50 bg-destructive/5 p-3">
+                                    <div>
+                                        <p className="text-sm font-medium text-destructive">
+                                            Not saved: this looks like it contains secrets
+                                        </p>
+                                        <p className="text-xs text-muted-foreground">
+                                            Everyone who uses the template gets a copy of these
+                                            fields. Remove the values from the workflow, save it,
+                                            and try again.
+                                        </p>
+                                    </div>
+                                    <ul className="max-h-40 space-y-1 overflow-y-auto text-xs">
+                                        {findings.map((finding) => (
+                                            <li key={`${finding.nodeId}-${finding.field}-${finding.reason}`}>
+                                                <span className="font-medium">
+                                                    {getNodeLabel(finding.nodeType)}
+                                                    {finding.nodeName ? ` (${finding.nodeName})` : ""}
+                                                </span>
+                                                {", field "}
+                                                <code className="break-all">{finding.field}</code>
+                                                {`: ${finding.reason}`}
+                                            </li>
+                                        ))}
+                                    </ul>
+                                    <div className="flex items-center gap-2">
+                                        <Checkbox
+                                            id="template-confirm-secrets"
+                                            checked={confirmSecrets}
+                                            onCheckedChange={(checked) => setConfirmSecrets(checked === true)}
+                                        />
+                                        <Label htmlFor="template-confirm-secrets">
+                                            I checked this, publish anyway
+                                        </Label>
+                                    </div>
+                                </div>
+                            )}
                         </div>
                     )}
 
                     <DialogFooter>
                         <Button
-                            disabled={!formValid || createTemplate.isPending || updateTemplate.isPending}
+                            disabled={
+                                !formValid ||
+                                (!!findings && !confirmSecrets) ||
+                                createTemplate.isPending ||
+                                updateTemplate.isPending
+                            }
                             onClick={submitForm}
                         >
-                            {form?.id ? "Save changes" : "Publish template"}
+                            {findings ? "Publish anyway" : form?.id ? "Save changes" : "Publish template"}
                         </Button>
                     </DialogFooter>
                 </DialogContent>

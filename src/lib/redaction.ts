@@ -114,13 +114,14 @@ const SECRET_HEADER_NAMES = new Set([
   "x-api-key",
 ]);
 
-const isSecretHeaderName = (key: string) =>
+export const isSecretHeaderName = (key: string) =>
   SECRET_HEADER_NAMES.has(key.toLowerCase());
 
 const SECRET_HEADERS = "(?:proxy-)?authorization|(?:set-)?cookie|x-api-key";
 
-// Each pattern keeps what identifies the kind of secret and drops the rest
-const PATTERNS: [RegExp, string][] = [
+// Each pattern keeps what identifies the kind of secret and drops the rest.
+// The name is what findSecretPatterns reports.
+const PATTERNS: [RegExp, string, string][] = [
   // "Authorization: Basic abc", "Cookie: a=b; c=d", x-api-key=abc, and the
   // same inside JSON text: "authorization":"Bearer abc" (quotes are kept)
   [
@@ -129,21 +130,22 @@ const PATTERNS: [RegExp, string][] = [
       "gi"
     ),
     `$1$2${REDACTED}$2`,
+    "an Authorization, Cookie or X-API-Key header value",
   ],
   // Bearer tokens anywhere else
-  [/\b(Bearer)\s+[A-Za-z0-9._~+/=-]{8,}/gi, `$1 ${REDACTED}`],
+  [/\b(Bearer)\s+[A-Za-z0-9._~+/=-]{8,}/gi, `$1 ${REDACTED}`, "a Bearer token"],
   // JSON Web Tokens: header.payload.signature, each base64url
-  [/\beyJ[A-Za-z0-9_-]{5,}\.eyJ[A-Za-z0-9_-]{5,}\.[A-Za-z0-9_-]*/g, REDACTED],
+  [/\beyJ[A-Za-z0-9_-]{5,}\.eyJ[A-Za-z0-9_-]{5,}\.[A-Za-z0-9_-]*/g, REDACTED, "a JSON Web Token"],
   // OpenAI, Anthropic and other "sk-" keys
-  [/\bsk-[A-Za-z0-9_-]{16,}/g, REDACTED],
+  [/\bsk-[A-Za-z0-9_-]{16,}/g, REDACTED, 'an "sk-" API key'],
   // AWS access key ids
-  [/\bAKIA[0-9A-Z]{16}\b/g, REDACTED],
+  [/\bAKIA[0-9A-Z]{16}\b/g, REDACTED, "an AWS access key id"],
   // Slack tokens
-  [/\bxox[bpa]-[A-Za-z0-9-]{10,}/g, REDACTED],
+  [/\bxox[bpa]-[A-Za-z0-9-]{10,}/g, REDACTED, "a Slack token"],
   // GitHub tokens
-  [/\bghp_[A-Za-z0-9]{20,}/g, REDACTED],
+  [/\bghp_[A-Za-z0-9]{20,}/g, REDACTED, "a GitHub token"],
   // The password in scheme://user:password@host
-  [/\b([a-z][a-z0-9+.-]*:\/\/[^\s/:@]*):[^\s/@]+@/gi, `$1:${REDACTED}@`],
+  [/\b([a-z][a-z0-9+.-]*:\/\/[^\s/:@]*):[^\s/@]+@/gi, `$1:${REDACTED}@`, "a password in a URL"],
 ];
 
 export const redactPatterns = (text: string): string => {
@@ -154,6 +156,46 @@ export const redactPatterns = (text: string): string => {
   }
 
   return output;
+};
+
+const EXPRESSION = /\{\{[\s\S]*?\}\}/g;
+
+// What is left of "Bearer {{ token }}" once the expression is gone: a scheme
+// word on its own is not a secret
+const NOT_A_VALUE = /^["'\s]*(?:bearer|basic|token|digest)?["'\s]*$/i;
+
+/**
+ * Whether a text holds a value typed in by hand. Nothing but {{ }}
+ * expressions, with or without "Bearer" in front, is not: the value comes
+ * from somewhere else when the workflow runs.
+ */
+export const hasLiteralValue = (text: string): boolean =>
+  !NOT_A_VALUE.test(text.replace(EXPRESSION, ""));
+
+/**
+ * The kinds of secret (the same patterns redactPatterns replaces) typed
+ * into a text, by name. Never the secrets themselves. {{ }} expressions are
+ * ignored, so "Authorization: Bearer {{ token }}" is not reported.
+ */
+export const findSecretPatterns = (text: string): string[] => {
+  let literal = text.replace(EXPRESSION, "");
+  const found: string[] = [];
+
+  for (const [pattern, replacement, name] of PATTERNS) {
+    for (const match of literal.matchAll(pattern)) {
+      // Past what the pattern keeps (the header name, "Bearer"...)
+      if (hasLiteralValue(match[0].slice((match[1] ?? "").length))) {
+        found.push(name);
+        break;
+      }
+    }
+
+    // What one pattern found is not reported again by the next: the token
+    // in "Authorization: Bearer abc" is one secret, not two
+    literal = literal.replace(pattern, replacement);
+  }
+
+  return found;
 };
 
 export type RedactOptions = {
