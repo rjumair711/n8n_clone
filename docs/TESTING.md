@@ -20,7 +20,7 @@ the instruction "build this workflow in the editor".
 ```bash
 npx prisma migrate deploy
 npm run dev:all
-npx tsx --conditions=react-server src/inngest/__test__/testCoreNodes.ts   # expect "69 checks passed"
+npx tsx --conditions=react-server src/inngest/__test__/testCoreNodes.ts   # expect "125 checks passed"
 ```
 
 Make a second account with a different email. Several checks need it.
