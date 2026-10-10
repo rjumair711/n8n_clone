@@ -554,6 +554,27 @@ The **Settings** page (sidebar) holds two things.
 * **Sign-in rate limit.** Password and two-factor code attempts are limited per IP address (`SIGN_IN_RATE_LIMIT_PER_MINUTE`, default 20). The address is read from the proxy headers Better Auth trusts (`x-forwarded-for`), so the app has to run behind a proxy that sets it, as it does on Vercel.
 * **Passkeys** are not included: in the installed Better Auth (1.6) they are a separate package, `@better-auth/passkey`, which is not installed.
 
+## Limits against abuse
+
+A free trial unlocks the paid nodes, so these keep a trial or a cheap plan from being used to send in bulk or to sign up over and over.
+
+* **Daily message caps.** Each user may send this many messages per day (the day is UTC) through the nodes that reach people outside the app. The numbers are in one file, `src/config/message-caps.ts`.
+
+  | Plan | Email (SMTP, Gmail, Resend, SendGrid) | WhatsApp | Twilio (SMS and WhatsApp) | Telegram |
+  | ---- | ----- | -------- | ------ | -------- |
+  | Free (and the free trial) | 20 | 20 | 10 | 50 |
+  | Beginner | 100 | 50 | 25 | 200 |
+  | Intermediate | 1,000 | 500 | 250 | 2,000 |
+  | Pro | 10,000 | 5,000 | 2,500 | 20,000 |
+
+  * For email every recipient counts (To, Cc and Bcc), so one email to 30 addresses is 30. The four email nodes share one count.
+  * Reading mail with the Gmail node does not count; sending and replying do.
+  * The cap is the plan's, trial or not, and it holds wherever the node runs: in a workflow, once per item of a list, and as an AI Agent tool.
+  * When a send would go over, the node fails before anything is sent, with for example "Daily email limit reached: the Free plan allows 20 emails per day and 20 were sent today. The count starts again at 00:00 UTC. Upgrade your plan to send more."
+  * A message is counted when the node is about to send it, so one the provider then refuses still counts.
+* **Disposable email addresses** (mailinator, 10minutemail and the like, and their subdomains) cannot be used to sign up, with a password or through Google or GitHub. The list comes from the `disposable-email-domains-js` package; `npm update disposable-email-domains-js` brings in new domains. Accounts that already exist are not affected.
+* **Cloudflare Turnstile** on the password sign-up form, when `TURNSTILE_SITE_KEY` and `TURNSTILE_SECRET_KEY` are both set. Without them (or with only one, which logs a warning at startup) sign-up works as before. Google and GitHub sign-ups are not asked: the provider has checked them.
+
 ## Planned Improvements
 
 * Interactive onboarding checklist
@@ -599,6 +620,7 @@ Step-by-step workflows for testing every node by hand are in [`docs/TESTING.md`]
 | `POLAR_*` | Billing (access token, product IDs, webhook secret, success URL) |
 | `ALLOW_PRIVATE_NETWORK_REQUESTS` | `true` lets workflows reach private addresses (self-hosting only) |
 | `WEBHOOK_RATE_LIMIT_PER_MINUTE`, `API_RATE_LIMIT_PER_MINUTE` | Requests per minute for one workflow's webhook URL, and for one API key. Default 120 each |
+| `TURNSTILE_SITE_KEY`, `TURNSTILE_SECRET_KEY` | Cloudflare Turnstile on the sign-up form. Both or neither: with neither the check is off |
 | `SIGN_IN_RATE_LIMIT_PER_MINUTE` | Password and two-factor code attempts per minute from one IP address, default 20 |
 | `WEBHOOK_RESPONSE_TIMEOUT_MS` | How long a webhook waits for the workflow's response, default 25000 |
 | `SANDBOX_MAX_OUTPUT_KB` | The most a Code node or one expression may return, in KB, default 1024 |

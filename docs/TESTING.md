@@ -435,6 +435,44 @@ Apply the migration first (`npx prisma migrate dev`). Use a password account, an
 
 **Admins need two-factor.** As an admin with two-factor **off**, open **Templates**. **Expect:** an amber note "Turn on two-factor authentication to publish, edit and delete templates" with a link to Settings, and no "New template", edit or delete buttons. Turn it on in Settings and go back: the buttons are there and publishing works. (The admin steps of T10 need it on.)
 
+## T12c. Abuse limits: message caps, disposable email, Turnstile
+
+Apply the migration first (`npx prisma migrate dev`).
+
+**Daily message caps.** Use a Free account and a Telegram bot (cap 50), or any email node (cap 20). To avoid sending that many, set today's row by hand: after one send, in the `message_usage` table set `count` to the cap minus one for your user and channel.
+
+| # | Do | Expect |
+|---|----|--------|
+| 1 | Manual Trigger → Email (SMTP) to one address, run | sent; `message_usage` has a row for your user, channel `email`, today's date (UTC), `count` 1 |
+| 2 | Resend or Gmail node with To `a@x.com, b@x.com` and Bcc `c@x.com`, run | `count` goes up by 3 |
+| 3 | Gmail node with operation **Search messages**, run | `count` does not change |
+| 4 | Set `count` to 19, run the one-address email twice | the first is sent (`count` 20); the second fails on that node with "Daily email limit reached: the Free plan allows 20 emails per day and 20 were sent today. The count starts again at 00:00 UTC. Upgrade your plan to send more." Nothing is sent |
+| 5 | With `count` 19, run the 3-recipient node | fails with "This send has 3 recipients and 1 is left."; `count` stays 19 |
+| 6 | Telegram, WhatsApp and Twilio nodes, one run each | one row per channel (`telegram`, `whatsapp`, `twilio`), each counting on its own |
+| 7 | Split Out a list of 3 items → Telegram | `count` goes up by 3 |
+| 8 | AI Agent with a Telegram node as a tool, at the cap | the tool call fails with the limit message and the agent reports it |
+| 9 | Set the user's `plan` to `BEGINNER` in the database, run the email node at `count` 20 | sent: the Beginner cap is 100 |
+| 10 | Change the `day` of the row to yesterday, run | sent, and a new row for today starts at 1 |
+
+**Disposable email.**
+
+| # | Do | Expect |
+|---|----|--------|
+| 1 | Sign up with `test@mailinator.com`, then `test@sub.mailinator.com` | both refused: "Disposable email addresses cannot be used to sign up. Use your regular email address." No user row is created |
+| 2 | Sign up with an ordinary address | works as before |
+| 3 | Sign in to an account that already exists | works; the check is only made when an account is created |
+
+**Turnstile.** Cloudflare's test keys always pass: site key `1x00000000000000000000AA`, secret key `1x0000000000000000000000000000000AA`. The always-fail secret is `2x0000000000000000000000000000000AA`.
+
+| # | Do | Expect |
+|---|----|--------|
+| 1 | Neither key set, open `/signup` | no widget; sign-up works |
+| 2 | Set both test keys, restart, open `/signup` | the widget appears above **Sign Up**; the button is disabled until it shows success, then sign-up works |
+| 3 | Use the always-fail secret key, restart, sign up | refused with a captcha error; no user row is created. The widget resets for another try |
+| 4 | With both keys set, `POST /api/auth/sign-up/email` with curl and no `x-captcha-response` header | `400`, missing captcha response |
+| 5 | Set only `TURNSTILE_SITE_KEY`, restart | the server log has "[RXJ] Only TURNSTILE_SITE_KEY is set..."; no widget, sign-up works |
+| 6 | With both keys set, open `/login` and sign in | no widget, sign-in works: only sign-up is checked |
+
 ---
 
 # Part 2: AI (needs one model API key)

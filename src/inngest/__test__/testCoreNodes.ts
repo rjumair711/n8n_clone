@@ -2642,6 +2642,163 @@ const main = async () => {
     assert.match(router, /assertOwnership\(/);
   });
 
+  // ------------------------------------------------- TRIAL AND PLAN ABUSE
+  console.log("Message caps, disposable email and Turnstile");
+
+  await test("every plan has a daily cap for every message channel, rising with the plan", async () => {
+    const caps = await import("@/config/message-caps");
+    const plans = ["FREE", "BEGINNER", "INTERMEDIATE", "PRO"] as const;
+    const channels = ["email", "whatsapp", "twilio", "telegram"] as const;
+
+    for (const channel of channels) {
+      let previous = 0;
+      for (const plan of plans) {
+        const cap = caps.DAILY_MESSAGE_CAPS[plan][channel];
+        assert.ok(Number.isInteger(cap) && cap > previous, `${plan} ${channel}`);
+        assert.equal(caps.getDailyMessageCap(plan, channel), cap);
+        previous = cap;
+      }
+    }
+
+    // A plan the config does not know is treated as Free, never as unlimited
+    assert.equal(caps.getDailyMessageCap("GOLD", "email"), caps.DAILY_MESSAGE_CAPS.FREE.email);
+  });
+
+  await test("the nodes that send are counted, per recipient for email", async () => {
+    const { getMessageSend } = await import("@/config/message-caps");
+    const render = (text: string) => text.replace("{{list}}", "a@x.com, b@x.com; c@x.com");
+
+    assert.deepEqual(getMessageSend("EMAIL_SEND", { recipient: "a@x.com" }), { channel: "email", count: 1 });
+    assert.deepEqual(getMessageSend("EMAIL_SEND", { recipient: "{{list}}" }, render), { channel: "email", count: 3 });
+    assert.deepEqual(
+      getMessageSend("RESEND", { to: "a@x.com,b@x.com", cc: "c@x.com", bcc: "d@x.com; e@x.com;" }),
+      { channel: "email", count: 5 }
+    );
+    assert.deepEqual(getMessageSend("SENDGRID", { to: "Ali <a@x.com>" }), { channel: "email", count: 1 });
+    assert.deepEqual(
+      getMessageSend("GMAIL", { operation: "send_email", to: "a@x.com", bcc: "{{list}}" }, render),
+      { channel: "email", count: 4 }
+    );
+    // A reply goes to one sender whatever "to" still holds
+    assert.deepEqual(
+      getMessageSend("GMAIL", { operation: "reply", to: "a@x.com,b@x.com" }),
+      { channel: "email", count: 1 }
+    );
+    // Reading mail sends nothing
+    for (const operation of ["search_messages", "get_message", "mark_as_read", undefined]) {
+      assert.equal(getMessageSend("GMAIL", { operation }), null, String(operation));
+    }
+
+    assert.deepEqual(getMessageSend("WHATSAPP", { operation: "send_text", to: "923001234567" }), { channel: "whatsapp", count: 1 });
+    assert.deepEqual(getMessageSend("TWILIO", { operation: "send_sms" }), { channel: "twilio", count: 1 });
+    assert.deepEqual(getMessageSend("TWILIO", {}), { channel: "twilio", count: 1 });
+    assert.deepEqual(getMessageSend("TELEGRAM", { chatId: "1" }), { channel: "telegram", count: 1 });
+
+    // A field that cannot be rendered still counts as a message
+    assert.deepEqual(
+      getMessageSend("EMAIL_SEND", { recipient: "{{bad}}" }, () => {
+        throw new Error("bad expression");
+      }),
+      { channel: "email", count: 1 }
+    );
+
+    for (const type of ["SLACK", "DISCORD", "HTTP_REQUEST", "GMAIL_TRIGGER", "WHATSAPP_TRIGGER", "CODE"]) {
+      assert.equal(getMessageSend(type, { operation: "send_email", to: "a@x.com" }), null, type);
+    }
+  });
+
+  await test("the cap error says the plan, the limit and when it resets", async () => {
+    const { messageCapError } = await import("@/config/message-caps");
+
+    assert.equal(
+      messageCapError({ plan: "FREE", channel: "email", used: 20, count: 1 }),
+      "Daily email limit reached: the Free plan allows 20 emails per day and 20 were sent today. The count starts again at 00:00 UTC. Upgrade your plan to send more."
+    );
+    assert.match(
+      messageCapError({ plan: "FREE", channel: "email", used: 18, count: 5 }),
+      /18 were sent today\. This send has 5 recipients and 2 are left\./
+    );
+    assert.match(
+      messageCapError({ plan: "BEGINNER", channel: "whatsapp", used: 50, count: 1 }),
+      /^Daily WhatsApp message limit reached: the Beginner plan allows 50 WhatsApp messages per day/
+    );
+    assert.equal(/Upgrade/.test(messageCapError({ plan: "PRO", channel: "twilio", used: 2500, count: 1 })), false);
+  });
+
+  await test("the cap is applied where every node runs, and counted in one statement", async () => {
+    const { readFileSync } = await import("node:fs");
+    const { join } = await import("node:path");
+    const read = (path: string) => readFileSync(join(process.cwd(), path), "utf8");
+
+    // Workflows and AI Agent tools both take executors from the registry
+    const registry = read("src/features/executions/lib/executor-registry.ts");
+    assert.match(registry, /withMessageCap\(type as NodeType, executor\)/);
+    assert.match(registry, /params\.step\.run\(`message-cap-\$\{params\.nodeId\}`/);
+    assert.match(read("src/features/editor/components/agent/executor.ts"), /executorRegistry\[toolNode\.type/);
+
+    const usage = read("src/lib/message-usage.ts");
+    assert.match(usage, /ON CONFLICT \("userId", "channel", "day"\) DO UPDATE/);
+    assert.match(usage, /WHERE "message_usage"\."count" \+ \$\{count\} <= \$\{cap\}/);
+  });
+
+  await test("disposable email domains are recognised, subdomains included", async () => {
+    const { isDisposableEmail } = await import("@/lib/disposable-email");
+
+    for (const email of [
+      "someone@mailinator.com",
+      "Someone@MAILINATOR.com ",
+      "x@sub.mailinator.com",
+      "x@guerrillamail.com",
+      "x@10minutemail.com",
+      "x@yopmail.com",
+    ]) {
+      assert.equal(isDisposableEmail(email), true, email);
+    }
+
+    for (const email of [
+      "someone@gmail.com",
+      "someone@outlook.com",
+      "someone@example.com",
+      "someone@university.edu.pk",
+      "not-an-email",
+      "",
+    ]) {
+      assert.equal(isDisposableEmail(email), false, email);
+    }
+  });
+
+  await test("Turnstile is on only with both keys, and sign-up is where it is checked", async () => {
+    const { getTurnstileConfig, getTurnstileWarning } = await import("@/lib/turnstile");
+
+    assert.equal(getTurnstileConfig({}), null);
+    assert.equal(getTurnstileConfig({ TURNSTILE_SITE_KEY: "site" }), null);
+    assert.equal(getTurnstileConfig({ TURNSTILE_SECRET_KEY: "secret" }), null);
+    assert.equal(getTurnstileConfig({ TURNSTILE_SITE_KEY: " ", TURNSTILE_SECRET_KEY: "secret" }), null);
+    assert.deepEqual(
+      getTurnstileConfig({ TURNSTILE_SITE_KEY: " site ", TURNSTILE_SECRET_KEY: "secret" }),
+      { siteKey: "site", secretKey: "secret" }
+    );
+
+    assert.equal(getTurnstileWarning({}), null);
+    assert.equal(getTurnstileWarning({ TURNSTILE_SITE_KEY: "site", TURNSTILE_SECRET_KEY: "secret" }), null);
+    assert.match(getTurnstileWarning({ TURNSTILE_SITE_KEY: "site" }) ?? "", /Only TURNSTILE_SITE_KEY is set/);
+    assert.match(getTurnstileWarning({ TURNSTILE_SECRET_KEY: "secret" }) ?? "", /Only TURNSTILE_SECRET_KEY is set/);
+
+    const { readFileSync } = await import("node:fs");
+    const { join } = await import("node:path");
+    const read = (path: string) => readFileSync(join(process.cwd(), path), "utf8");
+
+    const authSource = read("src/lib/auth.ts");
+    assert.match(authSource, /\.\.\.\(turnstile\s*\?\s*\[\s*captcha\(\{[\s\S]*?endpoints: \[PASSWORD_SIGN_UP\]/);
+    // Disposable addresses are refused on the form's path and when any account is made
+    assert.equal(authSource.match(/isDisposableEmail\(/g)?.length, 2);
+
+    // The secret key never reaches the page; only the site key is passed on
+    const page = read("src/app/(auth)/signup/page.tsx");
+    assert.match(page, /getTurnstileConfig\(\)\?\.siteKey/);
+    assert.equal(/secretKey/.test(page), false);
+  });
+
   // ------------------------------------------------------------- API KEYS
   console.log("API keys");
 

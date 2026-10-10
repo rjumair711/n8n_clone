@@ -13,6 +13,9 @@ import { Input } from "@/components/ui/input"
 import { authClient } from "@/lib/auth-client"
 import { toast } from "sonner"
 import Image from "next/image"
+import { useRef, useState } from "react"
+import { TURNSTILE_HEADER } from "@/lib/turnstile"
+import { TurnstileWidget, type TurnstileHandle } from "./turnstile-widget"
 
 const registerSchema = z.object({
     email: z.email("Please enter a valid email address"),
@@ -26,8 +29,17 @@ const registerSchema = z.object({
 
 type RegisterFormValues = z.infer<typeof registerSchema>
 
-export function RegisterForm() {
+type Props = {
+    // Set when Cloudflare Turnstile is configured: the form then shows the
+    // widget and sends its answer with the sign-up
+    turnstileSiteKey?: string | null
+}
+
+export function RegisterForm({ turnstileSiteKey }: Props) {
     const router = useRouter()
+
+    const turnstile = useRef<TurnstileHandle>(null)
+    const [turnstileToken, setTurnstileToken] = useState<string | null>(null)
 
     const form = useForm<RegisterFormValues>({
         resolver: zodResolver(registerSchema),
@@ -73,6 +85,9 @@ export function RegisterForm() {
                 callbackURL: "/workflows",
             },
             {
+                ...(turnstileSiteKey && turnstileToken
+                    ? { headers: { [TURNSTILE_HEADER]: turnstileToken } }
+                    : {}),
                 onSuccess: (ctx) => {
                     // No session yet: the address has to be confirmed first
                     if (!ctx.data?.token) {
@@ -88,6 +103,9 @@ export function RegisterForm() {
                 }
             }
         )
+
+        // Turnstile accepts an answer once: the next attempt needs a new one
+        turnstile.current?.reset()
     }
 
     const isPending = form.formState.isSubmitting
@@ -184,7 +202,20 @@ export function RegisterForm() {
                                             </FormItem>
                                         )}
                                     />
-                                    <Button type="submit" className="w-full" disabled={isPending}>Sign Up</Button>
+                                    {turnstileSiteKey && (
+                                        <TurnstileWidget
+                                            ref={turnstile}
+                                            siteKey={turnstileSiteKey}
+                                            onToken={setTurnstileToken}
+                                        />
+                                    )}
+                                    <Button
+                                        type="submit"
+                                        className="w-full"
+                                        disabled={isPending || (!!turnstileSiteKey && !turnstileToken)}
+                                    >
+                                        Sign Up
+                                    </Button>
                                 </div>
                                 <div className="text-center text-sm">
                                     Already have an account? {" "}
