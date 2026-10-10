@@ -5,7 +5,7 @@
   "scripts": {
     "dev": "next dev",
     "postinstall": "prisma generate",
-    "build": "prisma generate && cross-env NODE_OPTIONS=--max-old-space-size=8192 next build",
+    "build": "prisma generate && node scripts/migrate-on-deploy.mjs && cross-env NODE_OPTIONS=--max-old-space-size=8192 next build",
     "start": "next start",
     "lint": "biome check",
     "ngrok:dev": "dotenv -- cmd /c C:\\ngrok\\ngrok.exe http --url=%NGROK_URL% 3000",

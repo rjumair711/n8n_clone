@@ -3578,6 +3578,89 @@ const main = async () => {
     assert.match(read("src/app/api/inngest/route.ts"), /getStartupErrors\(\)[\s\S]*status: 500[\s\S]*inngestHandler\(\.\.\.args\)/);
   });
 
+  await test("the build migrates the database on Vercel production deploys only, and fails with it", async () => {
+    const { readFileSync } = await import("node:fs");
+    const { join } = await import("node:path");
+    const { pathToFileURL } = await import("node:url");
+
+    // A plain .mjs script outside src: loaded by its path
+    const scriptPath = join(process.cwd(), "scripts/migrate-on-deploy.mjs");
+    const script: {
+      shouldMigrate: (env: Record<string, string | undefined>) => boolean;
+      migrateOnDeploy: (options: {
+        env: Record<string, string | undefined>;
+        migrate: () => number;
+        log: (line: string) => void;
+      }) => number;
+    } = await import(pathToFileURL(scriptPath).href);
+
+    assert.equal(script.shouldMigrate({ VERCEL_ENV: "production" }), true);
+    for (const env of [
+      {},
+      { VERCEL_ENV: "preview" },
+      { VERCEL_ENV: "development" },
+      { VERCEL_ENV: "Production" },
+      { VERCEL_ENV: "" },
+      // Not Vercel's own variable: a local or CI build never migrates
+      { NODE_ENV: "production" },
+      { VERCEL: "1" },
+    ]) {
+      assert.equal(script.shouldMigrate(env), false, JSON.stringify(env));
+    }
+
+    const run = (env: Record<string, string | undefined>, migrate: () => number) => {
+      let calls = 0;
+      const lines: string[] = [];
+      const code = script.migrateOnDeploy({
+        env,
+        migrate: () => {
+          calls += 1;
+          return migrate();
+        },
+        log: (line) => lines.push(line),
+      });
+
+      return { code, calls, output: lines.join("\n") };
+    };
+
+    // Previews and local builds: the migration is not even started
+    for (const env of [{ VERCEL_ENV: "preview" }, {}, { NODE_ENV: "production" }]) {
+      const skipped = run(env, () => 1);
+      assert.deepEqual([skipped.code, skipped.calls], [0, 0], JSON.stringify(env));
+      assert.match(skipped.output, /Not a Vercel production build/);
+    }
+
+    const applied = run({ VERCEL_ENV: "production" }, () => 0);
+    assert.deepEqual([applied.code, applied.calls], [0, 1]);
+
+    // A failed migration stops the build, whatever way it failed
+    const failed = run({ VERCEL_ENV: "production" }, () => 1);
+    assert.deepEqual([failed.code, failed.calls], [1, 1]);
+    assert.match(failed.output, /prisma migrate deploy failed \(exit code 1\)/);
+    assert.equal(run({ VERCEL_ENV: "production" }, () => 3).code, 3);
+    const crashed = run({ VERCEL_ENV: "production" }, () => {
+      throw new Error("prisma is not installed");
+    });
+    assert.equal(crashed.code, 1);
+    assert.match(crashed.output, /could not be run: prisma is not installed/);
+
+    // It sits in the build between generating the client and building the
+    // app, joined with &&, so a non-zero exit code ends the build
+    const { scripts } = JSON.parse(readFileSync(join(process.cwd(), "package.json"), "utf8"));
+    assert.match(
+      scripts.build,
+      /^prisma generate && node scripts\/migrate-on-deploy\.mjs && .*next build$/
+    );
+    // Nothing else migrates: not installing, not starting, not developing
+    for (const name of ["postinstall", "start", "dev"]) {
+      assert.equal(/migrate/.test(scripts[name] ?? ""), false, name);
+    }
+
+    const source = readFileSync(scriptPath, "utf8");
+    assert.match(source, /\[prismaCli, "migrate", "deploy"\]/);
+    assert.equal(/db push|migrate reset|migrate dev|accept-data-loss/.test(source.replace(/\/\/.*$/gm, "")), false);
+  });
+
   await test("the Polar webhook only acts on requests Polar signed", async () => {
     const { verifyPolarWebhook } = await import("@/lib/polar-webhook");
     const secret = "polar-webhook-secret";

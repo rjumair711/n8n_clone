@@ -641,6 +641,19 @@ NODE_OPTIONS=--max-old-space-size=8192 npx tsc --noEmit
 
 Step-by-step workflows for testing every node by hand are in [`docs/TESTING.md`](docs/TESTING.md).
 
+## Deploying (Vercel)
+
+The live app on Vercel and local development use the **same** database, so the schema only changes in one controlled way.
+
+* **The build command** is `npm run build`: `prisma generate`, then `node scripts/migrate-on-deploy.mjs`, then `next build`.
+* **Production deploys migrate the database.** When Vercel builds a production deployment (`VERCEL_ENV=production`, which is what a merge to `main` produces), the script runs `prisma migrate deploy` before the app is built. Pending migrations are applied; with none pending it changes nothing.
+* **Preview deployments and local builds never migrate.** They use the same database, and a preview is built from a branch that has not been merged. The script prints that it left the database alone and the build goes on.
+* **A failed migration fails the build.** Vercel then keeps serving the previous deployment, so new code is never live on a database it was not migrated for.
+* **Migrations reach production by merging to `main`, and no other way.** A pull request that adds a folder under `prisma/migrations` changes the production database the moment it is merged, so read its SQL as part of the review.
+* **Migrations have to work with the code that is already live.** The database is migrated a few minutes before the new code replaces the old, and if the build fails after the migration the old code stays. So migrations only add: new tables, and new columns that are nullable or have a default. Removing or renaming something is done in a later change, once no deployed code uses it.
+* `DATABASE_URL` must be available to the build on Vercel (it already is for `prisma generate`), and should be a direct connection, not a pooled one: `prisma migrate deploy` takes a lock that connection poolers can break.
+* `INNGEST_SIGNING_KEY` has to be set in the production environment, or the server does not start (see "Security").
+
 ## Environment variables
 
 | Variable | Purpose |
