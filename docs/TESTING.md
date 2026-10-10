@@ -255,6 +255,16 @@ Repeat with Title `رسید نمبر 42` and Content `محترم علی خان،
    - Sign up with that address and a password, then open **Templates**. **Expect:** no "New template", edit or delete buttons, and hidden templates are not listed.
    - In the database set that user's `emailVerified` to `true` and reload. **Expect:** the admin buttons appear.
    - Put `RESEND_API_KEY` back and restart. **Expect:** no warning.
+6. **Secret scan before publishing.** As admin, build a workflow with a Manual Trigger and an HTTP Request node whose Headers are `{"Authorization": "Bearer abcdef123456"}`, and save it.
+
+| # | Do | Expect |
+|---|----|--------|
+| 1 | **New template**, pick that workflow, fill in the rest, **Publish template** | the dialog stays open with a red box "Not saved: this looks like it contains secrets" naming **HTTP Request**, field `headers` and "an Authorization, Cookie or X-API-Key header value". The token itself is not shown. The button reads **Publish anyway** and is disabled. No template appears in the gallery |
+| 2 | Tick **I checked this, publish anyway**, then **Publish anyway** | "Template saved" and the template is in the gallery |
+| 3 | Edit that template, change only the description, **Save changes** | blocked again with the same box (the stored content is scanned); ticking the box saves it |
+| 4 | In the workflow change the header to `{"Authorization": "Bearer {{token}}"}` and save. Edit the template, pick the workflow under **Replace content with workflow**, **Save changes** | saved at once, no box |
+| 5 | Put `sk-proj-AbCdEfGhIjKlMnOp_QrStUv-123` in an AI Agent's System Message and `postgresql://app:s3cr3t@db.example.com/main` in any text field, save, publish as a new template | both nodes are listed, each with its field and kind ("an \"sk-\" API key", "a password in a URL") |
+| 6 | After a block, pick a different workflow in the dialog | the red box disappears until the next save attempt |
 
 ## T11. API keys
 

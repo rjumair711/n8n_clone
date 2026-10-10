@@ -15,6 +15,7 @@ import {
     type TemplateConnection,
     type TemplateNode,
 } from "../lib/template-data";
+import { scanTemplateForSecrets } from "../lib/template-secrets";
 
 // Publishing, editing and deleting templates is for admins: a verified
 // account whose email is in ADMIN_EMAILS
@@ -35,6 +36,9 @@ const templateFields = {
     category: z.string().trim().min(1, "Category is required").max(40),
     minPlan: z.enum(SubscriptionPlan),
     published: z.boolean(),
+    // "I checked this, publish anyway": saves although the scan found
+    // something that looks like a secret
+    confirmSecrets: z.boolean().optional(),
 };
 
 const NODE_TYPES = new Set<string>(Object.values(NodeType));
@@ -191,7 +195,7 @@ export const templatesRouter = createTRPCRouter({
     create: adminProcedure
         .input(z.object({ workflowId: z.string(), ...templateFields }))
         .mutation(async ({ ctx, input }) => {
-            const { workflowId, ...fields } = input;
+            const { workflowId, confirmSecrets, ...fields } = input;
 
             const workflow = assertOwnership(
                 await prisma.workflow.findUnique({
@@ -211,7 +215,13 @@ export const templatesRouter = createTRPCRouter({
                 });
             }
 
-            return prisma.workflowTemplate.create({
+            const findings = scanTemplateForSecrets(data.nodes);
+
+            if (findings.length > 0 && !confirmSecrets) {
+                return { saved: false as const, findings };
+            }
+
+            const template = await prisma.workflowTemplate.create({
                 data: {
                     ...fields,
                     nodes: data.nodes as unknown as Prisma.InputJsonValue,
@@ -221,6 +231,8 @@ export const templatesRouter = createTRPCRouter({
                 },
                 select: { id: true, name: true },
             });
+
+            return { saved: true as const, ...template };
         }),
 
     // ADMIN: change a template's details, or replace its content with the
@@ -234,9 +246,21 @@ export const templatesRouter = createTRPCRouter({
             })
         )
         .mutation(async ({ ctx, input }) => {
-            const { id, workflowId, ...fields } = input;
+            const { id, workflowId, confirmSecrets, ...fields } = input;
+
+            const existing = await prisma.workflowTemplate.findUnique({
+                where: { id },
+                select: { nodes: true },
+            });
+
+            if (!existing) {
+                throw new TRPCError({ code: "NOT_FOUND", message: "Template not found." });
+            }
 
             let content = {};
+            // Without a workflow the content stays, and is scanned again: it
+            // may have been saved before the scan existed
+            let nodes = existing.nodes as unknown as TemplateNode[];
 
             if (workflowId) {
                 const workflow = assertOwnership(
@@ -250,6 +274,7 @@ export const templatesRouter = createTRPCRouter({
 
                 const data = toTemplateData(workflow.nodes, workflow.connections);
 
+                nodes = data.nodes;
                 content = {
                     nodes: data.nodes as unknown as Prisma.InputJsonValue,
                     connections: data.connections as unknown as Prisma.InputJsonValue,
@@ -257,11 +282,19 @@ export const templatesRouter = createTRPCRouter({
                 };
             }
 
-            return prisma.workflowTemplate.update({
+            const findings = scanTemplateForSecrets(Array.isArray(nodes) ? nodes : []);
+
+            if (findings.length > 0 && !confirmSecrets) {
+                return { saved: false as const, findings };
+            }
+
+            const template = await prisma.workflowTemplate.update({
                 where: { id },
                 data: { ...fields, ...content },
                 select: { id: true, name: true },
             });
+
+            return { saved: true as const, ...template };
         }),
 
     // ADMIN: workflows already made from the template are not affected
