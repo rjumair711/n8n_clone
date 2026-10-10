@@ -1,7 +1,6 @@
 import { tool, type ModelMessage, type ToolSet } from "ai";
 import { NonRetriableError } from "inngest";
 import prisma from "@/lib/db";
-import { decrypt } from "@/lib/encryption";
 import type {
   NodeExecutor,
   NodeWithCredential,
@@ -28,14 +27,23 @@ import {
 import {
   DEFAULT_MODELS,
   MODEL_NODE_PROVIDERS,
-  getModelNodeData,
+  MODEL_ROUTER_TYPE,
+  getModelNodeSpecs,
+  getRouterSpecs,
   getUsageProvider,
-  buildLanguageModel,
-  type ModelProvider as Provider,
+  loadModelCandidates,
+  type ModelSpec,
 } from "@/features/executions/lib/connected-model";
+import {
+  CHEAP_TIER,
+  STRONG_TIER,
+  buildEscalationPrompt,
+  createFallbackModel,
+  createModelTracker,
+  describeModelAnswer,
+} from "@/features/executions/lib/model-fallback";
 import { extractJson } from "@/features/executions/lib/ai-fields";
-import { normalizeUsage } from "@/lib/ai-cost";
-import { getAiUsageScope, recordAiUsage } from "@/lib/ai-usage";
+import { getAiUsageScope, recordModelCalls } from "@/lib/ai-usage";
 import {
   buildMcpTools,
   loadMcpSecret,
@@ -170,50 +178,70 @@ export const aiAgentExecutor: NodeExecutor<AIAgentData> = async ({
   // =========================================================================
   // 2. CHAT MODEL
   // =========================================================================
-  const modelData = getModelNodeData(modelNode);
+  // A Model Router stands for two models: a cheap one that is tried first
+  // and a strong one that takes over when it fails
+  const routerNode =
+    modelNode?.type === MODEL_ROUTER_TYPE ? modelNode : undefined;
 
-  const provider: Provider | undefined = modelNode
-    ? MODEL_NODE_PROVIDERS[modelNode.type]
-    : data.provider;
+  let specs: ModelSpec[];
 
-  if (provider === "COMPATIBLE" && !modelData.model?.trim()) {
+  if (routerNode) {
+    specs = getRouterSpecs({
+      label: "AI Agent",
+      routerNode,
+      allNodes,
+      connections,
+    });
+  } else if (modelNode) {
+    if (!(modelNode.type in MODEL_NODE_PROVIDERS)) {
+      throw new NonRetriableError(
+        "AI Agent: a Chat Model node must be connected to the Chat Model port"
+      );
+    }
+
+    // The node's own model, then a Chat Model node's fallbacks
+    specs = getModelNodeSpecs(modelNode);
+  } else {
+    // Legacy: the model was set on the agent itself
+    if (!data.provider) {
+      throw new NonRetriableError(
+        "AI Agent: a Chat Model node must be connected to the Chat Model port"
+      );
+    }
+
+    specs = [
+      {
+        provider: data.provider,
+        usageProvider: getUsageProvider(data.provider),
+        modelName: data.modelName || DEFAULT_MODELS[data.provider],
+        modelData: {},
+        credentialId: data.credentialId,
+        tier: CHEAP_TIER,
+      },
+    ];
+  }
+
+  if (specs.some((spec) => !spec.modelName)) {
     throw new NonRetriableError(
       "AI Agent: the connected Chat Model node has no model set"
     );
   }
 
-  if (!provider) {
-    throw new NonRetriableError(
-      "AI Agent: a Chat Model node must be connected to the Chat Model port"
-    );
-  }
-
-  const modelName: string =
-    modelData.model ||
-    modelData.modelName ||
-    (modelNode ? "" : data.modelName) ||
-    DEFAULT_MODELS[provider];
-
-  const credentialId: string | undefined = modelNode
-    ? modelData.credentialId || modelNode.credentialId
-    : data.credentialId;
-
-  if (!credentialId) {
+  if (specs.some((spec) => !spec.credentialId)) {
     throw new NonRetriableError(
       "AI Agent: the connected Chat Model node has no credential selected"
     );
   }
 
-  const credential = await step.run("get-agent-model-credential", async () => {
-    // Scoped to the workflow owner: never use another user's credential
-    return prisma.credential.findUnique({
-      where: { id: credentialId, userId },
-    });
+  const candidates = await loadModelCandidates({
+    label: "AI Agent",
+    stepId: "get-agent-model-credential",
+    specs,
+    userId,
+    step,
   });
 
-  if (!credential) {
-    throw new NonRetriableError("AI Agent: Chat Model credential not found");
-  }
+  const { provider, modelName } = specs[0];
 
   // =========================================================================
   // 3. PROMPT
@@ -407,10 +435,11 @@ export const aiAgentExecutor: NodeExecutor<AIAgentData> = async ({
   // 6. RUN THE AGENT
   // =========================================================================
   const agentResult = await step.run("execute-agent-llm-loop", async () => {
-    try {
-      const apiKey = decrypt(credential.value).trim();
+    // Which model answered each call of the loop
+    const tracker = createModelTracker();
 
-      const model = buildLanguageModel(provider, apiKey, modelName, modelData);
+    try {
+      const { model } = createFallbackModel(candidates, tracker);
 
       const allTools: ToolSet = { ...tools };
 
@@ -427,7 +456,7 @@ export const aiAgentExecutor: NodeExecutor<AIAgentData> = async ({
         }
       }
 
-      const result = await runAgentLoop({
+      let result = await runAgentLoop({
         model,
         system,
         messages,
@@ -436,15 +465,82 @@ export const aiAgentExecutor: NodeExecutor<AIAgentData> = async ({
         maxToolCalls,
       });
 
-      // All the model calls of the loop, as one line
-      await recordAiUsage({
-        scope: getAiUsageScope({ userId, workflowId, executionId, nodeId, allNodes }),
-        provider: getUsageProvider(provider, modelData),
-        model: modelName,
-        usage: normalizeUsage(result.usage),
-      });
+      // Model Router: which side gave the final answer, and why
+      let modelRoute: { tier: "cheap" | "strong"; reason: string } | undefined;
 
-      return result;
+      if (routerNode) {
+        const strongAnswered =
+          tracker.calls[tracker.calls.length - 1]?.tier === STRONG_TIER;
+
+        modelRoute = strongAnswered
+          ? { tier: "strong", reason: "The cheap model failed or timed out" }
+          : { tier: "cheap", reason: "The cheap model answered" };
+
+        const escalateOnParser =
+          (routerNode.data as { escalateOnParser?: string } | null)
+            ?.escalateOnParser !== "false";
+
+        // The cheap model's answer does not fit the parser: the strong model
+        // answers instead. The tools are not run again; it is given what
+        // they returned.
+        if (
+          parserNode &&
+          escalateOnParser &&
+          !strongAnswered &&
+          extractJson(result.output) === undefined
+        ) {
+          const strong = createFallbackModel(
+            candidates.filter((candidate) => candidate.tier === STRONG_TIER),
+            tracker
+          );
+
+          const second = await runAgentLoop({
+            model: strong.model,
+            system,
+            messages: [
+              ...history,
+              {
+                role: "user",
+                content: buildEscalationPrompt({
+                  prompt,
+                  draft: result.output,
+                  toolResults: result.intermediateSteps.map((entry) => ({
+                    tool: entry.action.tool,
+                    input: entry.action.toolInput,
+                    result: entry.observation,
+                  })),
+                }),
+              },
+            ],
+            tools: {},
+          });
+
+          const add = (a?: number, b?: number) =>
+            a === undefined && b === undefined ? undefined : (a ?? 0) + (b ?? 0);
+
+          result = {
+            ...result,
+            output: second.output,
+            iterations: result.iterations + second.iterations,
+            usage: {
+              inputTokens: add(result.usage.inputTokens, second.usage.inputTokens),
+              outputTokens: add(result.usage.outputTokens, second.usage.outputTokens),
+              totalTokens: add(result.usage.totalTokens, second.usage.totalTokens),
+              cachedInputTokens: add(
+                result.usage.cachedInputTokens,
+                second.usage.cachedInputTokens
+              ),
+            },
+          };
+
+          modelRoute = {
+            tier: "strong",
+            reason: "The cheap model's answer did not fit the Structured Output Parser",
+          };
+        }
+      }
+
+      return { ...result, ...describeModelAnswer(tracker), modelRoute };
     } catch (error: any) {
       if (error instanceof NonRetriableError) throw error;
 
@@ -457,6 +553,13 @@ export const aiAgentExecutor: NodeExecutor<AIAgentData> = async ({
       // Stop immediately and mark the AI Agent node as FAILED
       throw new NonRetriableError(
         `LLM Provider Error (${provider}): ${error.message || "Failed to generate response."}`
+      );
+    } finally {
+      // One line per model that answered, also when the run then failed:
+      // the calls that were answered have been paid for
+      await recordModelCalls(
+        getAiUsageScope({ userId, workflowId, executionId, nodeId, allNodes }),
+        tracker
       );
     }
   });
@@ -511,7 +614,13 @@ export const aiAgentExecutor: NodeExecutor<AIAgentData> = async ({
       ? { intermediateSteps: agentResult.intermediateSteps }
       : {}),
     usage: agentResult.usage,
-    modelUsed: modelName,
+    // The model that gave the final answer: with fallbacks or a Model Router
+    // it is not always the first one
+    modelUsed: agentResult.modelUsed ?? modelName,
+    providerUsed: agentResult.providerUsed ?? specs[0].usageProvider,
+    fallbackUsed: agentResult.fallbackUsed === true,
+    modelAttempts: agentResult.modelAttempts ?? [],
+    ...(agentResult.modelRoute ? { modelRoute: agentResult.modelRoute } : {}),
   };
 
   return {

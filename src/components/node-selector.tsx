@@ -17,7 +17,7 @@ import { Braces, DatabaseZap, FileInput, FileOutput, FileText, PencilRuler, Plug
 import { AlertTriangle, ArrowDownUp, CopyMinus, Group, ListEnd, OctagonX, Reply, Sigma, Split, Workflow } from "lucide-react"
 import { Clock, FilterIcon, GlobeIcon, MousePointerIcon, Send, VariableIcon, ChevronDown, ChevronRight, Code2, Bot, MemoryStickIcon, Search, Type, Calculator, GitBranch, GitFork, Merge, Repeat, Webhook, MessageSquare } from "lucide-react"
 import { toast } from "sonner"
-import { Lock } from "lucide-react"
+import { Lock, Route } from "lucide-react"
 import { getRequiredPlanForNode } from "@/config/plans"
 import { useCurrentPlan } from "@/features/subscription/hook/use-current-plan"
 import { UpgradeModal } from "@/components/upgrade-modal"
@@ -313,6 +313,12 @@ const aiNodes: NodeTypeOption[] = [
         label: "Chat Model (OpenRouter, Groq, Ollama...)",
         description: "Any OpenAI-compatible model: OpenRouter, Groq, DeepSeek, Mistral, Together, Ollama. Works as an AI Agent's Chat Model",
         icon: "/logos/chat-model.svg"
+    },
+    {
+        type: NodeType.MODEL_ROUTER,
+        label: "Model Router",
+        description: "For an AI Agent's Chat Model port: a cheap model first, a stronger one when it fails",
+        icon: Route
     },
     {
         type: NodeType.TEXT_CLASSIFIER,

@@ -8,6 +8,7 @@ import {
   Group,
   ListEnd,
   OctagonX,
+  Route,
   Reply,
   Sigma,
   Split,
@@ -21,6 +22,14 @@ import {
   getChatModelProvider,
 } from "../../lib/chat-model-providers";
 import type { ChatModelNodeType } from "../chat-model-field";
+import {
+  DEFAULT_FALLBACK_TIMEOUT_SECONDS,
+  DEFAULT_ROUTER_TIMEOUT_SECONDS,
+  MAX_FALLBACK_TIMEOUT_SECONDS,
+  ROUTER_CHEAP_PORT,
+  ROUTER_STRONG_PORT,
+  parseFallbackModels,
+} from "../../lib/model-fallback";
 
 // =========================================================================
 // RESPOND TO WEBHOOK
@@ -517,6 +526,19 @@ export const chatModelConfig: IntegrationConfig = {
       required: true,
     },
     {
+      name: "fallbackModels",
+      label: "Fallback Models",
+      type: "fallbacks",
+      description:
+        "Tried in this order when the model above times out, answers 429 (rate limit) or a 5xx error, or cannot be reached. A wrong key or a bad request is not retried on another model. Also used when this node is an AI Agent's, Text Classifier's or Information Extractor's model. The output says which model answered.",
+    },
+    {
+      name: "fallbackTimeoutSeconds",
+      label: "Fallback Timeout (seconds)",
+      placeholder: String(DEFAULT_FALLBACK_TIMEOUT_SECONDS),
+      description: `How long a model may take before the next one is tried. Only used when there are fallback models; the last model on the list has no limit. Up to ${MAX_FALLBACK_TIMEOUT_SECONDS}.`,
+    },
+    {
       name: "systemPrompt",
       label: "System Prompt",
       type: "textarea",
@@ -531,11 +553,47 @@ export const chatModelConfig: IntegrationConfig = {
   ],
 };
 
-export const ChatModelNode = createIntegrationNode(chatModelConfig, (data) =>
-  data.model
-    ? `${CHAT_MODEL_PROVIDERS.find((provider) => provider.value === data.provider)?.label || "Chat Model"}: ${data.model}`
-    : undefined
-);
+export const ChatModelNode = createIntegrationNode(chatModelConfig, (data) => {
+  if (!data.model) return undefined;
+
+  const fallbacks = parseFallbackModels(data.fallbackModels).length;
+
+  return `${CHAT_MODEL_PROVIDERS.find((provider) => provider.value === data.provider)?.label || "Chat Model"}: ${data.model}${fallbacks ? ` (+${fallbacks} fallback${fallbacks === 1 ? "" : "s"})` : ""}`;
+});
+
+// =========================================================================
+// MODEL ROUTER (cheap model first, strong model when it fails)
+// =========================================================================
+export const modelRouterConfig: IntegrationConfig = {
+  label: "Model Router",
+  description:
+    "For an AI Agent's Chat Model port: tries a cheap model first and switches to a stronger one when the cheap one fails. Plug a model node into the Cheap port and another into the Strong port underneath, then connect this node to the agent's Chat Model port.",
+  logo: Route,
+  summary: "Cheap model first, then strong",
+  subInputs: [
+    { id: ROUTER_CHEAP_PORT, label: "Cheap" },
+    { id: ROUTER_STRONG_PORT, label: "Strong" },
+  ],
+  hint: "The strong model takes over when the cheap one returns an error or takes too long. The agent's output says which model answered, at {{aiAgentOutput.modelUsed}} and {{aiAgentOutput.modelRoute.tier}}.",
+  fields: [
+    {
+      name: "escalateOnParser",
+      label: "Switch when the output parser fails",
+      type: "switch",
+      defaultValue: "true",
+      description:
+        "With a Structured Output Parser on the agent: when the cheap model's answer does not have the required structure, the strong model answers instead. Tools are not run a second time; the strong model is given what they returned.",
+    },
+    {
+      name: "timeoutSeconds",
+      label: "Cheap Model Timeout (seconds)",
+      placeholder: String(DEFAULT_ROUTER_TIMEOUT_SECONDS),
+      description: `How long the cheap model may take for one answer before the strong model is used. Up to ${MAX_FALLBACK_TIMEOUT_SECONDS}.`,
+    },
+  ],
+};
+
+export const ModelRouterNode = createIntegrationNode(modelRouterConfig);
 
 // =========================================================================
 // DEEPSEEK, KIMI, QWEN (Chat Model nodes locked to one provider)

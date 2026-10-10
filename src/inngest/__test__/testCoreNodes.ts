@@ -3684,20 +3684,27 @@ const main = async () => {
     const count = (text: string, pattern: RegExp) => (text.match(pattern) ?? []).length;
 
     // Each place that calls a model writes the call down in the same step
-    const callSites: [string, RegExp, number][] = [
-      ["src/features/executions/components/openai/executor.ts", /generateText\(options\)/g, 1],
-      ["src/features/executions/components/anthropic/executor.ts", /generateText\(options\)/g, 1],
-      ["src/features/executions/components/gemini/executor.ts", /await generateText\(/g, 1],
-      ["src/features/executions/components/chat-model/executor.ts", /await generateText\(/g, 1],
-      // Text Classifier, Information Extractor, and the two embedding calls
-      ["src/features/executions/components/ai/executors.ts", /await (generateText|embedMany|embed)\(/g, 4],
-      ["src/features/editor/components/agent/executor.ts", /await runAgentLoop\(/g, 1],
+    // [file, its model calls, how many, records of one call, records of a tracker]
+    // A tracker (model-fallback.ts) holds every call of a model that can
+    // have fallbacks, and is written down once, in a finally block.
+    const callSites: [string, RegExp, number, number, number][] = [
+      ["src/features/executions/components/openai/executor.ts", /generateText\(options\)/g, 1, 1, 0],
+      ["src/features/executions/components/anthropic/executor.ts", /generateText\(options\)/g, 1, 1, 0],
+      ["src/features/executions/components/gemini/executor.ts", /await generateText\(/g, 1, 1, 0],
+      ["src/features/executions/components/chat-model/executor.ts", /await generateText\(/g, 1, 0, 1],
+      // The connected model of the Text Classifier and Information
+      // Extractor (one shared call), and the two embedding calls
+      ["src/features/executions/components/ai/executors.ts", /await (generateText|embedMany|embed)\(/g, 3, 2, 1],
+      // The agent's loop, and the strong model's answer after a parser failure
+      ["src/features/editor/components/agent/executor.ts", /await runAgentLoop\(/g, 2, 0, 1],
     ];
 
-    for (const [path, calls, expected] of callSites) {
+    for (const [path, calls, expected, single, tracked] of callSites) {
       const source = read(path);
       assert.equal(count(source, calls), expected, `${path}: model calls`);
-      assert.equal(count(source, /await recordAiUsage\(/g), expected, `${path}: recorded calls`);
+      assert.equal(count(source, /await recordAiUsage\(/g), single, `${path}: recorded calls`);
+      assert.equal(count(source, /await recordModelCalls\(/g), tracked, `${path}: recorded trackers`);
+      if (tracked) assert.match(source, /\} finally \{[^}]*await recordModelCalls\(/, `${path}: recorded after a failure too`);
     }
 
     // No model call anywhere else
@@ -3776,6 +3783,434 @@ const main = async () => {
     assert.match(router, /where: \{ executionId: input\.executionId, userId: ctx\.auth\.user\.id \}/);
 
     assert.match(readFileSync(join(process.cwd(), "src/trpc/routers/_app.ts"), "utf8"), /aiUsage: aiUsageRouter/);
+  });
+
+  // ------------------------------------------- MODEL FALLBACK AND ROUTER
+  console.log("Model fallback and Model Router");
+
+  const fallback = await import("@/features/executions/lib/model-fallback");
+
+  // A model that answers, or fails the way a provider would
+  const fakeModel = (
+    modelId: string,
+    behave: (options: { abortSignal?: AbortSignal }) => Promise<string>
+  ) =>
+    ({
+      specificationVersion: "v3",
+      provider: "fake",
+      modelId,
+      supportedUrls: {},
+      doGenerate: async (options: { abortSignal?: AbortSignal }) => ({
+        content: [{ type: "text", text: await behave(options) }],
+        finishReason: { unified: "stop", raw: "stop" },
+        usage: {
+          inputTokens: { total: 10, noCache: 6, cacheRead: 4, cacheWrite: 0 },
+          outputTokens: { total: 3, text: 3, reasoning: 0 },
+        },
+        warnings: [],
+      }),
+      doStream: async () => {
+        throw new Error("not used");
+      },
+    }) as never;
+
+  const httpError = (statusCode: number, message = `HTTP ${statusCode} sk-secret-key-123`) =>
+    Object.assign(new Error(message), { statusCode });
+
+  const candidate = (
+    model: string,
+    behave: (options: { abortSignal?: AbortSignal }) => Promise<string>,
+    extra: { tier?: number; timeoutMs?: number; provider?: string } = {}
+  ) => ({
+    provider: extra.provider ?? "openrouter",
+    model,
+    tier: extra.tier ?? fallback.CHEAP_TIER,
+    timeoutMs: extra.timeoutMs,
+    create: () => fakeModel(model, behave),
+  });
+
+  const ask = (model: unknown) =>
+    (model as { doGenerate: (options: object) => Promise<{ content: { text: string }[] }> })
+      .doGenerate({ prompt: [] })
+      .then((result) => result.content[0].text);
+
+  await test("the fallback list of a Chat Model node is read in order, without empty lines", () => {
+    const { parseFallbackModels, serializeFallbackModels, parseTimeoutMs } = fallback;
+
+    const saved = JSON.stringify([
+      { provider: "groq", credentialId: "cred_2", model: " llama-3.3-70b-versatile " },
+      { provider: "", credentialId: "", model: "" },
+      { model: "deepseek-flash" },
+      null,
+      "text",
+      { provider: 5, credentialId: null, model: "x" },
+    ]);
+
+    assert.deepEqual(parseFallbackModels(saved), [
+      { provider: "groq", credentialId: "cred_2", model: "llama-3.3-70b-versatile" },
+      { provider: "", credentialId: "", model: "deepseek-flash" },
+      { provider: "", credentialId: "", model: "x" },
+    ]);
+
+    // A node saved before the option existed, or with something else in the field
+    for (const value of [undefined, null, "", "   ", "not json", "{}", '"text"', 5]) {
+      assert.deepEqual(parseFallbackModels(value), [], String(value));
+    }
+
+    const many = JSON.stringify(Array.from({ length: 20 }, (_, index) => ({ model: `m-${index}` })));
+    assert.equal(parseFallbackModels(many).length, fallback.MAX_FALLBACK_MODELS);
+
+    assert.equal(serializeFallbackModels([]), "");
+    assert.deepEqual(parseFallbackModels(serializeFallbackModels(parseFallbackModels(saved))), parseFallbackModels(saved));
+
+    assert.equal(parseTimeoutMs("30"), 30_000);
+    assert.equal(parseTimeoutMs(""), fallback.DEFAULT_FALLBACK_TIMEOUT_SECONDS * 1000);
+    assert.equal(parseTimeoutMs("abc"), fallback.DEFAULT_FALLBACK_TIMEOUT_SECONDS * 1000);
+    assert.equal(parseTimeoutMs("0"), fallback.DEFAULT_FALLBACK_TIMEOUT_SECONDS * 1000);
+    assert.equal(parseTimeoutMs("99999"), fallback.MAX_FALLBACK_TIMEOUT_SECONDS * 1000);
+    assert.equal(parseTimeoutMs(undefined, 120), 120_000);
+  });
+
+  await test("a timeout, 429 or 5xx moves on to the next model; a wrong key or bad request does not", () => {
+    const { classifyModelError, nextCandidateIndex } = fallback;
+
+    for (const status of [408, 429, 500, 502, 503, 504, 529]) {
+      assert.deepEqual(classifyModelError(httpError(status)), { transient: true, label: `HTTP ${status}` });
+    }
+    for (const status of [400, 401, 403, 404, 422]) {
+      assert.deepEqual(classifyModelError(httpError(status)), { transient: false, label: `HTTP ${status}` });
+    }
+
+    assert.deepEqual(classifyModelError(new Error("anything"), true), { transient: true, label: "timeout" });
+    assert.deepEqual(classifyModelError(Object.assign(new Error("x"), { name: "TimeoutError" })), { transient: true, label: "timeout" });
+    assert.deepEqual(classifyModelError(new Error("The operation timed out")), { transient: true, label: "timeout" });
+    // The provider cannot be reached at all
+    assert.deepEqual(classifyModelError(new TypeError("fetch failed")), { transient: true, label: "connection error" });
+    assert.deepEqual(classifyModelError(Object.assign(new Error("x"), { cause: { code: "ECONNRESET" } })), { transient: true, label: "connection error" });
+    assert.deepEqual(classifyModelError(new Error("Cannot connect to API: getaddrinfo ENOTFOUND api.example.com")), { transient: true, label: "connection error" });
+    // Anything else is a mistake to fix, not to work around
+    assert.deepEqual(classifyModelError(new Error("Requests to private or local addresses are not allowed")), { transient: false, label: "error" });
+    assert.deepEqual(classifyModelError(undefined), { transient: false, label: "error" });
+
+    // The label never repeats the provider's message
+    assert.equal(/secret/.test(classifyModelError(httpError(401)).label), false);
+
+    // One list (a Chat Model node and its fallbacks)
+    assert.equal(nextCandidateIndex([0, 0, 0], 0, true), 1);
+    assert.equal(nextCandidateIndex([0, 0, 0], 2, true), -1);
+    assert.equal(nextCandidateIndex([0, 0, 0], 0, false), -1);
+    // A Model Router: cheap, cheap's fallback, strong, strong's fallback
+    assert.equal(nextCandidateIndex([0, 0, 1, 1], 0, true), 1);
+    assert.equal(nextCandidateIndex([0, 0, 1, 1], 1, true), 2);
+    // Any error of the cheap side goes to the strong side, skipping the rest of the cheap side
+    assert.equal(nextCandidateIndex([0, 0, 1, 1], 0, false), 2);
+    assert.equal(nextCandidateIndex([0, 0, 1, 1], 2, false), -1);
+    assert.equal(nextCandidateIndex([0, 0, 1, 1], 2, true), 3);
+    assert.equal(nextCandidateIndex([0, 0, 1, 1], 3, true), -1);
+  });
+
+  await test("fallback models are tried in order and the output says which one answered", async () => {
+    const { createFallbackModel, describeModelAnswer, sumCallsByModel } = fallback;
+
+    // The first model answers: nothing else is touched
+    let built = 0;
+    const untouched = { ...candidate("backup", async () => "from backup"), create: () => (built++, fakeModel("backup", async () => "from backup")) };
+    const first = createFallbackModel([candidate("primary", async () => "from primary"), untouched]);
+    assert.equal(await ask(first.model), "from primary");
+    assert.equal(built, 0, "a fallback's key is not even decrypted until it is needed");
+    assert.deepEqual(describeModelAnswer(first.tracker), {
+      modelUsed: "primary",
+      providerUsed: "openrouter",
+      fallbackUsed: false,
+      modelAttempts: [{ provider: "openrouter", model: "primary", outcome: "answered" }],
+    });
+
+    // A model that never answers. Its own timer keeps the test process alive:
+    // the timer behind AbortSignal.timeout does not.
+    const hang = ({ abortSignal }: { abortSignal?: AbortSignal }) =>
+      new Promise<string>((_, reject) => {
+        const alive = setTimeout(() => reject(new Error("never stopped")), 5000);
+        abortSignal?.addEventListener("abort", () => {
+          clearTimeout(alive);
+          reject(new Error("aborted"));
+        });
+      });
+
+    // 429, then a timeout, then an answer
+    const chain = createFallbackModel([
+      candidate("primary", async () => { throw httpError(429); }),
+      candidate("slow", hang, { timeoutMs: 30, provider: "groq" }),
+      candidate("third", async () => "from third", { provider: "deepseek" }),
+    ]);
+    assert.equal(await ask(chain.model), "from third");
+    assert.deepEqual(describeModelAnswer(chain.tracker), {
+      modelUsed: "third",
+      providerUsed: "deepseek",
+      fallbackUsed: true,
+      modelAttempts: [
+        { provider: "openrouter", model: "primary", outcome: "HTTP 429" },
+        { provider: "groq", model: "slow", outcome: "timeout" },
+        { provider: "deepseek", model: "third", outcome: "answered" },
+      ],
+    });
+    // Only the model that answered used tokens; cached input is kept apart
+    assert.deepEqual(sumCallsByModel(chain.tracker), [
+      { provider: "deepseek", model: "third", usage: { inputTokens: 6, outputTokens: 3, cachedInputTokens: 4 } },
+    ]);
+
+    // Several calls (an agent's loop) are summed per model
+    await ask(chain.model);
+    assert.deepEqual(sumCallsByModel(chain.tracker)[0].usage, { inputTokens: 12, outputTokens: 6, cachedInputTokens: 8 });
+
+    // A wrong key is not hidden by a fallback: the provider's own error comes back
+    const wrongKey = httpError(401, "Incorrect API key");
+    const strict = createFallbackModel([
+      candidate("primary", async () => { throw wrongKey; }),
+      candidate("backup", async () => "never"),
+    ]);
+    await assert.rejects(ask(strict.model), (error) => error === wrongKey);
+    assert.deepEqual(strict.tracker.attempts, [{ provider: "openrouter", model: "primary", outcome: "HTTP 401" }]);
+    assert.equal(describeModelAnswer(strict.tracker).modelUsed, undefined);
+
+    // Every model failed: one error that names each attempt
+    const dead = createFallbackModel([
+      candidate("primary", async () => { throw httpError(503); }),
+      candidate("backup", async () => { throw httpError(500, "upstream exploded"); }, { provider: "groq" }),
+    ]);
+    await assert.rejects(ask(dead.model), (error: Error) => {
+      assert.equal(error.name, "ModelFallbackError");
+      assert.match(error.message, /all 2 models failed/);
+      assert.match(error.message, /openrouter \/ primary: HTTP 503; groq \/ backup: HTTP 500/);
+      assert.match(error.message, /Last error: upstream exploded/);
+      return true;
+    });
+
+    // The last model has nothing to hand over to, so it gets no time limit
+    const patient = createFallbackModel([
+      candidate("primary", async () => { throw httpError(500); }),
+      candidate("last", () => new Promise((resolve) => setTimeout(() => resolve("slow but fine"), 60)), { timeoutMs: 10 }),
+    ]);
+    assert.equal(await ask(patient.model), "slow but fine");
+
+    // A node without fallbacks behaves as before: its error passes through
+    const boom = httpError(500);
+    const single = createFallbackModel([candidate("only", async () => { throw boom; }, { timeoutMs: 10 })]);
+    await assert.rejects(ask(single.model), (error) => error === boom);
+
+    assert.throws(() => createFallbackModel([]), /at least one model/);
+  });
+
+  await test("the AI SDK accepts a model with fallbacks as a normal model", async () => {
+    const { generateText } = await import("ai");
+    const { model, tracker } = fallback.createFallbackModel([
+      candidate("primary", async () => { throw httpError(502); }),
+      candidate("backup", async () => "answer from the backup"),
+    ]);
+
+    const result = await generateText({ model, prompt: "hello", maxRetries: 0 });
+
+    assert.equal(result.text, "answer from the backup");
+    assert.equal(result.totalUsage.inputTokens, 10);
+    assert.equal(fallback.describeModelAnswer(tracker).modelUsed, "backup");
+    assert.equal(fallback.describeModelAnswer(tracker).fallbackUsed, true);
+  });
+
+  await test("a Model Router switches to the strong model on any error of the cheap one", async () => {
+    const { createFallbackModel, describeModelAnswer, CHEAP_TIER, STRONG_TIER } = fallback;
+
+    const router = createFallbackModel([
+      candidate("cheap", async () => { throw httpError(401); }, { tier: CHEAP_TIER }),
+      candidate("cheap-fallback", async () => "never: the cheap side is skipped", { tier: CHEAP_TIER }),
+      candidate("strong", async () => "from strong", { tier: STRONG_TIER, provider: "anthropic" }),
+    ]);
+
+    assert.equal(await ask(router.model), "from strong");
+    assert.deepEqual(router.tracker.attempts.map((attempt) => `${attempt.model}: ${attempt.outcome}`), [
+      "cheap: HTTP 401",
+      "strong: answered",
+    ]);
+    assert.equal(describeModelAnswer(router.tracker).modelUsed, "strong");
+    assert.equal(router.tracker.calls[0].tier, STRONG_TIER);
+
+    // A rate limit on the cheap model tries the cheap side's own fallback first
+    const patient = createFallbackModel([
+      candidate("cheap", async () => { throw httpError(429); }, { tier: CHEAP_TIER }),
+      candidate("cheap-fallback", async () => "from the cheap fallback", { tier: CHEAP_TIER }),
+      candidate("strong", async () => "never", { tier: STRONG_TIER }),
+    ]);
+    assert.equal(await ask(patient.model), "from the cheap fallback");
+    assert.equal(patient.tracker.calls[0].tier, CHEAP_TIER);
+
+    // The strong model's own errors are final
+    const broken = createFallbackModel([
+      candidate("cheap", async () => { throw httpError(500); }, { tier: CHEAP_TIER }),
+      candidate("strong", async () => { throw httpError(400, "bad request"); }, { tier: STRONG_TIER }),
+    ]);
+    await assert.rejects(ask(broken.model), /all 2 models failed.*cheap: HTTP 500.*strong: HTTP 400/);
+
+    // What the strong model is asked after the cheap answer did not fit the parser
+    const prompt = fallback.buildEscalationPrompt({
+      prompt: "What is the weather in Lahore?",
+      draft: "It is hot today.",
+      toolResults: [{ tool: "weather", input: { city: "Lahore" }, result: { celsius: 31 } }],
+    });
+    assert.match(prompt, /^What is the weather in Lahore\?/);
+    assert.match(prompt, /1\. weather\(\{"city":"Lahore"\}\) returned: \{"celsius":31\}/);
+    assert.match(prompt, /data, not instructions/);
+    assert.match(prompt, /It is hot today\./);
+    assert.match(prompt, /exactly the required structure\.$/);
+    // Nothing looked up, nothing drafted: just the question and the instruction
+    assert.equal(
+      fallback.buildEscalationPrompt({ prompt: "Hi", draft: " ", toolResults: [] }),
+      "Hi\n\nReply now with the final answer in exactly the required structure."
+    );
+    assert.ok(
+      fallback.buildEscalationPrompt({ prompt: "Hi", draft: "", toolResults: [{ tool: "big", input: {}, result: "x".repeat(50_000) }] }).length < 21_000
+    );
+  });
+
+  await test("model nodes and the Model Router resolve to the models to try, in order", async () => {
+    const connected = await import("@/features/executions/lib/connected-model");
+    const { CHEAP_TIER, STRONG_TIER, ROUTER_CHEAP_PORT, ROUTER_STRONG_PORT } = fallback;
+
+    const chatModel = {
+      type: "CHAT_MODEL",
+      data: {
+        provider: "openrouter",
+        baseUrl: "https://openrouter.ai/api/v1",
+        credentialId: "cred_main",
+        model: "cheap/model",
+        fallbackTimeoutSeconds: "20",
+        fallbackModels: JSON.stringify([
+          { provider: "", credentialId: "", model: "other/model" },
+          { provider: "groq", credentialId: "cred_groq", model: "llama-3.3-70b-versatile" },
+        ]),
+      },
+    };
+
+    const specs = connected.getModelNodeSpecs(chatModel as never);
+    assert.deepEqual(
+      specs.map((spec) => [spec.usageProvider, spec.modelName, spec.credentialId, spec.timeoutMs, spec.tier]),
+      [
+        ["openrouter", "cheap/model", "cred_main", 20_000, CHEAP_TIER],
+        // The node's own provider and credential
+        ["openrouter", "other/model", "cred_main", 20_000, CHEAP_TIER],
+        ["groq", "llama-3.3-70b-versatile", "cred_groq", 20_000, CHEAP_TIER],
+      ]
+    );
+    // Another provider does not inherit the node's address
+    assert.equal(specs[1].modelData.baseUrl, "https://openrouter.ai/api/v1");
+    assert.equal(specs[2].modelData.baseUrl, "");
+    assert.equal(specs[2].modelData.model, "llama-3.3-70b-versatile");
+
+    // Without fallbacks nothing changes: one model and no time limit
+    const plain = connected.getModelNodeSpecs({ type: "CHAT_MODEL", data: { ...chatModel.data, fallbackModels: "" } } as never);
+    assert.equal(plain.length, 1);
+    assert.equal(plain[0].timeoutMs, undefined);
+
+    // The option belongs to the Chat Model node only
+    const openai = connected.getModelNodeSpecs({ type: "OPENAI", credentialId: "cred_openai", data: { fallbackModels: chatModel.data.fallbackModels } } as never);
+    assert.deepEqual(openai.map((spec) => [spec.usageProvider, spec.modelName, spec.credentialId]), [["openai", "gpt-4o-mini", "cred_openai"]]);
+
+    // Model Router: Cheap port first, then Strong
+    const nodes = [
+      { id: "router", type: "MODEL_ROUTER", data: { timeoutSeconds: "45" } },
+      { id: "cheap", ...chatModel },
+      { id: "strong", type: "ANTHROPIC", data: { credentialId: "cred_anthropic", model: "claude-sonnet-5-5" } },
+    ];
+    const edges = [
+      { fromNodeId: "strong", toNodeId: "router", fromOutput: "source-1", toInput: ROUTER_STRONG_PORT },
+      { fromNodeId: "cheap", toNodeId: "router", fromOutput: "source-1", toInput: ROUTER_CHEAP_PORT },
+      { fromNodeId: "router", toNodeId: "agent", fromOutput: "source-1", toInput: "sub-model" },
+    ];
+
+    const routed = connected.getRouterSpecs({ label: "AI Agent", routerNode: nodes[0] as never, allNodes: nodes as never, connections: edges as never });
+    assert.deepEqual(
+      routed.map((spec) => [spec.usageProvider, spec.modelName, spec.tier, spec.timeoutMs]),
+      [
+        // The cheap node keeps its own fallback timeout
+        ["openrouter", "cheap/model", CHEAP_TIER, 20_000],
+        ["openrouter", "other/model", CHEAP_TIER, 20_000],
+        ["groq", "llama-3.3-70b-versatile", CHEAP_TIER, 20_000],
+        ["anthropic", "claude-sonnet-5-5", STRONG_TIER, undefined],
+      ]
+    );
+
+    // A cheap node without fallbacks gets the router's timeout
+    const simple = connected.getRouterSpecs({
+      label: "AI Agent",
+      routerNode: nodes[0] as never,
+      allNodes: [nodes[0], { id: "cheap", type: "DEEPSEEK", data: { credentialId: "c", model: "deepseek-flash" } }, nodes[2]] as never,
+      connections: edges as never,
+    });
+    assert.deepEqual(simple.map((spec) => [spec.usageProvider, spec.tier, spec.timeoutMs]), [
+      ["deepseek", CHEAP_TIER, 45_000],
+      ["anthropic", STRONG_TIER, undefined],
+    ]);
+
+    // Both ports are needed
+    assert.throws(
+      () => connected.getRouterSpecs({ label: "AI Agent", routerNode: nodes[0] as never, allNodes: nodes as never, connections: edges.slice(1) as never }),
+      /Model Router needs a model node on its Cheap port and another on its Strong port/
+    );
+  });
+
+  await test("the Model Router is a sub-node: it and its models never run as steps", async () => {
+    const { ROUTER_CHEAP_PORT, ROUTER_STRONG_PORT } = fallback;
+
+    const graph = buildGraph(
+      [
+        { id: "trigger", type: "MANUAL_TRIGGER" },
+        { id: "agent", type: "AI_AGENT" },
+        { id: "router", type: "MODEL_ROUTER" },
+        { id: "cheap", type: "CHAT_MODEL" },
+        { id: "strong", type: "ANTHROPIC" },
+        { id: "after", type: "SET_VARIABLE" },
+      ],
+      [
+        { fromNodeId: "trigger", toNodeId: "agent", fromOutput: "source-1", toInput: "flow-in" },
+        { fromNodeId: "router", toNodeId: "agent", fromOutput: "source-1", toInput: "sub-model" },
+        { fromNodeId: "cheap", toNodeId: "router", fromOutput: "source-1", toInput: ROUTER_CHEAP_PORT },
+        { fromNodeId: "strong", toNodeId: "router", fromOutput: "source-1", toInput: ROUTER_STRONG_PORT },
+        { fromNodeId: "agent", toNodeId: "after", fromOutput: "flow-out", toInput: "target-1" },
+      ]
+    );
+
+    assert.deepEqual(graph.order, ["trigger", "agent", "after"]);
+
+    const { readFileSync, readdirSync } = await import("node:fs");
+    const { join } = await import("node:path");
+    const read = (path: string) => readFileSync(join(process.cwd(), path), "utf8");
+
+    const { NodeType } = await import("@prisma/client");
+    assert.equal(NodeType.MODEL_ROUTER, "MODEL_ROUTER");
+    // It calls no model itself: the agent does, and is what the budget stops
+    assert.equal(aiCost.AI_NODE_TYPES.has("MODEL_ROUTER"), false);
+
+    assert.match(read("src/features/executions/lib/executor-registry.ts"), /\[NodeType\.MODEL_ROUTER\]: contextTriggerExecutor/);
+    assert.match(read("src/config/node-components.ts"), /\[NodeType\.MODEL_ROUTER\]: ModelRouterNode/);
+    assert.match(read("src/components/node-selector.tsx"), /type: NodeType\.MODEL_ROUTER/);
+
+    // The node type is added by a migration that only adds
+    const migration = readdirSync(join(process.cwd(), "prisma/migrations")).find((name) => name.endsWith("_model_router"));
+    assert.ok(migration, "migration");
+    const sql = read(`prisma/migrations/${migration}/migration.sql`);
+    assert.match(sql, /ALTER TYPE "NodeType" ADD VALUE 'MODEL_ROUTER'/);
+    assert.equal(/DROP|RENAME|DELETE|TRUNCATE/i.test(sql), false);
+
+    // After a parser failure the strong model answers without the tools,
+    // so nothing a tool did happens twice
+    const agent = read("src/features/editor/components/agent/executor.ts");
+    assert.match(agent, /extractJson\(result\.output\) === undefined/);
+    assert.match(agent, /candidates\.filter\(\(candidate\) => candidate\.tier === STRONG_TIER\)/);
+    assert.match(agent, /buildEscalationPrompt\(\{[\s\S]{0,400}\}\),\s+\},\s+\],\s+tools: \{\},/);
+    assert.match(agent, /modelUsed: agentResult\.modelUsed \?\? modelName/);
+
+    // The Chat Model dialog has the list, and it reaches every node the model can serve
+    const nodesSource = read("src/features/executions/components/core/nodes.tsx");
+    assert.match(nodesSource, /name: "fallbackModels",\s+label: "Fallback Models",\s+type: "fallbacks"/);
+    assert.match(read("src/features/executions/components/chat-model/executor.ts"), /\.\.\.describeModelAnswer\(tracker\)/);
+    assert.match(read("src/features/executions/components/ai/executors.ts"), /\.\.\.describeModelAnswer\(tracker\)/);
   });
 
   // ------------------------------------------------------------- API KEYS

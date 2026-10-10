@@ -9,8 +9,11 @@ import type { NodeExecutor } from "@/features/executions/types";
 import { renderTemplate } from "../../lib/templates";
 import { loadCredentialSecret, parseJsonField } from "../../lib/integration";
 import { loadConnectedModel } from "../../lib/connected-model";
-import { embeddingUsage, normalizeUsage } from "@/lib/ai-cost";
-import { getAiUsageScope, recordAiUsage } from "@/lib/ai-usage";
+
+type ConnectedModel = Awaited<ReturnType<typeof loadConnectedModel>>;
+import { embeddingUsage } from "@/lib/ai-cost";
+import { getAiUsageScope, recordAiUsage, recordModelCalls, type AiUsageScope } from "@/lib/ai-usage";
+import { describeModelAnswer } from "../../lib/model-fallback";
 import {
   OTHER_CATEGORY_ID,
   extractJson,
@@ -23,6 +26,50 @@ const toAiError = (label: string, error: any) =>
   error instanceof NonRetriableError
     ? error
     : new NonRetriableError(`${label} node failed: ${error?.message || "unknown error"}`);
+
+/**
+ * One question to the connected model, for use inside a step: the answer
+ * and the model that gave it (the connected node's own, or one of its
+ * fallbacks). What the call used is written down either way.
+ */
+const askConnectedModel = async ({
+  model,
+  system,
+  prompt,
+  scope,
+}: {
+  model: ConnectedModel;
+  system: string;
+  prompt: string;
+  scope: AiUsageScope;
+}) => {
+  const { model: languageModel, tracker } = model.create();
+
+  try {
+    const result = await generateText({ model: languageModel, system, prompt });
+
+    return {
+      text: result.text,
+      ...describeModelAnswer(tracker),
+    };
+  } finally {
+    await recordModelCalls(scope, tracker);
+  }
+};
+
+// Runs that started before the answering model was reported kept only the
+// answer's text in their step result
+const readModelReply = (
+  reply: string | { text: string; modelUsed?: string; fallbackUsed?: boolean },
+  model: ConnectedModel
+) =>
+  typeof reply === "string"
+    ? { answer: reply, modelUsed: model.modelName, fallbackUsed: false }
+    : {
+        answer: reply.text,
+        modelUsed: reply.modelUsed ?? model.modelName,
+        fallbackUsed: reply.fallbackUsed === true,
+      };
 
 // =========================================================================
 // TEXT CLASSIFIER
@@ -85,22 +132,16 @@ export const textClassifierExecutor: NodeExecutor<TextClassifierData> = async ({
   ].join("\n");
 
   try {
-    const answer = await step.run(`text-classifier-${nodeId}`, async () => {
-      const result = await generateText({
-        model: model.create(),
+    const reply = await step.run(`text-classifier-${nodeId}`, () =>
+      askConnectedModel({
+        model,
         system,
         prompt: text,
-      });
-
-      await recordAiUsage({
         scope: getAiUsageScope({ userId, workflowId, executionId, nodeId, allNodes }),
-        provider: model.usageProvider,
-        model: model.modelName,
-        usage: normalizeUsage(result.totalUsage),
-      });
+      })
+    );
 
-      return result.text;
-    });
+    const { answer, modelUsed, fallbackUsed } = readModelReply(reply, model);
 
     const parsed = extractJson(answer) as { category?: unknown } | undefined;
     const chosen = String(parsed?.category ?? answer).trim().toLowerCase();
@@ -123,6 +164,9 @@ export const textClassifierExecutor: NodeExecutor<TextClassifierData> = async ({
       [variableName]: {
         category: match?.name ?? "other",
         branch,
+        // The model that answered: the connected one, or one of its fallbacks
+        modelUsed,
+        fallbackUsed,
       },
     };
   } catch (error) {
@@ -212,22 +256,16 @@ export const informationExtractorExecutor: NodeExecutor<
   ].join("\n");
 
   try {
-    const answer = await step.run(`information-extractor-${nodeId}`, async () => {
-      const result = await generateText({
-        model: model.create(),
+    const reply = await step.run(`information-extractor-${nodeId}`, () =>
+      askConnectedModel({
+        model,
         system,
         prompt: text,
-      });
-
-      await recordAiUsage({
         scope: getAiUsageScope({ userId, workflowId, executionId, nodeId, allNodes }),
-        provider: model.usageProvider,
-        model: model.modelName,
-        usage: normalizeUsage(result.totalUsage),
-      });
+      })
+    );
 
-      return result.text;
-    });
+    const { answer, modelUsed, fallbackUsed } = readModelReply(reply, model);
 
     const parsed = extractJson(answer);
 
@@ -249,7 +287,7 @@ export const informationExtractorExecutor: NodeExecutor<
 
     return {
       ...context,
-      [variableName]: { output },
+      [variableName]: { output, modelUsed, fallbackUsed },
     };
   } catch (error) {
     throw toAiError("Information Extractor", error);

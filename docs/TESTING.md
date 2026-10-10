@@ -20,7 +20,7 @@ the instruction "build this workflow in the editor".
 ```bash
 npx prisma migrate deploy
 npm run dev:all
-npx tsx --conditions=react-server src/inngest/__test__/testCoreNodes.ts   # expect "144 checks passed"
+npx tsx --conditions=react-server src/inngest/__test__/testCoreNodes.ts   # expect "151 checks passed"
 ```
 
 Make a second account with a different email. Several checks need it.
@@ -612,6 +612,43 @@ Needs one model API key, and an admin account (its email in `ADMIN_EMAILS`, veri
 | 8 | On **Billing**, set the account's **Monthly AI budget** to `0.01` | the bar turns red. Every workflow now stops at its first AI node with "Monthly AI budget reached: your account has spent ..." A workflow without AI nodes still runs |
 | 9 | Give an AI Agent a model node as a tool and run it with the budget used up | the agent itself is stopped before it calls the model |
 | 10 | **Remove** the account budget | everything runs again |
+
+## T13d. Fallback models and the Model Router
+
+Needs two model API keys that work, ideally at two providers (for example OpenRouter and Groq), saved as **Chat Model API Key** credentials. The migration `model_router` must be applied. A model that fails on purpose: a Chat Model node with provider **Custom base URL** and Base URL `https://httpbin.org/status/503` (always answers 503), or `https://httpbin.org/status/429`, or `https://httpbin.org/delay/10` (answers after 10 seconds) for the timeout.
+
+**Fallback models (Chat Model node run as a step, with a User Prompt).**
+
+| # | Do | Expect |
+|---|----|--------|
+| 1 | Open a Chat Model node saved before this change | it has an empty **Fallback Models** list and runs as before; its output now also has `modelUsed`, `providerUsed`, `fallbackUsed: false` and `modelAttempts` with one "answered" line |
+| 2 | Click **Add fallback model**, type a model ID, leave provider and credential on "Same ... as this node", save | the canvas shows "(+1 fallback)". Add more: the button is disabled at 5. A line left without a model is gone after saving |
+| 3 | Pick another provider on a line without picking a credential | an amber line says another provider needs its own API key |
+| 4 | Primary: Custom base URL `https://httpbin.org/status/503` with any model name. Fallback: a provider and credential that work. Run | the node succeeds. Output: `modelUsed` is the fallback's model, `fallbackUsed: true`, `modelAttempts` is `[{..., outcome: "HTTP 503"}, {..., outcome: "answered"}]` |
+| 5 | The same with `https://httpbin.org/status/429` | the same, with "HTTP 429" |
+| 6 | The same with `https://httpbin.org/delay/10` and **Fallback Timeout** `3` | after about 3 seconds the fallback answers; the first attempt's outcome is "timeout" |
+| 7 | Primary: a working provider with a **wrong API key**. Fallback: one that works. Run | the node **fails** with the provider's 401 error. The fallback was not used |
+| 8 | Primary and fallback both on `https://httpbin.org/status/503` | the node fails with "all 2 models failed (custom / ...: HTTP 503; custom / ...: HTTP 503). Last error: ..." |
+| 9 | Arrows on the lines | the order changes, and the run tries them in the new order (`modelAttempts` shows it) |
+| 10 | Connect the node from step 4 to an **AI Agent's** Chat Model port and run the agent | the agent answers; `{{aiAgentOutput.modelUsed}}` is the fallback's model and `fallbackUsed` is true |
+| 11 | Connect it to a **Text Classifier** or **Information Extractor** | it works; the node's variable has `modelUsed` and `fallbackUsed: true` |
+| 12 | Open the execution's page (with a price set for the fallback's model, see T13c) | AI usage has a line for the model that answered, not for the one that failed |
+
+**Model Router.**
+
+| # | Do | Expect |
+|---|----|--------|
+| 1 | Add a **Model Router** (AI nodes) | a node with two ports underneath, **Cheap** and **Strong** |
+| 2 | Plug a cheap model node into Cheap, a stronger one into Strong, connect the router to an AI Agent's Chat Model port, run | the agent answers. Output: `modelUsed` is the cheap model, `modelRoute` is `{ tier: "cheap", reason: "The cheap model answered" }`. Only the trigger and the agent appear in the execution's node list: the router and the model nodes do not run |
+| 3 | Make the cheap model fail (wrong API key, or the 503 URL) and run | the agent still answers. `modelUsed` is the strong model, `modelRoute.tier` is "strong" with reason "The cheap model failed or timed out", and `modelAttempts` shows the failed attempt |
+| 4 | Cheap: `https://httpbin.org/delay/10`; set the router's **Cheap Model Timeout** to `3` | the strong model answers after about 3 seconds |
+| 5 | Add a **Structured Output Parser** to the agent. Use a cheap model that ignores the format: the simplest way is a Chat Model pointed at a small local or free model, or temporarily a system message "Always answer in plain prose, never JSON" on a weak model | when the cheap answer is not JSON, the run still succeeds: `{{output}}` is an object, `modelRoute` is `{ tier: "strong", reason: "The cheap model's answer did not fit the Structured Output Parser" }` |
+| 6 | Same as 5 with a tool on the agent that leaves a trace (for example an HTTP Request to a request bin) | the tool was called once, not twice: the strong model did not run the tools again |
+| 7 | Turn off **Switch when the output parser fails** and repeat 5 | the run fails with "the model's answer does not fit the required output format", as it does without a router |
+| 8 | Make both models fail | the agent fails with "LLM Provider Error (...): all 2 models failed (...)" |
+| 9 | Leave the Strong port empty | "AI Agent: the Model Router needs a model node on its Cheap port and another on its Strong port" |
+| 10 | Open the execution's page | AI usage has one line per model that answered (two when the strong model took over after the cheap one had answered some calls) |
+| 11 | An agent with a plain model node, saved before this change | runs as before; its output also has `providerUsed`, `fallbackUsed: false` and `modelAttempts` |
 
 ## T14. Text Classifier and Information Extractor
 
