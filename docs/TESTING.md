@@ -20,7 +20,7 @@ the instruction "build this workflow in the editor".
 ```bash
 npx prisma migrate deploy
 npm run dev:all
-npx tsx --conditions=react-server src/inngest/__test__/testCoreNodes.ts   # expect "125 checks passed"
+npx tsx --conditions=react-server src/inngest/__test__/testCoreNodes.ts   # expect "126 checks passed"
 ```
 
 Make a second account with a different email. Several checks need it.
@@ -615,6 +615,18 @@ Each needs its own account and credential. Test one at a time.
 | 8 | **Polar, not configured.** Remove `POLAR_WEBHOOK_SECRET`, restart, repeat 7 | `503` "The Polar webhook is not configured..."; the plan has not changed |
 | 9 | **Polar, real.** With the secret back, subscribe to a plan in Polar's sandbox | the user's plan changes as before |
 | 10 | **Inngest key, production.** Remove `INNGEST_SIGNING_KEY` from the environment, then `npm run build` and `npm start` | the build succeeds; the server does not start and prints "[RXJ] The server cannot start: - INNGEST_SIGNING_KEY is not set...". With the key set it starts. `npm run dev` starts either way |
+
+## T19c. The build and database migrations
+
+The database is shared with production, so only rows 1 and 2 are run locally. Rows 3 to 5 are observed on Vercel.
+
+| # | Do | Expect |
+|---|----|--------|
+| 1 | `node scripts/migrate-on-deploy.mjs` | "[migrate-on-deploy] Not a Vercel production build (VERCEL_ENV=not set): the database is left as it is." and exit code 0 |
+| 2 | The same with `VERCEL_ENV=preview` set | the same message with `VERCEL_ENV=preview`, exit code 0; nothing is applied |
+| 3 | Open a pull request and look at the build log of its preview deployment | the "Not a Vercel production build (VERCEL_ENV=preview)" line; `npx prisma migrate status` shows the same migrations as before |
+| 4 | Merge a pull request without a migration and look at the production build log | "Vercel production build: running prisma migrate deploy.", Prisma's "No pending migrations to apply.", then "The database is up to date." |
+| 5 | Merge a pull request that adds a migration | the production build log lists that migration as applied before `next build` starts; `npx prisma migrate status` afterwards says the schema is up to date |
 
 ## T20. Apps (one simple call each)
 
