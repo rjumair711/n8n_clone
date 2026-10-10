@@ -383,7 +383,24 @@ Supported credential types:
 
 ## Security
 
-* **Outbound requests:** URLs and database hosts typed in by users cannot point at private or local addresses (SSRF guard, including redirects and DNS tricks). Set `ALLOW_PRIVATE_NETWORK_REQUESTS=true` on a self-hosted server that needs to reach its own network, for example Ollama.
+* **Outbound requests:** URLs, database hosts and SSH hosts typed in by users cannot point at private or local addresses (SSRF guard, including redirects and DNS tricks). A self-hosted server that needs to reach something on its own network, for example Ollama, lists exactly that in `PRIVATE_NETWORK_ALLOWLIST`:
+
+  ```
+  PRIVATE_NETWORK_ALLOWLIST=127.0.0.1:11434,10.0.0.0/24,db.internal:5432
+  ```
+
+  | Entry | Allows |
+  | ----- | ------ |
+  | `127.0.0.1:11434` | that address on that port only |
+  | `10.0.0.5` | that address on any port |
+  | `10.0.0.0/24` | every address of the range, on any port |
+  | `ollama.lan:11434`, `db.internal` | that host name (with or without a port), whatever private address it resolves to |
+  | `[::1]:11434`, `fd00:1234::/64` | the same for IPv6; an address with a port goes in brackets |
+
+  * Everything private that is not listed stays refused, cloud metadata (`169.254.169.254`) included.
+  * A request has to match by what it uses: `http://localhost:11434` is allowed by `localhost:11434`, not by `127.0.0.1:11434`, because `localhost` can also resolve to `::1` and every address of a name has to be allowed. Use the same form in the node as in the list. The Chat Model node's default Ollama address is `http://localhost:11434/v1`, so for that the entry is `localhost:11434`.
+  * A range with a port (`10.0.0.0/24:5432`) is not supported. Entries that cannot be read are ignored and named in a warning at startup.
+  * `ALLOW_PRIVATE_NETWORK_REQUESTS=true` still works and opens **every** private address; the allowlist then has no effect. It logs a warning at startup recommending the allowlist, which is the safer choice.
 * **Webhooks:** per-node secrets or provider signatures (Stripe, WhatsApp, Typeform, Telegram), and a per-workflow rate limit.
   * Every secret, token and signature is compared in constant time (`secretsMatch` in `src/lib/webhook-security.ts`, built on `crypto.timingSafeEqual`).
   * **Stripe and Typeform events older than 5 minutes are refused**, so a captured request cannot be sent again later. Stripe signs its own timestamp. Typeform's signature has none, so the submission's `submitted_at` (which is inside the signed body) is used. A Typeform delivery that is retried more than 5 minutes after the form was submitted, for example after the app was down, is therefore refused and shows as failed in Typeform.
@@ -624,7 +641,8 @@ Step-by-step workflows for testing every node by hand are in [`docs/TESTING.md`]
 | `REQUIRE_EMAIL_VERIFICATION` | Set to `false` to switch verification off |
 | `POLAR_*` | Billing (access token, product IDs, webhook secret, success URL). `POLAR_WEBHOOK_SECRET` is what Polar's webhooks are verified with |
 | `INNGEST_SIGNING_KEY` | Proves that calls to `/api/inngest` come from Inngest. **Required in production**: the server does not start without it |
-| `ALLOW_PRIVATE_NETWORK_REQUESTS` | `true` lets workflows reach private addresses (self-hosting only) |
+| `PRIVATE_NETWORK_ALLOWLIST` | The private addresses workflows may reach, comma-separated: hosts, `host:port` or CIDR ranges, e.g. `127.0.0.1:11434,10.0.0.0/24` (self-hosting only) |
+| `ALLOW_PRIVATE_NETWORK_REQUESTS` | `true` lets workflows reach every private address. Still works, but logs a warning: prefer `PRIVATE_NETWORK_ALLOWLIST` |
 | `WEBHOOK_RATE_LIMIT_PER_MINUTE`, `API_RATE_LIMIT_PER_MINUTE` | Requests per minute for one workflow's webhook URL, and for one API key. Default 120 each |
 | `TURNSTILE_SITE_KEY`, `TURNSTILE_SECRET_KEY` | Cloudflare Turnstile on the sign-up form. Both or neither: with neither the check is off |
 | `SIGN_IN_RATE_LIMIT_PER_MINUTE` | Password and two-factor code attempts per minute from one IP address, default 20 |

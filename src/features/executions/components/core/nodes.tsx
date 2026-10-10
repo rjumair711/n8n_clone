@@ -501,7 +501,7 @@ export const chatModelConfig: IntegrationConfig = {
       label: "Base URL",
       placeholder: "https://api.example.com/v1",
       description:
-        "Required for Custom. For Ollama, the server's address if it is not http://localhost:11434/v1; a local address also needs ALLOW_PRIVATE_NETWORK_REQUESTS=true on the server.",
+        "Required for Custom. For Ollama, the server's address if it is not http://localhost:11434/v1; a local address also has to be listed in PRIVATE_NETWORK_ALLOWLIST on the server (for the default: localhost:11434).",
     },
     {
       name: "systemPrompt",

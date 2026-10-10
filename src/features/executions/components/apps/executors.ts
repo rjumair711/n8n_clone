@@ -805,10 +805,12 @@ export const mysqlExecutor: NodeExecutor<AppData> = async ({
   });
 
   let host: string;
+  let port = 3306;
   try {
     const url = new URL(connectionString);
     if (url.protocol !== "mysql:") throw new Error("not a mysql URL");
     host = url.hostname;
+    if (url.port) port = Number(url.port);
   } catch {
     throw new NonRetriableError(
       "MySQL node: the credential must be a connection string like mysql://user:password@host:3306/database"
@@ -817,8 +819,9 @@ export const mysqlExecutor: NodeExecutor<AppData> = async ({
 
   try {
     const result = await step.run(`mysql-${nodeId}-${operation}`, async () => {
-      // The host comes from the user: never connect into a private network
-      await assertPublicHost(host);
+      // The host comes from the user: never connect into a private network,
+      // unless it is listed in PRIVATE_NETWORK_ALLOWLIST
+      await assertPublicHost(host, port);
 
       const connection = await createConnection({
         uri: connectionString,

@@ -158,6 +158,217 @@ const main = async () => {
     assert.equal(requests.length, 0);
   });
 
+  // ------------------------------------------------ PRIVATE NETWORK ALLOWLIST
+  console.log("Private network allowlist");
+
+  const allowlistLib = await import("@/lib/private-network-allowlist");
+  const { assertPublicHost: assertHostAllowed } = await import("@/lib/ssrf");
+
+  await test("the allowlist reads hosts, host:port and CIDR ranges, and reports the rest", () => {
+    const { entries, invalid } = allowlistLib.parseAllowlist(
+      " 127.0.0.1:11434, 10.0.0.0/24 ,Ollama.LAN:11434,db.internal,[::1]:8080,::1,fd00:1234::/64,192.168.1.9,," +
+        "http://10.0.0.1, 10.0.0.300, 10.0.0.0/33, 10.0.0.0/24:5432, host:99999, host:, bad host, fd00::/129, [::1, 1.2.3.4:80:90"
+    );
+
+    assert.deepEqual(
+      entries.map((entry) => [entry.kind, entry.text, entry.port ?? null]),
+      [
+        ["range", "127.0.0.1:11434", 11434],
+        ["range", "10.0.0.0/24", null],
+        ["host", "ollama.lan:11434", 11434],
+        ["host", "db.internal", null],
+        ["range", "[::1]:8080", 8080],
+        ["range", "::1", null],
+        ["range", "fd00:1234::/64", null],
+        ["range", "192.168.1.9", null],
+      ]
+    );
+    assert.deepEqual(invalid, [
+      "http://10.0.0.1",
+      "10.0.0.300",
+      "10.0.0.0/33",
+      "10.0.0.0/24:5432",
+      "host:99999",
+      "host:",
+      "bad host",
+      "fd00::/129",
+      "[::1",
+      "1.2.3.4:80:90",
+    ]);
+
+    assert.deepEqual(allowlistLib.parseAllowlist(undefined), { entries: [], invalid: [] });
+    assert.deepEqual(allowlistLib.parseAllowlist("  ,, "), { entries: [], invalid: [] });
+  });
+
+  await test("allowlist matching: addresses, ranges, ports and names", () => {
+    const list = allowlistLib.parseAllowlist(
+      "127.0.0.1:11434,10.0.0.0/24,172.16.5.0/30,192.168.1.9,[::1]:8080,fd00:1234::/64,ollama.lan:11434,db.internal"
+    );
+    const address = (value: string, port?: number) =>
+      allowlistLib.isAllowedAddress(list, value, port);
+    const name = (value: string, port?: number) =>
+      allowlistLib.isAllowedHostname(list, value, port);
+
+    // One address, one port
+    assert.equal(address("127.0.0.1", 11434), true);
+    assert.equal(address("127.0.0.1", 80), false);
+    assert.equal(address("127.0.0.1"), false);
+    assert.equal(address("127.0.0.2", 11434), false);
+
+    // A range, any port: the edges are in, the neighbours are out
+    assert.equal(address("10.0.0.0", 5432), true);
+    assert.equal(address("10.0.0.255"), true);
+    assert.equal(address("10.0.1.0"), false);
+    assert.equal(address("9.255.255.255"), false);
+    assert.equal(address("172.16.5.3"), true);
+    assert.equal(address("172.16.5.4"), false);
+
+    // One address, any port
+    assert.equal(address("192.168.1.9", 22), true);
+    assert.equal(address("192.168.1.9"), true);
+    assert.equal(address("192.168.1.10"), false);
+
+    // IPv6, and IPv4 written inside IPv6
+    assert.equal(address("::1", 8080), true);
+    assert.equal(address("0:0:0:0:0:0:0:1", 8080), true);
+    assert.equal(address("::1", 80), false);
+    assert.equal(address("fd00:1234::beef"), true);
+    assert.equal(address("fd00:1234:0:1::1"), false);
+    assert.equal(address("::ffff:10.0.0.7"), true);
+    assert.equal(address("::ffff:127.0.0.1", 11434), true);
+    // An IPv4 range says nothing about IPv6 addresses and the other way round
+    assert.equal(address("::a00:7"), false);
+
+    // Never listed
+    assert.equal(address("169.254.169.254", 80), false);
+    assert.equal(address("not-an-ip"), false);
+
+    // Names: exact, whatever the case, with the port when one is listed
+    assert.equal(name("ollama.lan", 11434), true);
+    assert.equal(name("OLLAMA.lan.", 11434), true);
+    assert.equal(name("ollama.lan", 80), false);
+    assert.equal(name("ollama.lan"), false);
+    assert.equal(name("db.internal", 5432), true);
+    assert.equal(name("db.internal"), true);
+    assert.equal(name("x.db.internal"), false);
+    assert.equal(name("internal"), false);
+    // An address is not a name
+    assert.equal(name("10.0.0.7"), false);
+
+    // /0 is everything of that kind of address, and only that kind
+    const everything = allowlistLib.parseAllowlist("0.0.0.0/0");
+    assert.equal(allowlistLib.isAllowedAddress(everything, "169.254.169.254"), true);
+    assert.equal(allowlistLib.isAllowedAddress(everything, "::1"), false);
+
+    // An empty list allows nothing
+    const nothing = allowlistLib.parseAllowlist("");
+    assert.equal(allowlistLib.isAllowedAddress(nothing, "127.0.0.1"), false);
+    assert.equal(allowlistLib.isAllowedHostname(nothing, "localhost"), false);
+  });
+
+  await test("the SSRF guard lets through exactly what the allowlist names", async () => {
+    try {
+      process.env.PRIVATE_NETWORK_ALLOWLIST = `127.0.0.1:${port}, 10.0.0.0/24, db.internal:5432, bad entry`;
+
+      // The listed address and port: the request really goes out
+      const before = requests.length;
+      const response = await safeFetch(`${local}/allowed`);
+      assert.equal(response.status, 200);
+      assert.equal(requests.length, before + 1);
+      await assertPublicUrl(`${local}/`);
+
+      // The same address on another port, and its IPv6 spelling
+      const otherPort = port === 65535 ? port - 1 : port + 1;
+      await assert.rejects(safeFetch(`http://127.0.0.1:${otherPort}/`), /not allowed/);
+      assert.throws(() => parsePublicUrl("http://127.0.0.1/"), /not allowed/);
+      assert.doesNotThrow(() => parsePublicUrl(`http://[::ffff:127.0.0.1]:${port}/`));
+
+      // A range allows every port; outside it nothing changed
+      assert.doesNotThrow(() => parsePublicUrl("http://10.0.0.7:8080/"));
+      assert.doesNotThrow(() => parsePublicUrl("https://10.0.0.200/"));
+      for (const url of [
+        "http://10.0.1.7/",
+        "http://192.168.1.1/",
+        "http://169.254.169.254/latest/meta-data/",
+        "http://[::1]/",
+        "http://2130706433/",
+      ]) {
+        assert.throws(() => parsePublicUrl(url), /not allowed/, url);
+      }
+      assert.doesNotThrow(() => parsePublicUrl("https://example.com/"));
+
+      // Database hosts: with the port, and without one only port-less entries
+      await assertHostAllowed("10.0.0.7", 5432);
+      await assertHostAllowed("10.0.0.7");
+      await assertHostAllowed("127.0.0.1", port);
+      await assert.rejects(assertHostAllowed("127.0.0.1"), /not allowed/);
+      await assert.rejects(assertHostAllowed("127.0.0.1", 5432), /not allowed/);
+      await assert.rejects(assertHostAllowed("10.0.1.7", 5432), /not allowed/);
+
+      // A local name that is not listed is still refused, by its addresses
+      // or because it does not resolve; never let through
+      await assert.rejects(assertPublicUrl("http://localhost:1/"));
+      await assert.rejects(assertHostAllowed("db.internal", 3306));
+
+      // SSH connections go through the same list, with their port
+      const { resolveSshAddress } = await import("@/lib/ssh");
+      process.env.PRIVATE_NETWORK_ALLOWLIST = "127.0.0.1:22";
+      assert.equal(await resolveSshAddress("127.0.0.1", 22), "127.0.0.1");
+      await assert.rejects(resolveSshAddress("127.0.0.1", 2222), /not allowed/);
+      await assert.rejects(resolveSshAddress("127.0.0.1"), /not allowed/);
+      await assert.rejects(safeFetch(`${local}/`), /not allowed/);
+
+      // A listed name is allowed whatever private address it resolves to
+      process.env.PRIVATE_NETWORK_ALLOWLIST = "localhost:11434";
+      await assertPublicUrl("http://localhost:11434/v1");
+      await assert.rejects(assertPublicUrl("http://localhost:11435/v1"), /not allowed/);
+      assert.throws(() => parsePublicUrl("http://127.0.0.1:11434/"), /not allowed/);
+    } finally {
+      delete process.env.PRIVATE_NETWORK_ALLOWLIST;
+    }
+
+    // Without the variable everything private is refused again
+    await assert.rejects(safeFetch(`${local}/`), /not allowed/);
+    assert.throws(() => parsePublicUrl("http://10.0.0.7:8080/"), /not allowed/);
+    assert.throws(() => parsePublicUrl("http://localhost:11434/"), /not allowed/);
+  });
+
+  await test("ALLOW_PRIVATE_NETWORK_REQUESTS=true still allows everything, with a warning", async () => {
+    const warnings = allowlistLib.getPrivateNetworkWarnings;
+
+    assert.deepEqual(warnings({}), []);
+    assert.deepEqual(warnings({ PRIVATE_NETWORK_ALLOWLIST: "127.0.0.1:11434,10.0.0.0/24" }), []);
+    assert.deepEqual(warnings({ ALLOW_PRIVATE_NETWORK_REQUESTS: "false" }), []);
+
+    const [allowAll, ...others] = warnings({ ALLOW_PRIVATE_NETWORK_REQUESTS: "true" });
+    assert.equal(others.length, 0);
+    assert.match(allowAll, /ALLOW_PRIVATE_NETWORK_REQUESTS=true lets workflows reach every private/);
+    assert.match(allowAll, /Prefer PRIVATE_NETWORK_ALLOWLIST/);
+    assert.equal(/has no effect/.test(allowAll), false);
+
+    assert.match(
+      warnings({ ALLOW_PRIVATE_NETWORK_REQUESTS: "true", PRIVATE_NETWORK_ALLOWLIST: "10.0.0.5" })[0],
+      /PRIVATE_NETWORK_ALLOWLIST is set but has no effect/
+    );
+
+    const [unreadable] = warnings({ PRIVATE_NETWORK_ALLOWLIST: "10.0.0.5, http://x, 10.0.0.0/40" });
+    assert.match(unreadable, /could not be read and are ignored: http:\/\/x, 10\.0\.0\.0\/40\./);
+
+    try {
+      process.env.ALLOW_PRIVATE_NETWORK_REQUESTS = "true";
+
+      const before = requests.length;
+      assert.equal((await safeFetch(`${local}/`)).status, 200);
+      assert.equal(requests.length, before + 1);
+      assert.doesNotThrow(() => parsePublicUrl("http://169.254.169.254/"));
+      await assertHostAllowed("10.9.9.9", 5432);
+    } finally {
+      delete process.env.ALLOW_PRIVATE_NETWORK_REQUESTS;
+    }
+
+    await assert.rejects(safeFetch(`${local}/`), /not allowed/);
+  });
+
   await test("the HTTP Request node reports the block as its own error", async () => {
     await assert.rejects(
       httpRequestExecutor({

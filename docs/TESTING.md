@@ -124,6 +124,23 @@ Variations, one at a time:
 | Create a credential of type **HTTP Header Auth** with value `X-Api-Key: secret123`; set Authentication `Header Auth` and pick it; URL back to `/anything` | `headers.X-Api-Key` is `secret123` |
 | URL `https://httpbin.org/image/png`, Response Format `File (download)` | `echo.httpResponse.file` has `fileName`, `mimeType` `image/png`, `size`, `url` |
 
+## T4b. Private network allowlist
+
+Needs something listening on this machine, for example the app itself on port 3000 (any response will do, even an error page). Restart the server after each change to `.env`. Use the HTTP Request node from T4.
+
+| # | `.env` | URL | Expect |
+|---|--------|-----|--------|
+| 1 | neither variable | `http://127.0.0.1:3000` | fails: "Requests to private or local addresses are not allowed" |
+| 2 | `PRIVATE_NETWORK_ALLOWLIST=127.0.0.1:3000` | `http://127.0.0.1:3000` | the request goes through (whatever the page answers) |
+| 3 | same | `http://127.0.0.1:8288` (another port), `http://10.0.0.1`, `http://169.254.169.254/latest/meta-data/` | each fails with the "not allowed" message |
+| 4 | same | `http://localhost:3000` | fails: `localhost` is not what is listed |
+| 5 | `PRIVATE_NETWORK_ALLOWLIST=localhost:3000` | `http://localhost:3000` | goes through; `http://127.0.0.1:3000` now fails |
+| 6 | `PRIVATE_NETWORK_ALLOWLIST=127.0.0.0/8` | `http://127.0.0.1:3000` and `http://127.0.0.1:8288` | both go through (a range allows every port), `http://10.0.0.1` still fails |
+| 7 | `PRIVATE_NETWORK_ALLOWLIST=127.0.0.1:3000, http://oops, 10.0.0.0/40` | restart and read the server log | "[RXJ] PRIVATE_NETWORK_ALLOWLIST has entries that could not be read and are ignored: http://oops, 10.0.0.0/40." The valid entry still works |
+| 8 | `ALLOW_PRIVATE_NETWORK_REQUESTS=true` (no allowlist) | restart, then `http://127.0.0.1:3000` and `http://127.0.0.1:8288` | the log has "[RXJ] ALLOW_PRIVATE_NETWORK_REQUESTS=true lets workflows reach every private and local address... Prefer PRIVATE_NETWORK_ALLOWLIST..."; both requests go through |
+| 9 | `PRIVATE_NETWORK_ALLOWLIST=127.0.0.1:5432` and a Postgres credential `postgresql://user:pass@127.0.0.1:5432/db` | run a Postgres node | it gets as far as connecting (a login or "connection refused" error, not "not allowed"). With port `5433` in the credential it fails with "Connections to private or local addresses are not allowed" |
+| 10 | Ollama on this machine: `PRIVATE_NETWORK_ALLOWLIST=localhost:11434`, Chat Model node with provider Ollama and the default base URL (`http://localhost:11434/v1`) | run it | the model answers. With `127.0.0.1:11434` in the list instead, the base URL has to be `http://127.0.0.1:11434/v1` |
+
 ## T5. Webhook and Respond to Webhook
 
 | # | Node | Settings |

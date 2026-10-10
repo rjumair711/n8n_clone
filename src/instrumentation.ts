@@ -13,6 +13,9 @@ export async function register() {
     const warning = getAdminVerificationWarning();
     if (warning) console.warn(warning);
 
+    const { getPrivateNetworkWarnings } = await import("./lib/private-network-allowlist");
+    for (const networkWarning of getPrivateNetworkWarnings()) console.warn(networkWarning);
+
     const { getTurnstileWarning } = await import("./lib/turnstile");
     const turnstileWarning = getTurnstileWarning();
     if (turnstileWarning) console.warn(turnstileWarning);

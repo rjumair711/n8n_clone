@@ -120,14 +120,17 @@ export const postgresExecutor: NodeExecutor<PostgresData> = async ({
       `postgres-${nodeId}-${data.operation}`,
       async () => {
         // The host comes from the user: never connect into a private
-        // network (allowed with ALLOW_PRIVATE_NETWORK_REQUESTS=true)
+        // network, unless it is listed in PRIVATE_NETWORK_ALLOWLIST
         let host = "";
+        let port = 5432;
         try {
-          host = new URL(connectionString).hostname;
+          const url = new URL(connectionString);
+          host = url.hostname;
+          if (url.port) port = Number(url.port);
         } catch {
           // Not a URL (key=value form): pg reports what is wrong with it
         }
-        if (host) await assertPublicHost(host);
+        if (host) await assertPublicHost(host, port);
 
         const client = new Client({
           connectionString,

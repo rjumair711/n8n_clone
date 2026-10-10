@@ -620,7 +620,11 @@ targets are all looked up with the owner's `userId`.
 ## 13. Outbound request guard (SSRF)
 
 `src/lib/ssrf.ts` blocks requests to private, loopback, link-local and
-reserved addresses unless `ALLOW_PRIVATE_NETWORK_REQUESTS=true`.
+reserved addresses, except the ones listed in `PRIVATE_NETWORK_ALLOWLIST`
+(hosts, host:port and CIDR ranges; parsed and matched in
+`src/lib/private-network-allowlist.ts`). `ALLOW_PRIVATE_NETWORK_REQUESTS=true`
+still switches the guard off for every private address and logs a warning
+at startup.
 
 - `safeFetch` checks the URL, uses a connection agent whose DNS lookup is
   guarded (so the address is checked at connection time), and follows up to
