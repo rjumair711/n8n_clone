@@ -25,7 +25,8 @@ change must be safe for production.
 7. Tests and scripts that write data must use a dedicated test account,
    and must clean up after themselves. Never modify or delete real
    users' data.
-8. Don't push, and don't merge PRs. I do that.
+8. You may push task branches after the build and tests pass. Never push
+   to `main`, never force-push, and never merge PRs. I do that.
 9. Migrations reach production only by merging to `main`: the Vercel
    production build runs `prisma migrate deploy` (see below). A PR that
    adds a migration changes the production database when it is merged, so
