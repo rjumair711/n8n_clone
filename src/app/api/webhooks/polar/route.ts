@@ -1,4 +1,5 @@
 import prisma from "@/lib/db";
+import { verifyPolarWebhook } from "@/lib/polar-webhook";
 import { SubscriptionPlan } from "@prisma/client";
 import { NextResponse } from "next/server";
 
@@ -11,7 +12,25 @@ const WEBHOOK_PLAN_MAP: Record<string, string> = {
 
 export async function POST(req: Request) {
     try {
-        const body = await req.json();
+        // This route changes a user's plan, so nothing is read from a
+        // request that Polar did not sign. The signature covers the exact
+        // bytes Polar sent: the raw body is read before it is parsed.
+        const rawBody = await req.text();
+
+        const check = verifyPolarWebhook({
+            rawBody,
+            headers: req.headers,
+            secret: process.env.POLAR_WEBHOOK_SECRET,
+        });
+
+        if (!check.ok) {
+            return NextResponse.json(
+                { succeeded: false, error: check.error },
+                { status: check.status }
+            );
+        }
+
+        const body = JSON.parse(rawBody);
 
         // Polar payloads send the event type (e.g., 'subscription.created')
         const eventType = body.type;

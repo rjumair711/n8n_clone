@@ -2,6 +2,11 @@ import * as Sentry from "@sentry/nextjs";
 
 export async function register() {
   if (process.env.NEXT_RUNTIME === "nodejs") {
+    // Before anything else: a server that is missing a required setting
+    // does not start at all
+    const { assertStartupEnvironment } = await import("./lib/startup-checks");
+    assertStartupEnvironment();
+
     await import("../sentry.server.config");
 
     const { getAdminVerificationWarning } = await import("./lib/admin");

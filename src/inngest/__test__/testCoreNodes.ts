@@ -3340,6 +3340,312 @@ const main = async () => {
     });
   });
 
+  // ------------------------------------------------------ WEBHOOK HARDENING
+  console.log("Webhook hardening");
+
+  const webhookSecurity = await import("@/lib/webhook-security");
+  const { createHmac: hmac } = await import("node:crypto");
+
+  await test("secrets and signatures are compared in constant time, everywhere", async () => {
+    const { secretsMatch } = webhookSecurity;
+
+    assert.equal(secretsMatch("s3cret-value", "s3cret-value"), true);
+    assert.equal(secretsMatch("s3cret-valuf", "s3cret-value"), false);
+    assert.equal(secretsMatch("s3cret", "s3cret-value"), false);
+    assert.equal(secretsMatch("s3cret-value-and-more", "s3cret-value"), false);
+    assert.equal(secretsMatch("", "s3cret-value"), false);
+    assert.equal(secretsMatch("پاس ورڈ", "پاس ورڈ"), true);
+    // Nothing configured never matches, not even nothing provided
+    assert.equal(secretsMatch("", ""), false);
+    assert.equal(secretsMatch(undefined as never, "x"), false);
+    assert.equal(secretsMatch("x", undefined as never), false);
+
+    const { readFileSync, readdirSync } = await import("node:fs");
+    const { join } = await import("node:path");
+    const root = process.cwd();
+    const read = (path: string) => readFileSync(join(root, path), "utf8");
+
+    const helper = read("src/lib/webhook-security.ts");
+    assert.match(helper, /timingSafeEqual\(digest\(provided\), digest\(expected\)\)/);
+    // No comparison of lengths in front of it
+    const compare = helper.slice(
+      helper.indexOf("export const secretsMatch"),
+      helper.indexOf("export const WEBHOOK_TOLERANCE_SECONDS")
+    );
+    assert.ok(compare.length > 0);
+    assert.equal(/\.length\b/.test(compare), false);
+
+    // Every route that receives a secret, token or signature compares it
+    // through that helper (or a verifier built on it), never with === or ==
+    const routes: string[] = [];
+    const walk = (directory: string) => {
+      for (const entry of readdirSync(join(root, directory), { withFileTypes: true })) {
+        const path = `${directory}/${entry.name}`;
+        if (entry.isDirectory()) walk(path);
+        else if (entry.name === "route.ts") routes.push(path);
+      }
+    };
+    walk("src/app/api/webhooks");
+    walk("src/app/api/oauth");
+
+    const comparesSecrets = /secretsMatch\(|verifyStripeSignature\(|verifyTypeformSignature\(|verifyPolarWebhook\(/;
+    const unsafeComparison =
+      /\b(provided|signature|signatureHeader|secret|expected|verifyToken|appSecret|state)\w*\s*[!=]==?\s*(?!undefined|null|""|''|"subscribe")[\w.("'`]|[\w.)"'`]\s*[!=]==?\s*(provided|signature|signatureHeader|expected|verifyToken|appSecret)\b/;
+
+    for (const path of routes) {
+      const source = read(path).replace(/\/\/.*$/gm, "");
+
+      if (/secret|signature|verify_token|params\.get\("state"\)/i.test(source)) {
+        assert.match(source, comparesSecrets, `${path} does not use a constant-time check`);
+      }
+      assert.equal(unsafeComparison.test(source), false, `${path} compares a secret with ===`);
+    }
+    assert.ok(routes.length >= 8, "the webhook and OAuth routes were found");
+  });
+
+  await test("Stripe events are refused when their signature is more than 5 minutes old", () => {
+    const { verifyStripeSignature } = webhookSecurity;
+    const signingSecret = "whsec_test";
+    const rawBody = '{"id":"evt_1","type":"checkout.session.completed"}';
+    const now = Date.UTC(2026, 9, 10, 12, 0, 0);
+
+    const header = (ageSeconds: number, body = rawBody, key = signingSecret) => {
+      const timestamp = Math.floor(now / 1000) - ageSeconds;
+      const signature = hmac("sha256", key).update(`${timestamp}.${body}`, "utf8").digest("hex");
+
+      return `t=${timestamp},v1=${signature}`;
+    };
+    const verify = (signatureHeader: string | null, body = rawBody) =>
+      verifyStripeSignature({ rawBody: body, signatureHeader, signingSecret, now });
+
+    assert.equal(verify(header(0)), true);
+    assert.equal(verify(header(299)), true);
+    assert.equal(verify(header(300)), true);
+    assert.equal(verify(header(301)), false);
+    assert.equal(verify(header(3600)), false);
+    // A clock far ahead is no better than one far behind
+    assert.equal(verify(header(-301)), false);
+    assert.equal(verify(header(-60)), true);
+
+    // Signed by someone else, or not what was signed
+    assert.equal(verify(header(0, rawBody, "whsec_other")), false);
+    assert.equal(verify(header(0), rawBody.replace("evt_1", "evt_2")), false);
+    // A fresh timestamp put in front of an old signature does not pass
+    const old = header(3600);
+    assert.equal(verify(old.replace(/t=\d+/, `t=${Math.floor(now / 1000)}`)), false);
+
+    // During a secret roll Stripe sends two signatures: one valid is enough
+    assert.equal(verify(`${header(0)},v1=${"0".repeat(64)}`), true);
+    assert.equal(verify(`t=${Math.floor(now / 1000)},v1=${"0".repeat(64)},v0=abc`), false);
+
+    for (const bad of [null, "", "v1=abc", "t=abc,v1=abc", `t=${Math.floor(now / 1000)}`, "garbage"]) {
+      assert.equal(verify(bad), false, String(bad));
+    }
+    assert.equal(verifyStripeSignature({ rawBody, signatureHeader: header(0), signingSecret: "", now }), false);
+  });
+
+  await test("Typeform submissions are refused when they are more than 5 minutes old", async () => {
+    const { verifyTypeformSignature, isRecentTypeformEvent } = webhookSecurity;
+    const secret = "typeform-secret";
+    const now = Date.UTC(2026, 9, 10, 12, 0, 0);
+    const bodyAt = (ageSeconds: number) =>
+      JSON.stringify({
+        event_id: "evt",
+        form_response: { submitted_at: new Date(now - ageSeconds * 1000).toISOString() },
+      });
+    const sign = (rawBody: string, key = secret) =>
+      `sha256=${hmac("sha256", key).update(rawBody, "utf8").digest("base64")}`;
+
+    const rawBody = bodyAt(10);
+    assert.equal(verifyTypeformSignature({ rawBody, signatureHeader: sign(rawBody), secret }), true);
+    assert.equal(verifyTypeformSignature({ rawBody, signatureHeader: sign(rawBody, "other"), secret }), false);
+    assert.equal(verifyTypeformSignature({ rawBody: bodyAt(11), signatureHeader: sign(rawBody), secret }), false);
+    assert.equal(verifyTypeformSignature({ rawBody, signatureHeader: null, secret }), false);
+    assert.equal(verifyTypeformSignature({ rawBody, signatureHeader: sign(rawBody), secret: "" }), false);
+
+    const recent = (ageSeconds: number) => isRecentTypeformEvent(JSON.parse(bodyAt(ageSeconds)), now);
+    assert.equal(recent(0), true);
+    assert.equal(recent(299), true);
+    assert.equal(recent(301), false);
+    assert.equal(recent(36000), false);
+    assert.equal(recent(-301), false);
+
+    // No time of submission, or one that cannot be read: refused
+    for (const body of [null, {}, { form_response: {} }, { form_response: { submitted_at: "soon" } }, { form_response: { submitted_at: 1760097600 } }]) {
+      assert.equal(isRecentTypeformEvent(body, now), false, JSON.stringify(body));
+    }
+
+    // The route checks the signature first, then the age, before it starts a run
+    const { readFileSync } = await import("node:fs");
+    const { join } = await import("node:path");
+    const route = readFileSync(
+      join(process.cwd(), "src/app/api/webhooks/typeform/[workflowId]/route.ts"),
+      "utf8"
+    );
+    const order = ["verifyTypeformSignature(", "isRecentTypeformEvent(body)", "startWorkflowExecution({"].map(
+      (text) => route.indexOf(text)
+    );
+    assert.ok(order.every((index) => index > 0), "all three are in the route");
+    assert.deepEqual([...order].sort((a, b) => a - b), order);
+  });
+
+  await test("Telegram: the webhook is registered with a secret_token and the header is checked", async () => {
+    const telegram = await import("@/lib/telegram");
+    const { readFileSync } = await import("node:fs");
+    const { join } = await import("node:path");
+    const read = (path: string) => readFileSync(join(process.cwd(), path), "utf8");
+
+    assert.match(
+      read("src/lib/telegram.ts"),
+      /callTelegram\(botToken, "setWebhook", \{[\s\S]*?secret_token: getTelegramWebhookSecret\(workflowId\)/
+    );
+
+    const route = read("src/app/api/webhooks/telegram/[workflowId]/route.ts");
+    assert.match(route, /request\.headers\.get\("x-telegram-bot-api-secret-token"\)/);
+    assert.match(route, /secretsMatch\(provided, secret\)/);
+    // Refused before the update is read or a run is started
+    assert.ok(route.indexOf("status: 401") < route.indexOf("request.json()"));
+    assert.ok(route.indexOf("status: 401") < route.indexOf("startWorkflowExecution({"));
+
+    // The secret differs per workflow and cannot be made without the key
+    await withKeys("key-A", undefined, () => {
+      const secret = telegram.getTelegramWebhookSecret("wf1");
+      assert.match(secret, /^[0-9a-f]{64}$/);
+      assert.notEqual(secret, telegram.getTelegramWebhookSecret("wf2"));
+      assert.equal(webhookSecurity.secretsMatch(secret, telegram.getAcceptedTelegramWebhookSecrets("wf1")[0]), true);
+    });
+
+    const savedKey = process.env.ENCRYPTION_KEY;
+    const savedPrevious = process.env.ENCRYPTION_KEY_PREVIOUS;
+    try {
+      delete process.env.ENCRYPTION_KEY;
+      delete process.env.ENCRYPTION_KEY_PREVIOUS;
+
+      // Without the key nothing is accepted and nothing is registered
+      assert.deepEqual(telegram.getAcceptedTelegramWebhookSecrets("wf1"), []);
+      assert.throws(() => telegram.getTelegramWebhookSecret("wf1"), /ENCRYPTION_KEY is not set/);
+    } finally {
+      if (savedKey === undefined) delete process.env.ENCRYPTION_KEY;
+      else process.env.ENCRYPTION_KEY = savedKey;
+      if (savedPrevious === undefined) delete process.env.ENCRYPTION_KEY_PREVIOUS;
+      else process.env.ENCRYPTION_KEY_PREVIOUS = savedPrevious;
+    }
+  });
+
+  await test("in production the server does not start without the Inngest signing key", async () => {
+    const { getStartupErrors, assertStartupEnvironment } = await import("@/lib/startup-checks");
+
+    assert.deepEqual(getStartupErrors({ NODE_ENV: "development" }), []);
+    assert.deepEqual(getStartupErrors({ NODE_ENV: "test" }), []);
+    assert.deepEqual(getStartupErrors({}), []);
+    assert.deepEqual(getStartupErrors({ NODE_ENV: "production", INNGEST_SIGNING_KEY: "signkey-prod-abc" }), []);
+
+    for (const env of [
+      { NODE_ENV: "production" },
+      { NODE_ENV: "production", INNGEST_SIGNING_KEY: "" },
+      { NODE_ENV: "production", INNGEST_SIGNING_KEY: "   " },
+      // The event key is a different key, and dev mode does not excuse it
+      { NODE_ENV: "production", INNGEST_EVENT_KEY: "event-key", INNGEST_DEV: "1" },
+    ]) {
+      const errors = getStartupErrors(env);
+      assert.equal(errors.length, 1, JSON.stringify(env));
+      assert.match(errors[0], /INNGEST_SIGNING_KEY is not set/);
+    }
+
+    assert.throws(
+      () => assertStartupEnvironment({ NODE_ENV: "production" }),
+      /The server cannot start:\n- INNGEST_SIGNING_KEY is not set/
+    );
+    assert.doesNotThrow(() => assertStartupEnvironment({ NODE_ENV: "development" }));
+    assert.doesNotThrow(() =>
+      assertStartupEnvironment({ NODE_ENV: "production", INNGEST_SIGNING_KEY: "signkey-prod-abc" })
+    );
+    // `next build` runs with NODE_ENV=production but serves nothing
+    assert.doesNotThrow(() =>
+      assertStartupEnvironment({ NODE_ENV: "production", NEXT_PHASE: "phase-production-build" })
+    );
+
+    const { readFileSync } = await import("node:fs");
+    const { join } = await import("node:path");
+    const read = (path: string) => readFileSync(join(process.cwd(), path), "utf8");
+
+    // Run first thing at startup, and again on the endpoint itself
+    const instrumentation = read("src/instrumentation.ts");
+    assert.ok(
+      instrumentation.indexOf("assertStartupEnvironment()") > 0 &&
+        instrumentation.indexOf("assertStartupEnvironment()") < instrumentation.indexOf("sentry.server.config")
+    );
+    assert.match(read("src/app/api/inngest/route.ts"), /getStartupErrors\(\)[\s\S]*status: 500[\s\S]*inngestHandler\(\.\.\.args\)/);
+  });
+
+  await test("the Polar webhook only acts on requests Polar signed", async () => {
+    const { verifyPolarWebhook } = await import("@/lib/polar-webhook");
+    const secret = "polar-webhook-secret";
+    const rawBody = JSON.stringify({
+      type: "subscription.created",
+      data: { metadata: { userId: "user_1" }, product_id: "prod_1" },
+    });
+
+    // Standard Webhooks: base64(HMAC-SHA256("<id>.<timestamp>.<body>"))
+    const signed = (body: string, { key = secret, ageSeconds = 0, id = "msg_1" } = {}) => {
+      const timestamp = String(Math.floor(Date.now() / 1000) - ageSeconds);
+      const signature = hmac("sha256", key).update(`${id}.${timestamp}.${body}`, "utf8").digest("base64");
+
+      return new Headers({
+        "webhook-id": id,
+        "webhook-timestamp": timestamp,
+        "webhook-signature": `v1,${signature}`,
+      });
+    };
+    const check = (headers: Headers, body = rawBody) =>
+      verifyPolarWebhook({ rawBody: body, headers, secret });
+
+    // Not configured: refused, never let through
+    assert.deepEqual(
+      [undefined, "", "  "].map((missing) => {
+        const result = verifyPolarWebhook({ rawBody, headers: signed(rawBody), secret: missing });
+
+        return result.ok === false && result.status;
+      }),
+      [503, 503, 503]
+    );
+
+    // No signature, a wrong one, another secret, a changed body, an old one
+    for (const [name, headers, body] of [
+      ["no headers", new Headers(), rawBody],
+      ["wrong signature", new Headers({ "webhook-id": "msg_1", "webhook-timestamp": String(Math.floor(Date.now() / 1000)), "webhook-signature": "v1,AAAA" }), rawBody],
+      ["another secret", signed(rawBody, { key: "attacker" }), rawBody],
+      ["changed body", signed(rawBody), rawBody.replace("user_1", "user_2")],
+      ["old timestamp", signed(rawBody, { ageSeconds: 3600 }), rawBody],
+    ] as const) {
+      const result = check(headers as Headers, body);
+      assert.deepEqual(result, { ok: false, status: 403, error: "Invalid Polar webhook signature." }, name);
+    }
+
+    // A correct signature gets past the signature check: this body is not a
+    // complete Polar event, so it is refused for that reason instead (400)
+    const wellSigned = check(signed(rawBody));
+    assert.equal(wellSigned.ok, false);
+    assert.equal(wellSigned.ok === false && wellSigned.status, 400);
+
+    // The route verifies the raw body before it parses it or touches a user
+    const { readFileSync } = await import("node:fs");
+    const { join } = await import("node:path");
+    const route = readFileSync(join(process.cwd(), "src/app/api/webhooks/polar/route.ts"), "utf8");
+    const order = ["await req.text()", "verifyPolarWebhook({", "if (!check.ok)", "JSON.parse(rawBody)", "prisma.user.update("].map(
+      (text) => route.indexOf(text)
+    );
+    assert.ok(order.every((index) => index > 0), "all steps are in the route");
+    assert.deepEqual([...order].sort((a, b) => a - b), order);
+    assert.equal(/req\.json\(\)/.test(route), false);
+
+    // The Better Auth Polar plugin, the other place Polar posts to, is given the secret too
+    assert.match(
+      readFileSync(join(process.cwd(), "src/lib/auth.ts"), "utf8"),
+      /webhooks\(\{\s*secret: process\.env\.POLAR_WEBHOOK_SECRET/
+    );
+  });
+
   await test("the credential routes never select the stored value", async () => {
     const { readFileSync } = await import("node:fs");
     const { join } = await import("node:path");
