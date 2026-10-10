@@ -284,7 +284,7 @@ curl -X POST -H "Authorization: Bearer <key>" "$APP/api/v1/executions/<execution
 | 8 | Set `API_RATE_LIMIT_PER_MINUTE=5` in `.env`, restart, call `GET /api/v1/workflows` 6 times in a minute with one key, then once with another key | the 6th call gives `429` with a `Retry-After` header; the other key still works |
 | 9 | Look at the `api_key` table | `keyHash` is 64 hex characters and no column holds the key itself |
 
-After `npx prisma migrate deploy`: a key created before this change still works on all five routes and shows all four scopes.
+Keys created before scopes existed were given all four scopes by a backfill in the old migration history. That history was squashed into `20261010000000_baseline`, which holds no backfills: the existing database had none left to run at the squash, and a new database has no older keys. `npx prisma migrate deploy` no longer changes any key.
 
 ## T11b. Credential encryption and key rotation
 
@@ -510,7 +510,7 @@ Workflow: Trigger manually → Set Variable (name `email`, value `x' OR '1'='1`)
 | 4 | same as 3 | Query Parameters `[{{ 20 * 3 }}]` | `rows[0].value` is `60` |
 | 5 | same as 1 | switch **Allow expressions in query text (unsafe)** on | the run works; the value was pasted into the SQL (the warning stays) |
 
-After `npx prisma migrate deploy`: open a workflow that had a `{{ }}` expression in a Postgres or MySQL query before this change. **Expect:** the option is already on and the workflow runs as before.
+Postgres and MySQL nodes (and template nodes) that already had a `{{ }}` expression in their query got the option switched on by a backfill in the old migration history. That history was squashed into `20261010000000_baseline`, which holds no backfills: the existing database had none left to run at the squash, and a new database has no older nodes. `npx prisma migrate deploy` no longer switches the option on for any node.
 
 ---
 
