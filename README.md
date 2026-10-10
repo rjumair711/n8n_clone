@@ -385,6 +385,11 @@ Supported credential types:
 
 * **Outbound requests:** URLs and database hosts typed in by users cannot point at private or local addresses (SSRF guard, including redirects and DNS tricks). Set `ALLOW_PRIVATE_NETWORK_REQUESTS=true` on a self-hosted server that needs to reach its own network, for example Ollama.
 * **Webhooks:** per-node secrets or provider signatures (Stripe, WhatsApp, Typeform, Telegram), and a per-workflow rate limit.
+  * Every secret, token and signature is compared in constant time (`secretsMatch` in `src/lib/webhook-security.ts`, built on `crypto.timingSafeEqual`).
+  * **Stripe and Typeform events older than 5 minutes are refused**, so a captured request cannot be sent again later. Stripe signs its own timestamp. Typeform's signature has none, so the submission's `submitted_at` (which is inside the signed body) is used. A Typeform delivery that is retried more than 5 minutes after the form was submitted, for example after the app was down, is therefore refused and shows as failed in Typeform.
+  * **Telegram:** activating a workflow registers the bot's webhook with a `secret_token`, and every update has to carry it in `X-Telegram-Bot-Api-Secret-Token`. The token is derived from `ENCRYPTION_KEY`; without that key no webhook is registered and no update is accepted.
+  * **Polar:** both places Polar can post to verify its signature with `POLAR_WEBHOOK_SECRET`: the Better Auth plugin's `/api/auth/polar/webhooks` and `/api/webhooks/polar`. Without the secret the second answers 503 and changes nothing.
+* **Inngest:** in production (`NODE_ENV=production`) the server refuses to start without `INNGEST_SIGNING_KEY`, the key that proves a call to `/api/inngest` comes from Inngest. `next build` is not affected.
 * **Duplicate deliveries:** an event a provider sends twice starts one run, not two (see below).
 * **Webhook responses** are served with a sandbox policy so a workflow cannot run scripts on the app's origin.
 * **Sign-in:** email verification for password sign-ups, password reset by email, Google and GitHub sign-in.
@@ -617,7 +622,8 @@ Step-by-step workflows for testing every node by hand are in [`docs/TESTING.md`]
 | `RESEND_API_KEY` | Sends verification and password-reset emails. Email verification is only required when this is set |
 | `EMAIL_FROM` | Sender of those emails; must be on a domain verified in Resend |
 | `REQUIRE_EMAIL_VERIFICATION` | Set to `false` to switch verification off |
-| `POLAR_*` | Billing (access token, product IDs, webhook secret, success URL) |
+| `POLAR_*` | Billing (access token, product IDs, webhook secret, success URL). `POLAR_WEBHOOK_SECRET` is what Polar's webhooks are verified with |
+| `INNGEST_SIGNING_KEY` | Proves that calls to `/api/inngest` come from Inngest. **Required in production**: the server does not start without it |
 | `ALLOW_PRIVATE_NETWORK_REQUESTS` | `true` lets workflows reach private addresses (self-hosting only) |
 | `WEBHOOK_RATE_LIMIT_PER_MINUTE`, `API_RATE_LIMIT_PER_MINUTE` | Requests per minute for one workflow's webhook URL, and for one API key. Default 120 each |
 | `TURNSTILE_SITE_KEY`, `TURNSTILE_SECRET_KEY` | Cloudflare Turnstile on the sign-up form. Both or neither: with neither the check is off |

@@ -582,6 +582,23 @@ Each needs its own account and credential. Test one at a time.
 | Typeform Trigger | set the same Secret in Typeform's webhook settings, submit the form | `typeform.answers` keyed by question title |
 | Stripe Trigger | `stripe trigger payment_intent.succeeded`, then resend the same event from the Stripe dashboard | one execution, not two |
 
+## T19b. Webhook hardening
+
+`<app>` is the app's address and `<wf>` the id of an active workflow with the trigger named in the row.
+
+| # | Do | Expect |
+|---|----|--------|
+| 1 | **Stripe, old event.** In the Stripe dashboard open a delivery to the Stripe Trigger's endpoint that is more than 5 minutes old, copy its request body and `Stripe-Signature` header, and send them yourself: `curl -X POST "<app>/api/webhooks/stripe?workflowId=<wf>" -H "Stripe-Signature: <copied>" --data-binary @body.json` | `401` "Invalid Stripe signature..." and no execution, although the signature itself is genuine. (A fresh `stripe trigger` still starts a run.) |
+| 2 | **Typeform, fresh.** Submit the form | one execution, as in T19 |
+| 3 | **Typeform, old.** In Typeform's webhook settings open **View deliveries**, pick a delivery older than 5 minutes and **Redeliver** | the delivery fails with `401` "This submission is more than 5 minutes old (or has no submitted_at) and was not accepted." and no execution starts |
+| 4 | **Typeform, test request.** In Typeform's webhook settings click **Send test request** | note what happens: it is accepted only if Typeform's sample carries a current `submitted_at` |
+| 5 | **Telegram, wrong token.** `curl -X POST "<app>/api/webhooks/telegram/<wf>" -H "Content-Type: application/json" -d '{"update_id":1,"message":{"text":"hi","chat":{"id":1}}}'`, then again with `-H "X-Telegram-Bot-Api-Secret-Token: wrong"` | both `401` "Invalid secret token"; no execution |
+| 6 | **Telegram, real.** Activate the workflow, then `https://api.telegram.org/bot<token>/getWebhookInfo`; send the bot a message | the webhook URL is the app's (Telegram never shows the token back); the message starts one execution |
+| 7 | **Polar, unsigned.** `curl -X POST "<app>/api/webhooks/polar" -H "Content-Type: application/json" -d '{"type":"subscription.created","data":{"metadata":{"userId":"<your user id>"},"product_id":"<POLAR_PRO_PRODUCT_ID>"}}'` | `403` "Invalid Polar webhook signature." and the user's `plan` in the database has not changed |
+| 8 | **Polar, not configured.** Remove `POLAR_WEBHOOK_SECRET`, restart, repeat 7 | `503` "The Polar webhook is not configured..."; the plan has not changed |
+| 9 | **Polar, real.** With the secret back, subscribe to a plan in Polar's sandbox | the user's plan changes as before |
+| 10 | **Inngest key, production.** Remove `INNGEST_SIGNING_KEY` from the environment, then `npm run build` and `npm start` | the build succeeds; the server does not start and prints "[RXJ] The server cannot start: - INNGEST_SIGNING_KEY is not set...". With the key set it starts. `npm run dev` starts either way |
+
 ## T20. Apps (one simple call each)
 
 | Node | Credential | Test | Expect |

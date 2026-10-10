@@ -19,9 +19,13 @@ export async function POST(
     const provided =
         request.headers.get("x-telegram-bot-api-secret-token") || "";
 
-    const accepted = getAcceptedTelegramWebhookSecrets(workflowId).some(
-        (secret) => secretsMatch(provided, secret)
-    );
+    // Telegram sends back the secret_token the webhook was registered with
+    // (see syncTelegramWebhooks). Every accepted secret is compared, so the
+    // time taken does not say which one matched.
+    let accepted = false;
+    for (const secret of getAcceptedTelegramWebhookSecrets(workflowId)) {
+        if (secretsMatch(provided, secret)) accepted = true;
+    }
 
     if (!accepted) {
         return NextResponse.json(

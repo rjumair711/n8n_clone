@@ -320,8 +320,9 @@ outside service. Shared helpers:
   sends the event. With a `dedupeKey` it first inserts a `WebhookDelivery`
   row; the unique index on `(workflowId, source, key)` stops a re-sent event
   from starting a second run.
-- `secretsMatch` (`src/lib/webhook-security.ts:4-9`) is a constant-time
-  comparison.
+- `secretsMatch` (`src/lib/webhook-security.ts`) is the constant-time
+  comparison every secret, token and signature goes through
+  (`crypto.timingSafeEqual` over SHA-256 digests, so lengths do not leak).
 - `rateLimitResponse` limits each workflow's URL to
   `WEBHOOK_RATE_LIMIT_PER_MINUTE` (default 120).
 
@@ -331,10 +332,10 @@ outside service. Shared helpers:
 | `stripe?workflowId=` | POST | Stripe signature (HMAC-SHA256, 5-minute tolerance) with the node's signing secret | Yes | Stripe event id |
 | `google-form?workflowId=` | POST | Per-node secret in `X-Webhook-Secret` or `?secret=` | Yes | `responseId` |
 | `telegram/[workflowId]` | POST | `X-Telegram-Bot-Api-Secret-Token`, derived from `ENCRYPTION_KEY` and the workflow id | Yes | `update_id` |
-| `typeform/[workflowId]` | POST | `Typeform-Signature` (HMAC-SHA256, base64) with the node's secret | Yes | `event_id` |
+| `typeform/[workflowId]` | POST | `Typeform-Signature` (HMAC-SHA256, base64) with the node's secret; the signed `submitted_at` must be within 5 minutes | Yes | `event_id` |
 | `whatsapp/[workflowId]` | GET | `hub.verify_token` against the node's verify token | No | - |
 | `whatsapp/[workflowId]` | POST | `X-Hub-Signature-256` with the node's app secret | Yes | message id |
-| `polar` | POST | None (finding 1) | No | - |
+| `polar` | POST | Polar's Standard Webhooks signature with `POLAR_WEBHOOK_SECRET` (5-minute tolerance) | No | - |
 
 Owner check: not applicable in the session sense. The workflow id in the URL
 selects the workflow, and the secret or signature stored on that workflow's
@@ -641,7 +642,10 @@ reading the code.
 
 ### High
 
-1. **The Polar webhook route accepts unsigned requests.**
+1. *(Fixed in task 2.5: the route verifies Polar's signature with
+   `verifyPolarWebhook`, `src/lib/polar-webhook.ts`, before it reads the
+   body.)*
+   **The Polar webhook route accepts unsigned requests.**
    `src/app/api/webhooks/polar/route.ts:12-48`. Anyone can POST
    `{"type":"subscription.created","data":{"metadata":{"userId":"<id>"},"product_id":"<id>"}}`
    and set that user's plan. It needs a user id and a product id, neither of
@@ -751,7 +755,9 @@ reading the code.
     `src/app/api/sentry-example-api/route.ts:12-17`. Anyone can use it to
     fill Sentry with errors. `/sentry-example-page` belongs to the same demo.
 
-14. **The Telegram webhook secret falls back to an empty key.**
+14. *(Fixed in task 2.5: without `ENCRYPTION_KEY` no secret is derived, no
+    webhook is registered and no update is accepted.)*
+    **The Telegram webhook secret falls back to an empty key.**
     `src/lib/telegram.ts:55`: `process.env.ENCRYPTION_KEY || ""`. Without the
     variable the secret is predictable from the workflow id. Credential
     encryption would already fail in that setup, so this is mostly about

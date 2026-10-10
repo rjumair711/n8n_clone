@@ -56,8 +56,22 @@ const deriveTelegramWebhookSecret = (key: string, workflowId: string) =>
     .update(`telegram-webhook:${workflowId}`)
     .digest("hex");
 
+// Without the key the secret could be worked out from the workflow id, so
+// there is none: no webhook is registered and no update is accepted
+const requireKey = () => {
+  const key = process.env.ENCRYPTION_KEY?.trim();
+
+  if (!key) {
+    throw new Error(
+      "ENCRYPTION_KEY is not set, so the Telegram webhook cannot be secured"
+    );
+  }
+
+  return key;
+};
+
 export const getTelegramWebhookSecret = (workflowId: string) =>
-  deriveTelegramWebhookSecret(process.env.ENCRYPTION_KEY || "", workflowId);
+  deriveTelegramWebhookSecret(requireKey(), workflowId);
 
 /**
  * The secrets to accept from Telegram: the current one, and while
@@ -66,10 +80,12 @@ export const getTelegramWebhookSecret = (workflowId: string) =>
  * workflow is activated again, which registers it with the new one.
  */
 export const getAcceptedTelegramWebhookSecrets = (workflowId: string) => {
+  const current = process.env.ENCRYPTION_KEY?.trim();
   const previous = process.env.ENCRYPTION_KEY_PREVIOUS;
 
   return [
-    getTelegramWebhookSecret(workflowId),
+    // No key, no accepted secret: every update is refused
+    ...(current ? [deriveTelegramWebhookSecret(current, workflowId)] : []),
     ...(previous ? [deriveTelegramWebhookSecret(previous, workflowId)] : []),
   ];
 };

@@ -1,6 +1,9 @@
-import { createHmac } from "crypto";
 import { findTriggerNodes, startWorkflowExecution } from "@/inngest/utils";
-import { secretsMatch } from "@/lib/webhook-security";
+import {
+    WEBHOOK_TOLERANCE_SECONDS,
+    isRecentTypeformEvent,
+    verifyTypeformSignature,
+} from "@/lib/webhook-security";
 import { rateLimitResponse } from "@/lib/rate-limit";
 import { type NextRequest, NextResponse } from "next/server";
 import { NodeType } from "@prisma/client";
@@ -51,17 +54,15 @@ export async function POST(
     // The signature covers the exact bytes Typeform sent:
     // "sha256=" + base64(HMAC-SHA256(raw body, secret))
     const rawBody = await request.text();
-    const signature = request.headers.get("typeform-signature") || "";
+    const signatureHeader = request.headers.get("typeform-signature");
 
     const verified = triggerNodes.some((node) => {
         const secret = (node.data as { secret?: string } | null)?.secret?.trim();
-        if (!secret) return false;
 
-        const expected = `sha256=${createHmac("sha256", secret)
-            .update(rawBody, "utf8")
-            .digest("base64")}`;
-
-        return secretsMatch(signature, expected);
+        return (
+            !!secret &&
+            verifyTypeformSignature({ rawBody, signatureHeader, secret })
+        );
     });
 
     if (!verified) {
@@ -74,8 +75,29 @@ export async function POST(
         );
     }
 
+    let body: any;
     try {
-        const body = JSON.parse(rawBody);
+        body = JSON.parse(rawBody);
+    } catch {
+        return NextResponse.json(
+            { success: false, error: "The request body is not JSON" },
+            { status: 400 }
+        );
+    }
+
+    // A correctly signed submission that was captured cannot be sent again
+    // later: its time of submission is part of what is signed
+    if (!isRecentTypeformEvent(body)) {
+        return NextResponse.json(
+            {
+                success: false,
+                error: `This submission is more than ${WEBHOOK_TOLERANCE_SECONDS / 60} minutes old (or has no submitted_at) and was not accepted.`,
+            },
+            { status: 401 }
+        );
+    }
+
+    try {
         const response = body.form_response ?? {};
 
         const titles = new Map<string, string>(
