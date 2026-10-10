@@ -4,6 +4,8 @@ import { NodeType } from "@prisma/client";
 import { NodeExecutor } from "../types";
 import { getMessageSend } from "@/config/message-caps";
 import { consumeMessageQuota } from "@/lib/message-usage";
+import { AI_NODE_TYPES } from "@/lib/ai-cost";
+import { assertAiBudget } from "@/lib/ai-usage";
 import { renderTemplate } from "./templates";
 import { manualTriggerExecutor } from "@/features/triggers/components/manual-trigger/executor";
 import { httpRequestExecutor } from "../components/http-request/executor";
@@ -195,10 +197,36 @@ const withMessageCap = (
   };
 };
 
+/**
+ * Nodes that call a language or embedding model check the monthly AI budget
+ * of the workflow and of the account before they run (see
+ * src/lib/ai-usage.ts). Done here for the same reason as the message cap:
+ * it also holds for a node that runs as an AI Agent tool.
+ */
+const withAiBudget = (
+  type: NodeType,
+  executor: NodeExecutor<any>
+): NodeExecutor<any> => {
+  if (!AI_NODE_TYPES.has(type)) return executor;
+
+  return async (params) => {
+    // Unit tests run executors without an execution
+    if (params.executionId) {
+      await params.step.run(`ai-budget-${params.nodeId}`, async () => {
+        await assertAiBudget(params);
+
+        return null;
+      });
+    }
+
+    return executor(params);
+  };
+};
+
 export const executorRegistry = Object.fromEntries(
   Object.entries(baseExecutors).map(([type, executor]) => [
     type,
-    withMessageCap(type as NodeType, executor),
+    withAiBudget(type as NodeType, withMessageCap(type as NodeType, executor)),
   ])
 ) as Record<NodeType, NodeExecutor<any>>;
 

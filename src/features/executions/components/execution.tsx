@@ -11,6 +11,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { formatDistanceToNow } from "date-fns"
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible"
 import { Button } from "@/components/ui/button"
+import { ExecutionAiUsage } from "@/features/ai-usage/components/execution-ai-usage"
 
 
 const getStatusIcon = (status: ExecutionStatus) => {
@@ -166,6 +167,11 @@ export const ExecutionView = ({
                         )}
                     </div>
                 )}
+
+                <ExecutionAiUsage
+                    executionId={executionId}
+                    isRunning={execution.status === ExecutionStatus.RUNNING}
+                />
 
                 {execution.dataDeletedAt && (
                     <p className="mt-6 text-sm text-muted-foreground">

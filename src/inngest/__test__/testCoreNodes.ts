@@ -3514,6 +3514,270 @@ const main = async () => {
     assert.match(read("src/features/executions/components/chat-model-field.tsx"), /Load models/);
   });
 
+  // ------------------------------------------------- AI USAGE AND COST
+  console.log("AI usage, cost and budgets");
+
+  const aiCost = await import("@/lib/ai-cost");
+
+  await test("token usage is stored as input, output and cached input", () => {
+    const { normalizeUsage, embeddingUsage } = aiCost;
+
+    // The SDK's inputTokens is the whole prompt: the cached part is taken out
+    assert.deepEqual(
+      normalizeUsage({
+        inputTokens: 1000,
+        outputTokens: 200,
+        inputTokenDetails: { noCacheTokens: 400, cacheReadTokens: 600, cacheWriteTokens: 0 },
+      }),
+      { inputTokens: 400, outputTokens: 200, cachedInputTokens: 600 }
+    );
+    // Tokens written to a cache are normal input
+    assert.deepEqual(
+      normalizeUsage({
+        inputTokens: 1000,
+        outputTokens: 5,
+        inputTokenDetails: { noCacheTokens: 100, cacheReadTokens: 300, cacheWriteTokens: 600 },
+      }),
+      { inputTokens: 700, outputTokens: 5, cachedInputTokens: 300 }
+    );
+    // What an executor kept of it in a step result (the AI Agent)
+    assert.deepEqual(
+      normalizeUsage({ inputTokens: 50, outputTokens: 7, cachedInputTokens: 20 }),
+      { inputTokens: 30, outputTokens: 7, cachedInputTokens: 20 }
+    );
+    // No total: the parts are added up
+    assert.deepEqual(
+      normalizeUsage({ outputTokens: 1, inputTokenDetails: { noCacheTokens: 10, cacheReadTokens: 4, cacheWriteTokens: 2 } }),
+      { inputTokens: 12, outputTokens: 1, cachedInputTokens: 4 }
+    );
+    // A provider that reports nothing, or nonsense, counts as zero
+    for (const usage of [undefined, null, {}, { inputTokens: NaN, outputTokens: -5 }, { inputTokens: 3, cachedInputTokens: 9 }]) {
+      const result = normalizeUsage(usage as never);
+      assert.ok(result.inputTokens >= 0 && result.outputTokens >= 0, JSON.stringify(usage));
+      assert.equal(result.outputTokens, 0);
+    }
+    assert.equal(normalizeUsage({ inputTokens: 3, cachedInputTokens: 9 }).inputTokens, 0);
+
+    assert.deepEqual(embeddingUsage({ tokens: 123 }), { inputTokens: 123, outputTokens: 0, cachedInputTokens: 0 });
+    assert.deepEqual(embeddingUsage(undefined), { inputTokens: 0, outputTokens: 0, cachedInputTokens: 0 });
+  });
+
+  await test("cost is tokens times the price per million, and no price is not free", () => {
+    const { computeCostUsd } = aiCost;
+    const usage = { inputTokens: 1_000_000, outputTokens: 500_000, cachedInputTokens: 2_000_000 };
+
+    assert.equal(computeCostUsd(usage, { inputPerM: 3, outputPerM: 15, cachedInputPerM: 0.3 }), 11.1);
+    // Without a cached price, cached input is charged like other input
+    assert.equal(computeCostUsd(usage, { inputPerM: 3, outputPerM: 15, cachedInputPerM: null }), 16.5);
+    // A small call keeps its fractions of a cent
+    assert.equal(
+      computeCostUsd({ inputTokens: 120, outputTokens: 30, cachedInputTokens: 0 }, { inputPerM: 0.15, outputPerM: 0.6, cachedInputPerM: null }),
+      0.000036
+    );
+    // A free model costs 0; a model without a price has no cost at all
+    assert.equal(computeCostUsd(usage, { inputPerM: 0, outputPerM: 0, cachedInputPerM: null }), 0);
+    assert.equal(computeCostUsd(usage, null), null);
+    assert.equal(computeCostUsd(usage, undefined), null);
+
+    assert.equal(aiCost.normalizePriceKey("  OpenAI "), "openai");
+    assert.equal(aiCost.normalizePriceKey("GPT-4o-Mini"), "gpt-4o-mini");
+    assert.equal(aiCost.normalizePriceKey(null), "");
+  });
+
+  await test("an execution's calls are summed per node and model, with a total", () => {
+    const row = (nodeId: string, model: string, costUsd: number | null, tokens = 10) => ({
+      nodeId,
+      nodeName: `Node ${nodeId}`,
+      provider: "openai",
+      model,
+      inputTokens: tokens,
+      outputTokens: tokens * 2,
+      cachedInputTokens: 1,
+      costUsd,
+    });
+
+    const { nodes, total } = aiCost.summarizeExecutionUsage([
+      row("a", "gpt-4o-mini", 0.001),
+      row("b", "text-embedding-3-small", null),
+      row("a", "gpt-4o-mini", 0.002),
+      row("a", "gpt-4o", 0.5),
+    ]);
+
+    // In the order the nodes first called a model
+    assert.deepEqual(nodes.map((node) => `${node.nodeId}:${node.model}:${node.calls}`), [
+      "a:gpt-4o-mini:2",
+      "b:text-embedding-3-small:1",
+      "a:gpt-4o:1",
+    ]);
+    assert.equal(nodes[0].costUsd, 0.003);
+    assert.equal(nodes[0].inputTokens, 20);
+    assert.equal(nodes[0].outputTokens, 40);
+    assert.equal(nodes[0].cachedInputTokens, 2);
+    assert.equal(nodes[0].nodeName, "Node a");
+    // The call without a price is counted as a call, not as money
+    assert.equal(nodes[1].costUsd, 0);
+    assert.equal(nodes[1].unpricedCalls, 1);
+
+    assert.deepEqual(total, {
+      calls: 4,
+      inputTokens: 40,
+      outputTokens: 80,
+      cachedInputTokens: 4,
+      costUsd: 0.503,
+      unpricedCalls: 1,
+    });
+    assert.deepEqual(aiCost.summarizeExecutionUsage([]).total.calls, 0);
+  });
+
+  await test("a monthly AI budget stops at the amount set, with a message that says what to do", () => {
+    const { parseBudgetCents, isBudgetUsedUp, aiBudgetError, startOfUtcMonth, formatUsd } = aiCost;
+
+    assert.equal(parseBudgetCents("5"), 500);
+    assert.equal(parseBudgetCents(" 12.5 "), 1250);
+    assert.equal(parseBudgetCents(0.01), 1);
+    assert.equal(parseBudgetCents(19.99), 1999);
+    // Empty means no budget
+    for (const empty of ["", "   ", null, undefined]) assert.equal(parseBudgetCents(empty), null);
+    // Not an amount
+    for (const bad of ["abc", "0", "-3", "0.001", "1e9", "Infinity", NaN, 100_000.01]) {
+      assert.equal(parseBudgetCents(bad), undefined, String(bad));
+    }
+
+    // No budget never stops anything
+    assert.equal(isBudgetUsedUp(1_000_000, null), false);
+    assert.equal(isBudgetUsedUp(1_000_000, undefined), false);
+    assert.equal(isBudgetUsedUp(4.99, 500), false);
+    assert.equal(isBudgetUsedUp(5, 500), true);
+    assert.equal(isBudgetUsedUp(5.01, 500), true);
+    assert.equal(isBudgetUsedUp(0, 1), false);
+
+    const workflow = aiBudgetError({ scope: "workflow", workflowName: "Daily digest", spentUsd: 5.2, budgetCents: 500 });
+    assert.match(workflow, /^Monthly AI budget reached/);
+    assert.match(workflow, /"Daily digest"/);
+    assert.match(workflow, /\$5\.20/);
+    assert.match(workflow, /\$5\.00/);
+    assert.match(workflow, /workflow's settings/);
+
+    const account = aiBudgetError({ scope: "account", spentUsd: 20, budgetCents: 2000 });
+    assert.match(account, /^Monthly AI budget reached: your account/);
+    assert.match(account, /Billing page/);
+
+    // The month is the calendar month in UTC
+    assert.equal(startOfUtcMonth(new Date("2026-10-31T23:59:59.999Z")).toISOString(), "2026-10-01T00:00:00.000Z");
+    assert.equal(startOfUtcMonth(new Date("2026-11-01T00:00:00.000Z")).toISOString(), "2026-11-01T00:00:00.000Z");
+    assert.equal(startOfUtcMonth(new Date("2027-01-01T03:00:00+05:00")).toISOString(), "2026-12-01T00:00:00.000Z");
+
+    assert.equal(formatUsd(0), "$0.00");
+    assert.equal(formatUsd(12.346), "$12.35");
+    assert.equal(formatUsd(0.05), "$0.05");
+    assert.equal(formatUsd(0.1234), "$0.1234");
+    assert.equal(formatUsd(0.0042), "$0.0042");
+    assert.equal(formatUsd(0.000036), "$0.000036");
+    assert.equal(formatUsd(0.0000001), "<$0.000001");
+    assert.equal(formatUsd(null), "n/a");
+  });
+
+  await test("every model call is recorded, and AI nodes check the budget first", async () => {
+    const { readFileSync } = await import("node:fs");
+    const { join } = await import("node:path");
+    const read = (path: string) => readFileSync(join(process.cwd(), path), "utf8");
+    const count = (text: string, pattern: RegExp) => (text.match(pattern) ?? []).length;
+
+    // Each place that calls a model writes the call down in the same step
+    const callSites: [string, RegExp, number][] = [
+      ["src/features/executions/components/openai/executor.ts", /generateText\(options\)/g, 1],
+      ["src/features/executions/components/anthropic/executor.ts", /generateText\(options\)/g, 1],
+      ["src/features/executions/components/gemini/executor.ts", /await generateText\(/g, 1],
+      ["src/features/executions/components/chat-model/executor.ts", /await generateText\(/g, 1],
+      // Text Classifier, Information Extractor, and the two embedding calls
+      ["src/features/executions/components/ai/executors.ts", /await (generateText|embedMany|embed)\(/g, 4],
+      ["src/features/editor/components/agent/executor.ts", /await runAgentLoop\(/g, 1],
+    ];
+
+    for (const [path, calls, expected] of callSites) {
+      const source = read(path);
+      assert.equal(count(source, calls), expected, `${path}: model calls`);
+      assert.equal(count(source, /await recordAiUsage\(/g), expected, `${path}: recorded calls`);
+    }
+
+    // No model call anywhere else
+    const { readdirSync, statSync } = await import("node:fs");
+    const walk = (dir: string): string[] =>
+      readdirSync(join(process.cwd(), dir)).flatMap((name) => {
+        const path = `${dir}/${name}`;
+        if (name === "generated" || name === "__test__") return [];
+        return statSync(join(process.cwd(), path)).isDirectory() ? walk(path) : /\.tsx?$/.test(name) ? [path] : [];
+      });
+    const known = new Set([...callSites.map(([path]) => path), "src/features/editor/components/agent/agent-loop.ts"]);
+    for (const path of walk("src")) {
+      if (known.has(path)) continue;
+      assert.equal(/\b(generateText|streamText|generateObject|streamObject|embedMany|embed)\(/.test(read(path)), false, `${path} calls a model without recording it`);
+    }
+
+    // The agent's tools run with the workflow they belong to
+    assert.equal(count(read("src/features/editor/components/agent/executor.ts"), /^\s+workflowId,\r?$/gm), 2);
+    assert.match(read("src/inngest/functions.ts"), /executionId: execution\.id,\s+workflowId,/);
+
+    // Recording never fails a node, and nothing is written outside an execution
+    const usage = read("src/lib/ai-usage.ts");
+    assert.match(usage, /if \(!scope\.executionId\) return;\s+try \{/);
+    assert.match(usage, /\} catch \(error\) \{\s+console\.error\(/);
+    assert.equal(/apiKey|credential|prompt|\btext\b/i.test(usage), false, "only counts are stored");
+
+    // The budget check wraps exactly the node types that call a model
+    const registry = read("src/features/executions/lib/executor-registry.ts");
+    assert.match(registry, /if \(!AI_NODE_TYPES\.has\(type\)\) return executor;/);
+    assert.match(registry, /withAiBudget\(type as NodeType, withMessageCap\(type as NodeType, executor\)\)/);
+    assert.match(registry, /await assertAiBudget\(params\)/);
+
+    const { NodeType } = await import("@prisma/client");
+    for (const type of aiCost.AI_NODE_TYPES) assert.ok(type in NodeType, type);
+    for (const type of ["AI_AGENT", "OPENAI", "ANTHROPIC", "GEMINI", "CHAT_MODEL", "DEEPSEEK", "KIMI", "QWEN", "TEXT_CLASSIFIER", "INFORMATION_EXTRACTOR", "VECTOR_STORE"]) {
+      assert.ok(aiCost.AI_NODE_TYPES.has(type), type);
+    }
+    for (const type of ["HTTP_REQUEST", "CODE", "BUFFER_MEMORY", "STRUCTURED_OUTPUT_PARSER", "MCP_CLIENT_TOOL"]) {
+      assert.equal(aiCost.AI_NODE_TYPES.has(type), false, type);
+    }
+  });
+
+  await test("a call is priced under its provider's name", async () => {
+    const { getUsageProvider } = await import("@/features/executions/lib/connected-model");
+
+    assert.equal(getUsageProvider("OPENAI"), "openai");
+    assert.equal(getUsageProvider("ANTHROPIC"), "anthropic");
+    assert.equal(getUsageProvider("GEMINI"), "gemini");
+    // The Chat Model node: its preset, with OpenRouter as the default
+    assert.equal(getUsageProvider("COMPATIBLE", { provider: "deepseek" }), "deepseek");
+    assert.equal(getUsageProvider("COMPATIBLE", { provider: "groq", baseUrl: "https://example.com/v1" }), "groq");
+    assert.equal(getUsageProvider("COMPATIBLE", {}), "openrouter");
+    assert.equal(getUsageProvider("COMPATIBLE", { provider: "custom", baseUrl: "https://example.com/v1" }), "custom");
+    assert.equal(getUsageProvider("COMPATIBLE", { provider: "no-such-provider" }), "custom");
+  });
+
+  await test("prices are for admins with two-factor, and usage only for its owner", async () => {
+    const { readFileSync } = await import("node:fs");
+    const { join } = await import("node:path");
+    const router = readFileSync(join(process.cwd(), "src/features/ai-usage/server/routers.ts"), "utf8");
+
+    for (const procedure of ["getPrices", "savePrice", "deletePrice"]) {
+      assert.match(router, new RegExp(`${procedure}: adminProcedure`), procedure);
+    }
+    assert.match(router, /if \(!isAdmin\(ctx\.auth\.user\)\)/);
+    assert.match(router, /if \(!canUseAdminActions\(ctx\.auth\.user\)\)/);
+    // Price changes are in the audit log
+    assert.match(router, /action: "model_price\.saved"/);
+    assert.match(router, /action: "model_price\.deleted"/);
+
+    // Everything else is the signed-in user's own data
+    for (const procedure of ["getExecution", "getMonthly", "setUserBudget", "getWorkflowBudget", "setWorkflowBudget"]) {
+      assert.match(router, new RegExp(`${procedure}: protectedProcedure`), procedure);
+    }
+    assert.equal((router.match(/assertOwnership\(/g) ?? []).length, 3);
+    assert.match(router, /where: \{ executionId: input\.executionId, userId: ctx\.auth\.user\.id \}/);
+
+    assert.match(readFileSync(join(process.cwd(), "src/trpc/routers/_app.ts"), "utf8"), /aiUsage: aiUsageRouter/);
+  });
+
   // ------------------------------------------------------------- API KEYS
   console.log("API keys");
 

@@ -13,6 +13,8 @@ export const AUDIT_ACTIONS = {
   "template.published": "Template published",
   "template.updated": "Template updated",
   "template.deleted": "Template deleted",
+  "model_price.saved": "Model price saved",
+  "model_price.deleted": "Model price deleted",
   "auth.sign_in": "Signed in",
   "two_factor.enabled": "Two-factor authentication turned on",
   "two_factor.disabled": "Two-factor authentication turned off",

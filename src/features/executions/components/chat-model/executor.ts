@@ -5,6 +5,8 @@ import { generateText } from "ai";
 import { safeFetch } from "@/lib/ssrf";
 import { renderTemplate } from "../../lib/templates";
 import { loadCredentialSecret } from "../../lib/integration";
+import { normalizeUsage } from "@/lib/ai-cost";
+import { getAiUsageScope, recordAiUsage } from "@/lib/ai-usage";
 import {
   resolveChatModelEndpoint,
   withDedicatedProvider,
@@ -54,6 +56,11 @@ export const createCompatibleChatModel = (data: ChatModelData, apiKey: string) =
   }).chat(modelName);
 };
 
+// The provider a Chat Model node's calls are recorded and priced under:
+// the preset's name, "custom" for a base URL of the user's own
+export const getChatModelUsageProvider = (data: ChatModelData) =>
+  resolveChatModelEndpoint(data)?.provider.value ?? "custom";
+
 /**
  * The executor for the Chat Model node, or for a node locked to one provider
  * (DeepSeek, Kimi, Qwen) when `nodeType` is given.
@@ -67,6 +74,9 @@ const createChatModelExecutor = (
   userId,
   context,
   step,
+  allNodes,
+  executionId,
+  workflowId,
 }) => {
   const data = nodeType ? withDedicatedProvider(nodeType, nodeData) : nodeData;
 
@@ -99,6 +109,13 @@ const createChatModelExecutor = (
         model: createCompatibleChatModel(data, apiKey),
         system,
         prompt,
+      });
+
+      await recordAiUsage({
+        scope: getAiUsageScope({ userId, workflowId, executionId, nodeId, allNodes }),
+        provider: getChatModelUsageProvider(data),
+        model: data.model ?? "",
+        usage: normalizeUsage(totalUsage),
       });
 
       return {

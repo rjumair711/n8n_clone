@@ -29,10 +29,13 @@ import {
   DEFAULT_MODELS,
   MODEL_NODE_PROVIDERS,
   getModelNodeData,
+  getUsageProvider,
   buildLanguageModel,
   type ModelProvider as Provider,
 } from "@/features/executions/lib/connected-model";
 import { extractJson } from "@/features/executions/lib/ai-fields";
+import { normalizeUsage } from "@/lib/ai-cost";
+import { getAiUsageScope, recordAiUsage } from "@/lib/ai-usage";
 import {
   buildMcpTools,
   loadMcpSecret,
@@ -104,6 +107,7 @@ export const aiAgentExecutor: NodeExecutor<AIAgentData> = async ({
   allNodes,
   connections,
   executionId,
+  workflowId,
   callDepth,
 }) => {
   const maxIterations =
@@ -369,6 +373,7 @@ export const aiAgentExecutor: NodeExecutor<AIAgentData> = async ({
             step: inlineStep,
             context: toolContext,
             executionId,
+            workflowId,
             callDepth,
             inline: true,
           });
@@ -422,7 +427,7 @@ export const aiAgentExecutor: NodeExecutor<AIAgentData> = async ({
         }
       }
 
-      return await runAgentLoop({
+      const result = await runAgentLoop({
         model,
         system,
         messages,
@@ -430,6 +435,16 @@ export const aiAgentExecutor: NodeExecutor<AIAgentData> = async ({
         maxIterations,
         maxToolCalls,
       });
+
+      // All the model calls of the loop, as one line
+      await recordAiUsage({
+        scope: getAiUsageScope({ userId, workflowId, executionId, nodeId, allNodes }),
+        provider: getUsageProvider(provider, modelData),
+        model: modelName,
+        usage: normalizeUsage(result.usage),
+      });
+
+      return result;
     } catch (error: any) {
       if (error instanceof NonRetriableError) throw error;
 

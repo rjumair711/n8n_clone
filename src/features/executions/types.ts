@@ -35,6 +35,9 @@ export interface NodeExecutorParams<
   // The execution this node runs in (absent in unit tests)
   executionId?: string;
 
+  // The workflow that execution belongs to (absent in unit tests)
+  workflowId?: string;
+
   // True when the node runs as an AI Agent tool: its steps run inline, so it
   // cannot use step tools that only work at the top level (step.invoke)
   inline?: boolean;

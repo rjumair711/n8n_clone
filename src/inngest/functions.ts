@@ -421,6 +421,7 @@ export const executeWorkflow =
                   inputs: meta.inputs,
                   items: runItems,
                   executionId: execution.id,
+                  workflowId,
                   callDepth: Number(event.data.callDepth) || 0,
                 }),
             });

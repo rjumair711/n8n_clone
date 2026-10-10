@@ -6,7 +6,8 @@ import { Input } from '@/components/ui/input'
 import { SidebarTrigger } from '@/components/ui/sidebar'
 import { Switch } from '@/components/ui/switch'
 import { useSetSaveExecutionData, useSetWorkflowActive, useSuspenseWorkflow, useUpdateWorkflow, useUpdateWorkflowName } from '@/features/workflows/hooks/use-workflows'
-import { DropdownMenu, DropdownMenuCheckboxItem, DropdownMenuContent, DropdownMenuLabel, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
+import { DropdownMenu, DropdownMenuCheckboxItem, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
+import { WorkflowBudgetDialog } from '@/features/ai-usage/components/workflow-budget-dialog'
 import { useAtomValue } from 'jotai'
 import { SaveIcon, SettingsIcon, Workflow } from 'lucide-react'
 import Link from 'next/link'
@@ -50,8 +51,15 @@ export const EditorSaveButton = ({ workflowId }: { workflowId: string }) => {
 export const EditorSettingsMenu = ({ workflowId }: { workflowId: string }) => {
     const { data: workflow } = useSuspenseWorkflow(workflowId)
     const setSaveExecutionData = useSetSaveExecutionData()
+    const [budgetOpen, setBudgetOpen] = useState(false)
 
     return (
+        <>
+        <WorkflowBudgetDialog
+            workflowId={workflowId}
+            open={budgetOpen}
+            onOpenChange={setBudgetOpen}
+        />
         <DropdownMenu>
             <DropdownMenuTrigger asChild>
                 <Button size="icon" variant="ghost" title="Workflow settings" className='ml-auto'>
@@ -77,8 +85,21 @@ export const EditorSettingsMenu = ({ workflowId }: { workflowId: string }) => {
                         </p>
                     </div>
                 </DropdownMenuCheckboxItem>
+                <DropdownMenuItem
+                    onSelect={() => setBudgetOpen(true)}
+                    className='items-start pl-8'
+                >
+                    <div className='space-y-1'>
+                        <div>Monthly AI budget...</div>
+                        <p className='text-xs text-muted-foreground'>
+                            Stops this workflow&apos;s AI nodes once its AI spend of the
+                            month reaches an amount you set.
+                        </p>
+                    </div>
+                </DropdownMenuItem>
             </DropdownMenuContent>
         </DropdownMenu>
+        </>
     )
 }
 

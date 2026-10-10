@@ -10,6 +10,7 @@ import type { Connection } from "@prisma/client";
 import type { NodeWithCredential, StepTools } from "../types";
 import {
   createCompatibleChatModel,
+  getChatModelUsageProvider,
   type ChatModelData,
 } from "../components/chat-model/executor";
 import { withDedicatedProvider } from "./chat-model-providers";
@@ -49,6 +50,16 @@ export const DEFAULT_MODELS: Record<ModelProvider, string> = {
   // The Chat Model node always names its model
   COMPATIBLE: "",
 };
+
+// The provider a model's calls are recorded and priced under: "openai",
+// "anthropic", "gemini", a Chat Model preset or "custom"
+export const getUsageProvider = (
+  provider: ModelProvider,
+  modelData: Record<string, unknown> = {}
+) =>
+  provider === "COMPATIBLE"
+    ? getChatModelUsageProvider(modelData as ChatModelData)
+    : provider.toLowerCase();
 
 export const buildLanguageModel = (
   provider: ModelProvider,
@@ -157,6 +168,7 @@ export const loadConnectedModel = async ({
 
   return {
     provider,
+    usageProvider: getUsageProvider(provider, modelData),
     modelName,
     create: () =>
       buildLanguageModel(

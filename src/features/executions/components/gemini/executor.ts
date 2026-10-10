@@ -6,6 +6,8 @@ import Handlebars from "handlebars";
 import { generateText } from "ai";
 import prisma from "@/lib/db";
 import { decrypt } from "@/lib/encryption";
+import { normalizeUsage } from "@/lib/ai-cost";
+import { getAiUsageScope, recordAiUsage } from "@/lib/ai-usage";
 
 // Guard helper registration against potential hot-reload double registration crashes
 try {
@@ -26,9 +28,13 @@ type GeminiData = {
 
 export const geminiExecutor: NodeExecutor<GeminiData> = async ({
   data,
+  nodeId,
   userId,
   context,
   step,
+  allNodes,
+  executionId,
+  workflowId,
 }) => {
   // ==========================================
   // 1. VALIDATION
@@ -83,6 +89,13 @@ export const geminiExecutor: NodeExecutor<GeminiData> = async ({
           recordInputs: true,
           recordOutputs: true,
         },
+      });
+
+      await recordAiUsage({
+        scope: getAiUsageScope({ userId, workflowId, executionId, nodeId, allNodes }),
+        provider: "gemini",
+        model: targetModel,
+        usage: normalizeUsage(response.totalUsage),
       });
 
       // Safely serialize execution telemetry markers for Inngest state checkpoints

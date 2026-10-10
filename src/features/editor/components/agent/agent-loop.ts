@@ -101,6 +101,8 @@ export type AgentLoopResult = {
     inputTokens?: number;
     outputTokens?: number;
     totalTokens?: number;
+    // The part of inputTokens the provider read from its cache
+    cachedInputTokens?: number;
   };
 };
 
@@ -183,6 +185,9 @@ export const runAgentLoop = async ({
       inputTokens: result.totalUsage.inputTokens,
       outputTokens: result.totalUsage.outputTokens,
       totalTokens: result.totalUsage.totalTokens,
+      cachedInputTokens:
+        result.totalUsage.inputTokenDetails?.cacheReadTokens ??
+        result.totalUsage.cachedInputTokens,
     },
   };
 };
