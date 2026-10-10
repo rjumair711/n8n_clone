@@ -188,6 +188,25 @@ Trigger manually → Set Variable (name `order`, value `{"price": 20, "qty": 3}`
 | `{{ "ali".toUpperCase() }} {{ $now }}` | `ALI` and a date |
 | `{{ [1,2,3].map((n) => n * 2).join(",") }}` | `2,4,6` |
 | `{{ process.env }}` | the run fails; nothing leaks |
+| `{{ (() => { while (true) {} })($json) }}` | the run fails after about a second: "it ran for more than 1 second" |
+| `{{ "x".repeat(2 * 1024 * 1024) + $json.price }}` | the run fails: "its result is too large (2 MB, the limit is 1 MB)" |
+
+## T8b. Code node limits
+
+Trigger manually → JavaScript Code. Run the workflow with each script in turn; after each failure run `return { ok: true }` once to see that the next run is fine.
+
+| # | Script | Timeout | Expect |
+|---|--------|---------|--------|
+| 1 | `return { ok: true }` | open the dialog of a node saved before this change | the Timeout field shows `10`; the run works |
+| 2 | `while (true) {}` | 10 (default) | fails after about 10 seconds: "Script stopped: it ran for more than 10 seconds" |
+| 3 | `while (true) {}` | 2 | fails after about 2 seconds, "more than 2 seconds" |
+| 4 | any | type `61`, then `0` | the dialog refuses both ("At most 60 seconds", "At least 1 second") |
+| 5 | `let s = "x".repeat(1024); while (true) s += s;` | 10 | fails at once: "Script stopped: it used more than the 64 MB of memory a script may use" |
+| 5b | `const list = []; for (;;) list.push(new Uint8Array(1024 * 1024));` | 10 | the same memory message within a second (many small allocations are stopped too) |
+| 6 | `const f = () => f(); return f();` | 10 | fails at once with "stack overflow" in the message |
+| 7 | `return "x".repeat(3 * 1024 * 1024);` | 10 | fails: "its result is too large (3 MB, the limit is 1 MB)" |
+| 8 | `for (let i = 0; i < 1000; i++) console.log(i); return 1;` | 10 | works; the log shows 200 lines and "800 more log lines were not kept" |
+| 9 | `throw new Error("boom")` | 10 | fails with "Error: boom", as before |
 
 ## T9. Files
 

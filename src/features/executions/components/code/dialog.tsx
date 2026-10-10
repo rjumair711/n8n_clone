@@ -14,6 +14,12 @@ import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { useEffect } from "react";
+import {
+  CODE_TIMEOUT_DEFAULT_SECONDS,
+  CODE_TIMEOUT_MAX_SECONDS,
+  SANDBOX_MEMORY_LIMIT_MB,
+  resolveCodeTimeoutSeconds,
+} from "../../lib/sandbox-limits";
 
 const DEFAULT_BOILERPLATE = `// Access historical data via the 'context' object
 // Ensure your script explicitly returns a clean object 
@@ -34,6 +40,10 @@ const formSchema = z.object({
     .regex(/^[A-Za-z_$][A-Za-z0-9_$]*$/, {
       message: "Variables must conform to camelCase/JS alphanumeric standards",
     }),
+  timeoutSeconds: z
+    .number({ message: "Enter a number of seconds" })
+    .min(1, "At least 1 second")
+    .max(CODE_TIMEOUT_MAX_SECONDS, `At most ${CODE_TIMEOUT_MAX_SECONDS} seconds`),
 });
 
 export type CodeNodeFormValues = z.infer<typeof formSchema>;
@@ -51,6 +61,7 @@ export const CodeNodeDialog = ({ open, onOpenChange, onSubmit, defaultValues = {
     defaultValues: {
       code: defaultValues.code || DEFAULT_BOILERPLATE,
       variableName: defaultValues.variableName || "codeResult",
+      timeoutSeconds: resolveCodeTimeoutSeconds(defaultValues.timeoutSeconds),
     },
   });
 
@@ -59,6 +70,8 @@ export const CodeNodeDialog = ({ open, onOpenChange, onSubmit, defaultValues = {
       form.reset({
         code: defaultValues.code || DEFAULT_BOILERPLATE,
         variableName: defaultValues.variableName || "codeResult",
+        // Nodes saved before the setting existed show the default
+        timeoutSeconds: resolveCodeTimeoutSeconds(defaultValues.timeoutSeconds),
       });
     }
   }, [open, defaultValues, form]);
@@ -112,6 +125,34 @@ export const CodeNodeDialog = ({ open, onOpenChange, onSubmit, defaultValues = {
                   <FormDescription>
                     Access this node's output in later sequence streams using:{" "}
                     <strong>{`{{${watchVariableName}}}`}</strong> or <strong>{`{{${watchVariableName}.property}}`}</strong>
+                  </FormDescription>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+
+            <FormField
+              control={form.control}
+              name="timeoutSeconds"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Timeout (seconds)</FormLabel>
+                  <FormControl>
+                    <Input
+                      type="number"
+                      min={1}
+                      max={CODE_TIMEOUT_MAX_SECONDS}
+                      step={1}
+                      className="max-w-32"
+                      {...field}
+                      value={Number.isNaN(field.value) ? "" : field.value}
+                      onChange={(event) => field.onChange(event.target.valueAsNumber)}
+                    />
+                  </FormControl>
+                  <FormDescription>
+                    The script is stopped after this long. Default {CODE_TIMEOUT_DEFAULT_SECONDS},
+                    at most {CODE_TIMEOUT_MAX_SECONDS}. It may also use up to {SANDBOX_MEMORY_LIMIT_MB} MB
+                    of memory.
                   </FormDescription>
                   <FormMessage />
                 </FormItem>
