@@ -50,9 +50,28 @@ model User {
   twoFactorEnabled       Boolean?         @default(false)
   twoFactors             TwoFactor[]
   messageUsage           MessageUsage[]
+  auditLogs              AuditLog[]
 
   @@unique([email])
   @@map("user")
+}
+
+// What an account did that matters for its security: credentials, API keys,
+// workflow activation, templates, sign-ins and two-factor changes. Rows are
+// only ever added (see src/lib/audit-log.ts). Never holds a secret.
+model AuditLog {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  // "credential.created", "workflow.activated", "auth.sign_in"...
+  action    String
+  // What it was done to, for a person to read: `Credential "SMTP" (id)`
+  target    String?
+  ipAddress String?
+  createdAt DateTime @default(now())
+
+  @@index([userId, createdAt])
+  @@map("audit_log")
 }
 
 // How many messages a user sent on one day (UTC) through one channel

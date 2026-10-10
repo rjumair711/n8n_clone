@@ -12,6 +12,8 @@ import { TRIGGER_SOURCES } from "@/config/trigger-sources";
 import { TESTABLE_TRIGGERS, TRIGGER_LABELS, buildTestPayload } from "./test-payloads";
 import { syncTelegramWebhooks } from "@/lib/telegram";
 import { assertOwnership } from "@/lib/ownership";
+import { describeAuditTarget } from "@/lib/audit-actions";
+import { recordAudit } from "@/lib/audit-log";
 
 // Every procedure that takes a workflow id starts here: a workflow that does
 // not exist and one that belongs to someone else are the same "not found"
@@ -242,12 +244,20 @@ export const workflowsRouter = createTRPCRouter({
         .mutation(async ({ ctx, input }) => {
             await getOwnedWorkflow(input.id, ctx.auth.user.id);
 
-            return prisma.workflow.delete({
+            const deleted = await prisma.workflow.delete({
                 where: {
                     id: input.id,
                     userId: ctx.auth.user.id
                 }
             })
+
+            await recordAudit({
+                userId: ctx.auth.user.id,
+                action: "workflow.deleted",
+                target: describeAuditTarget("Workflow", deleted),
+            });
+
+            return deleted;
         }),
 
     // UPDATE WORKFLOW NAME
@@ -304,13 +314,21 @@ export const workflowsRouter = createTRPCRouter({
                 });
             }
 
-            return prisma.workflow.update({
+            const workflow = await prisma.workflow.update({
                 where: {
                     id: input.id,
                     userId: ctx.auth.user.id
                 },
                 data: { active: input.active },
             })
+
+            await recordAudit({
+                userId: ctx.auth.user.id,
+                action: input.active ? "workflow.activated" : "workflow.deactivated",
+                target: describeAuditTarget("Workflow", workflow),
+            });
+
+            return workflow;
         }),
 
     // UPDATE WORKFLOW

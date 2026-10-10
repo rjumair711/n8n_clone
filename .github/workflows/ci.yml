@@ -1,0 +1,84 @@
+name: CI
+
+# Runs on every pull request and on every push to main. Nothing here talks
+# to the database or deploys anything: Vercel builds and deploys on its own.
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+# A newer push to the same branch makes the older run pointless
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+# The jobs only read the repository
+permissions:
+  contents: read
+
+env:
+  NODE_VERSION: "22"
+  # `prisma generate` (run by npm ci) reads the variable but never connects.
+  # No job has the real database address.
+  DATABASE_URL: "postgresql://ci:ci@localhost:5432/ci"
+
+jobs:
+  typecheck:
+    name: Type check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+      - run: npm ci
+      - name: tsc --noEmit
+        run: npx tsc --noEmit
+        env:
+          # The project does not fit in Node's default heap
+          NODE_OPTIONS: --max-old-space-size=8192
+
+  tests:
+    name: Core node tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+      - run: npm ci
+      - name: testCoreNodes
+        run: npx tsx --conditions=react-server src/inngest/__test__/testCoreNodes.ts
+
+  audit:
+    name: npm audit
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+      # Reads package-lock.json only: nothing is installed
+      - name: npm audit --audit-level=high
+        run: npm audit --audit-level=high
+
+  gitleaks:
+    name: Secret scan (gitleaks)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # The commits of the push or pull request are scanned, so all of
+          # them have to be there
+          fetch-depth: 0
+      - uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITLEAKS_CONFIG: .gitleaks.toml
+          # No comment on the pull request and no uploaded report: the job
+          # result and its log are enough, and neither needs write access
+          GITLEAKS_ENABLE_COMMENTS: "false"
+          GITLEAKS_ENABLE_UPLOAD_ARTIFACT: "false"

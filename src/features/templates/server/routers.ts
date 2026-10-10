@@ -20,6 +20,8 @@ import {
     type TemplateNode,
 } from "../lib/template-data";
 import { scanTemplateForSecrets } from "../lib/template-secrets";
+import { describeAuditTarget } from "@/lib/audit-actions";
+import { recordAudit } from "@/lib/audit-log";
 
 // Publishing, editing and deleting templates is for admins: a verified
 // account whose email is in ADMIN_EMAILS
@@ -51,6 +53,15 @@ const templateFields = {
 };
 
 const NODE_TYPES = new Set<string>(Object.values(NodeType));
+
+// Also says when the admin saved it although the secret scan objected
+const templateAuditTarget = (
+    template: { id: string; name: string },
+    { hidden, secretsConfirmed }: { hidden: boolean; secretsConfirmed: boolean }
+) =>
+    describeAuditTarget("Template", template) +
+    (hidden ? ", hidden" : "") +
+    (secretsConfirmed ? ", saved despite the secret scan" : "");
 
 export const templatesRouter = createTRPCRouter({
     // The gallery. Everyone sees every published template; `locked` says
@@ -244,6 +255,15 @@ export const templatesRouter = createTRPCRouter({
                 select: { id: true, name: true },
             });
 
+            await recordAudit({
+                userId: ctx.auth.user.id,
+                action: "template.published",
+                target: templateAuditTarget(template, {
+                    hidden: !fields.published,
+                    secretsConfirmed: findings.length > 0,
+                }),
+            });
+
             return { saved: true as const, ...template };
         }),
 
@@ -306,14 +326,32 @@ export const templatesRouter = createTRPCRouter({
                 select: { id: true, name: true },
             });
 
+            await recordAudit({
+                userId: ctx.auth.user.id,
+                action: "template.updated",
+                target: templateAuditTarget(template, {
+                    hidden: !fields.published,
+                    secretsConfirmed: findings.length > 0,
+                }),
+            });
+
             return { saved: true as const, ...template };
         }),
 
     // ADMIN: workflows already made from the template are not affected
     remove: adminProcedure
         .input(z.object({ id: z.string() }))
-        .mutation(async ({ input }) => {
-            await prisma.workflowTemplate.delete({ where: { id: input.id } });
+        .mutation(async ({ ctx, input }) => {
+            const deleted = await prisma.workflowTemplate.delete({
+                where: { id: input.id },
+                select: { id: true, name: true },
+            });
+
+            await recordAudit({
+                userId: ctx.auth.user.id,
+                action: "template.deleted",
+                target: describeAuditTarget("Template", deleted),
+            });
 
             return { id: input.id };
         }),

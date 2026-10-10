@@ -1,4 +1,6 @@
-import { betterAuth } from "better-auth"
+import { betterAuth, type BetterAuthPlugin } from "better-auth"
+import { getAuthAuditEvent } from "./audit-actions"
+import { recordAudit } from "./audit-log"
 import { prismaAdapter } from "better-auth/adapters/prisma"
 import { APIError, createAuthMiddleware, getIp } from "better-auth/api"
 import { captcha, twoFactor } from "better-auth/plugins"
@@ -120,6 +122,36 @@ const emailOf = (body: unknown) => {
 
   return typeof email === "string" && email.trim() ? email : null
 }
+
+// Records sign-ins and two-factor changes in the audit log. A plugin rather
+// than `hooks.after` below, because plugin hooks run after the options'
+// hook and in plugin order: this one has to see what twoFactor decided.
+const auditLogPlugin = {
+  id: "rxj-audit-log",
+  hooks: {
+    after: [
+      {
+        matcher: () => true,
+        handler: createAuthMiddleware(async (ctx) => {
+          const event = getAuthAuditEvent({
+            path: ctx.path,
+            returned: ctx.context.returned,
+            newSession: ctx.context.newSession,
+            priorSession: ctx.context.session,
+            provider: (ctx.params as { id?: string } | undefined)?.id,
+          })
+
+          if (!event) return
+
+          await recordAudit({
+            ...event,
+            ipAddress: ctx.request ? getIp(ctx.request, ctx.context.options) : null,
+          })
+        }),
+      },
+    ],
+  },
+} satisfies BetterAuthPlugin
 
 export const auth = betterAuth({
   database: prismaAdapter(prisma, {
@@ -286,6 +318,9 @@ export const auth = betterAuth({
           }),
         ]
       : []),
+    // After twoFactor on purpose: its hook has then already turned a
+    // password sign-in that still needs a code into a "twoFactorRedirect"
+    auditLogPlugin,
     polar({
       client: polarClient,
       createCustomerOnSignUp: true,

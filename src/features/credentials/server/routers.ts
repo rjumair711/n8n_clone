@@ -7,6 +7,8 @@ import { encrypt } from "@/lib/encryption";
 import { PLAN_LIMITS } from "@/config/plans";
 import { TRPCError } from "@trpc/server";
 import { assertOwnership } from "@/lib/ownership";
+import { describeAuditTarget } from "@/lib/audit-actions";
+import { recordAudit } from "@/lib/audit-log";
 
 // What the browser may see of a credential. "value" (the encrypted secret)
 // is never selected, so it cannot be sent by accident.
@@ -73,7 +75,7 @@ export const credentialsRouter = createTRPCRouter({
                 });
             }
 
-            return prisma.credential.create({
+            const created = await prisma.credential.create({
                 data: {
                     name,
 
@@ -85,6 +87,14 @@ export const credentialsRouter = createTRPCRouter({
                 },
                 select: SAFE_CREDENTIAL_FIELDS,
             });
+
+            await recordAudit({
+                userId: ctx.auth.user.id,
+                action: "credential.created",
+                target: describeAuditTarget(`${type} credential`, { name, id: created.id }),
+            });
+
+            return created;
         }),
 
 
@@ -94,13 +104,21 @@ export const credentialsRouter = createTRPCRouter({
         .mutation(async ({ ctx, input }) => {
             await getOwnedCredential(input.id, ctx.auth.user.id);
 
-            return prisma.credential.delete({
+            const deleted = await prisma.credential.delete({
                 where: {
                     id: input.id,
                     userId: ctx.auth.user.id
                 },
                 select: SAFE_CREDENTIAL_FIELDS,
             })
+
+            await recordAudit({
+                userId: ctx.auth.user.id,
+                action: "credential.deleted",
+                target: describeAuditTarget(`${deleted.type} credential`, deleted),
+            });
+
+            return deleted;
         }),
 
     // UPDATE CREDENTIAL
@@ -123,7 +141,7 @@ export const credentialsRouter = createTRPCRouter({
 
             await getOwnedCredential(id, ctx.auth.user.id);
 
-            return prisma.credential.update({
+            const updated = await prisma.credential.update({
                 where: { id, userId: ctx.auth.user.id },
                 data: {
                     name,
@@ -131,6 +149,17 @@ export const credentialsRouter = createTRPCRouter({
                 },
                 select: SAFE_CREDENTIAL_FIELDS,
             })
+
+            await recordAudit({
+                userId: ctx.auth.user.id,
+                action: "credential.updated",
+                // Says whether the secret itself was replaced, never what it is
+                target:
+                    describeAuditTarget(`${updated.type} credential`, updated) +
+                    (replaceSecret ? ", secret replaced" : ", name changed"),
+            });
+
+            return updated;
         }),
 
     // GET ONE
