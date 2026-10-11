@@ -88,6 +88,18 @@ const triggerNodes: NodeTypeOption[] = [
         icon: "/logos/whatsapp.svg",
     },
     {
+        type: NodeType.MESSENGER_TRIGGER,
+        label: "Messenger Trigger",
+        description: "Runs the flow when someone messages your Facebook Page",
+        icon: "/logos/messenger.svg",
+    },
+    {
+        type: NodeType.INSTAGRAM_TRIGGER,
+        label: "Instagram Trigger",
+        description: "Runs the flow when your Instagram account receives a direct message",
+        icon: "/logos/instagram.svg",
+    },
+    {
         type: NodeType.GMAIL_TRIGGER,
         label: "Gmail Trigger",
         description: "Runs the flow when a new email arrives in your Gmail inbox",
@@ -413,6 +425,24 @@ const communicationNodes: NodeTypeOption[] = [
         label: "Email",
         description: "Send an email notification step",
         icon: "/logos/email.jfif"
+    },
+    {
+        type: NodeType.MESSENGER,
+        label: "Messenger",
+        description: "Reply to someone who messaged your Facebook Page, with text or a picture",
+        icon: "/logos/messenger.svg"
+    },
+    {
+        type: NodeType.INSTAGRAM,
+        label: "Instagram",
+        description: "Reply to an Instagram direct message, with text or a picture",
+        icon: "/logos/instagram.svg"
+    },
+    {
+        type: NodeType.SOCIAL_POST,
+        label: "Instagram / Facebook Post",
+        description: "Publish a photo with a caption on Instagram or a Facebook Page",
+        icon: "/logos/social-post.svg"
     },
     {
         type: NodeType.WEB_SEARCH,

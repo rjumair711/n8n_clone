@@ -967,6 +967,49 @@ Each needs its own account and credential. Test one at a time.
 
 **Files to chat:** add a PDF Generator and a WhatsApp node with Operation `Send File`, File `pdf.file`; and a Telegram node with **Attach File** `pdf.file`.
 
+## T17b. Messenger and Instagram (public URL)
+
+Needs the `instagram_messenger` migration applied, a public `NEXT_PUBLIC_APP_URL`, and a Meta app in development mode with a **test Page** and a **test Instagram professional account** connected to it. Use the test account. While the app is in development mode only people with a role on the app can message it; that is enough for these tests.
+
+**Credential.** In the Meta app generate a Page access token with `pages_messaging`, `pages_manage_posts`, `instagram_basic`, `instagram_manage_messages` and `instagram_content_publish`, and save it as a **Facebook Page** credential. (For an app that uses Instagram Login, save the Instagram user token as an **Instagram** credential and choose *Instagram Login* on the nodes.)
+
+**a) Messenger bot.** Messenger Trigger (Verify Token: any text; App Secret: from the Meta app) → AI Agent → Messenger (Recipient ID `{{messenger.from}}`, Message `{{output}}`). Activate first, then in the Meta app's Messenger settings enter the Webhook URL and Verify Token and subscribe the Page to `messages` and `messaging_postbacks`.
+
+| # | Do | Expect |
+|---|----|--------|
+| 1 | Click **Execute** in the editor | a run with a sample message: `messenger.text`, `messenger.from`, `chatInput`, `sessionId` |
+| 2 | Save the webhook in the Meta app with a wrong Verify Token | Meta refuses to save it ("The callback URL or verify token couldn't be validated") |
+| 3 | Message the Page from a tester's account | one execution; the bot answers; **no second execution for its own answer** (the echo is ignored) |
+| 4 | Send two more messages | the agent remembers the conversation (same `sessionId`) |
+| 5 | Send a photo | one execution: `messenger.attachments` has a `type` `image` and a `url`; `chatInput` is empty |
+| 6 | Change a character of the App Secret in the node, save, message the Page | no execution; `401` in Meta's webhook log. Put it back |
+| 7 | `curl -X POST "<app>/api/webhooks/messenger/<wf>" -H "Content-Type: application/json" -d '{"object":"page","entry":[]}'` | `401` "Invalid signature..." |
+| 8 | Messenger node with Recipient ID `ali.khan` | "Recipient ID must be the number Meta gave for this person..." |
+| 9 | Messenger node, Operation `Send Image`, Image a public `https` JPEG address | the picture arrives |
+| 10 | The same with Image `speech.file` (not a picture) or a PDF | "... is not a picture" |
+| 11 | A credential with a wrong token | "Messenger API error [401]: ... (code 190)"; the token is in neither the message nor the logs |
+| 12 | Reply to someone whose last message is more than 24 hours old | Meta's "outside of allowed window" error |
+
+**b) Instagram bot.** The same with Instagram Trigger → AI Agent → Instagram (Recipient ID `{{instagram.from}}`, Message `{{output}}`); the webhook is under the Meta app's Instagram product, field `messages`. Repeat rows 1, 3, 5, 6 and 9 with `instagram.` variables. The Instagram account must have **Allow access to messages** switched on (Instagram app → Settings → Messages and story replies → Message controls → Connected tools).
+
+**c) Posts.** Trigger manually → Instagram / Facebook Post. **These publish for real: use the test Page and test account.**
+
+| Operation | Do | Expect |
+|-----------|----|--------|
+| Facebook Page Photo Post | Image a public `https` picture address, Caption `Test from RXJ` | the photo is on the Page; `post.url` opens it |
+| Instagram Photo Post | Image a public `https` **JPEG** address, Caption `Test from RXJ #test` | the photo is on the Instagram account; `post.url` is its permalink |
+| Instagram Photo Post | on the deployed app: HTTP Request (Response Format File, a JPEG) → Post with Image `<name>.httpResponse.file` | published from the file |
+| Instagram Photo Post | the same with a PNG file | "Instagram only publishes JPEG pictures..." |
+| Instagram Photo Post | Image `http://...` | "the image address must start with https://" |
+| Instagram Photo Post | Image `https://10.0.0.5/a.jpg` | refused: a private address |
+| Instagram Photo Post | a very tall picture (1:3) | Instagram's own error about the aspect ratio |
+| Instagram Photo Post | a Page with no Instagram account connected, Instagram Account ID empty | "this Page has no Instagram professional account connected to it..." |
+| Either | a file variable while running on `localhost` | "NEXT_PUBLIC_APP_URL has to be a public https address" |
+| Either | Caption longer than 2200 characters (Instagram) | "the caption has N characters; Instagram takes at most 2200" |
+| As an AI Agent tool | connect the Post node to an agent and ask it to post | the run pauses for approval before anything is published |
+
+Delete the test posts afterwards.
+
 ## T18. Google (reconnect the Google Account credential first)
 
 | Node | Test | Expect |

@@ -14,6 +14,7 @@ const NODE_LABELS: Record<string, string> = {
     WHATSAPP: "WhatsApp",
     GOOGLE_FORM_TRIGGER: "Google Form Trigger",
     WHATSAPP_TRIGGER: "WhatsApp Trigger",
+    SOCIAL_POST: "Instagram / Facebook Post",
     EXECUTE_WORKFLOW_TRIGGER: "When Executed by Another Workflow",
     RESPOND_TO_WEBHOOK: "Respond to Webhook",
     STOP_AND_ERROR: "Stop and Error",

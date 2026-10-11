@@ -129,6 +129,8 @@ const credentialLogos: Record<CredentialType, string> = {
     [CredentialType.AIRTABLE]: "/logos/airtable.svg",
     [CredentialType.POSTGRES]: "/logos/postgres.svg",
     [CredentialType.WHATSAPP]: "/logos/whatsapp.svg",
+    [CredentialType.FACEBOOK_PAGE]: "/logos/messenger.svg",
+    [CredentialType.INSTAGRAM]: "/logos/instagram.svg",
     [CredentialType.HTTP_BASIC_AUTH]: "/logos/http.svg",
     [CredentialType.HTTP_HEADER_AUTH]: "/logos/http.svg",
     [CredentialType.HTTP_BEARER_AUTH]: "/logos/http.svg",
