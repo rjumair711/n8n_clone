@@ -22,6 +22,8 @@ const NODE_LABELS: Record<string, string> = {
     WEBHOOK_RESPONSE: "Webhook Callback",
     MCP_CLIENT_TOOL: "MCP Client",
     HUBSPOT: "HubSpot",
+    WOOCOMMERCE: "WooCommerce",
+    WOOCOMMERCE_TRIGGER: "WooCommerce Trigger",
     SSH: "SSH",
     PDF_GENERATOR: "PDF Generator",
     CONVERT_TO_FILE: "Convert to File",

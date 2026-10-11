@@ -1,9 +1,10 @@
 import { toTemplateData, type TemplateConnection, type TemplateNode } from "./template-data";
 
 // Templates that ship with the app. They are put into the template gallery
-// by a migration (prisma/migrations/*_analyze_document), which holds exactly
-// what `toSeedRows()` returns; a test compares the two. To change one, add
-// a new migration: an applied migration is never edited.
+// by migrations: each group below was added by one
+// (prisma/migrations/*_analyze_document, *_shopify_woocommerce), which holds
+// exactly what `buildSeedSql(<the group>)` returns; a test compares the two.
+// To change a template, add a new migration: an applied one is never edited.
 
 export type BuiltinTemplate = {
   // Fixed, so the migration's INSERT can be run twice
@@ -198,7 +199,134 @@ const CV_SCREENING: BuiltinTemplate = {
   ],
 };
 
-export const BUILTIN_TEMPLATES: BuiltinTemplate[] = [INVOICE_TO_SHEETS, CV_SCREENING];
+// An output of an IF node
+const branch = (
+  fromNodeId: string,
+  output: "true" | "false",
+  toNodeId: string
+): TemplateConnection => ({
+  fromNodeId,
+  toNodeId,
+  fromOutput: output,
+  toInput: "target-1",
+});
+
+const ORDER_PAID_WHATSAPP: BuiltinTemplate = {
+  id: "tpl_shopify_order_paid_whatsapp",
+  name: "Shopify order paid: WhatsApp confirmation",
+  description:
+    "When an order is paid in your Shopify store, the customer gets a confirmation on WhatsApp. Orders without a phone number are skipped. WhatsApp only lets a business start a conversation with an approved message template, so first create one in WhatsApp Manager named order_confirmation with four variables, for example: \"Hi {{1}}, thank you for your order {{2}}. We received your payment of {{3}} {{4}}.\" To set it up: put your signing secret on the Shopify Trigger and create the Order payment webhook in Shopify with the trigger's Webhook URL; on the WhatsApp node pick your credential and type your Phone Number ID. Only message customers who agreed to be contacted on WhatsApp. For WooCommerce, replace the trigger with a WooCommerce Trigger set to Order paid and use {{woocommerce.phone}}, {{woocommerce.customerName}}, {{woocommerce.order.number}}, {{woocommerce.order.total}} and {{woocommerce.order.currency}}.",
+  category: "E-commerce",
+  nodes: [
+    {
+      id: "tpl_paid_trigger",
+      type: "SHOPIFY_TRIGGER",
+      position: { x: 0, y: 0 },
+      data: { event: "orders/paid" },
+    },
+    {
+      id: "tpl_paid_has_phone",
+      type: "IF",
+      position: { x: 320, y: 0 },
+      data: {
+        combinator: "and",
+        conditions: [{ inputKey: "shopify.phone", operator: "exists", value: "" }],
+      },
+    },
+    {
+      id: "tpl_paid_whatsapp",
+      type: "WHATSAPP",
+      position: { x: 640, y: 0 },
+      data: {
+        variableName: "confirmation",
+        operation: "send_template",
+        phoneNumberId: "",
+        to: "{{shopify.phone}}",
+        templateName: "order_confirmation",
+        languageCode: "en_US",
+        // {{json ...}} writes each value as JSON text, quotes included
+        templateParamsJson:
+          "[{{json shopify.customerName}}, {{json shopify.order.name}}, {{json shopify.order.total_price}}, {{json shopify.order.currency}}]",
+      },
+    },
+  ],
+  connections: [
+    flow("tpl_paid_trigger", "tpl_paid_has_phone"),
+    branch("tpl_paid_has_phone", "true", "tpl_paid_whatsapp"),
+  ],
+};
+
+const ABANDONED_CART_REMINDER: BuiltinTemplate = {
+  id: "tpl_shopify_abandoned_cart_reminder",
+  name: "Shopify abandoned cart: email reminder",
+  description:
+    "Every hour, looks for checkouts in your Shopify store that were started between one and two hours ago and never completed, and emails each shopper a link back to their cart. Because the schedule and the two time limits match, a checkout gets one reminder. To set it up: on the Shopify node pick your credential (its app needs the read_orders scope) and type your Shop Domain; on the Email node pick an SMTP credential and rewrite the message in your shop's voice. If you change how often it runs, change the two time limits on the Shopify node to match. Shopify can send abandoned checkout emails by itself: switch that off in Shopify (Settings > Checkout) or shoppers get two. Only email shoppers where the law and your privacy policy allow it.",
+  category: "E-commerce",
+  nodes: [
+    {
+      id: "tpl_cart_schedule",
+      type: "SCHEDULE_TRIGGER",
+      position: { x: 0, y: 0 },
+      data: { variableName: "scheduleTrigger", cronExpression: "0 * * * *" },
+    },
+    {
+      id: "tpl_cart_list",
+      type: "SHOPIFY",
+      position: { x: 320, y: 0 },
+      data: {
+        variableName: "abandoned",
+        operation: "list_abandoned_checkouts",
+        shopDomain: "",
+        minAgeMinutes: "60",
+        maxAgeMinutes: "120",
+        contactOnly: "true",
+        limit: "50",
+      },
+    },
+    {
+      id: "tpl_cart_split",
+      type: "SPLIT_OUT",
+      position: { x: 640, y: 0 },
+      data: { variableName: "checkouts", inputPath: "abandoned", field: "", include: "none" },
+    },
+    {
+      id: "tpl_cart_has_email",
+      type: "IF",
+      position: { x: 960, y: 0 },
+      data: {
+        combinator: "and",
+        conditions: [{ inputKey: "item.email", operator: "exists", value: "" }],
+      },
+    },
+    {
+      id: "tpl_cart_email",
+      type: "EMAIL_SEND",
+      position: { x: 1280, y: 0 },
+      data: {
+        recipient: "{{item.email}}",
+        subject: "You left something in your cart",
+        body: [
+          "<p>Hi {{item.customer.first_name}},</p>",
+          "<p>You started an order with us and did not finish it. Your cart is saved:</p>",
+          '<p><a href="{{item.abandoned_checkout_url}}">Return to your cart</a></p>',
+          "<p>If you have a question about your order, reply to this email.</p>",
+        ].join("\n"),
+      },
+    },
+  ],
+  connections: [
+    flow("tpl_cart_schedule", "tpl_cart_list"),
+    flow("tpl_cart_list", "tpl_cart_split"),
+    flow("tpl_cart_split", "tpl_cart_has_email"),
+    branch("tpl_cart_has_email", "true", "tpl_cart_email"),
+  ],
+};
+
+// One group per migration that added templates
+export const DOCUMENT_TEMPLATES: BuiltinTemplate[] = [INVOICE_TO_SHEETS, CV_SCREENING];
+export const STORE_TEMPLATES: BuiltinTemplate[] = [ORDER_PAID_WHATSAPP, ABANDONED_CART_REMINDER];
+
+export const BUILTIN_TEMPLATES: BuiltinTemplate[] = [...DOCUMENT_TEMPLATES, ...STORE_TEMPLATES];
 
 // Who the gallery says made them: no user's account
 export const BUILTIN_TEMPLATE_AUTHOR = "system";
@@ -207,8 +335,8 @@ export const BUILTIN_TEMPLATE_AUTHOR = "system";
  * The rows of the template gallery for the built-in templates, cleaned the
  * same way a published workflow is (no credentials, no secrets).
  */
-export const toSeedRows = () =>
-  BUILTIN_TEMPLATES.map((template) => {
+export const toSeedRows = (templates: BuiltinTemplate[] = BUILTIN_TEMPLATES) =>
+  templates.map((template) => {
     const data = toTemplateData(template.nodes, template.connections);
 
     return {
@@ -229,8 +357,8 @@ const quote = (value: string) => `'${value.replace(/'/g, "''")}'`;
  * that is already there (also one an admin has edited since) is left as it
  * is.
  */
-export const buildSeedSql = () =>
-  toSeedRows()
+export const buildSeedSql = (templates: BuiltinTemplate[] = BUILTIN_TEMPLATES) =>
+  toSeedRows(templates)
     .map(
       (row) =>
         `INSERT INTO "workflow_template" ("id", "name", "description", "category", "minPlan", "published", "nodes", "connections", "nodeTypes", "useCount", "createdById", "createdAt", "updatedAt")\n` +

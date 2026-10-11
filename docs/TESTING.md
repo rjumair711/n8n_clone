@@ -986,6 +986,7 @@ Each needs its own account and credential. Test one at a time.
 | RSS Feed Trigger | URL `https://hnrss.org/frontpage`, Check Every `Minute`, activate, wait for a new story | first check starts nothing; later, one run per new item with `rss.title` |
 | RSS Read | Trigger manually → RSS Read (same URL, Limit 5) → Set Variable `title` = `{{item.title}}` | the Set Variable runs 5 times |
 | Typeform Trigger | set the same Secret in Typeform's webhook settings, submit the form | `typeform.answers` keyed by question title |
+| Shopify Trigger, WooCommerce Trigger | see T19f | |
 | Stripe Trigger | `stripe trigger payment_intent.succeeded`, then resend the same event from the Stripe dashboard | one execution, not two |
 
 ## T19a. Forms
@@ -1176,6 +1177,80 @@ Seen on GitHub, after the branch is pushed.
 | 3 | In a throwaway branch add a line like `const key = "AKIAIOSFODNN7EXAMPLE2";` with a made-up AWS-style key to a file under `src/lib`, push | **Secret scan** fails and names the file and line. Delete the branch |
 | 4 | Break a type in a throwaway branch, push | **Type check** fails |
 | 5 | The Monday after merging | Dependabot opens its pull requests (repository → Insights → Dependency graph → Dependabot shows its last run) |
+
+## T19f. Shopify and WooCommerce
+
+Needs the `shopify_woocommerce` migration applied and a public `NEXT_PUBLIC_APP_URL`. Use the test account and a **test store**: a Shopify development store, and a WooCommerce site you can break. Never point these at a shop with real customers.
+
+**Credentials.** Shopify: in the store's admin, Settings > Apps and sales channels > Develop apps, create an app with the Admin API scopes `read_orders`, `write_orders`, `read_products`, `write_products`, `read_customers`, `write_customers`, `read_inventory`, `write_inventory`, `read_locations`; install it and save the token as a **Shopify** credential. WooCommerce: WooCommerce > Settings > Advanced > REST API, a Read/Write key, saved as `ck_...:cs_...` in a **WooCommerce** credential.
+
+**a) Shopify node.** Trigger manually → Shopify.
+
+| Operation | Do | Expect |
+|-----------|----|--------|
+| List Orders | Shop Domain `your-store.myshopify.com`, Limit 5 | `shopify.items` has up to 5 orders, `shopify.count` their number |
+| List Orders | Fields `id, name, email` | each item has only those three fields |
+| Get Order | Order ID of one of them (the long number) | the order |
+| Get Order | Order ID `#1001` | "Order ID must be a number" |
+| Update Order | Note `Tested from RXJ` | the note shows on the order in Shopify admin |
+| Create Product | Title `RXJ test`, Price `5.00`, Product Status `draft` | a draft product; `shopify.variants.0.inventory_item_id` is set |
+| List Locations | | at least one location with an `id` |
+| Set Inventory Level | that inventory item, that location, Quantity 7 | Shopify shows 7 (the product has to track quantity) |
+| Adjust Inventory Level | Quantity `-2` | 5 |
+| Get Inventory Level | the inventory item | `shopify.available` is 5 |
+| Search Customers | Search `email:` plus a customer's address | that customer in `shopify.items` |
+| Any | Shop Domain `your-shop.com` (the public domain) | "Shop Domain must be the store's myshopify.com address" |
+| Any | a credential with a wrong token | "Shopify API error [401]: ..." and the token is in neither the message nor the logs |
+| Any | a token without the scope the operation needs | "Shopify API error [403]: ..." naming the missing scope |
+| List Abandoned Checkouts | start a checkout in the store with an email address, leave it; Abandoned At Least `0` | the checkout is in `shopify.items` with an `abandoned_checkout_url` |
+
+Then add Split Out (Input List `shopify`) → Set Variable `{{item.name}}` after List Orders: the Set Variable runs once per order.
+
+**b) Shopify Trigger.** Shopify Trigger (Event `Order paid`, Signing Secret from Settings > Notifications > Webhooks) → Set Variable. Activate. In Shopify create a webhook for *Order payment*, format JSON, with the node's Webhook URL.
+
+| # | Do | Expect |
+|---|----|--------|
+| 1 | Click **Execute** in the editor | a run with a sample order: `shopify.event` `orders/paid`, `shopify.phone`, `shopify.order.name` |
+| 2 | Pay a test order in the store (Bogus Gateway) | one execution; `shopify.order` is the order, `shopify.email` and `shopify.customerName` are filled |
+| 3 | In Shopify's webhook list, **Send test notification** | one execution with Shopify's sample order |
+| 4 | Change a character of the Signing Secret in the node, save, pay another order | no execution; Shopify's delivery log shows `401` |
+| 5 | Add a second webhook in Shopify for *Order creation* with the same URL, create an order without paying | Shopify's log shows `200`; no execution (the node listens for Order paid) |
+| 6 | Send a captured delivery twice: `curl -X POST "<app>/api/webhooks/shopify/<wf>" -H "X-Shopify-Hmac-Sha256: <copied>" -H "X-Shopify-Topic: orders/paid" -H "X-Shopify-Event-Id: <copied>" --data-binary @body.json`, twice | one execution, not two. Without the headers Shopify sent it is `401` |
+| 7 | Deactivate the workflow and pay an order | `404`; Shopify retries later |
+
+**c) WooCommerce node.** Trigger manually → WooCommerce (Store URL `https://your-shop.example`).
+
+| Operation | Do | Expect |
+|-----------|----|--------|
+| List Orders | Limit 5 | `woocommerce.items`, `woocommerce.count` |
+| Get Order | an Order ID | the order, with `billing.phone` |
+| Update Order | Status `completed` | the order is completed in WordPress |
+| Add Order Note | Note `Tested from RXJ` | a private note on the order; with **Send To Customer** on, the customer is emailed |
+| Create Product | Name `RXJ test`, Regular Price `5.00`, Stock Quantity `7`, Product Status `draft` | a draft product with stock 7 |
+| Update Product | Stock Quantity `0` | stock 0 |
+| List Customers | Email of a customer | that customer |
+| Any | Store URL `http://...` | "Store URL must be the shop's https address" |
+| Any | Store URL without `www` where the shop redirects to `www` | "the store redirected the request to www...": use that address |
+| Any | a Read-only key with Update Order | "WooCommerce API error [401]: ..." |
+
+**d) WooCommerce Trigger.** WooCommerce Trigger (Event `Order paid`, a Secret) → Set Variable. **Activate first.** Then in WooCommerce add a webhook: status Active, topic *Order updated*, Delivery URL the node's Webhook URL, the same Secret.
+
+| # | Do | Expect |
+|---|----|--------|
+| 1 | Save the webhook in WooCommerce | it saves without an error (WooCommerce's check of the address is answered); no execution |
+| 2 | Save a webhook while the workflow is **not** active | WooCommerce reports "Delivery URL returned response code: 404" |
+| 3 | Place an order with Cash on Delivery | no execution yet (no payment date) |
+| 4 | Mark that order Completed, or pay one with a test gateway | one execution: `woocommerce.event` `order.paid`, `woocommerce.phone`, `woocommerce.order.number` |
+| 5 | Edit and save the paid order again | no second execution |
+| 6 | Event `Order updated`, Only When The Order Status Is `processing`; move an order to Processing, save it twice | one execution for that order |
+| 7 | A different Secret in the node | no execution; the webhook's delivery log in WooCommerce shows `401` |
+
+**e) Templates.** On the Templates page, under **E-commerce**:
+
+| Template | Do | Expect |
+|----------|----|--------|
+| Shopify order paid: WhatsApp confirmation | Use it; the trigger and the WhatsApp node show "Not Configured". Fill in the signing secret, the WhatsApp credential and Phone Number ID; create and get approved a WhatsApp template `order_confirmation` with four variables; pay a test order whose phone number is your own | the WhatsApp template message arrives with name, order number, amount and currency. An order without a phone number ends at the IF node with no error |
+| Shopify abandoned cart: email reminder | Use it; fill in the Shopify credential and Shop Domain and the SMTP credential. Start a checkout with your own email address and leave it. Set Abandoned At Least to `0` and At Most empty, then Execute | the email arrives with a link that reopens the cart. Set the limits back to 60 and 120 before activating |
 
 ## T20. Apps (one simple call each)
 

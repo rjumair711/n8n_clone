@@ -137,6 +137,8 @@ const credentialLogos: Record<CredentialType, string> = {
     [CredentialType.TWILIO]: "/logos/twilio.svg",
     [CredentialType.JIRA]: "/logos/jira.svg",
     [CredentialType.HUBSPOT]: "/logos/hubspot.svg",
+    [CredentialType.SHOPIFY]: "/logos/shopify.svg",
+    [CredentialType.WOOCOMMERCE]: "/logos/woocommerce.svg",
     [CredentialType.MYSQL]: "/logos/mysql.svg",
     [CredentialType.RESEND]: "/logos/resend.svg",
     [CredentialType.SENDGRID]: "/logos/sendgrid.svg",

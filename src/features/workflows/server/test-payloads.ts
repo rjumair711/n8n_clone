@@ -1,5 +1,15 @@
 import { NodeType } from "@prisma/client";
 import { buildSampleFormValues, parseFormFields } from "@/lib/form-fields";
+import {
+    buildShopifyTriggerData,
+    buildWoocommerceTriggerData,
+} from "@/lib/store-webhooks";
+import {
+    ANY_EVENT,
+    SHOPIFY_EVENTS,
+    WOOCOMMERCE_EVENTS,
+    WOOCOMMERCE_PAID_EVENT,
+} from "@/features/executions/lib/store-options";
 
 // Triggers the editor's Execute button can run once with sample data
 export const TESTABLE_TRIGGERS = [
@@ -12,6 +22,8 @@ export const TESTABLE_TRIGGERS = [
     NodeType.WHATSAPP_TRIGGER,
     NodeType.GMAIL_TRIGGER,
     NodeType.TYPEFORM_TRIGGER,
+    NodeType.SHOPIFY_TRIGGER,
+    NodeType.WOOCOMMERCE_TRIGGER,
     NodeType.RSS_FEED_TRIGGER,
     NodeType.FORM_TRIGGER,
     NodeType.ERROR_TRIGGER,
@@ -30,6 +42,8 @@ export const TRIGGER_LABELS: Record<TestableTrigger, string> = {
     WHATSAPP_TRIGGER: "WhatsApp",
     GMAIL_TRIGGER: "Gmail",
     TYPEFORM_TRIGGER: "Typeform",
+    SHOPIFY_TRIGGER: "Shopify",
+    WOOCOMMERCE_TRIGGER: "WooCommerce",
     RSS_FEED_TRIGGER: "RSS Feed",
     FORM_TRIGGER: "Form",
     ERROR_TRIGGER: "Error Trigger",
@@ -179,6 +193,148 @@ export const buildTestPayload = (
                     hidden: {},
                     raw: { form_id: "sample-form-id", token: "sample-response-id" },
                 },
+            };
+        }
+
+        case NodeType.SHOPIFY_TRIGGER: {
+            const selected = String(nodeData.event ?? "");
+            // "Any event" is tried with a paid order
+            const topic =
+                selected !== ANY_EVENT &&
+                SHOPIFY_EVENTS.some((event) => event.value === selected)
+                    ? selected
+                    : "orders/paid";
+            const resource = topic.split("/")[0];
+            const customer = {
+                id: 7000000000001,
+                email: "customer@example.com",
+                first_name: "Sample",
+                last_name: "Customer",
+                phone: "+923001234567",
+            };
+            const stamp = { created_at: now.toISOString(), updated_at: now.toISOString() };
+
+            const body =
+                resource === "products"
+                    ? {
+                          id: 8000000000001,
+                          title: "Sample product",
+                          status: "active",
+                          vendor: "Sample vendor",
+                          ...stamp,
+                          variants: [
+                              {
+                                  id: 44000000000001,
+                                  price: "20.00",
+                                  sku: "SAMPLE-1",
+                                  inventory_item_id: 46000000000001,
+                                  inventory_quantity: 12,
+                              },
+                          ],
+                      }
+                    : resource === "customers"
+                      ? { ...customer, ...stamp }
+                      : resource === "checkouts"
+                        ? {
+                              id: 30000000000001,
+                              token: "sample-checkout-token",
+                              email: customer.email,
+                              phone: customer.phone,
+                              total_price: "20.00",
+                              currency: "USD",
+                              completed_at: null,
+                              abandoned_checkout_url:
+                                  "https://sample-store.myshopify.com/checkouts/sample/recover",
+                              ...stamp,
+                              customer,
+                              line_items: [{ title: "Sample product", quantity: 1, price: "20.00" }],
+                          }
+                        : {
+                              id: 5000000000001,
+                              name: "#1001",
+                              order_number: 1001,
+                              email: customer.email,
+                              phone: customer.phone,
+                              total_price: "20.00",
+                              currency: "USD",
+                              financial_status: topic === "orders/create" ? "pending" : "paid",
+                              fulfillment_status: topic === "orders/fulfilled" ? "fulfilled" : null,
+                              order_status_url:
+                                  "https://sample-store.myshopify.com/orders/sample/authenticate",
+                              ...stamp,
+                              customer,
+                              line_items: [{ title: "Sample product", quantity: 1, price: "20.00" }],
+                          };
+
+            return {
+                shopify: buildShopifyTriggerData({
+                    topic,
+                    shopDomain: "sample-store.myshopify.com",
+                    body,
+                }),
+            };
+        }
+
+        case NodeType.WOOCOMMERCE_TRIGGER: {
+            const selected = String(nodeData.event ?? "");
+            const known =
+                selected !== ANY_EVENT &&
+                WOOCOMMERCE_EVENTS.some((event) => event.value === selected);
+            const event = known ? selected : WOOCOMMERCE_PAID_EVENT;
+            // "Order paid" arrives as an order update
+            const topic = event === WOOCOMMERCE_PAID_EVENT ? "order.updated" : event;
+            const resource = topic.split(".")[0];
+            const billing = {
+                first_name: "Sample",
+                last_name: "Customer",
+                email: "customer@example.com",
+                phone: "+923001234567",
+            };
+
+            const body =
+                resource === "product"
+                    ? {
+                          id: 101,
+                          name: "Sample product",
+                          status: "publish",
+                          sku: "SAMPLE-1",
+                          price: "20.00",
+                          regular_price: "20.00",
+                          stock_quantity: 12,
+                          date_modified: now.toISOString(),
+                      }
+                    : resource === "customer"
+                      ? {
+                            id: 25,
+                            email: billing.email,
+                            first_name: billing.first_name,
+                            last_name: billing.last_name,
+                            billing,
+                            date_created: now.toISOString(),
+                        }
+                      : {
+                            id: 727,
+                            number: "727",
+                            status:
+                                String(nodeData.orderStatus ?? "").trim() ||
+                                (topic === "order.created" ? "pending" : "processing"),
+                            currency: "USD",
+                            total: "20.00",
+                            customer_id: 25,
+                            date_created: now.toISOString(),
+                            date_paid: topic === "order.created" ? null : now.toISOString(),
+                            payment_method_title: "Sample payment",
+                            billing,
+                            line_items: [{ name: "Sample product", quantity: 1, total: "20.00" }],
+                        };
+
+            return {
+                woocommerce: buildWoocommerceTriggerData({
+                    event,
+                    topic,
+                    source: "https://shop.example.com/",
+                    body,
+                }),
             };
         }
 

@@ -121,6 +121,8 @@ const TOOL_LABELS: Record<string, string> = {
   JIRA: "Jira",
   HUBSPOT: "HubSpot",
   SALESFORCE: "Salesforce",
+  SHOPIFY: "Shopify",
+  WOOCOMMERCE: "WooCommerce",
   SSH: "SSH Command",
   MYSQL: "MySQL",
   RESEND: "Resend",
@@ -224,6 +226,8 @@ const DEFAULT_OPERATIONS: Record<string, string> = {
   VECTOR_STORE: "search",
   GOOGLE_DRIVE: "search_files",
   SALESFORCE: "query",
+  SHOPIFY: "get_order",
+  WOOCOMMERCE: "get_order",
 };
 
 const DELETE_OPERATION = /(^|_)(delete|remove|drop|truncate|destroy|purge|trash)(_|$)/i;

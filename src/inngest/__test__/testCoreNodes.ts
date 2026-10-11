@@ -4615,7 +4615,12 @@ const main = async () => {
     walk("src/app/api/webhooks");
     walk("src/app/api/oauth");
 
-    const comparesSecrets = /secretsMatch\(|verifyStripeSignature\(|verifyTypeformSignature\(|verifyPolarWebhook\(/;
+    const comparesSecrets = /secretsMatch\(|verifyStripeSignature\(|verifyTypeformSignature\(|verifyBase64HmacSignature\(|verifyPolarWebhook\(/;
+    // The verifier Shopify and WooCommerce share is built on the helper too
+    assert.match(
+      helper.slice(helper.indexOf("export const verifyBase64HmacSignature")),
+      /return secretsMatch\(signatureHeader\.trim\(\), expected\);/
+    );
     const unsafeComparison =
       /\b(provided|signature|signatureHeader|secret|expected|verifyToken|appSecret|state)\w*\s*[!=]==?\s*(?!undefined|null|""|''|"subscribe")[\w.("'`]|[\w.)"'`]\s*[!=]==?\s*(provided|signature|signatureHeader|expected|verifyToken|appSecret)\b/;
 
@@ -7172,7 +7177,7 @@ const main = async () => {
     const listOf = (value: unknown) =>
       parseAttributes(String(value ?? "")).map((attribute) => attribute.name);
 
-    const rows = builtin.toSeedRows();
+    const rows = builtin.toSeedRows(builtin.DOCUMENT_TEMPLATES);
     assert.deepEqual(rows.map((row) => row.name), ["Invoice to Google Sheets", "CV screening: score and email"]);
 
     const schema = readFileSync("prisma/schema.prisma", "utf8");
@@ -7234,7 +7239,10 @@ const main = async () => {
     const sql = readFileSync(`prisma/migrations/${folder}/migration.sql`, "utf8").replace(/\r\n/g, "\n");
 
     assert.match(sql, /^-- AlterEnum\nALTER TYPE "NodeType" ADD VALUE 'ANALYZE_DOCUMENT';/);
-    assert.ok(sql.includes(builtin.buildSeedSql()), "the migration holds what the templates module builds");
+    assert.ok(
+      sql.includes(builtin.buildSeedSql(builtin.DOCUMENT_TEMPLATES)),
+      "the migration holds what the templates module builds"
+    );
     assert.equal(sql.match(/INSERT INTO "workflow_template"/g)?.length, 2);
     assert.equal(sql.match(/ON CONFLICT \("id"\) DO NOTHING;/g)?.length, 2);
     const statements = sql.replace(/'(?:[^']|'')*'/g, "''");
@@ -8026,6 +8034,747 @@ pour()</code></pre>
       read("src/features/executions/components/integration-node.tsx"),
       /credentialType && !config\.credentialOptional && !nodeData\.credentialId/
     );
+  });
+
+  // ------------------------------------------- SHOPIFY AND WOOCOMMERCE
+  console.log("Shopify and WooCommerce");
+
+  const stores = await import("@/features/executions/components/apps/stores");
+  const storeWebhooks = await import("@/lib/store-webhooks");
+  const storeOptions = await import("@/features/executions/lib/store-options");
+
+  await test("a store's webhook is accepted only with its signature", async () => {
+    const { createHmac } = await import("node:crypto");
+    const { verifyBase64HmacSignature } = await import("@/lib/webhook-security");
+
+    const rawBody = JSON.stringify({ id: 5000000000001, name: "#1001", note: "شکریہ" });
+    const secret = "shpss_0123456789abcdef";
+    const signature = createHmac("sha256", secret).update(rawBody, "utf8").digest("base64");
+
+    assert.equal(verifyBase64HmacSignature({ rawBody, signatureHeader: signature, secret }), true);
+    assert.equal(verifyBase64HmacSignature({ rawBody, signatureHeader: ` ${signature}\n`, secret }), true);
+    // Another secret, a changed body, the hex form, or nothing at all
+    assert.equal(verifyBase64HmacSignature({ rawBody, signatureHeader: signature, secret: "other" }), false);
+    assert.equal(verifyBase64HmacSignature({ rawBody: `${rawBody} `, signatureHeader: signature, secret }), false);
+    assert.equal(
+      verifyBase64HmacSignature({
+        rawBody,
+        signatureHeader: createHmac("sha256", secret).update(rawBody, "utf8").digest("hex"),
+        secret,
+      }),
+      false
+    );
+    assert.equal(verifyBase64HmacSignature({ rawBody, signatureHeader: null, secret }), false);
+    assert.equal(verifyBase64HmacSignature({ rawBody, signatureHeader: "", secret }), false);
+    assert.equal(verifyBase64HmacSignature({ rawBody, signatureHeader: signature, secret: "" }), false);
+
+    const { readFileSync } = await import("node:fs");
+    const read = (path: string) => readFileSync(path, "utf8");
+
+    for (const [name, header, type] of [
+      ["shopify", "x-shopify-hmac-sha256", "SHOPIFY_TRIGGER"],
+      ["woocommerce", "x-wc-webhook-signature", "WOOCOMMERCE_TRIGGER"],
+    ]) {
+      const route = read(`src/app/api/webhooks/${name}/[workflowId]/route.ts`);
+
+      assert.ok(route.includes(`request.headers.get("${header}")`), name);
+      assert.ok(route.includes(`rateLimitResponse(\`${name}:\${workflowId}\`)`), name);
+      assert.ok(route.includes(`NodeType.${type}`), name);
+      // Only an active workflow's trigger nodes, and a node without a
+      // secret verifies nothing
+      assert.match(route, /findTriggerNodes\(/, name);
+      assert.match(route, /!!secret &&\s*verifyBase64HmacSignature\(\{ rawBody, signatureHeader, secret \}\)/, name);
+      assert.match(route, /if \(verifiedNodes\.length === 0\) \{\s*return NextResponse\.json\(\s*\{[^}]*\},\s*\{ status: 401 \}/, name);
+      // The body is not read as JSON, and no run is started, before that
+      const refused = route.indexOf("{ status: 401 }");
+      assert.ok(refused > 0 && route.indexOf("JSON.parse(rawBody)") > refused, name);
+      assert.ok(route.indexOf("startWorkflowExecution({") > refused, name);
+      assert.match(route, /dedupeKey:/, name);
+      // The secret is never written to the log or the answer
+      assert.equal(/console\.\w+\([^)]*secret/i.test(route), false, name);
+    }
+
+    // WooCommerce's unsigned check of a new webhook is answered before the
+    // signature is asked for, and starts nothing
+    const woo = read("src/app/api/webhooks/woocommerce/[workflowId]/route.ts");
+    assert.ok(woo.indexOf("isWoocommercePing(rawBody, signatureHeader)") < woo.indexOf("verifiedNodes"));
+    assert.equal(storeWebhooks.isWoocommercePing("webhook_id=42", null), true);
+    assert.equal(storeWebhooks.isWoocommercePing("webhook_id=42\n", ""), true);
+    // Signed, or anything more than the check
+    assert.equal(storeWebhooks.isWoocommercePing("webhook_id=42", "abc="), false);
+    assert.equal(storeWebhooks.isWoocommercePing('{"id":42}', null), false);
+    assert.equal(storeWebhooks.isWoocommercePing("webhook_id=42&status=completed", null), false);
+    assert.equal(storeWebhooks.isWoocommercePing("", null), false);
+  });
+
+  await test("Shopify events: the chosen one starts a run once, with the buyer's details", () => {
+    assert.equal(storeWebhooks.matchesShopifyEvent("orders/paid", "orders/paid"), true);
+    assert.equal(storeWebhooks.matchesShopifyEvent("orders/paid", "orders/create"), false);
+    assert.equal(storeWebhooks.matchesShopifyEvent("any", "products/update"), true);
+    // A node saved without an event listens for everything
+    assert.equal(storeWebhooks.matchesShopifyEvent(undefined, "products/update"), true);
+    assert.equal(storeWebhooks.matchesShopifyEvent("", "products/update"), true);
+
+    for (const topic of ["orders/create", "orders/paid", "products/update"]) {
+      assert.ok(storeOptions.SHOPIFY_EVENTS.some((event) => event.value === topic), topic);
+    }
+
+    // A retry carries the same event id
+    const key = storeWebhooks.shopifyDedupeKey({ topic: "orders/paid", eventId: "evt-1", webhookId: "wh-1", rawBody: "{}" });
+    assert.equal(key, "orders/paid:evt-1");
+    assert.equal(storeWebhooks.shopifyDedupeKey({ topic: "orders/paid", eventId: " evt-1 ", webhookId: "wh-9", rawBody: "{}" }), key);
+    // The same order being created and paid are two events
+    assert.notEqual(storeWebhooks.shopifyDedupeKey({ topic: "orders/create", eventId: "evt-1", rawBody: "{}" }), key);
+    assert.equal(storeWebhooks.shopifyDedupeKey({ topic: "orders/paid", eventId: null, webhookId: "wh-1", rawBody: "{}" }), "orders/paid:wh-1");
+    // Neither header: the body decides
+    const hashed = storeWebhooks.shopifyDedupeKey({ topic: "orders/paid", rawBody: '{"id":1}' });
+    assert.match(hashed, /^orders\/paid:[0-9a-f]{64}$/);
+    assert.equal(storeWebhooks.shopifyDedupeKey({ topic: "orders/paid", rawBody: '{"id":1}' }), hashed);
+    assert.notEqual(storeWebhooks.shopifyDedupeKey({ topic: "orders/paid", rawBody: '{"id":2}' }), hashed);
+
+    const order = {
+      id: 5000000000001,
+      name: "#1001",
+      email: "",
+      contact_email: "ali@example.com",
+      total_price: "20.00",
+      customer: { first_name: "Ali", last_name: "Khan", phone: null },
+      shipping_address: { name: "Ali K.", phone: "+92 300 1234567" },
+    };
+    const data: any = storeWebhooks.buildShopifyTriggerData({ topic: "orders/paid", shopDomain: "my-store.myshopify.com", body: order });
+    assert.equal(data.event, "orders/paid");
+    assert.equal(data.shopDomain, "my-store.myshopify.com");
+    assert.equal(data.id, 5000000000001);
+    assert.equal(data.email, "ali@example.com");
+    // The phone number is taken from wherever the order has one
+    assert.equal(data.phone, "+92 300 1234567");
+    assert.equal(data.customerName, "Ali Khan");
+    assert.equal(data.order, order);
+    assert.equal("data" in data, false);
+
+    const product: any = storeWebhooks.buildShopifyTriggerData({ topic: "products/update", shopDomain: "s.myshopify.com", body: { id: 8, title: "Shirt" } });
+    assert.equal(product.product.title, "Shirt");
+    assert.equal(product.phone, "");
+    assert.equal(product.customerName, "");
+    // A topic without a name of its own, and a body that is not an object
+    const other: any = storeWebhooks.buildShopifyTriggerData({ topic: "app/uninstalled", shopDomain: "s.myshopify.com", body: [1] });
+    assert.deepEqual(other.data, [1]);
+    assert.equal(other.id, null);
+  });
+
+  await test("WooCommerce events: order paid and a status start one run per order", () => {
+    const match = (settings: Record<string, unknown>, topic: string, body: unknown, deliveryId: string | null = "d-1") =>
+      storeWebhooks.matchWoocommerceDelivery({ settings, topic, body, deliveryId, rawBody: JSON.stringify(body) });
+
+    const pending = { id: 727, status: "pending", date_paid: null, date_paid_gmt: null };
+    const paid = { id: 727, status: "processing", date_paid: "2026-10-11T09:00:00", date_paid_gmt: "2026-10-11T04:00:00" };
+
+    assert.deepEqual(match({ event: "order.created" }, "order.created", pending), { event: "order.created", dedupeKey: "order.created:d-1" });
+    assert.equal(match({ event: "order.created" }, "order.updated", paid), null);
+    assert.deepEqual(match({ event: "any" }, "product.updated", { id: 9 }), { event: "product.updated", dedupeKey: "product.updated:d-1" });
+    assert.deepEqual(match({}, "product.updated", { id: 9 }, "d-2"), { event: "product.updated", dedupeKey: "product.updated:d-2" });
+
+    // Order paid: not while the order has no payment date, then once,
+    // however many more updates of the order arrive
+    assert.equal(match({ event: "order.paid" }, "order.updated", pending), null);
+    assert.deepEqual(match({ event: "order.paid" }, "order.updated", paid, "d-3"), { event: "order.paid", dedupeKey: "order:727:paid" });
+    assert.deepEqual(match({ event: "order.paid" }, "order.updated", { ...paid, status: "completed" }, "d-4"), { event: "order.paid", dedupeKey: "order:727:paid" });
+    assert.deepEqual(match({ event: "order.paid" }, "order.created", paid), { event: "order.paid", dedupeKey: "order:727:paid" });
+    assert.equal(match({ event: "order.paid" }, "product.updated", { id: 9, date_paid: "x" }), null);
+    assert.equal(match({ event: "order.paid" }, "order.updated", { status: "processing", date_paid: "2026-10-11" }), null);
+
+    // A status: only orders in it, one run per order and status
+    assert.equal(match({ event: "order.updated", orderStatus: "completed" }, "order.updated", paid), null);
+    assert.deepEqual(
+      match({ event: "order.updated", orderStatus: " WC-Processing " }, "order.updated", paid),
+      { event: "order.updated", dedupeKey: "order:727:status:processing" }
+    );
+    // The status is about orders: a product event passes it by
+    assert.deepEqual(match({ event: "any", orderStatus: "processing" }, "product.updated", { id: 9, status: "publish" }), { event: "product.updated", dedupeKey: "product.updated:d-1" });
+
+    // Without a delivery id the body decides
+    assert.match(match({ event: "order.created" }, "order.created", pending, null)!.dedupeKey, /^order\.created:[0-9a-f]{64}$/);
+
+    const order = { id: 727, number: "727", total: "20.00", billing: { first_name: "Ali", last_name: "Khan", email: "ali@example.com", phone: "03001234567" } };
+    const data: any = storeWebhooks.buildWoocommerceTriggerData({ event: "order.paid", topic: "order.updated", source: "https://shop.example.com/", body: order });
+    assert.equal(data.event, "order.paid");
+    assert.equal(data.topic, "order.updated");
+    assert.equal(data.storeUrl, "https://shop.example.com/");
+    assert.equal(data.id, 727);
+    assert.equal(data.email, "ali@example.com");
+    assert.equal(data.phone, "03001234567");
+    assert.equal(data.customerName, "Ali Khan");
+    assert.equal(data.order, order);
+
+    const customer: any = storeWebhooks.buildWoocommerceTriggerData({ event: "customer.created", topic: "customer.created", source: "", body: { id: 25, email: "c@example.com", first_name: "Sara" } });
+    assert.equal(customer.customer.id, 25);
+    assert.equal(customer.email, "c@example.com");
+    assert.equal(customer.customerName, "Sara");
+    const action: any = storeWebhooks.buildWoocommerceTriggerData({ event: "action.woocommerce_add_to_cart", topic: "action.woocommerce_add_to_cart", source: "", body: { arg: "x" } });
+    assert.deepEqual(action.data, { arg: "x" });
+  });
+
+  await test("the Shopify node builds the right Admin API request for each operation", () => {
+    const now = Date.parse("2026-10-11T12:00:00.000Z");
+    const build = (data: Record<string, string>, context: Record<string, unknown> = {}) =>
+      stores.buildShopifyRequest({ shopDomain: "my-store.myshopify.com", ...data }, context, now);
+    const base = `https://my-store.myshopify.com/admin/api/${stores.SHOPIFY_API_VERSION}`;
+
+    // The token only ever goes to a myshopify.com host
+    assert.equal(stores.normalizeShopDomain("My-Store"), "my-store.myshopify.com");
+    assert.equal(stores.normalizeShopDomain("https://my-store.myshopify.com/admin/orders"), "my-store.myshopify.com");
+    assert.equal(stores.normalizeShopDomain("admin.shopify.com/store/my-store/orders"), "my-store.myshopify.com");
+    for (const bad of ["", "shop.example.com", "my-store.myshopify.com.evil.com", "evil.com/my-store.myshopify.com", "my-store.myshopify.com@evil.com", "my_store", "169.254.169.254", "my-store.myshopify.com:8443", "-x.myshopify.com"]) {
+      assert.equal(stores.normalizeShopDomain(bad), null, bad);
+    }
+    assert.throws(() => build({ shopDomain: "shop.example.com", operation: "list_locations" }), /Shop Domain must be the store's myshopify\.com address/);
+    assert.throws(() => stores.buildShopifyRequest({ operation: "list_locations" }, {}), /Shop Domain is required/);
+    assert.throws(() => build({ operation: "list_locations", apiVersion: "latest/../x" }), /API Version must look like 2025-01/);
+    assert.equal(build({ operation: "list_locations", apiVersion: "2026-07" }).url, "https://my-store.myshopify.com/admin/api/2026-07/locations.json");
+
+    // Orders
+    const order = build({ orderId: "{{shopify.order.id}}", fields: "id, name , email" }, { shopify: { order: { id: 5000000000001 } } });
+    assert.equal(order.method, "GET");
+    assert.equal(order.url, `${base}/orders/5000000000001.json?fields=id%2Cname%2Cemail`);
+    assert.equal(order.body, undefined);
+    assert.deepEqual(order.shape({ order: { id: 1 } }), { id: 1 });
+    assert.equal(build({ operation: "get_order", orderId: "gid://shopify/Order/450789469" }).url, `${base}/orders/450789469.json`);
+    // An id goes into the address: only a number
+    for (const bad of ["#1001", "12/../../shop", "1?x=1", "abc"]) {
+      assert.throws(() => build({ operation: "get_order", orderId: bad }), /Order ID must be a number/, bad);
+    }
+    assert.throws(() => build({ operation: "get_order" }), /Order ID is required/);
+
+    const orders = new URL(build({ operation: "list_orders", financialStatus: "paid", createdAfter: "2026-10-01", limit: "500" }).url);
+    assert.equal(orders.pathname, `/admin/api/${stores.SHOPIFY_API_VERSION}/orders.json`);
+    assert.deepEqual(Object.fromEntries(orders.searchParams), {
+      status: "any",
+      financial_status: "paid",
+      created_at_min: "2026-10-01T00:00:00.000Z",
+      limit: String(stores.STORE_MAX_LIMIT),
+    });
+    assert.equal(new URL(build({ operation: "list_orders", limit: "nonsense" }).url).searchParams.get("limit"), String(stores.STORE_DEFAULT_LIMIT));
+    assert.throws(() => build({ operation: "list_orders", createdAfter: "last week" }), /Created After must be a date/);
+    assert.deepEqual(build({ operation: "list_orders" }).shape({ orders: [{ id: 1 }, { id: 2 }] }), { items: [{ id: 1 }, { id: 2 }], count: 2 });
+    assert.deepEqual(build({ operation: "list_orders" }).shape({}), { items: [], count: 0 });
+
+    const update = build({ operation: "update_order", orderId: "77", note: "Confirmed", tags: "vip", fieldsJson: '{"email":"new@example.com"}' });
+    assert.equal(update.method, "PUT");
+    assert.equal(update.url, `${base}/orders/77.json`);
+    assert.deepEqual(update.body, { order: { note: "Confirmed", tags: "vip", email: "new@example.com", id: 77 } });
+    assert.throws(() => build({ operation: "update_order", orderId: "77" }), /fill in at least one field to update/);
+    assert.throws(() => build({ operation: "update_order", orderId: "77", fieldsJson: "[1]" }), /Additional Fields must be a JSON object/);
+    // The id in the address wins over one in Additional Fields
+    assert.equal((build({ operation: "update_order", orderId: "77", fieldsJson: '{"id":99,"note":"x"}' }).body as any).order.id, 77);
+
+    // Products
+    const created = build({ operation: "create_product", title: "Shirt", price: "19.99", sku: "S-1", productStatus: "draft" });
+    assert.equal(created.method, "POST");
+    assert.equal(created.url, `${base}/products.json`);
+    assert.deepEqual(created.body, { product: { title: "Shirt", status: "draft", variants: [{ price: "19.99", sku: "S-1" }] } });
+    assert.deepEqual(build({ operation: "create_product", title: "Shirt" }).body, { product: { title: "Shirt" } });
+    assert.throws(() => build({ operation: "create_product" }), /Title is required/);
+    assert.deepEqual(build({ operation: "update_product", productId: "8", description: "<p>New</p>" }).body, { product: { body_html: "<p>New</p>", id: 8 } });
+    assert.equal(build({ operation: "list_products", title: "Shirt & Tie" }).url, `${base}/products.json?title=Shirt+%26+Tie&limit=20`);
+
+    // Customers
+    assert.equal(build({ operation: "search_customers", query: "email:ali@example.com", limit: "5" }).url, `${base}/customers/search.json?query=email%3Aali%40example.com&limit=5`);
+    assert.throws(() => build({ operation: "search_customers" }), /Search is required/);
+    assert.deepEqual(build({ operation: "create_customer", email: "a@example.com", firstName: "Ali" }).body, { customer: { email: "a@example.com", first_name: "Ali" } });
+    assert.throws(() => build({ operation: "create_customer", firstName: "Ali" }), /Email or Phone is required/);
+    assert.deepEqual(build({ operation: "update_customer", customerId: "9", tags: "vip" }).body, { customer: { tags: "vip", id: 9 } });
+
+    // Inventory
+    const level = build({ operation: "get_inventory", inventoryItemId: "46" });
+    assert.equal(level.url, `${base}/inventory_levels.json?inventory_item_ids=46`);
+    assert.deepEqual(level.shape({ inventory_levels: [{ location_id: 1, available: 4 }, { location_id: 2, available: null }, { location_id: 3, available: 6 }] }), {
+      items: [{ location_id: 1, available: 4 }, { location_id: 2, available: null }, { location_id: 3, available: 6 }],
+      count: 3,
+      available: 10,
+    });
+    const set = build({ operation: "set_inventory", inventoryItemId: "46", locationId: "3", quantity: "25" });
+    assert.equal(set.url, `${base}/inventory_levels/set.json`);
+    assert.deepEqual(set.body, { location_id: 3, inventory_item_id: 46, available: 25 });
+    const adjust = build({ operation: "adjust_inventory", inventoryItemId: "46", locationId: "3", quantity: "-2" });
+    assert.equal(adjust.url, `${base}/inventory_levels/adjust.json`);
+    assert.deepEqual(adjust.body, { location_id: 3, inventory_item_id: 46, available_adjustment: -2 });
+    assert.throws(() => build({ operation: "set_inventory", inventoryItemId: "46", locationId: "3", quantity: "2.5" }), /Quantity must be a whole number/);
+    assert.throws(() => build({ operation: "set_inventory", inventoryItemId: "46", locationId: "3", quantity: "many" }), /Quantity must be a number/);
+    assert.throws(() => build({ operation: "set_inventory", inventoryItemId: "46", quantity: "2" }), /Location ID is required/);
+
+    // Abandoned checkouts: open ones, last touched inside the window
+    const abandoned = build({ operation: "list_abandoned_checkouts", minAgeMinutes: "60", maxAgeMinutes: "120", limit: "50" });
+    assert.deepEqual(Object.fromEntries(new URL(abandoned.url).searchParams), {
+      status: "open",
+      updated_at_max: "2026-10-11T11:00:00.000Z",
+      updated_at_min: "2026-10-11T10:00:00.000Z",
+      limit: "50",
+    });
+    assert.equal(new URL(abandoned.url).pathname, `/admin/api/${stores.SHOPIFY_API_VERSION}/checkouts.json`);
+    // By default: an hour old or more, with no far end
+    const open = new URL(build({ operation: "list_abandoned_checkouts" }).url).searchParams;
+    assert.equal(open.get("updated_at_max"), "2026-10-11T11:00:00.000Z");
+    assert.equal(open.has("updated_at_min"), false);
+    assert.throws(() => build({ operation: "list_abandoned_checkouts", minAgeMinutes: "120", maxAgeMinutes: "60" }), /Abandoned At Most must be more minutes than Abandoned At Least/);
+    assert.throws(() => build({ operation: "list_abandoned_checkouts", minAgeMinutes: "soon" }), /Abandoned At Least must be a number of minutes/);
+
+    const checkouts = {
+      checkouts: [
+        { id: 1, email: "a@example.com", completed_at: null },
+        { id: 2, email: null, phone: null, completed_at: null },
+        { id: 3, email: "c@example.com", completed_at: "2026-10-11T10:30:00Z" },
+        { id: 4, email: "", phone: "+923001234567" },
+      ],
+    };
+    // Nobody to write to, and bought after all, are left out
+    assert.deepEqual((abandoned.shape(checkouts) as any).items.map((checkout: any) => checkout.id), [1, 4]);
+    assert.deepEqual(
+      (build({ operation: "list_abandoned_checkouts", contactOnly: "false" }).shape(checkouts) as any).items.map((checkout: any) => checkout.id),
+      [1, 2, 4]
+    );
+
+    assert.throws(() => build({ operation: "delete_everything" }), /Unsupported operation "delete_everything"/);
+  });
+
+  await test("the WooCommerce node builds the right REST API request for each operation", () => {
+    const build = (data: Record<string, string>, context: Record<string, unknown> = {}) =>
+      stores.buildWoocommerceRequest({ storeUrl: "https://shop.example.com", ...data }, context);
+    const base = "https://shop.example.com/wp-json/wc/v3";
+
+    assert.equal(stores.normalizeStoreUrl("https://shop.example.com/"), "https://shop.example.com");
+    assert.equal(stores.normalizeStoreUrl(" https://example.com/shop/wp-json/wc/v3/orders "), "https://example.com/shop");
+    // The key and secret are never sent in the clear, or to an address
+    // that hides where it goes
+    for (const bad of ["", "shop.example.com", "http://shop.example.com", "https://user:pass@shop.example.com", "https://shop.example.com/?x=1", "ftp://shop.example.com", "javascript:alert(1)"]) {
+      assert.equal(stores.normalizeStoreUrl(bad), null, bad);
+    }
+    assert.throws(() => build({ storeUrl: "http://shop.example.com" }), /Store URL must be the shop's https address/);
+    assert.throws(() => stores.buildWoocommerceRequest({}, {}), /Store URL is required/);
+
+    const order = build({ orderId: "{{woocommerce.order.id}}", fields: "id,status" }, { woocommerce: { order: { id: 727 } } });
+    assert.equal(order.method, "GET");
+    assert.equal(order.url, `${base}/orders/727?_fields=id%2Cstatus`);
+    assert.deepEqual(order.shape({ id: 727 }), { id: 727 });
+    assert.throws(() => build({ operation: "get_order", orderId: "727/notes" }), /Order ID must be a number/);
+
+    const orders = new URL(build({ operation: "list_orders", status: "processing", createdAfter: "2026-10-01T05:00:00Z", limit: "3" }).url);
+    assert.equal(orders.pathname, "/wp-json/wc/v3/orders");
+    assert.deepEqual(Object.fromEntries(orders.searchParams), { status: "processing", after: "2026-10-01T05:00:00.000Z", per_page: "3" });
+    assert.deepEqual(build({ operation: "list_orders" }).shape([{ id: 1 }]), { items: [{ id: 1 }], count: 1 });
+    // An error object where a list was expected is not a list of one
+    assert.deepEqual(build({ operation: "list_orders" }).shape({ code: "x" }), { items: [], count: 0 });
+
+    const update = build({ operation: "update_order", orderId: "727", status: "completed" });
+    assert.equal(update.method, "PUT");
+    assert.equal(update.url, `${base}/orders/727`);
+    assert.deepEqual(update.body, { status: "completed" });
+    assert.throws(() => build({ operation: "update_order", orderId: "727" }), /fill in at least one field to update/);
+
+    const note = build({ operation: "add_order_note", orderId: "727", note: "Confirmed on WhatsApp" });
+    assert.equal(note.method, "POST");
+    assert.equal(note.url, `${base}/orders/727/notes`);
+    // Not emailed to the customer unless that is switched on
+    assert.deepEqual(note.body, { note: "Confirmed on WhatsApp", customer_note: false });
+    assert.equal((build({ operation: "add_order_note", orderId: "727", note: "Hi", noteForCustomer: "true" }).body as any).customer_note, true);
+    assert.throws(() => build({ operation: "add_order_note", orderId: "727" }), /Note is required/);
+
+    assert.deepEqual(build({ operation: "create_product", name: "Shirt", price: "19.99", stockQuantity: "25" }).body, {
+      name: "Shirt",
+      regular_price: "19.99",
+      manage_stock: true,
+      stock_quantity: 25,
+    });
+    assert.throws(() => build({ operation: "create_product", price: "19.99" }), /Name is required/);
+    const stock = build({ operation: "update_product", productId: "101", stockQuantity: "0" });
+    assert.equal(stock.url, `${base}/products/101`);
+    assert.deepEqual(stock.body, { manage_stock: true, stock_quantity: 0 });
+    assert.throws(() => build({ operation: "update_product", productId: "101", stockQuantity: "a few" }), /Stock Quantity must be a whole number/);
+    assert.throws(() => build({ operation: "update_product", productId: "101" }), /fill in at least one field to update/);
+    assert.equal(build({ operation: "list_products", sku: "S-1" }).url, `${base}/products?sku=S-1&per_page=20`);
+
+    assert.equal(build({ operation: "list_customers", email: "a@example.com" }).url, `${base}/customers?email=a%40example.com&per_page=20`);
+    assert.deepEqual(build({ operation: "create_customer", email: "a@example.com", lastName: "Khan", fieldsJson: '{"billing":{"phone":"0300"}}' }).body, {
+      email: "a@example.com",
+      last_name: "Khan",
+      billing: { phone: "0300" },
+    });
+    assert.throws(() => build({ operation: "create_customer" }), /Email is required/);
+    assert.equal(build({ operation: "update_customer", customerId: "25", firstName: "Sara" }).url, `${base}/customers/25`);
+
+    // A shop in a folder
+    assert.equal(stores.buildWoocommerceRequest({ storeUrl: "https://example.com/shop/", operation: "list_orders" }, {}).url, "https://example.com/shop/wp-json/wc/v3/orders?per_page=20");
+    assert.throws(() => build({ operation: "delete_order" }), /Unsupported operation "delete_order"/);
+  });
+
+  await test("a store request is sent with the key, never follows a redirect, and reports the store's error", async () => {
+    type Call = { method: string; url: string; headers: Record<string, unknown>; body: string };
+    const calls: Call[] = [];
+
+    const api = createServer((req, res) => {
+      const chunks: Buffer[] = [];
+      req.on("data", (chunk) => chunks.push(chunk));
+      req.on("end", () => {
+        calls.push({ method: req.method ?? "", url: req.url ?? "", headers: req.headers, body: Buffer.concat(chunks).toString() });
+
+        const json = (status: number, body: unknown) => {
+          res.writeHead(status, { "Content-Type": "application/json" });
+          res.end(JSON.stringify(body));
+        };
+
+        if (req.url?.startsWith("/ok")) return json(200, { order: { id: 1 } });
+        if (req.url?.startsWith("/moved")) {
+          res.writeHead(301, { Location: "https://elsewhere.example.com/admin/api/orders.json" });
+          return res.end();
+        }
+        if (req.url?.startsWith("/shopify-text")) return json(404, { errors: "Not Found" });
+        if (req.url?.startsWith("/shopify-fields")) return json(422, { errors: { phone: ["has already been taken"], email: ["is invalid", "is too long"] } });
+        if (req.url?.startsWith("/woo")) return json(401, { code: "woocommerce_rest_cannot_view", message: "Sorry, you <strong>cannot</strong> list resources.", data: { status: 401 } });
+        if (req.url?.startsWith("/busy")) return json(429, { errors: "Exceeded 2 calls per second for api client." });
+        if (req.url?.startsWith("/page")) {
+          res.writeHead(200, { "Content-Type": "text/html" });
+          return res.end("<html><body>Log in</body></html>");
+        }
+        if (req.url?.startsWith("/firewall")) {
+          res.writeHead(403, { "Content-Type": "text/html" });
+          return res.end("<html><body><h1>Access   denied</h1></body></html>");
+        }
+        if (req.url?.startsWith("/huge")) {
+          res.writeHead(200, { "Content-Type": "application/json" });
+          return res.end(`{"orders":"${"x".repeat(3 * 1024 * 1024 + 10)}"}`);
+        }
+        if (req.url?.startsWith("/empty")) {
+          res.writeHead(200);
+          return res.end();
+        }
+
+        json(500, {});
+      });
+    });
+    await new Promise<void>((resolve) => api.listen(0, "127.0.0.1", resolve));
+    const base = `http://127.0.0.1:${(api.address() as AddressInfo).port}`;
+
+    const send = (path: string, request: { method?: "GET" | "POST" | "PUT"; body?: unknown } = {}, kind: "shopify" | "woo" = "shopify") =>
+      stores.sendStoreRequest({
+        label: kind === "shopify" ? "Shopify" : "WooCommerce",
+        request: { method: request.method ?? "GET", url: `${base}${path}`, body: request.body },
+        headers: kind === "shopify" ? { "X-Shopify-Access-Token": "shpat_secret_token" } : { Authorization: "Basic Y2tfa2V5OmNzX3NlY3JldA==" },
+        redirectHint: "Use the store's current address.",
+        describeError: (payload: any) =>
+          typeof payload?.message === "string"
+            ? payload.message.replace(/<[^>]*>/g, "")
+            : typeof payload?.errors === "string"
+              ? payload.errors
+              : payload?.errors
+                ? Object.entries(payload.errors).map(([name, messages]) => `${name}: ${[messages].flat().join(", ")}`).join("; ")
+                : "",
+      });
+
+    const before = process.env.ALLOW_PRIVATE_NETWORK_REQUESTS;
+
+    try {
+      // A private address is refused like everywhere else
+      delete process.env.ALLOW_PRIVATE_NETWORK_REQUESTS;
+      await assert.rejects(send("/ok"));
+      assert.equal(calls.length, 0);
+
+      process.env.ALLOW_PRIVATE_NETWORK_REQUESTS = "true";
+
+      assert.deepEqual(await send("/ok"), { order: { id: 1 } });
+      assert.equal(calls[0].method, "GET");
+      assert.equal(calls[0].headers["x-shopify-access-token"], "shpat_secret_token");
+      assert.equal(calls[0].headers.accept, "application/json");
+      assert.equal(calls[0].headers["content-type"], undefined);
+      assert.equal(calls[0].body, "");
+
+      await send("/ok", { method: "PUT", body: { order: { id: 1, note: "شکریہ" } } });
+      assert.equal(calls[1].method, "PUT");
+      assert.equal(calls[1].headers["content-type"], "application/json");
+      assert.deepEqual(JSON.parse(calls[1].body), { order: { id: 1, note: "شکریہ" } });
+
+      // The request carries the key: where the store sends it on is told,
+      // not followed
+      const seen = calls.length;
+      await assert.rejects(
+        send("/moved"),
+        /Shopify node: the store redirected the request to elsewhere\.example\.com\. Use the store's current address\./
+      );
+      assert.equal(calls.length, seen + 1);
+
+      // The store's own words, and nothing of the key
+      const failure = async (path: string, kind: "shopify" | "woo" = "shopify") => {
+        try {
+          await send(path, {}, kind);
+        } catch (error) {
+          const message = (error as Error).message;
+          assert.equal(/shpat_secret_token|Y2tfa2V5|cs_secret/.test(message), false, message);
+          return message;
+        }
+        throw new Error(`${path} did not fail`);
+      };
+
+      assert.equal(await failure("/shopify-text"), "Shopify API error [404]: Not Found");
+      assert.equal(await failure("/shopify-fields"), "Shopify API error [422]: phone: has already been taken; email: is invalid, is too long");
+      assert.equal(await failure("/woo", "woo"), "WooCommerce API error [401]: Sorry, you cannot list resources.");
+      assert.match(await failure("/busy"), /^Shopify API error \[429\]: Exceeded 2 calls per second for api client\. \(too many requests/);
+      assert.equal(await failure("/firewall", "woo"), "WooCommerce API error [403]: Access denied");
+      assert.match(await failure("/page", "woo"), /WooCommerce node: the store did not answer with JSON/);
+      assert.match(await failure("/huge"), /Shopify node: the answer is larger than 3 MB\. Lower Limit, or name the fields you need in Fields\./);
+      assert.deepEqual(await send("/empty"), {});
+    } finally {
+      if (before === undefined) delete process.env.ALLOW_PRIVATE_NETWORK_REQUESTS;
+      else process.env.ALLOW_PRIVATE_NETWORK_REQUESTS = before;
+      await new Promise((resolve) => api.close(resolve));
+    }
+  });
+
+  await test("both store nodes check their settings before they use a credential, and are registered", async () => {
+    const shopify = (data: Record<string, string>) =>
+      stores.shopifyExecutor({ ...baseParams, data, context: {} });
+    const woocommerce = (data: Record<string, string>) =>
+      stores.woocommerceExecutor({ ...baseParams, data, context: {} });
+
+    await assert.rejects(shopify({}), /Shopify node: Shop Domain is required/);
+    await assert.rejects(shopify({ shopDomain: "shop.example.com" }), /must be the store's myshopify\.com address/);
+    await assert.rejects(shopify({ shopDomain: "my-store" }), /Shopify node: Order ID is required/);
+    // Everything is in order: the credential is next
+    await assert.rejects(shopify({ shopDomain: "my-store", orderId: "1" }), /Shopify node: Credential is required/);
+    await assert.rejects(woocommerce({ storeUrl: "http://shop.example.com" }), /must be the shop's https address/);
+    await assert.rejects(woocommerce({ storeUrl: "https://shop.example.com", operation: "list_orders" }), /WooCommerce node: Credential is required/);
+
+    const { readFileSync, readdirSync } = await import("node:fs");
+    const read = (path: string) => readFileSync(path, "utf8");
+    const source = read("src/features/executions/components/apps/stores.ts");
+
+    // One place sends, through the guard, and never follows a redirect
+    assert.equal(source.match(/await safeFetch\(/g)?.length, 1);
+    assert.equal(/\bfetch\(/.test(source.replace(/safeFetch\(/g, "")), false);
+    assert.match(source, /redirect: "manual",/);
+    // No key in an address
+    assert.equal(/consumer_key|consumer_secret|access_token=/.test(source), false);
+    assert.match(source, /headers: \{ "X-Shopify-Access-Token": token \}/);
+    assert.match(source, /Authorization: `Basic \$\{Buffer\.from\(secret, "utf8"\)\.toString\("base64"\)\}`/);
+
+    const registry = read("src/features/executions/lib/executor-registry.ts");
+    assert.match(
+      registry,
+      /\[NodeType\.SHOPIFY\]: shopifyExecutor,\s*\[NodeType\.WOOCOMMERCE\]: woocommerceExecutor,\s*\[NodeType\.SHOPIFY_TRIGGER\]: contextTriggerExecutor,\s*\[NodeType\.WOOCOMMERCE_TRIGGER\]: contextTriggerExecutor,/
+    );
+    const components = read("src/config/node-components.ts");
+    for (const [type, component] of [["SHOPIFY", "ShopifyNode"], ["SHOPIFY_TRIGGER", "ShopifyTriggerNode"], ["WOOCOMMERCE", "WoocommerceNode"], ["WOOCOMMERCE_TRIGGER", "WoocommerceTriggerNode"]]) {
+      assert.ok(components.includes(`[NodeType.${type}]: ${component},`), type);
+      assert.ok(read("src/components/node-selector.tsx").includes(`type: NodeType.${type},`), type);
+    }
+
+    // The engine starts at the triggers, and a run says where it came from
+    const { TRIGGER_TYPE_SOURCES, formatTriggerSource } = await import("@/config/trigger-sources");
+    assert.equal(formatTriggerSource(TRIGGER_TYPE_SOURCES.SHOPIFY_TRIGGER), "Shopify");
+    assert.equal(formatTriggerSource(TRIGGER_TYPE_SOURCES.WOOCOMMERCE_TRIGGER), "WooCommerce");
+    for (const type of ["SHOPIFY_TRIGGER", "WOOCOMMERCE_TRIGGER"]) {
+      const graph = buildGraph(
+        [{ id: "t", type, data: {} }, { id: "n", type: "SET_VARIABLE", data: {} }] as never,
+        [{ fromNodeId: "t", toNodeId: "n", fromOutput: "source-1", toInput: "target-1" }] as never
+      );
+      assert.deepEqual(getStartNodeIds(graph, type as never), ["t"], type);
+    }
+    const { getNodeLabel } = await import("@/config/node-labels");
+    assert.equal(getNodeLabel("WOOCOMMERCE"), "WooCommerce");
+    assert.equal(getNodeLabel("WOOCOMMERCE_TRIGGER"), "WooCommerce Trigger");
+    assert.equal(getNodeLabel("SHOPIFY_TRIGGER"), "Shopify Trigger");
+
+    // As AI Agent tools: looking things up is "read", changing them "write"
+    for (const type of ["SHOPIFY", "WOOCOMMERCE"]) {
+      assert.equal(agentTools.getToolRisk(type, {}), "read", type);
+      for (const operation of ["get_order", "list_orders", "get_product", "list_products", "get_customer"]) {
+        assert.equal(agentTools.getToolRisk(type, { operation }), "read", `${type} ${operation}`);
+      }
+      for (const operation of ["update_order", "create_product", "update_product", "create_customer", "update_customer"]) {
+        assert.equal(agentTools.getToolRisk(type, { operation }), "write", `${type} ${operation}`);
+      }
+    }
+    for (const operation of ["search_customers", "get_inventory", "list_locations", "list_abandoned_checkouts"]) {
+      assert.equal(agentTools.getToolRisk("SHOPIFY", { operation }), "read", operation);
+    }
+    for (const operation of ["set_inventory", "adjust_inventory"]) {
+      assert.equal(agentTools.getToolRisk("SHOPIFY", { operation }), "write", operation);
+    }
+    assert.equal(agentTools.getToolRisk("WOOCOMMERCE", { operation: "add_order_note" }), "write");
+    assert.equal(agentTools.getToolLabel("WOOCOMMERCE"), "WooCommerce");
+
+    // Every operation a dialog offers is one its node can build
+    const nodes = read("src/features/executions/components/apps/nodes.tsx");
+    const operationsOf = (name: string) => {
+      const start = nodes.indexOf(`export const ${name}: IntegrationConfig = {`);
+      const block = nodes.slice(start, nodes.indexOf("  fields: [", start));
+      return [...block.matchAll(/\{ value: "([a-z_]+)", label:/g)].map((found) => found[1]);
+    };
+    // With nothing else filled in, an operation either builds or asks for
+    // a field; it is never unknown
+    const known = (build: () => unknown, operation: string) => {
+      try {
+        build();
+      } catch (error) {
+        assert.equal(/Unsupported operation/.test((error as Error).message), false, operation);
+      }
+    };
+    const shopifyOperations = operationsOf("shopifyConfig");
+    assert.equal(shopifyOperations.length, 16);
+    for (const operation of shopifyOperations) {
+      known(() => stores.buildShopifyRequest({ shopDomain: "my-store", operation }, {}), operation);
+    }
+    const woocommerceOperations = operationsOf("woocommerceConfig");
+    assert.equal(woocommerceOperations.length, 12);
+    for (const operation of woocommerceOperations) {
+      known(() => stores.buildWoocommerceRequest({ storeUrl: "https://shop.example.com", operation }, {}), operation);
+    }
+    assert.match(nodes, /credentialType: CredentialType\.SHOPIFY,/);
+    assert.match(nodes, /credentialType: CredentialType\.WOOCOMMERCE,/);
+    assert.match(nodes, /webhookPath: "shopify",/);
+    assert.match(nodes, /webhookPath: "woocommerce",/);
+
+    const credentialForm = read("src/features/credentials/components/credential.tsx");
+    for (const type of ["SHOPIFY", "WOOCOMMERCE"]) {
+      assert.ok(credentialForm.includes(`{ value: CredentialType.${type},`), type);
+      assert.ok(credentialForm.includes(`[CredentialType.${type}]: {`), type);
+    }
+
+    // A test run from the editor has the shape a real event has
+    const { buildTestPayload, TESTABLE_TRIGGERS } = await import("@/features/workflows/server/test-payloads");
+    assert.ok((TESTABLE_TRIGGERS as readonly string[]).includes("SHOPIFY_TRIGGER"));
+    assert.ok((TESTABLE_TRIGGERS as readonly string[]).includes("WOOCOMMERCE_TRIGGER"));
+    const paid: any = buildTestPayload("SHOPIFY_TRIGGER", { event: "orders/paid" }).shopify;
+    assert.equal(paid.event, "orders/paid");
+    assert.equal(paid.order.financial_status, "paid");
+    assert.equal(paid.phone, "+923001234567");
+    assert.equal(paid.customerName, "Sample Customer");
+    assert.equal((buildTestPayload("SHOPIFY_TRIGGER", { event: "products/update" }).shopify as any).product.title, "Sample product");
+    assert.ok((buildTestPayload("SHOPIFY_TRIGGER", { event: "checkouts/update" }).shopify as any).checkout.abandoned_checkout_url);
+    assert.equal((buildTestPayload("SHOPIFY_TRIGGER", { event: "any" }).shopify as any).event, "orders/paid");
+    const wooPaid: any = buildTestPayload("WOOCOMMERCE_TRIGGER", { event: "order.paid" }).woocommerce;
+    assert.equal(wooPaid.event, "order.paid");
+    assert.equal(wooPaid.topic, "order.updated");
+    assert.ok(wooPaid.order.date_paid);
+    assert.equal(wooPaid.email, "customer@example.com");
+    // The sample is one the trigger itself would accept
+    assert.ok(storeWebhooks.matchWoocommerceDelivery({ settings: { event: "order.paid" }, topic: wooPaid.topic, body: wooPaid.order, rawBody: "{}" }));
+    assert.equal((buildTestPayload("WOOCOMMERCE_TRIGGER", { event: "order.updated", orderStatus: "completed" }).woocommerce as any).order.status, "completed");
+    assert.equal((buildTestPayload("WOOCOMMERCE_TRIGGER", { event: "product.updated" }).woocommerce as any).product.name, "Sample product");
+
+    // The migration: the six enum values and the two templates, nothing
+    // else, and safe to run twice
+    const folder = readdirSync("prisma/migrations").find((name) => name.endsWith("_shopify_woocommerce"));
+    assert.ok(folder, "migration");
+    const sql = read(`prisma/migrations/${folder}/migration.sql`).replace(/\r\n/g, "\n");
+    const builtin = await import("@/features/templates/lib/builtin-templates");
+
+    assert.deepEqual(
+      sql.split("\n").filter((line) => line.startsWith("ALTER ")),
+      [
+        `ALTER TYPE "CredentialType" ADD VALUE 'SHOPIFY';`,
+        `ALTER TYPE "CredentialType" ADD VALUE 'WOOCOMMERCE';`,
+        `ALTER TYPE "NodeType" ADD VALUE 'SHOPIFY';`,
+        `ALTER TYPE "NodeType" ADD VALUE 'SHOPIFY_TRIGGER';`,
+        `ALTER TYPE "NodeType" ADD VALUE 'WOOCOMMERCE';`,
+        `ALTER TYPE "NodeType" ADD VALUE 'WOOCOMMERCE_TRIGGER';`,
+      ]
+    );
+    assert.ok(sql.includes(builtin.buildSeedSql(builtin.STORE_TEMPLATES)), "the migration holds what the templates module builds");
+    assert.equal(sql.match(/INSERT INTO "workflow_template"/g)?.length, 2);
+    assert.equal(sql.match(/ON CONFLICT \("id"\) DO NOTHING;/g)?.length, 2);
+    const statements = sql.replace(/'(?:[^']|'')*'/g, "''").replace(/^--.*$/gm, "");
+    assert.equal(/\b(DROP|DELETE|TRUNCATE|UPDATE|RENAME)\b/i.test(statements), false);
+    // All four templates are in the gallery's list, each under its own id
+    assert.equal(builtin.BUILTIN_TEMPLATES.length, 4);
+    assert.equal(new Set(builtin.BUILTIN_TEMPLATES.map((template) => template.id)).size, 4);
+  });
+
+  await test("the two store templates are valid workflows that carry no secret", async () => {
+    const builtin = await import("@/features/templates/lib/builtin-templates");
+    const { readFileSync } = await import("node:fs");
+
+    const rows = builtin.toSeedRows(builtin.STORE_TEMPLATES);
+    assert.deepEqual(rows.map((row) => row.name), [
+      "Shopify order paid: WhatsApp confirmation",
+      "Shopify abandoned cart: email reminder",
+    ]);
+
+    const schema = readFileSync("prisma/schema.prisma", "utf8");
+    const nodeTypes = new Set(
+      (/enum NodeType \{([^}]*)\}/.exec(schema)?.[1] ?? "").split(/\s+/).filter(Boolean)
+    );
+
+    for (const row of rows) {
+      assert.match(row.id, /^tpl_[a-z_]+$/);
+      const ids = new Set(row.nodes.map((node) => node.id));
+      assert.equal(ids.size, row.nodes.length, `${row.name}: node ids are unique`);
+
+      for (const node of row.nodes) {
+        assert.equal(nodeTypes.has(node.type), true, `${row.name}: ${node.type} is a node type`);
+        assert.equal(/credentialId|"secret"|signingSecret|webhookUrl|workflowId|shpat_/.test(JSON.stringify(node.data)), false, node.id);
+      }
+      for (const connection of row.connections) {
+        assert.equal(ids.has(connection.fromNodeId) && ids.has(connection.toNodeId), true, row.name);
+      }
+      assert.deepEqual(row.nodeTypes, [...new Set(row.nodes.map((node) => node.type))]);
+      // One chain from the trigger to the last node
+      assert.equal(row.connections.length, row.nodes.length - 1, row.name);
+    }
+
+    const [paid, cart] = rows;
+
+    // Order paid: the trigger listens for exactly that, only a customer
+    // with a phone number is written to, and with a message template
+    assert.deepEqual(paid.nodeTypes, ["SHOPIFY_TRIGGER", "IF", "WHATSAPP"]);
+    assert.equal(paid.nodes[0].data.event, "orders/paid");
+    assert.equal(getStartNodeIds(buildGraph(paid.nodes, paid.connections), "SHOPIFY_TRIGGER").length, 1);
+    assert.deepEqual(paid.nodes[1].data.conditions, [{ inputKey: "shopify.phone", operator: "exists", value: "" }]);
+    assert.deepEqual(paid.connections[1], { fromNodeId: "tpl_paid_has_phone", toNodeId: "tpl_paid_whatsapp", fromOutput: "true", toInput: "target-1" });
+    const whatsapp = paid.nodes[2].data;
+    assert.equal(whatsapp.operation, "send_template");
+    assert.equal(whatsapp.to, "{{shopify.phone}}");
+
+    // The template's variables are valid JSON for a real order, also when
+    // a name has a quote in it
+    const { renderTemplate } = await import("@/features/executions/lib/templates");
+    const sample = storeWebhooks.buildShopifyTriggerData({
+      topic: "orders/paid",
+      shopDomain: "my-store.myshopify.com",
+      body: { id: 1, name: "#1001", total_price: "20.00", currency: "PKR", phone: "+923001234567", customer: { first_name: 'Ali "AK"', last_name: "O'Brien" } },
+    });
+    assert.deepEqual(JSON.parse(renderTemplate(String(whatsapp.templateParamsJson), { shopify: sample })), [
+      'Ali "AK" O\'Brien',
+      "#1001",
+      "20.00",
+      "PKR",
+    ]);
+    assert.equal(renderTemplate(String(whatsapp.to), { shopify: sample }), "+923001234567");
+    // The sample of a test run goes through the same way
+    const { buildTestPayload } = await import("@/features/workflows/server/test-payloads");
+    assert.equal(JSON.parse(renderTemplate(String(whatsapp.templateParamsJson), buildTestPayload("SHOPIFY_TRIGGER", { event: "orders/paid" }))).length, 4);
+
+    // Abandoned cart: every hour, the checkouts of the hour before the
+    // last one, each as an item, and an email only where there is one
+    assert.deepEqual(cart.nodeTypes, ["SCHEDULE_TRIGGER", "SHOPIFY", "SPLIT_OUT", "IF", "EMAIL_SEND"]);
+    assert.equal(cart.nodes[0].data.cronExpression, "0 * * * *");
+    const listNode = cart.nodes[1].data as Record<string, string>;
+    assert.equal(listNode.operation, "list_abandoned_checkouts");
+    assert.equal(Number(listNode.maxAgeMinutes) - Number(listNode.minAgeMinutes), 60);
+    // The node accepts its own settings once a shop is typed in
+    const request = stores.buildShopifyRequest({ ...listNode, shopDomain: "my-store" }, {});
+    assert.match(request.url, /\/checkouts\.json\?status=open&/);
+    assert.throws(() => stores.buildShopifyRequest(listNode, {}), /Shop Domain is required/);
+
+    // Split Out reads the list the Shopify node returns
+    const { readInputList } = await import("@/features/executions/components/data/executors");
+    const listed = request.shape({ checkouts: [{ id: 1, email: "a@example.com" }, { id: 2, email: "b@example.com" }] });
+    assert.equal(cart.nodes[2].data.inputPath, listNode.variableName);
+    assert.deepEqual(
+      listOps.splitOut(readInputList("Split Out", { [listNode.variableName]: listed }, String(cart.nodes[2].data.inputPath)), String(cart.nodes[2].data.field)),
+      [{ id: 1, email: "a@example.com" }, { id: 2, email: "b@example.com" }]
+    );
+    assert.deepEqual(cart.nodes[3].data.conditions, [{ inputKey: "item.email", operator: "exists", value: "" }]);
+    assert.equal(cart.nodes[4].data.recipient, "{{item.email}}");
+    assert.match(String(cart.nodes[4].data.body), /href="\{\{item\.abandoned_checkout_url\}\}"/);
+    assert.equal(getStartNodeIds(buildGraph(cart.nodes, cart.connections), "SCHEDULE_TRIGGER").length, 1);
   });
 
   console.log(`\n${passed} checks passed`);

@@ -106,6 +106,18 @@ const triggerNodes: NodeTypeOption[] = [
         icon: "/logos/typeform.svg",
     },
     {
+        type: NodeType.SHOPIFY_TRIGGER,
+        label: "Shopify Trigger",
+        description: "Runs the flow when an order is created or paid, or a product changes, in your Shopify store",
+        icon: "/logos/shopify.svg",
+    },
+    {
+        type: NodeType.WOOCOMMERCE_TRIGGER,
+        label: "WooCommerce Trigger",
+        description: "Runs the flow when an order is created or paid, or a product changes, in your WooCommerce store",
+        icon: "/logos/woocommerce.svg",
+    },
+    {
         type: NodeType.EXECUTE_WORKFLOW_TRIGGER,
         label: "When Executed by Another Workflow",
         description: "Runs the flow when an Execute Workflow node or an AI Agent tool calls it",
@@ -530,6 +542,18 @@ const productivityNodes: NodeTypeOption[] = [
         label: "Salesforce",
         description: "Query, create, update and delete records of any Salesforce object",
         icon: "/logos/salesforce.svg"
+    },
+    {
+        type: NodeType.SHOPIFY,
+        label: "Shopify",
+        description: "Orders, products, customers, inventory and abandoned checkouts of a Shopify store",
+        icon: "/logos/shopify.svg"
+    },
+    {
+        type: NodeType.WOOCOMMERCE,
+        label: "WooCommerce",
+        description: "Orders, products and customers of a WooCommerce store",
+        icon: "/logos/woocommerce.svg"
     },
 ]
 

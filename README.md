@@ -395,6 +395,8 @@ OCR and vision for a file a workflow has: a Form Trigger upload, an HTTP Request
 | WhatsApp Trigger    | Runs when your WhatsApp Business number receives a message (verify token + signature check). With a WhatsApp credential selected, a voice message is given as a file at `{{whatsapp.voice}}` |
 | Gmail Trigger       | Runs when a new email arrives; polls every 1, 5, 15 or 60 minutes with an optional Gmail search filter      |
 | Typeform Trigger    | Runs when a typeform is submitted; answers are available by question title                                 |
+| Shopify Trigger     | Runs when an order is created, paid, fulfilled or cancelled, a product is created or updated, a customer is created or a checkout changes (HMAC signature check; see "Shopify and WooCommerce") |
+| WooCommerce Trigger | Runs when an order is created, updated or paid, or a product or customer changes (signature check; optional order status filter) |
 | Form Trigger        | Runs when someone submits the workflow's own hosted form at `/forms/<id>` (see "Forms")                    |
 | RSS Feed Trigger    | Runs when a new item appears in an RSS or Atom feed; polls every 1, 5, 15, 60 minutes or daily             |
 | Google Form Trigger | Form submission automation                                                                                 |
@@ -402,7 +404,7 @@ OCR and vision for a file a workflow has: a Form Trigger upload, an HTTP Request
 | Error Trigger       | Runs when a workflow fails (this workflow, or all of your workflows), for alerts                           |
 | When Executed by Another Workflow | Start of a sub-workflow called by an Execute Workflow node or an AI Agent tool               |
 
-Telegram, WhatsApp, Typeform and Stripe need `NEXT_PUBLIC_APP_URL` to be a public https address. Every webhook route is rate limited per workflow.
+Telegram, WhatsApp, Typeform, Shopify, WooCommerce and Stripe need `NEXT_PUBLIC_APP_URL` to be a public https address. Every webhook route is rate limited per workflow.
 
 ## Duplicate deliveries and retry
 
@@ -414,6 +416,8 @@ Providers re-send an event when they are unsure it arrived. Each trigger remembe
 | WhatsApp | The message id |
 | Telegram | The update id |
 | Typeform | The submission's event id |
+| Shopify | The event id Shopify sends with every attempt (`X-Shopify-Event-Id`), per event type |
+| WooCommerce | The delivery id; for "Order paid" and the order status filter, the order itself, so an order starts one run however often it is updated |
 | Google Form | The response id |
 | Gmail, RSS Feed | The message or item id |
 | Webhook | An optional `Idempotency-Key` (or `X-Idempotency-Key`) header sent by the caller; a repeat answers `{ "duplicate": true }` |
@@ -559,8 +563,44 @@ Two nodes that bring the web into a workflow. Both work as ordinary steps and as
 | Jira             | Create issue, get issue, search with JQL, add comment (Jira Cloud)        |
 | HubSpot          | Create, get, update and search contacts; create deals                     |
 | Salesforce       | Query with SOQL, and create, get, update and delete records of any object |
+| Shopify          | Orders, products, customers, inventory levels and abandoned checkouts (see "Shopify and WooCommerce") |
+| WooCommerce      | Orders, order notes, products and customers through the REST API           |
 | Postgres         | Run parameterised SQL, select rows, insert rows. Expressions go in Query Parameters, not in the query text |
 | MySQL            | Run parameterised SQL, select rows, insert rows (MySQL and MariaDB). Same rule for expressions |
+
+---
+
+## Shopify and WooCommerce
+
+Two store nodes and two triggers. The nodes can also be AI Agent tools: reading is "read", creating and updating is "write" (so it asks for approval by default).
+
+| Node | Operations |
+| ---- | ---------- |
+| Shopify | Get, list and update orders; get, list, create and update products; get, search, create and update customers; get, set and adjust an inventory level; list locations; list abandoned checkouts |
+| WooCommerce | Get, list and update orders; add an order note; get, list, create and update products (with stock quantity); get, list, create and update customers |
+
+* **Shopify** uses the Admin REST API with a custom app's access token. The node's **Shop Domain** must be the store's `myshopify.com` address: the token is sent nowhere else. Shopify calls the REST API "legacy" and is moving to GraphQL, but still serves it; the node asks for version `2025-01`, Shopify answers a retired version with its oldest supported one, and **API Version** can be set on the node.
+* **WooCommerce** uses REST API v3 with a consumer key and secret, sent as HTTP Basic authentication. **Store URL** must be `https`. The key is never put in the address. Some hosts remove the `Authorization` header before WordPress sees it, and the store then answers 401 "cannot list resources" with a correct key; that has to be fixed on the host.
+* **Lists** come back as `{{json <name>.items}}` and `{{<name>.count}}`, at most 100 (default 20). Put a **Split Out** node with Input List `<name>` after one to run the next nodes once per item. **Fields** limits what each item contains; an answer over 3 MB is refused with that advice.
+* **Additional Fields** takes a JSON object in the store's own field names, merged into what is sent, for anything the node has no field for.
+* A redirect from the store is not followed, because the request carries the key. The error names where the store pointed, so the address can be corrected.
+* **Inventory** in Shopify belongs to an *inventory item* at a *location*: take `variants.0.inventory_item_id` from Get Product and a location from List Locations.
+* **List Abandoned Checkouts** returns checkouts that were started, not completed, and last touched between "at least" and "at most" minutes ago. By default those without an email address and phone number are left out.
+
+### Store triggers
+
+| Trigger | Set up in the store | Signature |
+| ------- | ------------------- | --------- |
+| Shopify Trigger | Settings > Notifications > Webhooks: one webhook per event, format JSON, the node's Webhook URL | `X-Shopify-Hmac-Sha256`, checked with the signing secret shown on that page (or the app's API secret key for a webhook an app created) |
+| WooCommerce Trigger | WooCommerce > Settings > Advanced > Webhooks: status Active, a topic, the node's Webhook URL as Delivery URL, and a Secret | `X-WC-Webhook-Signature`, checked with the same Secret typed into the node |
+
+* Each trigger node listens for one **Event** (or any). A correctly signed delivery of another event is answered `200` and starts nothing, because both stores switch a webhook off when it keeps failing.
+* **Shopify events:** order created, paid, updated, fulfilled, cancelled; product created, updated; customer created; checkout created, updated.
+* **WooCommerce events:** order created, updated; product created, updated; customer created; and **Order paid**, which WooCommerce has no topic for. Give the WooCommerce webhook the topic *Order updated*: the run starts once per order, the first time the order has a payment date.
+* **Only When The Order Status Is** (WooCommerce) starts a run only for orders in that status, once per order and status. WooCommerce often sends "Order updated" several times for one change.
+* **Activate the workflow before saving the webhook in WooCommerce.** WooCommerce checks the address when the webhook is saved and reports an error for a workflow that is not active.
+* The run starts with `{{shopify.event}}`, `{{shopify.id}}`, `{{shopify.email}}`, `{{shopify.phone}}`, `{{shopify.customerName}}` and the store's whole payload at `{{shopify.order}}` (or `.product`, `.customer`, `.checkout`); the same names under `{{woocommerce...}}`. `phone` and `email` are taken from wherever the payload has them (an order has a phone number in up to five places).
+* Signed events are not refused for being old, unlike Stripe and Typeform: Shopify retries a failed delivery for hours, so an age limit would drop real orders after an outage. A repeat is stopped by the duplicate check for 7 days; a signed request that someone captured could start a run again after that.
 
 ---
 
@@ -614,6 +654,8 @@ Supported credential types:
 | JIRA          | Jira node (`email:api-token`) |
 | HUBSPOT       | HubSpot node (private app access token) |
 | SALESFORCE    | Salesforce node ("Connect Salesforce", production or sandbox) |
+| SHOPIFY       | Shopify node (a custom app's Admin API access token, `shpat_...`) |
+| WOOCOMMERCE   | WooCommerce node (`consumer_key:consumer_secret`) |
 | POSTGRES      | Postgres node (connection string) |
 | MYSQL         | MySQL node (`mysql://user:password@host:3306/database`) |
 | SSH           | SSH node (host, port, username, and a private key or password; optional host key fingerprint) |
@@ -639,7 +681,7 @@ Supported credential types:
   * A request has to match by what it uses: `http://localhost:11434` is allowed by `localhost:11434`, not by `127.0.0.1:11434`, because `localhost` can also resolve to `::1` and every address of a name has to be allowed. Use the same form in the node as in the list. The Chat Model node's default Ollama address is `http://localhost:11434/v1`, so for that the entry is `localhost:11434`.
   * A range with a port (`10.0.0.0/24:5432`) is not supported. Entries that cannot be read are ignored and named in a warning at startup.
   * `ALLOW_PRIVATE_NETWORK_REQUESTS=true` still works and opens **every** private address; the allowlist then has no effect. It logs a warning at startup recommending the allowlist, which is the safer choice.
-* **Webhooks:** per-node secrets or provider signatures (Stripe, WhatsApp, Typeform, Telegram), and a per-workflow rate limit.
+* **Webhooks:** per-node secrets or provider signatures (Stripe, WhatsApp, Typeform, Telegram, Shopify, WooCommerce), and a per-workflow rate limit.
   * Every secret, token and signature is compared in constant time (`secretsMatch` in `src/lib/webhook-security.ts`, built on `crypto.timingSafeEqual`).
   * **Stripe and Typeform events older than 5 minutes are refused**, so a captured request cannot be sent again later. Stripe signs its own timestamp. Typeform's signature has none, so the submission's `submitted_at` (which is inside the signed body) is used. A Typeform delivery that is retried more than 5 minutes after the form was submitted, for example after the app was down, is therefore refused and shows as failed in Typeform.
   * **Telegram:** activating a workflow registers the bot's webhook with a `secret_token`, and every update has to carry it in `X-Telegram-Bot-Api-Secret-Token`. The token is derived from `ENCRYPTION_KEY`; without that key no webhook is registered and no update is accepted.
@@ -822,6 +864,7 @@ RXJ includes onboarding UX to improve activation and retention.
 
 The **Templates** page is a gallery of ready-made workflows. "Use template" copies one into the user's account as a new workflow, which opens with its nodes marked "Not Configured" wherever the user has to connect their own account.
 
+* **Built-in templates** are added by database migrations and can be edited or hidden by an admin like any other: *Invoice to Google Sheets*, *CV screening: score and email*, *Shopify order paid: WhatsApp confirmation* and *Shopify abandoned cart: email reminder*. The WhatsApp one sends an approved message template, because WhatsApp does not let a business start a conversation with free text; its description says how to set that up and how to switch it to WooCommerce. The abandoned cart one runs every hour and emails the shoppers whose checkout was last touched one to two hours ago.
 * **Publishing:** an admin builds a workflow, then picks it under **New template** and gives it a name, description, category and the plan it is available from. Editing a template can replace its content with the current version of a workflow; hidden templates are visible to admins only.
 * **Admins** are accounts whose email is in the `ADMIN_EMAILS` environment variable **and** is verified. Only they can publish, edit and delete templates. A Google or GitHub sign-in counts as verified; a password account has to confirm its email first, which needs `RESEND_API_KEY`. Without that key the server logs a warning at startup, and a password account using an admin address stays an ordinary user.
 * **Admins need two-factor authentication.** Publishing, editing and deleting templates is refused until the admin turns it on under **Settings**; until then the Templates page shows a note with a link there instead of the admin buttons.

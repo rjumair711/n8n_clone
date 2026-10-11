@@ -105,6 +105,29 @@ export const verifyTypeformSignature = ({
 };
 
 /**
+ * Verifies a signature that is base64(HMAC-SHA256(raw body, secret)), the
+ * form both Shopify (`X-Shopify-Hmac-Sha256`) and WooCommerce
+ * (`X-WC-Webhook-Signature`) use.
+ */
+export const verifyBase64HmacSignature = ({
+    rawBody,
+    signatureHeader,
+    secret,
+}: {
+    rawBody: string;
+    signatureHeader: string | null;
+    secret: string;
+}): boolean => {
+    if (!signatureHeader || !secret) return false;
+
+    const expected = createHmac("sha256", secret)
+        .update(rawBody, "utf8")
+        .digest("base64");
+
+    return secretsMatch(signatureHeader.trim(), expected);
+};
+
+/**
  * Typeform's signature has no timestamp of its own. The time the form was
  * submitted is inside the signed body (`form_response.submitted_at`), so it
  * cannot be altered either and is used the same way: a submission older
