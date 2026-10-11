@@ -6,6 +6,7 @@ import {
   getRetentionCutoff,
   getStartOfMonth,
 } from "@/lib/execution-retention";
+import { CHAT_TRANSCRIPT_RETENTION_DAYS } from "@/lib/chat-widget";
 import { inngest } from "./client";
 
 const BATCH_SIZE = 500;
@@ -94,10 +95,36 @@ export const deleteExpiredExecutionData = async (now: Date = new Date()) => {
   return { deleted, stripped };
 };
 
+/**
+ * Removes the stored conversations of public chat widgets that are older
+ * than their retention period. Only the widget's own rows: their session
+ * key starts with "widget:".
+ */
+export const deleteOldChatTranscripts = async (now: Date = new Date()) => {
+  const cutoff = new Date(
+    now.getTime() - CHAT_TRANSCRIPT_RETENTION_DAYS * 24 * 60 * 60 * 1000
+  );
+
+  const deleted = await prisma.chatMessage.deleteMany({
+    where: { sessionId: { startsWith: "widget:" }, createdAt: { lt: cutoff } },
+  });
+
+  return deleted.count;
+};
+
 // Every night, a little after the file cleanup
 export const executionDataCleanup = inngest.createFunction(
   { id: "execution-data-cleanup", retries: 1 },
   { cron: "47 3 * * *" },
-  async ({ step }) =>
-    step.run("delete-expired-execution-data", () => deleteExpiredExecutionData())
+  async ({ step }) => {
+    const result = await step.run("delete-expired-execution-data", () =>
+      deleteExpiredExecutionData()
+    );
+
+    const chatMessages = await step.run("delete-old-chat-transcripts", () =>
+      deleteOldChatTranscripts()
+    );
+
+    return { ...result, chatMessages };
+  }
 );

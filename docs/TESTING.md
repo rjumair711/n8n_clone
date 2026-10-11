@@ -906,6 +906,89 @@ Needs the Inngest dev server next to the app and the `forms` migration applied. 
 | 9 | **Polar, real.** With the secret back, subscribe to a plan in Polar's sandbox | the user's plan changes as before |
 | 10 | **Inngest key, production.** Remove `INNGEST_SIGNING_KEY` from the environment, then `npm run build` and `npm start` | the build succeeds; the server does not start and prints "[RXJ] The server cannot start: - INNGEST_SIGNING_KEY is not set...". With the key set it starts. `npm run dev` starts either way |
 
+## T19bb. Website chat widget
+
+Needs the Inngest dev server next to the app. No migration. Use the test account. Workflow: **Chat Trigger** → **AI Agent** with a chat model and a **Memory** node. "Save execution data" stays on.
+
+For the embed tests, save this as `widget-test.html` and serve it from another origin, for example `npx serve -l 5000 .` and open `http://localhost:5000/widget-test.html`:
+
+```html
+<!doctype html><html><body><h1>My shop</h1>
+<script src="http://localhost:3000/widget.js" data-id="PASTE-THE-ID" async></script>
+</body></html>
+```
+
+**a) Make it public.**
+
+| Do | Expect |
+|----|--------|
+| Open the Chat Trigger's settings | a **Make chat public** switch, off; with it off, `/chat/<id>` says "This chat is not available." |
+| Switch it on | an **Embed snippet** (`<script src=".../widget.js" data-id="..." async>`) and a **Hosted chat page** link, plus Title, Colour, Welcome message, Avatar, Text direction, Allowed domains and the "Talk to a human" block |
+| Set Title `Help desk`, a colour, Welcome `Hi! How can I help?`, save and activate | the node says "Public chat" |
+| Open the hosted chat page signed out | the title in your colour, the welcome message, a message box; no sign-in |
+| Write `My name is Ali` | your message, a typing indicator, then the agent's answer |
+| Write `What is my name?` | the answer says Ali (Memory works for this visitor) |
+| Open the page in a private window and ask `What is my name?` | it does not know: another visitor, another memory |
+| Reload the first window | the conversation is shown again |
+| Click **New chat** and ask `What is my name?` | it does not know |
+| Look at the executions | one per message, trigger "Chat"; `sessionId` starts with `widget:<id>:` |
+| Deactivate the workflow and reload | "This chat is not available." |
+
+**b) The widget on a website.**
+
+| Do | Expect |
+|----|--------|
+| Open `widget-test.html` | a round button in your colour, bottom right |
+| Click it | the chat opens in a window above the button; it works like the hosted page |
+| Click the ✕ in the chat, or the button again | it closes; opening it again shows the same conversation |
+| Narrow the browser below 480 px and open it | the chat fills the screen |
+| Block third-party storage (or use a private window) and chat | it still works; the conversation is forgotten when the page is reloaded |
+| Set Avatar to an https image address | the image is shown next to the title |
+
+**c) Urdu and Arabic.**
+
+| Do | Expect |
+|----|--------|
+| Set Title `ہم سے بات کریں` and Welcome `السلام علیکم`, Text direction `Automatic` | the chat is mirrored: title on the right, your messages on the left; on `widget-test.html` the button is bottom **left** |
+| With an English title, write a message in Urdu | that message is right-aligned and reads right to left; English messages stay left to right |
+| Text direction `Right to left` with an English title | the layout is mirrored |
+
+**d) Allowed domains.**
+
+| Do | Expect |
+|----|--------|
+| Allowed domains `example.com`, save, reload `widget-test.html` (on localhost) | no button; `curl -H "Origin: http://localhost:5000" <app>/api/chat/<id>/config` answers `403` |
+| `curl -sI <app>/chat/<id>` | `Content-Security-Policy: frame-ancestors 'self' https://example.com:* http://example.com:*`, and no `X-Frame-Options` |
+| Put an `<iframe src="<app>/chat/<id>">` in `widget-test.html` | the browser refuses to show it |
+| Allowed domains `localhost`, save | the button and the chat work on `widget-test.html` |
+| Empty the list | `frame-ancestors *`; the widget works anywhere |
+| Open the hosted chat page directly | it works whatever the list says |
+| `curl -sI <app>/chat/does-not-exist` | `404` with `frame-ancestors 'none'` |
+| `curl -sI <app>/login` and `curl -sI <app>/api/chat/<id>/config` | both still `X-Frame-Options: DENY` |
+
+**e) Rate limits.**
+
+| Do | Expect |
+|----|--------|
+| Send more than 10 messages in a minute in one chat | "You are sending messages too quickly. Please wait a moment." |
+| `curl -X POST <app>/api/chat/<id>/messages -H "Content-Type: application/json" -d '{"sessionId":"x","message":"hi"}'` | `400`, "The chat session is not valid" |
+| The same with a 16+ character session id, more than 60 times in a minute with changing session ids from one machine | `429` after the 10th (per address), and for everyone after the 60th (per widget) |
+| A message of more than 4000 characters | `400` |
+
+**f) Talk to a human.** Switch the block on, choose Email with an SMTP credential and your address (or Slack with a webhook URL).
+
+| Do | Expect |
+|----|--------|
+| Reload the chat | a **Talk to a human** link under the message box |
+| Chat a little, click it, type `ali@example.com`, send | "Your conversation was passed to a person..." and the link disappears |
+| Check the inbox (or Slack channel) | "Chat handoff: Help desk" with the contact and the whole conversation, Visitor and Bot lines |
+| Write another message | the note "This conversation was passed to a person. They will get back to you."; **no new execution** starts |
+| Reload the page | the conversation and the note are still there |
+| Click **New chat** and write | the bot answers again |
+| Put a wrong password in the SMTP credential, click Talk to a human in a new chat | "We could not reach a person right now..."; the bot keeps answering |
+| Write `<b>x</b> {{execution.resumeUrl}}` before handing off | the email shows that text literally |
+| Switch the block on with Email and no address, save | the dialog says what is missing |
+
 ## T19c. The build and database migrations
 
 The database is shared with production, so only rows 1 and 2 are run locally. Rows 3 to 5 are observed on Vercel.

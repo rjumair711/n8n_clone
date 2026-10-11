@@ -5,21 +5,21 @@ type Header = { key: string; value: string };
 type HeaderRule = { source: string; headers: Header[] };
 
 /**
- * EXCEPTION POINT for pages that other sites may show in a frame.
+ * The pages that other sites may show in a frame.
  *
  * Everything is served with `X-Frame-Options: DENY`, so no other site can
- * frame the app (clickjacking). An embeddable chat widget needs the
- * opposite for its own route. When that route exists, add its path prefix
- * here, without a trailing slash:
+ * frame the app (clickjacking). The website chat widget needs the opposite
+ * for its own route: /chat/<id>, the hosted chat page that widget.js shows
+ * in a frame on a customer's website. It is the only one.
  *
- *   export const EMBEDDABLE_PATH_PREFIXES = ["/embed"];
- *
- * Those paths (the prefix itself and everything under it) then get no
- * X-Frame-Options and no `frame-ancestors 'none'`; give the route its own
- * `Content-Security-Policy: frame-ancestors <the sites allowed to embed it>`
- * instead. Everything else stays DENY.
+ * Those paths (the prefix itself and everything under it) get no
+ * X-Frame-Options and no `frame-ancestors 'none'`. The route sets its own
+ * `Content-Security-Policy: frame-ancestors <the sites allowed to embed
+ * it>` per widget (see src/app/chat/[id]/route.ts), and answers
+ * `frame-ancestors 'none'` when there is no such widget. Everything else
+ * stays DENY. Path prefixes, without a trailing slash.
  */
-export const EMBEDDABLE_PATH_PREFIXES: string[] = [];
+export const EMBEDDABLE_PATH_PREFIXES: string[] = ["/chat"];
 
 // Two years, the length browsers' preload lists ask for. Subdomains are
 // included; "preload" is left out, because it is hard to take back.
