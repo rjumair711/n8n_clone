@@ -17,8 +17,9 @@ import { Braces, DatabaseZap, FileInput, FileOutput, FileText, PencilRuler, Plug
 import { AlertTriangle, ArrowDownUp, CopyMinus, Group, ListEnd, OctagonX, Reply, Sigma, Split, Workflow } from "lucide-react"
 import { Clock, FilterIcon, GlobeIcon, MousePointerIcon, Send, VariableIcon, ChevronDown, ChevronRight, Code2, Bot, MemoryStickIcon, Search, Type, Calculator, GitBranch, GitFork, Merge, Repeat, Webhook, MessageSquare } from "lucide-react"
 import { toast } from "sonner"
-import { Hourglass, Lock, Route } from "lucide-react"
+import { Hourglass, Lock, Route, UserCheck } from "lucide-react"
 import { getRequiredPlanForNode } from "@/config/plans"
+import { TOOL_APPROVAL_DEFAULT_BY_RISK } from "@/lib/approvals"
 import { useCurrentPlan } from "@/features/subscription/hook/use-current-plan"
 import { UpgradeModal } from "@/components/upgrade-modal"
 
@@ -262,6 +263,12 @@ const logicNodes: NodeTypeOption[] = [
         label: "Wait",
         description: "Pause for a time, until a date, or until a resume URL is called",
         icon: Hourglass,
+    },
+    {
+        type: NodeType.APPROVAL,
+        label: "Send and Wait for Approval",
+        description: "Ask a person to approve or reject, and continue on their answer",
+        icon: UserCheck,
     },
     {
         type: NodeType.BUFFER_MEMORY,
@@ -595,7 +602,12 @@ export function NodeSelector({
 
             const newNode = {
                 id: createId(),
-                data: {},
+                // New agents ask before using tools that write or are
+                // dangerous; agents made earlier keep running as they did
+                data:
+                    selection.type === NodeType.AI_AGENT
+                        ? { toolApprovalDefault: TOOL_APPROVAL_DEFAULT_BY_RISK }
+                        : {},
                 position: flowPosition,
                 type: selection.type
             }

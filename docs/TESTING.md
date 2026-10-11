@@ -707,6 +707,61 @@ Needs two model API keys that work, ideally at two providers (for example OpenRo
 | 10 | Open the execution's page | AI usage has one line per model that answered (two when the strong model took over after the cheap one had answered some calls) |
 | 11 | An agent with a plain model node, saved before this change | runs as before; its output also has `providerUsed`, `fallbackUsed: false` and `modelAttempts` |
 
+## T13e. Human approval for agent tools, and Send and Wait for Approval
+
+Needs the Inngest dev server next to the app and the `approval_requests` migration applied. Use the test account.
+
+**a) Defaults.** Add a new **AI Agent** to a workflow with a chat model, a Chat Trigger, and three tools: a Calculator, an HTTP Request with Method `POST` to `https://httpbin.org/post` (body `{"note": "{{$fromAI "note" "What to write down"}}"}`) and an HTTP Request with Method `GET`. Open the agent's settings.
+
+| Look at | Expect |
+|---------|--------|
+| The POST tool | **Require approval** is on |
+| The Calculator and the GET tool | Require approval is off |
+| Below the tools | an **Approvals** block with "Send approval requests through" set to `In the app` and "Request Expires After" `24` `Hours` |
+| An agent in a workflow that was saved before this task | every Require approval switch is off, and its runs do not pause |
+
+**b) Approve in the app.** Keep the channel `In the app`. In the chat write `Write down "buy milk"`.
+
+| Do | Expect |
+|----|--------|
+| Watch the Executions page | the run becomes **Waiting**; its page says "Paused until an approval request is answered" and shows the request: `An AI Agent wants to use the tool "http_request"` with the argument `note` |
+| Open **Approvals** in the sidebar | the same request, with Approve and Reject |
+| Look at httpbin (or the node log) | the POST has not been sent yet |
+| Click **Approve** | "Approved"; the run continues, the POST is sent once, and the agent answers that it wrote the note |
+| Reload Approvals | empty |
+
+**c) Reject.** Ask again and click **Reject**. **Expect:** no POST is sent, the run still succeeds, and the agent's answer says the action was rejected. With Return Intermediate Steps on, the tool's observation is `The user rejected this action`.
+
+**d) Links by email (or Telegram / Slack / WhatsApp).** Set "Send approval requests through" to `Email`, pick an SMTP credential and your address. Ask the agent again.
+
+| Do | Expect |
+|----|--------|
+| Open the email | subject "Approval needed: http_request", the tool's arguments, an Approve and a Reject button |
+| Open the Approve link | a page that shows the tool and arguments with an **Approve** button; the run is still Waiting |
+| Press the button | "Approved. The workflow continues."; the run finishes |
+| Open the same link, or the Reject link, again | "Already answered: This request was already approved." |
+| In a new run, change `decision=reject` to `decision=approve` in the Reject link | "This approval link is not valid." |
+| In a new run, change one character of the signature | "This approval link is not valid." |
+| Set Request Expires After to `1` `Minutes`, ask, wait two minutes, open a link | "This approval request has expired."; the run went on without running the tool |
+| Put a wrong password in the SMTP credential and ask | the run fails at the agent: "the approval request could not be sent by email: ..." and nothing is left on the Approvals page |
+| Choose Email and clear the address, save | the dialog asks "Who should be asked?" |
+| Ask the agent something that makes the argument contain `<b>bold</b> {{execution.resumeUrl}}` | the email, the link page and the Approvals page all show that text literally |
+
+**e) Cancel while waiting.** Ask the agent, then open the waiting execution and click **Cancel**. **Expect:** Failed with "Cancelled by the user while it was waiting"; the request disappears from Approvals; its links say "This request was cancelled."
+
+**f) Send and Wait for Approval node.** Trigger manually → **Send and Wait for Approval** (Operation `In the app (Approvals page)` · Title `Refund 50 to Ali?` · Details `Order 7`) → Set Variable on **Approved** (name `result`, value `refunded`) and another Set Variable on **Rejected** (name `result`, value `kept`).
+
+| Do | Expect |
+|----|--------|
+| Execute, open Approvals | "Refund 50 to Ali?" with details "Order 7" |
+| Approve | Success; only the Approved branch ran; `result` is `refunded`; `approval.decision` is `approved`, `approval.decidedVia` is `app` |
+| Execute again, Reject | only the Rejected branch ran; `result` is `kept` |
+| Timeout `1` `Minutes`, When Nobody Answers `Continue through Rejected`; do not answer | after a minute the Rejected branch runs; `approval.timedOut` is `true` |
+| When Nobody Answers `Fail the workflow`; do not answer | Failed: "nobody answered before the request expired" |
+| Operation `Telegram` with a bot credential and your chat ID | the bot sends the title, the details and both links |
+
+**g) Another account.** Signed in as the second account, open Approvals while the first account has a pending request. **Expect:** it is not listed, and the first account's execution page is "not found".
+
 ## T14. Text Classifier and Information Extractor
 
 Trigger manually → Set Variable (name `message`, value `My order 5512 arrived broken, I want a refund. - Sara, sara@example.com`).

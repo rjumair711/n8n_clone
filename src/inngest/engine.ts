@@ -202,6 +202,20 @@ export const getActiveOutputs = (
         ? [context.matchedBranch]
         : [];
 
+    // Send and Wait for Approval leaves through Approved or Rejected
+    case "APPROVAL": {
+      const name =
+        String(
+          (node.data as { variableName?: unknown } | null)?.variableName ?? ""
+        ).trim() || "approval";
+
+      return [
+        (context[name] as { approved?: unknown } | undefined)?.approved === true
+          ? "approved"
+          : "rejected",
+      ];
+    }
+
     default:
       return null;
   }

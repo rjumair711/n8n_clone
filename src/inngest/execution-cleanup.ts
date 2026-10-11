@@ -74,6 +74,8 @@ export const deleteExpiredExecutionData = async (now: Date = new Date()) => {
 
       await prisma.$transaction([
         prisma.executionNode.deleteMany({ where: { executionId: { in: ids } } }),
+        // They hold tool arguments, which are execution data too
+        prisma.approvalRequest.deleteMany({ where: { executionId: { in: ids } } }),
         prisma.execution.updateMany({
           where: { id: { in: ids } },
           data: {

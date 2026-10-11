@@ -69,6 +69,8 @@ const RUN_ONCE_TYPES = new Set([
   "DELAY",
   // One pause for the whole list, not one per item
   "WAIT",
+  // One question for the whole list; the items leave through its answer
+  "APPROVAL",
   "RESPOND_TO_WEBHOOK",
   "WEBHOOK_RESPONSE",
   "STOP_AND_ERROR",
@@ -198,8 +200,16 @@ export const runNodeForItems = async ({
       : null;
 
     if (!list) {
-      // Delay, Respond to Webhook...: the items continue unchanged
-      return { context: output, outputItems: { [ALL_OUTPUTS]: incoming } };
+      // Delay, Respond to Webhook...: the items continue unchanged, through
+      // the one output that fired when the node chooses between outputs
+      const handles = getActiveOutputs(node, output);
+
+      return {
+        context: output,
+        outputItems: handles
+          ? Object.fromEntries(handles.map((handle) => [handle, incoming]))
+          : { [ALL_OUTPUTS]: incoming },
+      };
     }
 
     // Items that survive (Sort, Limit, Remove Duplicates) keep what earlier

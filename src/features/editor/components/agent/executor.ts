@@ -15,15 +15,35 @@ import {
   getBlockedToolsMessage,
   getDefaultToolDescription,
   getDefaultToolName,
+  getToolRisk,
   sanitizeToolName,
   uniqueToolName,
 } from "@/features/executions/lib/agent-tools";
 import {
   AGENT_DEFAULT_MAX_ITERATIONS,
   AGENT_DEFAULT_MAX_TOOL_CALLS,
+  AGENT_MAX_ITERATIONS_MESSAGE,
   AgentToolCallLimitError,
+  appendToolResults,
   runAgentLoop,
+  type AgentLoopResult,
+  type IntermediateStep,
 } from "./agent-loop";
+import { createInlineStep } from "@/features/executions/lib/inline-step";
+import { parseWaitDuration } from "@/lib/execution-wait";
+import {
+  APPROVAL_DEFAULT_TIMEOUT_AMOUNT,
+  APPROVAL_DEFAULT_TIMEOUT_UNIT,
+  TOOL_APPROVAL_DEFAULT_BY_RISK,
+  TOOL_EXPIRED_MESSAGE,
+  TOOL_REJECTED_MESSAGE,
+  toolRequiresApproval,
+} from "@/lib/approvals";
+import { requestApproval } from "@/features/approvals/server/wait";
+import {
+  getDeliveryProblem,
+  type ApprovalDelivery,
+} from "@/features/approvals/server/notify";
 import {
   DEFAULT_MODELS,
   MODEL_NODE_PROVIDERS,
@@ -64,8 +84,25 @@ export type AIAgentData = {
   allowDangerousTools?: boolean;
   returnIntermediateSteps?: boolean;
   variableName?: string;
-  // Name / description the model sees for each connected tool node
-  toolSettings?: Record<string, { name?: string; description?: string }>;
+  // Name / description the model sees for each connected tool node, and
+  // whether a person has to approve each of its calls
+  toolSettings?: Record<
+    string,
+    { name?: string; description?: string; requireApproval?: boolean }
+  >;
+  // "risk" on agents added since approvals exist: tools without a saved
+  // choice need approval when they write or are dangerous
+  toolApprovalDefault?: string;
+  // Where approval requests go: "in_app" (default), "email", "slack",
+  // "telegram" or "whatsapp", and what that channel needs
+  approvalChannel?: string;
+  approvalCredentialId?: string;
+  approvalRecipient?: string;
+  approvalWebhookUrl?: string;
+  approvalPhoneNumberId?: string;
+  // How long a request can be answered, default 24 hours
+  approvalTimeoutAmount?: string | number;
+  approvalTimeoutUnit?: string;
 
   // Legacy fields, used when no Chat Model node is connected
   provider?: "OPENAI" | "ANTHROPIC" | "GEMINI";
@@ -331,21 +368,50 @@ export const aiAgentExecutor: NodeExecutor<AIAgentData> = async ({
   // 5. TOOLS: every node on the Tools port becomes a function the model can call
   // =========================================================================
   // Tools run inside the agent's own step, so their step calls run inline
-  const inlineStep = {
-    ...step,
-    run: async (_id: unknown, fn: () => unknown) => fn(),
-    sleep: async () => {},
-    sleepUntil: async () => {},
-    sendEvent: async () => ({ ids: [] }),
-    ai: {
-      ...step.ai,
-      wrap: async (_id: unknown, fn: (...args: any[]) => unknown, ...args: any[]) =>
-        fn(...args),
-    },
-  } as unknown as typeof step;
+  const inlineStep = createInlineStep(step);
+
+  // "Require approval": the model can call the tool, but the call only runs
+  // after a person approved it (see the loop in section 6)
+  const approvalDefaultByRisk =
+    data.toolApprovalDefault === TOOL_APPROVAL_DEFAULT_BY_RISK;
+
+  const needsApproval = (toolNode: NodeWithCredential) =>
+    toolRequiresApproval({
+      saved: data.toolSettings?.[toolNode.id]?.requireApproval,
+      risk: getToolRisk(
+        toolNode.type,
+        (toolNode.data ?? {}) as Record<string, unknown>
+      ),
+      defaultByRisk: approvalDefaultByRisk,
+    });
+
+  const approvalDelivery: ApprovalDelivery = {
+    channel: data.approvalChannel,
+    credentialId: data.approvalCredentialId,
+    recipient: data.approvalRecipient,
+    webhookUrl: data.approvalWebhookUrl,
+    phoneNumberId: data.approvalPhoneNumberId,
+  };
+
+  if (toolNodes.some(needsApproval)) {
+    // Before the model is called: a run must not get as far as a tool call
+    // and then find it has nowhere to send the request
+    const problem = getDeliveryProblem(approvalDelivery, context);
+
+    if (problem) {
+      throw new NonRetriableError(
+        `AI Agent: a tool requires approval, but ${problem}. Check "Send approval requests through" in the AI Agent's settings.`
+      );
+    }
+  }
 
   const tools: ToolSet = {};
   const takenNames = new Set<string>();
+  // The tools that wait for approval, by the name the model calls them
+  const approvalRunners = new Map<
+    string,
+    (input: Record<string, unknown>) => Promise<unknown>
+  >();
 
   // MCP servers bring their own tools; they are connected inside the
   // agent's step below because the connection is live
@@ -353,7 +419,11 @@ export const aiAgentExecutor: NodeExecutor<AIAgentData> = async ({
     (node) => node.type === NodeType.MCP_CLIENT_TOOL
   );
 
-  const mcpServers: { data: McpClientData; secret: string }[] = [];
+  const mcpServers: {
+    data: McpClientData;
+    secret: string;
+    requireApproval: boolean;
+  }[] = [];
   for (const mcpNode of mcpNodes) {
     const mcpData = (mcpNode.data ?? {}) as McpClientData;
 
@@ -365,6 +435,7 @@ export const aiAgentExecutor: NodeExecutor<AIAgentData> = async ({
         nodeId: mcpNode.id,
         data: mcpData,
       }),
+      requireApproval: needsApproval(mcpNode),
     });
   }
 
@@ -382,187 +453,384 @@ export const aiAgentExecutor: NodeExecutor<AIAgentData> = async ({
       takenNames
     );
 
-    tools[name] = tool({
+    const runTool = async (input: Record<string, unknown>) => {
+      // The model's arguments are exposed as {{$fromAI "key"}} / {{ai.key}}
+      const toolContext: WorkflowContext = { ...context, ai: input };
+
+      try {
+        const output = await executor({
+          data: toolData,
+          nodeId: toolNode.id,
+          userId,
+          allNodes,
+          connections,
+          step: inlineStep,
+          context: toolContext,
+          executionId,
+          workflowId,
+          callDepth,
+          inline: true,
+        });
+
+        // Hand back only what the tool produced, not the whole context
+        const produced: Record<string, unknown> = {};
+        for (const [key, value] of Object.entries(output)) {
+          if (key !== "ai" && toolContext[key] !== value) {
+            produced[key] = value;
+          }
+        }
+
+        const keys = Object.keys(produced);
+        const result = keys.length === 1 ? produced[keys[0]] : produced;
+        const serialized = JSON.stringify(result ?? null);
+
+        return serialized.length > MAX_TOOL_RESULT_CHARS
+          ? `${serialized.slice(0, MAX_TOOL_RESULT_CHARS)}... [truncated]`
+          : result;
+      } catch (error: any) {
+        // The model sees the failure and can retry or explain it
+        return {
+          error: error?.message || "The tool failed to run",
+        };
+      }
+    };
+
+    const definition = {
       description:
         settings.description?.trim() ||
         getDefaultToolDescription(toolNode.type, toolData),
       inputSchema: buildToolInputSchema(extractAIParameters(toolData)),
-      execute: async (input: Record<string, unknown>) => {
-        // The model's arguments are exposed as {{$fromAI "key"}} / {{ai.key}}
-        const toolContext: WorkflowContext = { ...context, ai: input };
+    };
 
-        try {
-          const output = await executor({
-            data: toolData,
-            nodeId: toolNode.id,
-            userId,
-            allNodes,
-            connections,
-            step: inlineStep,
-            context: toolContext,
-            executionId,
-            workflowId,
-            callDepth,
-            inline: true,
-          });
-
-          // Hand back only what the tool produced, not the whole context
-          const produced: Record<string, unknown> = {};
-          for (const [key, value] of Object.entries(output)) {
-            if (key !== "ai" && toolContext[key] !== value) {
-              produced[key] = value;
-            }
-          }
-
-          const keys = Object.keys(produced);
-          const result = keys.length === 1 ? produced[keys[0]] : produced;
-          const serialized = JSON.stringify(result ?? null);
-
-          return serialized.length > MAX_TOOL_RESULT_CHARS
-            ? `${serialized.slice(0, MAX_TOOL_RESULT_CHARS)}... [truncated]`
-            : result;
-        } catch (error: any) {
-          // The model sees the failure and can retry or explain it
-          return {
-            error: error?.message || "The tool failed to run",
-          };
-        }
-      },
-    });
+    if (needsApproval(toolNode)) {
+      // Without `execute` the loop stops when the model calls the tool
+      tools[name] = tool(definition);
+      approvalRunners.set(name, runTool);
+    } else {
+      tools[name] = tool({ ...definition, execute: runTool });
+    }
   }
+
+  const nodeToolNames = [...takenNames];
+
+  // Connects to the MCP servers and returns their tools under the same
+  // names every time, with the tools of servers that require approval listed
+  const loadMcpTools = async () => {
+    const names = new Set(nodeToolNames);
+    const all: ToolSet = {};
+    const approval = new Set<string>();
+
+    for (const server of mcpServers) {
+      try {
+        const serverTools = await buildMcpTools({
+          data: server.data,
+          secret: server.secret,
+          context,
+          takenNames: names,
+        });
+
+        for (const [name, serverTool] of Object.entries(serverTools)) {
+          all[name] = serverTool;
+          if (server.requireApproval) approval.add(name);
+        }
+      } catch (error: any) {
+        throw new NonRetriableError(
+          `AI Agent: could not load the tools of the MCP server (${error?.message || "unknown error"})`
+        );
+      }
+    }
+
+    return { all, approval };
+  };
 
   // =========================================================================
   // 6. RUN THE AGENT
   // =========================================================================
-  const agentResult = await step.run("execute-agent-llm-loop", async () => {
-    // Which model answered each call of the loop
-    const tracker = createModelTracker();
+  // The model loop runs in a step. When the model calls a tool that requires
+  // approval the step ends there; the request is sent and the run waits (an
+  // Inngest wait-for-event, like the Wait node), the tool is run or not, and
+  // the loop goes on in a new step with the tool's result.
+  const add = (a?: number, b?: number) =>
+    a === undefined && b === undefined ? undefined : (a ?? 0) + (b ?? 0);
 
-    try {
-      const { model } = createFallbackModel(candidates, tracker);
+  const addUsage = (
+    a: AgentLoopResult["usage"],
+    b: AgentLoopResult["usage"]
+  ): AgentLoopResult["usage"] => ({
+    inputTokens: add(a.inputTokens, b.inputTokens),
+    outputTokens: add(a.outputTokens, b.outputTokens),
+    totalTokens: add(a.totalTokens, b.totalTokens),
+    cachedInputTokens: add(a.cachedInputTokens, b.cachedInputTokens),
+  });
 
-      const allTools: ToolSet = { ...tools };
+  let conversation = messages;
+  let iterationsLeft = maxIterations;
+  let toolCallsLeft = maxToolCalls;
 
-      for (const server of mcpServers) {
+  const intermediateSteps: IntermediateStep[] = [];
+  const modelAttempts: unknown[] = [];
+  let usage: AgentLoopResult["usage"] = {};
+  let answerText = "";
+  let answeredBy: {
+    modelUsed?: string;
+    providerUsed?: string;
+    fallbackUsed?: boolean;
+    modelRoute?: { tier: "cheap" | "strong"; reason: string };
+  } = {};
+
+  for (let segment = 1; ; segment++) {
+    const segmentMessages = conversation;
+    const segmentIterations = iterationsLeft;
+    const segmentToolCalls = toolCallsLeft;
+    // What the tools returned before this part of the loop
+    const earlierSteps = [...intermediateSteps];
+
+    const part = await step.run(
+      // The first keeps the name it always had, for runs in flight
+      segment === 1
+        ? "execute-agent-llm-loop"
+        : `execute-agent-llm-loop-${segment}`,
+      async () => {
+        // Which model answered each call of the loop
+        const tracker = createModelTracker();
+
         try {
-          Object.assign(
-            allTools,
-            await buildMcpTools({ ...server, context, takenNames })
-          );
-        } catch (error: any) {
-          throw new NonRetriableError(
-            `AI Agent: could not load the tools of the MCP server (${error?.message || "unknown error"})`
-          );
-        }
-      }
+          const { model } = createFallbackModel(candidates, tracker);
 
-      let result = await runAgentLoop({
-        model,
-        system,
-        messages,
-        tools: allTools,
-        maxIterations,
-        maxToolCalls,
-      });
+          const mcp = await loadMcpTools();
+          const allTools: ToolSet = { ...tools };
 
-      // Model Router: which side gave the final answer, and why
-      let modelRoute: { tier: "cheap" | "strong"; reason: string } | undefined;
+          for (const [name, mcpTool] of Object.entries(mcp.all)) {
+            if (mcp.approval.has(name)) {
+              const { execute: _execute, ...definition } = mcpTool as ToolSet[string] & {
+                execute?: unknown;
+              };
+              allTools[name] = definition as ToolSet[string];
+            } else {
+              allTools[name] = mcpTool;
+            }
+          }
 
-      if (routerNode) {
-        const strongAnswered =
-          tracker.calls[tracker.calls.length - 1]?.tier === STRONG_TIER;
-
-        modelRoute = strongAnswered
-          ? { tier: "strong", reason: "The cheap model failed or timed out" }
-          : { tier: "cheap", reason: "The cheap model answered" };
-
-        const escalateOnParser =
-          (routerNode.data as { escalateOnParser?: string } | null)
-            ?.escalateOnParser !== "false";
-
-        // The cheap model's answer does not fit the parser: the strong model
-        // answers instead. The tools are not run again; it is given what
-        // they returned.
-        if (
-          parserNode &&
-          escalateOnParser &&
-          !strongAnswered &&
-          extractJson(result.output) === undefined
-        ) {
-          const strong = createFallbackModel(
-            candidates.filter((candidate) => candidate.tier === STRONG_TIER),
-            tracker
-          );
-
-          const second = await runAgentLoop({
-            model: strong.model,
+          let result = await runAgentLoop({
+            model,
             system,
-            messages: [
-              ...history,
-              {
-                role: "user",
-                content: buildEscalationPrompt({
-                  prompt,
-                  draft: result.output,
-                  toolResults: result.intermediateSteps.map((entry) => ({
-                    tool: entry.action.tool,
-                    input: entry.action.toolInput,
-                    result: entry.observation,
-                  })),
-                }),
-              },
-            ],
-            tools: {},
+            messages: segmentMessages,
+            tools: allTools,
+            maxIterations: segmentIterations,
+            maxToolCalls: segmentToolCalls,
           });
 
-          const add = (a?: number, b?: number) =>
-            a === undefined && b === undefined ? undefined : (a ?? 0) + (b ?? 0);
+          // Model Router: which side gave the final answer, and why
+          let modelRoute: { tier: "cheap" | "strong"; reason: string } | undefined;
 
-          result = {
-            ...result,
-            output: second.output,
-            iterations: result.iterations + second.iterations,
-            usage: {
-              inputTokens: add(result.usage.inputTokens, second.usage.inputTokens),
-              outputTokens: add(result.usage.outputTokens, second.usage.outputTokens),
-              totalTokens: add(result.usage.totalTokens, second.usage.totalTokens),
-              cachedInputTokens: add(
-                result.usage.cachedInputTokens,
-                second.usage.cachedInputTokens
-              ),
-            },
-          };
+          if (routerNode && result.pending.length === 0) {
+            const strongAnswered =
+              tracker.calls[tracker.calls.length - 1]?.tier === STRONG_TIER;
 
-          modelRoute = {
-            tier: "strong",
-            reason: "The cheap model's answer did not fit the Structured Output Parser",
-          };
+            modelRoute = strongAnswered
+              ? { tier: "strong", reason: "The cheap model failed or timed out" }
+              : { tier: "cheap", reason: "The cheap model answered" };
+
+            const escalateOnParser =
+              (routerNode.data as { escalateOnParser?: string } | null)
+                ?.escalateOnParser !== "false";
+
+            // The cheap model's answer does not fit the parser: the strong model
+            // answers instead. The tools are not run again; it is given what
+            // they returned.
+            if (
+              parserNode &&
+              escalateOnParser &&
+              !strongAnswered &&
+              extractJson(result.output) === undefined
+            ) {
+              const strong = createFallbackModel(
+                candidates.filter((candidate) => candidate.tier === STRONG_TIER),
+                tracker
+              );
+
+              // What the tools returned, also before a pause for approval
+              const toolSteps = [...earlierSteps, ...result.intermediateSteps];
+
+              const second = await runAgentLoop({
+                model: strong.model,
+                system,
+                messages: [
+                  ...history,
+                  {
+                    role: "user",
+                    content: buildEscalationPrompt({
+                      prompt,
+                      draft: result.output,
+                      toolResults: toolSteps.map((entry) => ({
+                        tool: entry.action.tool,
+                        input: entry.action.toolInput,
+                        result: entry.observation,
+                      })),
+                    }),
+                  },
+                ],
+                tools: {},
+              });
+
+              result = {
+                ...result,
+                output: second.output,
+                iterations: result.iterations + second.iterations,
+                usage: addUsage(result.usage, second.usage),
+              };
+
+              modelRoute = {
+                tier: "strong",
+                reason: "The cheap model's answer did not fit the Structured Output Parser",
+              };
+            }
+          }
+
+          return { ...result, ...describeModelAnswer(tracker), modelRoute };
+        } catch (error: any) {
+          if (error instanceof NonRetriableError) throw error;
+
+          if (error instanceof AgentToolCallLimitError) {
+            // The limit is the agent's, not what was left of it for this part
+            throw new NonRetriableError(
+              new AgentToolCallLimitError(maxToolCalls).message
+            );
+          }
+
+          console.error(`[AI Agent Error]: Failed to communicate with ${provider}`, error);
+
+          // Stop immediately and mark the AI Agent node as FAILED
+          throw new NonRetriableError(
+            `LLM Provider Error (${provider}): ${error.message || "Failed to generate response."}`
+          );
+        } finally {
+          // One line per model that answered, also when the run then failed:
+          // the calls that were answered have been paid for
+          await recordModelCalls(
+            getAiUsageScope({ userId, workflowId, executionId, nodeId, allNodes }),
+            tracker
+          );
         }
       }
+    );
 
-      return { ...result, ...describeModelAnswer(tracker), modelRoute };
-    } catch (error: any) {
-      if (error instanceof NonRetriableError) throw error;
+    intermediateSteps.push(...(part.intermediateSteps as IntermediateStep[]));
+    modelAttempts.push(...(part.modelAttempts ?? []));
+    usage = addUsage(usage, part.usage);
+    answerText = part.output;
+    answeredBy = {
+      modelUsed: part.modelUsed,
+      providerUsed: part.providerUsed,
+      fallbackUsed: answeredBy.fallbackUsed === true || part.fallbackUsed === true,
+      modelRoute: part.modelRoute ?? undefined,
+    };
 
-      if (error instanceof AgentToolCallLimitError) {
-        throw new NonRetriableError(error.message);
-      }
+    // A run that was in flight when this was deployed has no `pending`
+    const pending = part.pending ?? [];
+    if (pending.length === 0) break;
 
-      console.error(`[AI Agent Error]: Failed to communicate with ${provider}`, error);
+    toolCallsLeft -= (part.toolCalls ?? 0) + pending.length;
+    iterationsLeft -= part.iterations;
 
-      // Stop immediately and mark the AI Agent node as FAILED
-      throw new NonRetriableError(
-        `LLM Provider Error (${provider}): ${error.message || "Failed to generate response."}`
+    if (toolCallsLeft < 0) {
+      throw new NonRetriableError(new AgentToolCallLimitError(maxToolCalls).message);
+    }
+
+    let timeoutMs: number;
+    try {
+      timeoutMs = parseWaitDuration(
+        renderTemplate(String(data.approvalTimeoutAmount ?? ""), context).trim() ||
+          APPROVAL_DEFAULT_TIMEOUT_AMOUNT,
+        data.approvalTimeoutUnit || APPROVAL_DEFAULT_TIMEOUT_UNIT,
+        "Approval Timeout"
       );
-    } finally {
-      // One line per model that answered, also when the run then failed:
-      // the calls that were answered have been paid for
-      await recordModelCalls(
-        getAiUsageScope({ userId, workflowId, executionId, nodeId, allNodes }),
-        tracker
+    } catch (error) {
+      throw new NonRetriableError(
+        (error instanceof Error ? error.message : "Approval Timeout is not valid").replace(
+          /^Wait node:/,
+          "AI Agent:"
+        )
       );
     }
-  });
+
+    const results: { toolCallId: string; toolName: string; result: unknown }[] = [];
+
+    // One request at a time, in the order the model asked
+    for (const call of pending) {
+      const approval = await requestApproval({
+        step,
+        stepId: `agent-approval-${call.toolCallId}`,
+        label: "AI Agent",
+        executionId,
+        nodeId,
+        userId,
+        kind: "tool",
+        title: call.toolName,
+        details: call.input,
+        delivery: approvalDelivery,
+        timeoutMs,
+        context,
+      });
+
+      const input = (call.input ?? {}) as Record<string, unknown>;
+
+      const result =
+        approval.outcome === "approved"
+          ? await step.run(`agent-tool-${call.toolCallId}`, async () => {
+              const runner = approvalRunners.get(call.toolName);
+              if (runner) return runner(input);
+
+              // An MCP server's tool: the connection is made again
+              const mcpTool = (await loadMcpTools()).all[call.toolName] as
+                | { execute?: (input: unknown, options: unknown) => unknown }
+                | undefined;
+
+              return mcpTool?.execute
+                ? mcpTool.execute(input, { toolCallId: call.toolCallId, messages: [] })
+                : { error: "The tool is no longer available" };
+            })
+          : approval.outcome === "rejected"
+            ? TOOL_REJECTED_MESSAGE
+            : TOOL_EXPIRED_MESSAGE;
+
+      results.push({
+        toolCallId: call.toolCallId,
+        toolName: call.toolName,
+        result,
+      });
+
+      intermediateSteps.push({
+        action: {
+          tool: call.toolName,
+          toolInput: call.input,
+          toolCallId: call.toolCallId,
+        },
+        observation: result ?? null,
+      });
+    }
+
+    conversation = appendToolResults(
+      [
+        ...segmentMessages,
+        ...(part.responseMessages as unknown as ModelMessage[]),
+      ],
+      results
+    );
+
+    if (iterationsLeft <= 0) {
+      answerText = AGENT_MAX_ITERATIONS_MESSAGE;
+      break;
+    }
+  }
+
+  const agentResult = {
+    output: answerText,
+    intermediateSteps,
+    usage,
+    modelAttempts,
+    ...answeredBy,
+  };
 
   // With an output parser the answer is data, not text
   let finalOutput: unknown = agentResult.output;

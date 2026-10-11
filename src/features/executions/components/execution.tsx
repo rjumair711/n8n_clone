@@ -13,6 +13,7 @@ import { Input } from "@/components/ui/input"
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible"
 import { Button } from "@/components/ui/button"
 import { ExecutionAiUsage } from "@/features/ai-usage/components/execution-ai-usage"
+import { PendingApprovals } from "@/features/approvals/components/pending-approvals"
 
 
 const getStatusIcon = (status: ExecutionStatus) => {
@@ -82,7 +83,7 @@ export const ExecutionView = ({
                             className="ml-auto"
                             onClick={() => cancelExecution.mutate({ id: executionId })}
                             disabled={cancelExecution.isPending}
-                            title="Stops the execution: the nodes after the Wait node will not run"
+                            title="Stops the execution: the nodes after the one it waits at will not run"
                         >
                             <BanIcon className="size-4" />
                             Cancel
@@ -155,14 +156,25 @@ export const ExecutionView = ({
                         <p className="text-sm font-medium">
                             {execution.waitingFor === "webhook"
                                 ? "Paused at a Wait node until its resume URL is called"
-                                : "Paused at a Wait node"}
+                                : execution.waitingFor === "approval"
+                                    ? "Paused until an approval request is answered"
+                                    : "Paused at a Wait node"}
                         </p>
                         {execution.waitingUntil && (
                             <p className="text-sm">
-                                {execution.waitingFor === "webhook" ? "Times out" : "Continues"}{" "}
+                                {execution.waitingFor === "webhook"
+                                    ? "Times out"
+                                    : execution.waitingFor === "approval"
+                                        ? "The request expires"
+                                        : "Continues"}{" "}
                                 {formatDistanceToNow(execution.waitingUntil, { addSuffix: true })}{" "}
                                 ({format(execution.waitingUntil, "PPpp")})
                             </p>
+                        )}
+                        {execution.waitingFor === "approval" && (
+                            <div className="text-foreground">
+                                <PendingApprovals executionId={executionId} />
+                            </div>
                         )}
                         {execution.resumeUrl && (
                             <div className="space-y-1">

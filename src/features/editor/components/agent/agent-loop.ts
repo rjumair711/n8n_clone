@@ -93,10 +93,25 @@ export type IntermediateStep = {
   observation: unknown;
 };
 
+// A call to a tool that has no `execute`: the loop stopped for it, and
+// whoever called the loop decides what the tool returns
+export type PendingToolCall = {
+  toolCallId: string;
+  toolName: string;
+  input: unknown;
+};
+
 export type AgentLoopResult = {
   output: string;
   intermediateSteps: IntermediateStep[];
   iterations: number;
+  // How many tool calls were run
+  toolCalls: number;
+  // Calls that wait for an answer from outside (an approval). Empty when
+  // the loop finished.
+  pending: PendingToolCall[];
+  // What the model said and what the tools returned, to continue from
+  responseMessages: ModelMessage[];
   usage: {
     inputTokens?: number;
     outputTokens?: number;
@@ -107,9 +122,48 @@ export type AgentLoopResult = {
 };
 
 /**
+ * Adds the results of pending tool calls to the conversation, marked as
+ * untrusted data like every other tool result, so the loop can be run
+ * again from where it stopped.
+ */
+export const appendToolResults = (
+  messages: ModelMessage[],
+  results: { toolCallId: string; toolName: string; result: unknown }[]
+): ModelMessage[] => {
+  if (results.length === 0) return messages;
+
+  const parts = results.map((entry) => ({
+    type: "tool-result" as const,
+    toolCallId: entry.toolCallId,
+    toolName: entry.toolName,
+    output: {
+      type: "text" as const,
+      value: wrapToolResult(entry.toolName, entry.result),
+    },
+  }));
+
+  const last = messages[messages.length - 1];
+
+  // Tools of the same turn that did run already have their results in a
+  // tool message: the rest of the turn's results belong with them
+  if (last?.role === "tool" && Array.isArray(last.content)) {
+    return [
+      ...messages.slice(0, -1),
+      { ...last, content: [...last.content, ...parts] },
+    ];
+  }
+
+  return [...messages, { role: "tool", content: parts }];
+};
+
+/**
  * The Tools Agent loop: the model answers, or asks for tools; tool results
  * are fed back until it produces a final answer or runs out of iterations.
  * More than `maxToolCalls` tool calls end the run with an error.
+ *
+ * A tool without `execute` stops the loop when the model calls it: the
+ * call is returned in `pending` and the loop is continued later with
+ * appendToolResults().
  */
 export const runAgentLoop = async ({
   model,
@@ -150,10 +204,36 @@ export const runAgentLoop = async ({
     throw new AgentToolCallLimitError(maxToolCalls);
   }
 
+  const lastStep = result.steps[result.steps.length - 1];
+  const answered = new Set(
+    (lastStep?.toolResults ?? []).map((entry) => entry.toolCallId)
+  );
+
+  const pending: PendingToolCall[] = (lastStep?.toolCalls ?? [])
+    .filter(
+      (call) =>
+        call.toolName in tools &&
+        !(tools[call.toolName] as { execute?: unknown }).execute &&
+        !answered.has(call.toolCallId) &&
+        // Arguments that do not fit the tool's schema are the model's
+        // mistake to fix, not something to ask a person about
+        !(call as { invalid?: boolean }).invalid
+    )
+    .map((call) => ({
+      toolCallId: call.toolCallId,
+      toolName: call.toolName,
+      input: call.input,
+    }));
+
+  const pendingIds = new Set(pending.map((call) => call.toolCallId));
+
   const intermediateSteps: IntermediateStep[] = [];
 
   for (const step of result.steps) {
     for (const call of step.toolCalls) {
+      // Added by the caller once it has their result
+      if (pendingIds.has(call.toolCallId)) continue;
+
       const toolResult = step.toolResults.find(
         (entry) => entry.toolCallId === call.toolCallId
       );
@@ -174,13 +254,18 @@ export const runAgentLoop = async ({
 
   // The last step still wanted tools: the iteration budget ran out
   const output =
-    result.text ||
-    (result.finishReason === "tool-calls" ? AGENT_MAX_ITERATIONS_MESSAGE : "");
+    pending.length > 0
+      ? ""
+      : result.text ||
+        (result.finishReason === "tool-calls" ? AGENT_MAX_ITERATIONS_MESSAGE : "");
 
   return {
     output,
     intermediateSteps,
     iterations: result.steps.length,
+    toolCalls: guard.state.calls,
+    pending,
+    responseMessages: result.response.messages as ModelMessage[],
     usage: {
       inputTokens: result.totalUsage.inputTokens,
       outputTokens: result.totalUsage.outputTokens,

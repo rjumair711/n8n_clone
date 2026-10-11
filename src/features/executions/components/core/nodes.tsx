@@ -13,6 +13,7 @@ import {
   Reply,
   Sigma,
   Split,
+  UserCheck,
   Workflow,
 } from "lucide-react";
 import { createIntegrationNode } from "../integration-node";
@@ -23,6 +24,11 @@ import {
   getChatModelProvider,
 } from "../../lib/chat-model-providers";
 import type { ChatModelNodeType } from "../chat-model-field";
+import {
+  APPROVAL_CHANNELS,
+  APPROVAL_DEFAULT_TIMEOUT_AMOUNT,
+  APPROVAL_DEFAULT_TIMEOUT_UNIT,
+} from "@/lib/approvals";
 import {
   DEFAULT_FALLBACK_TIMEOUT_SECONDS,
   DEFAULT_ROUTER_TIMEOUT_SECONDS,
@@ -206,6 +212,105 @@ export const WaitNode = createIntegrationNode(waitConfig, (data) => {
 
   return data.amount ? `For ${data.amount} ${data.unit || "minutes"}` : undefined;
 });
+
+// =========================================================================
+// SEND AND WAIT FOR APPROVAL
+// =========================================================================
+const APPROVAL_CREDENTIALS: Record<string, CredentialType> = {
+  email: CredentialType.SMTP,
+  telegram: CredentialType.TELEGRAM,
+  whatsapp: CredentialType.WHATSAPP,
+};
+
+export const approvalConfig: IntegrationConfig = {
+  label: "Send and Wait for Approval",
+  description:
+    "Asks a person to approve or reject, and pauses the workflow until they answer. The request has Approve and Reject links that are signed, work once and expire; it can also be answered on the Approvals page. Connect what should happen next to the Approved and Rejected outputs.",
+  logo: UserCheck,
+  defaultVariableName: "approval",
+  // "Operation" is where the request is sent
+  operations: APPROVAL_CHANNELS.map(({ value, label }) => ({ value, label })),
+  credentialTypeFor: (values) => APPROVAL_CREDENTIALS[values.operation ?? ""],
+  credentialLabel: "Credential",
+  getOutputs: () => [
+    { id: "approved", label: "Approved" },
+    { id: "rejected", label: "Rejected" },
+  ],
+  hint: "Operation is where the request is sent. Later nodes can read {{<name>.approved}} (true or false), {{<name>.decision}} (approved, rejected or expired) and {{<name>.decidedVia}} (link or app). The execution shows as Waiting meanwhile and can be cancelled.",
+  fields: [
+    {
+      name: "title",
+      label: "Title",
+      placeholder: "Refund {{order.total}} to {{order.email}}?",
+      description: "What is being asked, in one line.",
+      required: true,
+    },
+    {
+      name: "message",
+      label: "Details",
+      type: "textarea",
+      placeholder: "Order {{order.id}}\nReason: {{webhook.body.reason}}",
+      description: "Shown under the title, as plain text.",
+    },
+    {
+      name: "recipient",
+      label: "Send To",
+      placeholder: "manager@example.com",
+      description:
+        "Email: an address. Telegram: the chat ID. WhatsApp: the phone number with country code.",
+      required: true,
+      operations: ["email", "telegram", "whatsapp"],
+    },
+    {
+      name: "phoneNumberId",
+      label: "Phone Number ID",
+      placeholder: "123456789012345",
+      description:
+        "Your WhatsApp Business number's ID. WhatsApp only delivers free text to someone who wrote to that number in the last 24 hours.",
+      required: true,
+      operations: ["whatsapp"],
+    },
+    {
+      name: "webhookUrl",
+      label: "Slack Webhook URL",
+      placeholder: "https://hooks.slack.com/services/...",
+      description: "An incoming webhook of the channel the request is posted to.",
+      required: true,
+      operations: ["slack"],
+    },
+    {
+      name: "timeoutAmount",
+      label: "Timeout",
+      placeholder: APPROVAL_DEFAULT_TIMEOUT_AMOUNT,
+      defaultValue: APPROVAL_DEFAULT_TIMEOUT_AMOUNT,
+      description:
+        "How long the request can be answered. After that the links stop working.",
+    },
+    {
+      name: "timeoutUnit",
+      label: "Timeout Unit",
+      type: "select",
+      defaultValue: APPROVAL_DEFAULT_TIMEOUT_UNIT,
+      options: waitUnitOptions,
+    },
+    {
+      name: "onTimeout",
+      label: "When Nobody Answers",
+      type: "select",
+      defaultValue: "reject",
+      required: true,
+      options: [
+        { value: "reject", label: "Continue through Rejected" },
+        { value: "fail", label: "Fail the workflow" },
+      ],
+    },
+  ],
+};
+
+export const ApprovalNode = createIntegrationNode(
+  approvalConfig,
+  (data) => data.title || undefined
+);
 
 // =========================================================================
 // LIST NODES
