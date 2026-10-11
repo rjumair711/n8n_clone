@@ -45,6 +45,7 @@ import {
   executeWorkflowExecutor,
   respondToWebhookExecutor,
   stopAndErrorExecutor,
+  waitExecutor,
 } from '../components/core/executors';
 import {
   aggregateExecutor,
@@ -126,6 +127,7 @@ const baseExecutors: Record<NodeType, NodeExecutor<any>> = {
   [NodeType.RESPOND_TO_WEBHOOK]: respondToWebhookExecutor,
   [NodeType.ERROR_TRIGGER]: contextTriggerExecutor,
   [NodeType.STOP_AND_ERROR]: stopAndErrorExecutor,
+  [NodeType.WAIT]: waitExecutor,
   [NodeType.TELEGRAM_TRIGGER]: contextTriggerExecutor,
   [NodeType.WHATSAPP_TRIGGER]: contextTriggerExecutor,
   [NodeType.GMAIL]: gmailExecutor,

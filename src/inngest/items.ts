@@ -67,6 +67,8 @@ const RUN_ONCE_TYPES = new Set([
   // itself (existing workflows return lists from Code); add a Split Out.
   "CODE",
   "DELAY",
+  // One pause for the whole list, not one per item
+  "WAIT",
   "RESPOND_TO_WEBHOOK",
   "WEBHOOK_RESPONSE",
   "STOP_AND_ERROR",

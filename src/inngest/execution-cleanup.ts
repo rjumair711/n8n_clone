@@ -17,7 +17,7 @@ const MAX_BATCHES = 40;
  * retention" setting. Executions from earlier months are deleted with their
  * node logs. Executions from this month keep their row (status, times and
  * error message), because the monthly execution limit counts them, and lose
- * everything else. Running executions are never touched.
+ * everything else. Running and waiting executions are never touched.
  */
 export const deleteExpiredExecutionData = async (now: Date = new Date()) => {
   const startOfMonth = getStartOfMonth(now);
@@ -39,7 +39,7 @@ export const deleteExpiredExecutionData = async (now: Date = new Date()) => {
 
     const expired: Prisma.ExecutionWhereInput = {
       startedAt: { lt: cutoff },
-      status: { not: ExecutionStatus.RUNNING },
+      status: { notIn: [ExecutionStatus.RUNNING, ExecutionStatus.WAITING] },
       workflow: { user: owner },
     };
 

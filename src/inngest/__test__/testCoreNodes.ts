@@ -5532,6 +5532,404 @@ const main = async () => {
     assert.equal(fileFormats.parseCsv(csv).length, 4);
   });
 
+  // ---------------------------------------------------------------- WAIT
+  console.log("Wait node");
+
+  const wait = await import("@/lib/execution-wait");
+  const { waitExecutor } = await import(
+    "@/features/executions/components/core/executors"
+  );
+
+  // Records what the node asked Inngest for instead of really waiting
+  const createWaitStep = (resumeEvent: unknown = null) => {
+    const calls: { tool: string; id: string; arg?: any }[] = [];
+
+    const step = {
+      run: async (id: string, fn: () => unknown) => {
+        calls.push({ tool: "run", id });
+        return fn();
+      },
+      sleepUntil: async (id: string, time: Date) => {
+        calls.push({ tool: "sleepUntil", id, arg: time });
+      },
+      waitForEvent: async (id: string, options: unknown) => {
+        calls.push({ tool: "waitForEvent", id, arg: options });
+        return resumeEvent;
+      },
+    } as never;
+
+    return { step, calls };
+  };
+
+  await test("durations and dates are read strictly, up to the maximum wait", () => {
+    const day = 86_400_000;
+
+    assert.equal(wait.parseWaitDuration("90", "seconds", "Wait Amount"), 90_000);
+    assert.equal(wait.parseWaitDuration(" 1.5 ", "minutes", "Wait Amount"), 90_000);
+    assert.equal(wait.parseWaitDuration(2, "hours", "Wait Amount"), 7_200_000);
+    assert.equal(wait.parseWaitDuration("7", "days", "Wait Amount"), 7 * day);
+    assert.equal(wait.parseWaitDuration("0", "seconds", "Wait Amount"), 0);
+    // The unit defaults to seconds, like a node saved without one
+    assert.equal(wait.parseWaitDuration("5", undefined, "Wait Amount"), 5000);
+
+    for (const bad of ["", "  ", "soon", "-1", "Infinity", undefined, null]) {
+      assert.throws(
+        () => wait.parseWaitDuration(bad, "minutes", "Wait Amount"),
+        /Wait node: Wait Amount must be a number, 0 or more/,
+        JSON.stringify(bad)
+      );
+    }
+    assert.throws(() => wait.parseWaitDuration("1", "weeks", "Timeout"), /Timeout unit must be/);
+    assert.throws(
+      () => wait.parseWaitDuration("8", "days", "Wait Amount"),
+      /Wait Amount is longer than the maximum of 7 days/
+    );
+    assert.throws(() => wait.parseWaitDuration("2", "hours", "Timeout", 3_600_000), /maximum of 1 hour/);
+
+    // WAIT_MAX_DAYS raises the limit; nonsense falls back to 7 days
+    const before = process.env.WAIT_MAX_DAYS;
+    try {
+      delete process.env.WAIT_MAX_DAYS;
+      assert.equal(wait.getMaxWaitMs(), 7 * day);
+      process.env.WAIT_MAX_DAYS = "30";
+      assert.equal(wait.getMaxWaitMs(), 30 * day);
+      assert.equal(wait.parseWaitDuration("8", "days", "Wait Amount"), 8 * day);
+      process.env.WAIT_MAX_DAYS = "-3";
+      assert.equal(wait.getMaxWaitMs(), 7 * day);
+    } finally {
+      if (before === undefined) delete process.env.WAIT_MAX_DAYS;
+      else process.env.WAIT_MAX_DAYS = before;
+    }
+
+    assert.equal(wait.formatWaitDuration(45_000), "45 seconds");
+    assert.equal(wait.formatWaitDuration(60_000), "1 minute");
+    assert.equal(wait.formatWaitDuration(3 * 3_600_000), "3 hours");
+    assert.equal(wait.formatWaitDuration(day), "1 day");
+
+    // A time without a zone is UTC on every server
+    const utc = Date.UTC(2026, 11, 24, 9, 0, 0);
+    assert.equal(wait.parseWaitDate("2026-12-24T09:00:00Z").getTime(), utc);
+    assert.equal(wait.parseWaitDate("2026-12-24T09:00").getTime(), utc);
+    assert.equal(wait.parseWaitDate(" 2026-12-24 09:00:00 ").getTime(), utc);
+    assert.equal(wait.parseWaitDate("2026-12-24T14:00:00+05:00").getTime(), utc);
+    assert.equal(wait.parseWaitDate("2026-12-24").getTime(), Date.UTC(2026, 11, 24));
+    for (const bad of ["", "tomorrow", "2026-13-45T00:00", undefined]) {
+      assert.throws(() => wait.parseWaitDate(bad), /Wait node: Date and Time must be a date/);
+    }
+  });
+
+  await test("every execution has its own resume URL that cannot be guessed", () =>
+    withKeys("wait-key-A", undefined, async () => {
+      const token = wait.createResumeToken("exec1");
+
+      assert.match(token, /^[A-Za-z0-9_-]{43}$/);
+      assert.equal(wait.createResumeToken("exec1"), token);
+      assert.notEqual(wait.createResumeToken("exec2"), token);
+
+      assert.equal(wait.verifyResumeToken("exec1", token), true);
+      assert.equal(wait.verifyResumeToken("exec2", token), false);
+      assert.equal(wait.verifyResumeToken("exec1", token.slice(0, -1) + (token.endsWith("A") ? "B" : "A")), false);
+      assert.equal(wait.verifyResumeToken("exec1", ""), false);
+      assert.equal(wait.verifyResumeToken("", token), false);
+      assert.equal(wait.verifyResumeToken("exec1", "exec1"), false);
+
+      assert.equal(
+        wait.buildResumeUrl("https://app.example.com", "exec1"),
+        `https://app.example.com/api/webhooks/wait/exec1/${token}`
+      );
+      assert.deepEqual(wait.getResumeLink("https://app.example.com", "exec1"), {
+        url: `https://app.example.com/api/webhooks/wait/exec1/${token}`,
+        token,
+      });
+
+      // Made with the app's key: another key does not accept it, except as
+      // the previous key, so a run that waits through a key change resumes
+      await withKeys("wait-key-B", undefined, () => {
+        assert.equal(wait.verifyResumeToken("exec1", token), false);
+        assert.notEqual(wait.createResumeToken("exec1"), token);
+      });
+      await withKeys("wait-key-B", "wait-key-A", () => {
+        assert.equal(wait.verifyResumeToken("exec1", token), true);
+      });
+
+      // Not the signature of a file download link for the same id
+      const fileSignature = fileLinks.signFileDownload("exec1").signature;
+      assert.equal(wait.verifyResumeToken("exec1", fileSignature), false);
+    })
+  );
+
+  await test("{{execution.resumeUrl}} is in the data from the start and out of the logs", async () => {
+    const url = "https://app.example.com/api/webhooks/wait/exec1/tok_secret_123456";
+
+    assert.deepEqual(wait.withResumeUrl({ a: 1 }, url), { a: 1, execution: { resumeUrl: url } });
+    // What the Error Trigger put under `execution` stays
+    assert.deepEqual(
+      wait.withResumeUrl({ execution: { id: "failed1", error: { message: "x" } } }, url),
+      { execution: { id: "failed1", error: { message: "x" }, resumeUrl: url } }
+    );
+    assert.deepEqual(wait.withResumeUrl({ execution: "text" }, url), { execution: { resumeUrl: url } });
+    // No ENCRYPTION_KEY, no URL: the data is left as it is
+    const untouched = { a: 1 };
+    assert.equal(wait.withResumeUrl(untouched, undefined), untouched);
+
+    const { renderTemplate } = await import("@/features/executions/lib/templates");
+    const { ensureExpressionEngine } = await import("@/features/executions/lib/expressions");
+    await ensureExpressionEngine();
+    const context = wait.withResumeUrl({}, url);
+    assert.equal(renderTemplate("Approve: {{execution.resumeUrl}}", context), `Approve: ${url}`);
+    assert.equal(renderTemplate("{{ $execution.resumeUrl }}?ok=1", context), `${url}?ok=1`);
+
+    // "All Workflow Data" answers the webhook's caller without it
+    assert.deepEqual(wait.withoutResumeUrl({ a: 1, execution: { resumeUrl: url } }), { a: 1 });
+    assert.deepEqual(
+      wait.withoutResumeUrl({ execution: { id: "failed1", resumeUrl: url } }),
+      { execution: { id: "failed1" } }
+    );
+    assert.deepEqual(wait.withoutResumeUrl({ a: 1 }), { a: 1 });
+
+    // The stored copy of the run keeps the address and loses the token
+    const { createRunRedactor } = await import("@/lib/execution-redaction");
+    const redactor = createRunRedactor([], ["tok_secret_123456"]);
+    const stored = "https://app.example.com/api/webhooks/wait/exec1/[REDACTED]";
+    assert.deepEqual(redactor.data(context), { execution: { resumeUrl: stored } });
+    assert.deepEqual(redactor.result(context), { execution: { resumeUrl: stored } });
+    assert.equal(redactor.text(`sent ${url}`), `sent ${stored}`);
+    // The run itself still has the real one
+    assert.equal((context.execution as { resumeUrl: string }).resumeUrl, url);
+  });
+
+  await test("waits for an interval or until a date with one Inngest sleep", async () => {
+    const before = Date.now();
+    const { step, calls } = createWaitStep();
+
+    const output = await waitExecutor({
+      ...baseParams,
+      step,
+      data: { operation: "interval", amount: "{{minutes}}", unit: "minutes" },
+      context: { minutes: 5, kept: true },
+    });
+
+    assert.deepEqual(calls.map((call) => `${call.tool}:${call.id}`), [
+      "run:wait-node-1-start",
+      "sleepUntil:wait-node-1-sleep",
+    ]);
+    const until = (calls[1].arg as Date).getTime();
+    assert.ok(until >= before + 300_000 && until <= Date.now() + 300_000);
+    assert.deepEqual(output, {
+      minutes: 5,
+      kept: true,
+      wait: { resumedBy: "timer", timedOut: false },
+    });
+
+    // A node saved without a mode waits for its interval; the result goes
+    // under the node's own variable name
+    const defaults = createWaitStep();
+    const named = await waitExecutor({
+      ...baseParams,
+      step: defaults.step,
+      data: { amount: "30", variableName: "pause" },
+      context: {},
+    });
+    assert.equal(defaults.calls[1].tool, "sleepUntil");
+    assert.deepEqual(named, { pause: { resumedBy: "timer", timedOut: false } });
+
+    // Until a date, from a variable
+    const date = createWaitStep();
+    const target = new Date(Date.now() + 3_600_000).toISOString();
+    await waitExecutor({
+      ...baseParams,
+      step: date.step,
+      data: { operation: "until", dateTime: "{{order.shipAt}}" },
+      context: { order: { shipAt: target } },
+    });
+    assert.equal((date.calls[1].arg as Date).toISOString(), target);
+
+    // A date that has passed, or no time at all, does not pause the run
+    for (const data of [
+      { operation: "until", dateTime: "2020-01-01T00:00:00Z" },
+      { operation: "interval", amount: "0", unit: "seconds" },
+    ]) {
+      const past = createWaitStep();
+      const result = await waitExecutor({ ...baseParams, step: past.step, data, context: {} });
+      assert.deepEqual(past.calls.map((call) => call.tool), ["run"]);
+      assert.deepEqual(result, { wait: { resumedBy: "timer", timedOut: false } });
+    }
+
+    for (const [data, message] of [
+      [{ operation: "interval", amount: "", unit: "minutes" }, /Wait Amount must be a number/],
+      [{ operation: "interval", amount: "30", unit: "days" }, /longer than the maximum of 7 days/],
+      [{ operation: "until", dateTime: "next week" }, /Date and Time must be a date/],
+      [{ operation: "until", dateTime: "2999-01-01T00:00:00Z" }, /more than the maximum of 7 days away/],
+      [{ operation: "forever" }, /Unsupported resume mode "forever"/],
+    ] as const) {
+      const failing = createWaitStep();
+      await assert.rejects(
+        waitExecutor({ ...baseParams, step: failing.step, data, context: {} }),
+        message
+      );
+      // Nothing was put to sleep
+      assert.ok(failing.calls.every((call) => call.tool === "run"));
+    }
+
+    // An agent's tool call cannot be paused
+    await assert.rejects(
+      waitExecutor({ ...baseParams, step, inline: true, data: { amount: "1" }, context: {} }),
+      /cannot be used as an AI Agent tool/
+    );
+  });
+
+  await test("waits for a call to the resume URL, with a timeout that continues or fails", async () => {
+    const before = Date.now();
+    const called = createWaitStep({
+      name: wait.WAIT_RESUME_EVENT,
+      data: {
+        executionId: "exec1",
+        webhook: {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          query: { source: "email" },
+          body: { approved: true },
+        },
+      },
+    });
+
+    const output = await waitExecutor({
+      ...baseParams,
+      step: called.step,
+      data: { operation: "webhook", variableName: "approval", timeoutAmount: "2", timeoutUnit: "hours" },
+      context: { kept: true },
+    });
+
+    assert.deepEqual(called.calls.map((call) => `${call.tool}:${call.id}`), [
+      "run:wait-node-1-start",
+      "waitForEvent:wait-node-1-webhook",
+    ]);
+    const options = called.calls[1].arg;
+    assert.equal(options.event, "workflows/wait.resume");
+    assert.ok(options.timeout instanceof Date);
+    assert.ok(options.timeout.getTime() >= before + 7_200_000);
+    assert.ok(options.timeout.getTime() <= Date.now() + 7_200_000);
+    assert.deepEqual(output, {
+      kept: true,
+      approval: {
+        resumedBy: "webhook",
+        timedOut: false,
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        query: { source: "email" },
+        body: { approved: true },
+      },
+    });
+
+    // No timeout set: the longest the server allows
+    const open = createWaitStep(null);
+    const startedAt = Date.now();
+    const timedOut = await waitExecutor({
+      ...baseParams,
+      step: open.step,
+      data: { operation: "webhook" },
+      context: {},
+    });
+    assert.ok(open.calls[1].arg.timeout.getTime() >= startedAt + wait.getMaxWaitMs());
+    // Nobody called: the workflow continues and can tell
+    assert.deepEqual(timedOut, {
+      wait: { resumedBy: "timeout", timedOut: true, method: null, headers: {}, query: {}, body: null },
+    });
+
+    // ...or fails, when the node is set to
+    await assert.rejects(
+      waitExecutor({
+        ...baseParams,
+        step: createWaitStep(null).step,
+        data: { operation: "webhook", timeoutAmount: "1", timeoutUnit: "minutes", onTimeout: "fail" },
+        context: {},
+      }),
+      /Wait node: the resume URL was not called before the timeout/
+    );
+    // "Fail" only matters when nobody called
+    const inTime = await waitExecutor({
+      ...baseParams,
+      step: createWaitStep({ data: { webhook: { method: "GET" } } }).step,
+      data: { operation: "webhook", onTimeout: "fail" },
+      context: {},
+    });
+    assert.equal((inTime.wait as { resumedBy: string }).resumedBy, "webhook");
+
+    await assert.rejects(
+      waitExecutor({
+        ...baseParams,
+        step: createWaitStep().step,
+        data: { operation: "webhook", timeoutAmount: "soon" },
+        context: {},
+      }),
+      /Timeout must be a number/
+    );
+  });
+
+  await test("only this execution's resume call wakes it, and a list is paused once", async () => {
+    // The wait-for-event is matched on the execution id
+    const scoped = createWaitStep(null);
+    await waitExecutor({
+      ...baseParams,
+      step: scoped.step,
+      data: { operation: "interval", amount: "1" },
+      context: {},
+    });
+    const webhookWait = createWaitStep(null);
+    await waitExecutor({
+      ...baseParams,
+      step: webhookWait.step,
+      data: { operation: "webhook" },
+      context: {},
+    });
+    assert.match(webhookWait.calls[1].arg.if, /^async\.data\.executionId == "/);
+
+    // Downstream of a list node the Wait node runs once and passes the items on
+    const { runNodeForItems } = await import("@/inngest/items");
+    let runs = 0;
+    const result = await runNodeForItems({
+      node: { id: "w1", type: "WAIT", data: {} },
+      context: {},
+      items: [
+        { json: { id: 1 }, vars: {} },
+        { json: { id: 2 }, vars: {} },
+      ],
+      getActiveOutputs: () => null,
+      execute: async (context) => {
+        runs++;
+        return { ...context, wait: { resumedBy: "timer", timedOut: false } };
+      },
+    });
+    assert.equal(runs, 1);
+    assert.deepEqual(
+      result.outputItems?.["*"].map((item) => item.json),
+      [{ id: 1 }, { id: 2 }]
+    );
+
+    // The function is cancelled by the event the Cancel button sends, and
+    // the node, its resume URL and the status are wired up
+    const { readFileSync } = await import("node:fs");
+    const { join } = await import("node:path");
+    const read = (path: string) => readFileSync(join(process.cwd(), path), "utf8");
+
+    assert.match(read("src/inngest/functions.ts"), /cancelOn: \[\s*\{ event: EXECUTION_CANCEL_EVENT, match: "data\.executionId" \},?\s*\]/);
+    assert.equal(wait.EXECUTION_CANCEL_EVENT, "workflows/execution.cancel");
+    assert.match(read("src/features/executions/lib/executor-registry.ts"), /\[NodeType\.WAIT\]: waitExecutor/);
+    assert.match(read("src/config/node-components.ts"), /\[NodeType\.WAIT\]: WaitNode/);
+    assert.match(read("prisma/schema.prisma"), /enum ExecutionStatus \{[^}]*\bWAITING\b[^}]*\}/);
+    // Waiting executions are not cleaned up or run again while they wait
+    assert.match(read("src/inngest/execution-cleanup.ts"), /notIn: \[ExecutionStatus\.RUNNING, ExecutionStatus\.WAITING\]/);
+    assert.match(read("src/features/executions/server/retry.ts"), /ExecutionStatus\.WAITING/);
+    // Only a waiting execution is cancelled, and only its owner can
+    const cancel = read("src/features/executions/server/cancel.ts");
+    assert.match(cancel, /assertOwnership\(/);
+    assert.match(cancel, /where: \{ id: execution\.id, status: ExecutionStatus\.WAITING \}/);
+    // The resume route checks the token before it touches the database
+    const route = read("src/app/api/webhooks/wait/[executionId]/[token]/route.ts");
+    assert.ok(route.indexOf("verifyResumeToken(") < route.indexOf("prisma.execution"));
+    assert.ok(route.indexOf("verifyResumeToken(") < route.indexOf("rateLimitResponse("));
+  });
+
   console.log(`\n${passed} checks passed`);
 };
 

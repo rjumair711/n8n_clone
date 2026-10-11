@@ -344,6 +344,7 @@ enum NodeType {
   KIMI
   QWEN
   MODEL_ROUTER
+  WAIT
 }
 
 model Node {
@@ -398,6 +399,8 @@ enum ExecutionStatus {
   RUNNING
   SUCCESS
   FAILED
+  // Paused by a Wait node until a time or a call to its resume URL
+  WAITING
 }
 
 model Execution {
@@ -430,6 +433,11 @@ model Execution {
   // Set when the retention cleanup removed this execution's data and node
   // logs and kept only the row
   dataDeletedAt DateTime?
+
+  // Set while the status is WAITING: what the Wait node waits for ("time" or
+  // "webhook") and when the wait, or its timeout, ends
+  waitingFor   String?
+  waitingUntil DateTime?
 
   nodes ExecutionNode[]
 }

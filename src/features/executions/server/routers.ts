@@ -4,6 +4,10 @@ import { createTRPCRouter, protectedProcedure } from "@/trpc/init";
 import z from "zod";
 import { TRPCError } from "@trpc/server";
 import { RetryError, retryExecution } from "./retry";
+import { CancelError, cancelExecution } from "./cancel";
+import { ExecutionStatus } from "@prisma/client";
+import { getAppUrl } from "@/lib/app-url";
+import { WAITING_FOR_WEBHOOK, getResumeLink } from "@/lib/execution-wait";
 import { assertOwnership } from "@/lib/ownership";
 import {
     RETENTION_DAY_OPTIONS,
@@ -66,6 +70,24 @@ export const executionsRouter = createTRPCRouter({
             }
         }),
 
+    // CANCEL: only an execution that is paused at a Wait node
+    cancel: protectedProcedure
+        .input(z.object({ id: z.string() }))
+        .mutation(async ({ ctx, input }) => {
+            try {
+                return await cancelExecution(input.id, ctx.auth.user.id);
+            } catch (error) {
+                if (error instanceof CancelError) {
+                    throw new TRPCError({
+                        code: error.reason === "not_found" ? "NOT_FOUND" : "BAD_REQUEST",
+                        message: error.message,
+                    });
+                }
+
+                throw error;
+            }
+        }),
+
     // UPDATE ONE
     getOne: protectedProcedure
         .input(z.object({ id: z.string() }))
@@ -88,8 +110,16 @@ export const executionsRouter = createTRPCRouter({
                 (found) => found.workflow.userId
             )
 
+            // Shown to the owner while a Wait node waits for it to be called
+            const resumeUrl =
+                execution.status === ExecutionStatus.WAITING &&
+                execution.waitingFor === WAITING_FOR_WEBHOOK
+                    ? getResumeLink(getAppUrl(), execution.id)?.url ?? null
+                    : null
+
             return {
                 ...execution,
+                resumeUrl,
                 workflow: { id: workflow.id, name: workflow.name },
             }
         }),

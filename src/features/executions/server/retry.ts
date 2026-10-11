@@ -58,6 +58,13 @@ export const retryExecution = async (executionId: string, userId: string) => {
         throw new RetryError("This execution is still running.", "not_retryable");
     }
 
+    if (execution.status === ExecutionStatus.WAITING) {
+        throw new RetryError(
+            "This execution is waiting at a Wait node. Cancel it before running it again.",
+            "not_retryable"
+        );
+    }
+
     if (!execution.trigger) {
         throw new RetryError(
             "This execution cannot be retried: it ran before its starting data was being kept.",

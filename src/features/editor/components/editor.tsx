@@ -105,9 +105,11 @@ export const Editor = ({ workflowId }: { workflowId: string }) => {
         status:
             node.status === "RUNNING"
                 ? "loading"
-                : node.status === "SUCCESS"
-                    ? "success"
-                    : "error",
+                : node.status === "WAITING"
+                    ? "waiting"
+                    : node.status === "SUCCESS"
+                        ? "success"
+                        : "error",
         duration:
             node.completedAt && node.startedAt
                 ? formatDuration(
@@ -199,7 +201,8 @@ export const Editor = ({ workflowId }: { workflowId: string }) => {
         executionNodes.forEach((node: any) => {
             setNodeStatus(node.nodeId, {
                 status:
-                    node.status === "RUNNING"
+                    // A node paused at a Wait is still in progress on the canvas
+                    node.status === "RUNNING" || node.status === "WAITING"
                         ? "loading"
                         : node.status === "SUCCESS"
                             ? "success"

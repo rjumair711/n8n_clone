@@ -58,12 +58,17 @@ export type RunRedactor = {
 /**
  * Redacts what is about to be stored about a run. Takes the encrypted
  * values of the credentials the run may use; the plain values never leave
- * this module.
+ * this module. `otherSecrets` are plain values that belong to the run itself
+ * (the token of its resume URL).
  */
 export const createRunRedactor = (
-  encryptedCredentialValues: readonly string[] = []
+  encryptedCredentialValues: readonly string[] = [],
+  otherSecrets: readonly string[] = []
 ): RunRedactor => {
-  const secrets = getSecrets(encryptedCredentialValues);
+  const secrets = [
+    ...getSecrets(encryptedCredentialValues),
+    ...otherSecrets.filter(Boolean),
+  ];
 
   return {
     data: (value) => redactValue(value, { secrets }),

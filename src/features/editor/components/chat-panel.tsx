@@ -89,7 +89,8 @@ export const ChatPanel = ({
                 staleTime: 0,
             });
 
-            if (execution.status !== "RUNNING") return execution;
+            // A run paused at a Wait node has not finished either
+            if (execution.status !== "RUNNING" && execution.status !== "WAITING") return execution;
         }
 
         throw new Error("Timed out waiting for the workflow to finish");
