@@ -13,7 +13,7 @@ import {
 } from "./ui/sheet"
 import { Input } from "@/components/ui/input"
 import { NodeType } from "@prisma/client"
-import { Braces, DatabaseZap, FolderSync, ServerCog, FileInput, FileOutput, FileText, PencilRuler, Plug, Rss, ScanText, Tags } from "lucide-react"
+import { Braces, BrainCircuit, DatabaseZap, FolderSync, ServerCog, FileInput, FileOutput, FileText, PencilRuler, Plug, Rss, ScanText, Tags } from "lucide-react"
 import { AlertTriangle, ArrowDownUp, CopyMinus, Group, ListEnd, OctagonX, Reply, Sigma, Split, Workflow } from "lucide-react"
 import { Clock, FilterIcon, GlobeIcon, MousePointerIcon, Send, VariableIcon, ChevronDown, ChevronRight, Code2, Bot, MemoryStickIcon, Search, Type, Calculator, GitBranch, GitFork, Merge, Repeat, Webhook, MessageSquare } from "lucide-react"
 import { toast } from "sonner"
@@ -317,6 +317,12 @@ const logicNodes: NodeTypeOption[] = [
         label: "Memory",
         description: "Store data in a memory",
         icon: MemoryStickIcon
+    },
+    {
+        type: NodeType.POSTGRES_MEMORY,
+        label: "Postgres Memory",
+        description: "Lasting agent memory: chat history with a summary of older messages, and facts about each contact",
+        icon: BrainCircuit
     },
 ]
 

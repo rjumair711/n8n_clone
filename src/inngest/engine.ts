@@ -62,6 +62,7 @@ const AGENT_SUPPLY_TYPES = new Set([
   "QWEN",
   "MODEL_ROUTER",
   "BUFFER_MEMORY",
+  "POSTGRES_MEMORY",
 ]);
 
 export const LOOP_BODY_OUTPUT = "loop";

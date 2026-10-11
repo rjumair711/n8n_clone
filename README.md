@@ -206,7 +206,7 @@ Works like the n8n AI Agent: a chat model that decides which tools to call and l
 
 * **Chat Model (required):** connect an OpenAI, Anthropic, Gemini, DeepSeek, Kimi, Qwen or Chat Model node to the Chat Model port; its credential and model are used. A **Model Router** can be connected instead, to try a cheap model first (see below).
 * **Parser (optional):** a Structured Output Parser makes the agent answer with JSON in a structure you define; `{{output}}` becomes an object.
-* **Memory (optional):** a Buffer Memory node keeps the last N messages per session and replays them as real chat turns.
+* **Memory (optional):** a Memory node keeps the last N messages per session and replays them as real chat turns. A **Postgres Memory** node adds a summary of older messages and long-term facts about each contact (see "Persistent memory").
 * **Tools (optional):** any node connected to the Tools port becomes a tool. Give each one a name and description in the agent's settings. An MCP Client node adds all the tools of an MCP server; an Execute Workflow node makes another workflow a tool; a Vector Store node lets the agent search your documents.
 * **`{{$fromAI "name" "description"}}`:** write this in any field of a tool node to let the agent fill in that value.
 * **Prompt source:** taken from the trigger (`{{chatInput}}`, set by the Chat, Telegram and WhatsApp triggers) or defined in the node with `{{variables}}`.
@@ -255,6 +255,24 @@ Each tool in the agent's settings has a **Require approval** switch. When the mo
 * Cancelling a waiting execution withdraws its requests. If the request cannot be sent (a wrong credential, say), the run fails with that error instead of waiting.
 * **Output:** `{{output}}` and `{{<variableName>.output}}`, plus `intermediateSteps` when enabled.
 * **Chat panel:** workflows with a Chat Trigger get an "Open chat" button in the editor to talk to the agent.
+
+### Persistent memory (Postgres Memory)
+
+A second node for the agent's Memory port, next to the simple Memory node. It keeps everything in the app's own database, so it needs no credential.
+
+* **Chat history per session.** Every turn is stored under the Session ID (by default `{{sessionId}}`, which the chat, Telegram, WhatsApp, Messenger and Instagram triggers set). **Message Limit** (default 20, up to 100) is how many of the latest messages the model is given; older ones stay stored.
+* **Summarise Older Messages** (off by default) keeps a running summary of what no longer fits in the limit and gives it to the model at the start of every turn. It is written by the agent's own model after a turn, once six messages have fallen out of the window, so not every turn pays for one. Its cost is recorded with the agent's. A summary that cannot be written never fails the run; it is tried again after a later turn.
+* **Long-Term Facts** (on by default) are key/value notes about a contact that outlive the conversation: a name, a preference, an order number. The agent gets two built-in tools:
+  * `recall_facts` reads everything saved about the contact;
+  * `remember_fact` saves one fact under a short key, replaces it when the key exists, and removes it when the value is empty.
+
+  What is saved is also shown to the model at the start of every turn, so it does not have to ask first. The two tools only touch the agent's own notes and never ask for approval.
+* **Contact ID** says who the facts are about. Empty means the session. Use something that stays the same for a person, for example `{{whatsapp.from}}` or a customer ID, so the facts are there in the next conversation too.
+* **Limits:** 50 facts per contact, a key of up to 64 characters (lower case letters, digits and `_`), a value of one line of up to 500 characters.
+* **Facts belong to the account, not to one workflow.** Every agent of the same account that uses the same Contact ID sees and changes the same facts. Another account never does.
+* **What the model wrote is treated as notes.** The summary and the facts are given to the model marked as data, with the instruction not to follow anything written inside them, and a fact cannot contain line breaks or angle brackets. This lowers, but cannot remove, the risk that a user talks the agent into "remembering" an instruction.
+* Facts and summaries hold what people told the agent. They are deleted with the account. There is no screen to view or delete them yet; the agent removes a fact when asked to forget it.
+* The older **Memory** node works as before.
 
 ### Website chat widget
 
