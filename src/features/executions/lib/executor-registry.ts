@@ -47,6 +47,7 @@ import {
   stopAndErrorExecutor,
   waitExecutor,
   approvalExecutor,
+  formExecutor,
 } from '../components/core/executors';
 import {
   aggregateExecutor,
@@ -130,6 +131,8 @@ const baseExecutors: Record<NodeType, NodeExecutor<any>> = {
   [NodeType.STOP_AND_ERROR]: stopAndErrorExecutor,
   [NodeType.WAIT]: waitExecutor,
   [NodeType.APPROVAL]: approvalExecutor,
+  [NodeType.FORM_TRIGGER]: contextTriggerExecutor,
+  [NodeType.FORM]: formExecutor,
   [NodeType.TELEGRAM_TRIGGER]: contextTriggerExecutor,
   [NodeType.WHATSAPP_TRIGGER]: contextTriggerExecutor,
   [NodeType.GMAIL]: gmailExecutor,

@@ -57,6 +57,8 @@ import {
     TelegramTriggerNode,
     WaitNode,
     ApprovalNode,
+    FormNode,
+    FormTriggerNode,
     WhatsappTriggerNode,
 } from '@/features/executions/components/core/nodes';
 import {
@@ -130,6 +132,8 @@ export const nodeComponents: NodeTypes = {
     [NodeType.STOP_AND_ERROR]: StopAndErrorNode,
     [NodeType.WAIT]: WaitNode,
     [NodeType.APPROVAL]: ApprovalNode,
+    [NodeType.FORM_TRIGGER]: FormTriggerNode,
+    [NodeType.FORM]: FormNode,
     [NodeType.TELEGRAM_TRIGGER]: TelegramTriggerNode,
     [NodeType.WHATSAPP_TRIGGER]: WhatsappTriggerNode,
     [NodeType.GMAIL]: GmailNode,

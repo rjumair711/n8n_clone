@@ -31,6 +31,7 @@ const TRIGGER_TYPES = new Set([
   "GMAIL_TRIGGER",
   "TYPEFORM_TRIGGER",
   "RSS_FEED_TRIGGER",
+  "FORM_TRIGGER",
 ]);
 
 // Nodes with "sub-" ports that other nodes plug into as configuration

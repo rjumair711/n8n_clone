@@ -39,6 +39,8 @@ import { useQuery } from "@tanstack/react-query";
 import { useParams } from "next/navigation";
 import { ChatModelField, type ChatModelNodeType } from "./chat-model-field";
 import { FallbackModelsField, cleanFallbackModels } from "./fallback-models-field";
+import { FormFieldsField } from "./form-fields-field";
+import { cleanFormFields, parseFormFields } from "@/lib/form-fields";
 
 export type IntegrationField = {
   name: string;
@@ -49,7 +51,17 @@ export type IntegrationField = {
   // "Load models" button (see chat-model-field.tsx)
   // "fallbacks" is a Chat Model's ordered list of models to try next
   // (see fallback-models-field.tsx), saved as a JSON string
-  type?: "text" | "textarea" | "select" | "workflow" | "switch" | "model" | "fallbacks";
+  // "formFields" is the list of fields of a hosted form (see
+  // form-fields-field.tsx), saved as a JSON string
+  type?:
+    | "text"
+    | "textarea"
+    | "select"
+    | "workflow"
+    | "switch"
+    | "model"
+    | "fallbacks"
+    | "formFields";
   // For "model": the node the field belongs to
   modelNodeType?: ChatModelNodeType;
   // Other fields to set when this one changes, e.g. a provider preset
@@ -62,6 +74,9 @@ export type IntegrationField = {
   defaultValue?: string;
   // Show the field only for these operations (all operations when omitted)
   operations?: string[];
+  // For "formFields": added to the node's variable name where the values
+  // are shown, e.g. ".form" for {{wait.form.name}}
+  variableSuffix?: string;
   // A warning shown under the field while it returns text
   warning?: (value: string) => string | undefined;
 };
@@ -101,6 +116,11 @@ export type IntegrationConfig = {
   // For triggers another service calls: shows the URL
   // <app>/api/webhooks/<webhookPath>/<workflowId> to copy
   webhookPath?: string;
+  // For the Form Trigger: shows the form's address, <app>/forms/<node id>
+  formUrl?: boolean;
+  // The variable form values are shown under when the node has no
+  // Variable Name of its own (the Form Trigger's {{form}})
+  formVariable?: string;
 };
 
 export type IntegrationFormValues = Record<string, string>;
@@ -111,6 +131,8 @@ interface Props {
   onOpenChange: (open: boolean) => void;
   onSubmit?: (values: IntegrationFormValues) => void;
   defaultValues?: Partial<IntegrationFormValues>;
+  // The node the dialog belongs to
+  nodeId?: string;
 }
 
 const VARIABLE_NAME_PATTERN = /^[A-Za-z_$][A-Za-z0-9_$]*$/;
@@ -189,6 +211,7 @@ export const IntegrationDialog = ({
   onOpenChange,
   onSubmit,
   defaultValues = {},
+  nodeId,
 }: Props) => {
   const form = useForm<IntegrationFormValues>({
     defaultValues: getValues(config, defaultValues),
@@ -216,6 +239,11 @@ export const IntegrationDialog = ({
   const webhookUrl = config.webhookPath
     ? `${process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000"}/api/webhooks/${config.webhookPath}/${params.workflowId}`
     : null;
+
+  const formUrl =
+    config.formUrl && nodeId
+      ? `${process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000"}/forms/${nodeId}`
+      : null;
 
   const visibleFields = config.fields.filter(
     (field) => !field.operations || field.operations.includes(operation)
@@ -247,6 +275,22 @@ export const IntegrationDialog = ({
         form.setError(field.name, { message: `${field.label} is required` });
         valid = false;
       }
+
+      if (field.type === "formFields") {
+        const fields = parseFormFields(values[field.name]);
+        const emptyDropdown = fields.find(
+          (entry) => entry.type === "dropdown" && entry.options.length === 0
+        );
+
+        if (fields.length === 0 || emptyDropdown) {
+          form.setError(field.name, {
+            message: emptyDropdown
+              ? `The dropdown "${emptyDropdown.label}" needs at least one option`
+              : "Add at least one field with a label",
+          });
+          valid = false;
+        }
+      }
     }
 
     if (!valid) return;
@@ -255,6 +299,10 @@ export const IntegrationDialog = ({
     for (const field of config.fields) {
       if (field.type === "fallbacks") {
         values[field.name] = cleanFallbackModels(values[field.name]);
+      }
+      // Rows of a form that were left without a label are dropped too
+      if (field.type === "formFields" && values[field.name] !== undefined) {
+        values[field.name] = cleanFormFields(values[field.name]);
       }
     }
 
@@ -285,6 +333,22 @@ export const IntegrationDialog = ({
                 />
                 <p className="text-sm text-muted-foreground">
                   Paste this as the Callback URL in the other service.
+                </p>
+              </div>
+            )}
+
+            {formUrl && (
+              <div className="space-y-2">
+                <FormLabel>Form URL</FormLabel>
+                <Input
+                  value={formUrl}
+                  readOnly
+                  className="font-mono text-sm"
+                  onFocus={(event) => event.target.select()}
+                />
+                <p className="text-sm text-muted-foreground">
+                  The public address of this form. It works once the workflow
+                  is saved and active.
                 </p>
               </div>
             )}
@@ -442,6 +506,15 @@ export const IntegrationDialog = ({
                       <FallbackModelsField
                         value={field.value ?? ""}
                         onChange={field.onChange}
+                      />
+                    ) : definition.type === "formFields" ? (
+                      <FormFieldsField
+                        value={field.value ?? ""}
+                        onChange={field.onChange}
+                        variableName={
+                          (config.formVariable ?? watchVariableName) +
+                          (definition.variableSuffix ?? "")
+                        }
                       />
                     ) : definition.type === "select" ? (
                       <Select

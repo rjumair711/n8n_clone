@@ -1,4 +1,4 @@
-import { ExecutionStatus } from "@prisma/client";
+import { ExecutionStatus, Prisma } from "@prisma/client";
 import { NonRetriableError } from "inngest";
 import prisma from "@/lib/db";
 
@@ -14,12 +14,15 @@ export const markExecutionWaiting = async ({
   nodeId,
   waitingFor,
   until,
+  data,
 }: {
   executionId: string;
   nodeId: string;
-  // "time", "webhook" or "approval"
+  // "time", "webhook", "approval" or "form"
   waitingFor: string;
   until: Date;
+  // For "form": the page that is shown
+  data?: Prisma.InputJsonValue;
 }) => {
   await prisma.execution.updateMany({
     where: { id: executionId, status: ExecutionStatus.RUNNING },
@@ -27,6 +30,7 @@ export const markExecutionWaiting = async ({
       status: ExecutionStatus.WAITING,
       waitingFor,
       waitingUntil: until,
+      ...(data === undefined ? {} : { waitingData: data }),
     },
   });
 
@@ -56,6 +60,7 @@ export const markExecutionResumed = async ({
       status: ExecutionStatus.RUNNING,
       waitingFor: null,
       waitingUntil: null,
+      waitingData: Prisma.DbNull,
     },
   });
 

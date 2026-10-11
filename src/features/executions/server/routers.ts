@@ -7,7 +7,12 @@ import { RetryError, retryExecution } from "./retry";
 import { CancelError, cancelExecution } from "./cancel";
 import { ExecutionStatus } from "@prisma/client";
 import { getAppUrl } from "@/lib/app-url";
-import { WAITING_FOR_WEBHOOK, getResumeLink } from "@/lib/execution-wait";
+import {
+    WAITING_FOR_WEBHOOK,
+    getFormLink,
+    getResumeLink,
+} from "@/lib/execution-wait";
+import { WAITING_FOR_FORM } from "@/lib/form-fields";
 import { assertOwnership } from "@/lib/ownership";
 import {
     RETENTION_DAY_OPTIONS,
@@ -117,9 +122,17 @@ export const executionsRouter = createTRPCRouter({
                     ? getResumeLink(getAppUrl(), execution.id)?.url ?? null
                     : null
 
+            // The same for the form a Wait or Form node shows
+            const formUrl =
+                execution.status === ExecutionStatus.WAITING &&
+                execution.waitingFor === WAITING_FOR_FORM
+                    ? getFormLink(getAppUrl(), execution.id)?.url ?? null
+                    : null
+
             return {
                 ...execution,
                 resumeUrl,
+                formUrl,
                 workflow: { id: workflow.id, name: workflow.name },
             }
         }),

@@ -71,6 +71,7 @@ export const createIntegrationNode = (
           onOpenChange={setDialogOpen}
           onSubmit={handleSubmit}
           defaultValues={nodeData}
+          nodeId={props.id}
         />
         {config.trigger ? (
           <BaseTriggerNode

@@ -134,9 +134,11 @@ const signingSecrets = (): string[] => {
   return previous && previous !== current ? [current, previous] : [current];
 };
 
-const sign = (secret: string, executionId: string) =>
+// "wait-resume": the resume URL. "form-page": the link to a form the
+// execution is waiting for. One cannot be used as the other.
+const sign = (secret: string, executionId: string, purpose = "wait-resume") =>
   createHmac("sha256", secret)
-    .update(`wait-resume:${executionId}`)
+    .update(`${purpose}:${executionId}`)
     .digest("base64url");
 
 export const createResumeToken = (executionId: string) =>
@@ -175,14 +177,54 @@ export const getResumeLink = (
   }
 };
 
+// The form a waiting execution shows: <app>/forms/wait/<executionId>/<token>
+const FORM_PURPOSE = "form-page";
+
+export const createFormToken = (executionId: string) =>
+  sign(signingSecrets()[0], executionId, FORM_PURPOSE);
+
+export const verifyFormToken = (executionId: string, token: string) => {
+  if (!executionId || !token) return false;
+
+  let verified = false;
+  for (const secret of signingSecrets()) {
+    if (secretsMatch(token, sign(secret, executionId, FORM_PURPOSE))) verified = true;
+  }
+
+  return verified;
+};
+
+export const buildFormUrl = (appUrl: string, executionId: string) =>
+  `${appUrl}/forms/wait/${encodeURIComponent(executionId)}/${createFormToken(executionId)}`;
+
 /**
- * Adds {{execution.resumeUrl}} to the data a run starts with, so a node
- * before the Wait node can send the URL out. What a trigger put under
- * `execution` (the Error Trigger's failed run) is kept.
+ * The form link of an execution and the secret part of it, or null on a
+ * server without ENCRYPTION_KEY.
+ */
+export const getFormLink = (
+  appUrl: string,
+  executionId: string
+): { url: string; token: string } | null => {
+  try {
+    return {
+      url: buildFormUrl(appUrl, executionId),
+      token: createFormToken(executionId),
+    };
+  } catch {
+    return null;
+  }
+};
+
+/**
+ * Adds {{execution.resumeUrl}} (and {{execution.formUrl}}) to the data a
+ * run starts with, so a node before the Wait node can send the URL out.
+ * What a trigger put under `execution` (the Error Trigger's failed run) is
+ * kept.
  */
 export const withResumeUrl = (
   context: Record<string, unknown>,
-  resumeUrl: string | undefined
+  resumeUrl: string | undefined,
+  formUrl?: string
 ): Record<string, unknown> => {
   if (!resumeUrl) return context;
 
@@ -195,6 +237,7 @@ export const withResumeUrl = (
         ? existing
         : {}),
       resumeUrl,
+      ...(formUrl ? { formUrl } : {}),
     },
   };
 };
@@ -212,7 +255,11 @@ export const withoutResumeUrl = (
     return context;
   }
 
-  const { resumeUrl: _resumeUrl, ...execution } = existing as Record<string, unknown>;
+  const {
+    resumeUrl: _resumeUrl,
+    formUrl: _formUrl,
+    ...execution
+  } = existing as Record<string, unknown>;
   const { execution: _execution, ...rest } = context;
 
   return Object.keys(execution).length > 0 ? { ...rest, execution } : rest;

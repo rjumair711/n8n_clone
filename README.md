@@ -39,6 +39,7 @@ The platform is designed as a scalable SaaS product with:
 * Error handling: Retry On Fail, Continue on error, Error Trigger, Stop and Error
 * Wait node: pause a run for a time, until a date, or until its resume URL is called (see "Waiting executions")
 * Human approval: AI Agent tools that wait for a person's Approve or Reject, and a Send and Wait for Approval node
+* Hosted forms: a Form Trigger with its own public page, multi-step forms with the Form node, and a Wait node that resumes on a form
 * Inngest background execution system
 * Dynamic time-based execution engine via an automated Background Ticker (`* * * * *` clock matching system)
 * Shared execution context
@@ -57,6 +58,7 @@ The **Wait** node pauses a run and continues it later. While it is paused nothin
 | After Time Interval | after an amount of seconds, minutes, hours or days |
 | At Specified Time | at a date and time (ISO, e.g. `2026-12-24T09:00:00Z`; no time zone means UTC). A time in the past does not wait |
 | On Webhook Call | when the execution's resume URL is called (GET, POST, PUT or PATCH) |
+| On Form Submitted | when the form at `{{execution.formUrl}}` is submitted (see "Forms"). The answers are at `{{wait.form.<field>}}` |
 
 * **Resume URL.** Every execution has its own: `<app>/api/webhooks/wait/<executionId>/<token>`. The token is an HMAC of the execution id made with `ENCRYPTION_KEY`, so the URL cannot be guessed and nothing is stored for it. It is available from the first node on as `{{execution.resumeUrl}}` (or `{{ $execution.resumeUrl }}`), so a node before the Wait node can send it out, for example as an approval link in an email. Whoever has the URL can continue that one execution, so send it only to who should decide.
 * **What the call sent** is under the Wait node's variable (default `wait`): `{{wait.body}}`, `{{wait.query}}`, `{{wait.headers}}`, `{{wait.method}}`, and `{{wait.resumedBy}}` (`webhook`, `timeout` or `timer`).
@@ -75,6 +77,22 @@ The **Send and Wait for Approval** node asks a person a yes/no question in a nor
 * The run continues through the **Approved** or the **Rejected** output. Later nodes can also read `{{approval.approved}}`, `{{approval.decision}}` (`approved`, `rejected` or `expired`), `{{approval.timedOut}}` and `{{approval.decidedVia}}` (`link` or `app`).
 * **Timeout** (default 24 hours, at most the longest wait) and **When Nobody Answers**: continue through Rejected, or fail the workflow.
 * While it waits the execution is **Waiting** and can be cancelled. After a list node it asks once for the whole list.
+
+## Forms
+
+A workflow can have its own form: a public page hosted by the app, no sign-in needed.
+
+* **Form Trigger.** Its settings show the **Form URL**, `<app>/forms/<id>` (the id is the trigger node's). The page works while the workflow is active. A submission starts the workflow with the answers at `{{form.<field>}}` and `{{formMeta.submittedAt}}`.
+* **Fields:** Text, Email, Number, Dropdown, Date, File Upload and Checkbox, each with a label and a Required switch. A field's value is read by a name made from its label (`Your name` becomes `{{form.your_name}}`); the settings show it under each field.
+* **Title, description, button label**, and **After Submit**: show a thank-you message, or redirect to a URL (http or https only).
+* **Form node:** the next page of a multi-step form. Place it anywhere after the Form Trigger. When the run reaches it, the person who is filling in the form is shown that page next, and the workflow waits for it (the same Inngest wait-for-event as the Wait node: the execution is **Waiting**, and can be cancelled). Its title, description and messages can use earlier answers, for example `Hello {{form.your_name}}`. The answers are at `{{formPage.<field>}}`. The form ends with the After Submit setting of the last page that was submitted.
+* **Wait node, On Form Submitted:** pauses a run of any workflow until a form is filled in. Send the link `{{execution.formUrl}}` from an earlier node (an email, a chat message). It is different for every execution, cannot be guessed, and is not the resume URL. The execution's page shows it while the run waits.
+* **Uploaded files** are stored like every other workflow file: the same size limit per file (`MAX_FILE_SIZE_MB`), counted against the workflow owner's storage (`MAX_USER_STORAGE_MB`), removed after `FILE_RETENTION_DAYS`, and only ever downloaded as attachments. The value of a file field is a file variable: use `form.cv` in an email's Attachments, in Extract from File, and so on. Nothing is stored when the submission is not valid.
+* **Checked on the server:** required fields, email and date formats, numbers, that a dropdown value is one of its options, and file sizes. Only the form's own fields are read; anything else that is sent is ignored.
+* **Rate limit:** 30 submissions per minute per form (`FORM_RATE_LIMIT_PER_MINUTE`), counted before anything else is done.
+* **CAPTCHA (optional):** the Form Trigger's "Require a CAPTCHA" switch adds a Cloudflare Turnstile check, verified on the server before any file is stored. It needs `TURNSTILE_SITE_KEY` and `TURNSTILE_SECRET_KEY`; without both keys the form works without the check.
+* A page of a running execution can be submitted once. A timeout on the Form node (default 1 hour) decides how long the page stays open, and whether the workflow fails or continues when nobody submits it.
+* Limits: a form has at most 30 fields; a workflow that is switched off shows "This form is not available"; after a submission the page waits up to a minute for a next page before it shows the thank-you message.
 
 ## Per-item execution
 
@@ -336,6 +354,7 @@ They are on the Chat Model, DeepSeek, Kimi and Qwen nodes (`{{chatModel.modelUse
 | WhatsApp Trigger    | Runs when your WhatsApp Business number receives a message (verify token + signature check)                |
 | Gmail Trigger       | Runs when a new email arrives; polls every 1, 5, 15 or 60 minutes with an optional Gmail search filter      |
 | Typeform Trigger    | Runs when a typeform is submitted; answers are available by question title                                 |
+| Form Trigger        | Runs when someone submits the workflow's own hosted form at `/forms/<id>` (see "Forms")                    |
 | RSS Feed Trigger    | Runs when a new item appears in an RSS or Atom feed; polls every 1, 5, 15, 60 minutes or daily             |
 | Google Form Trigger | Form submission automation                                                                                 |
 | Stripe Trigger      | Payment event automation                                                                                   |
@@ -386,6 +405,7 @@ Every execution also keeps the trigger and the data it started with, so it can b
 | Delay            | Pause workflow                                                            |
 | Wait             | Pause for a time, until a date, or until the execution's resume URL is called; timeout that continues or fails; cancellable |
 | Send and Wait for Approval | Ask a person to approve or reject (in the app, by email, Slack, Telegram or WhatsApp) and continue through the Approved or Rejected output |
+| Form             | The next page of a multi-step hosted form; the workflow waits until it is submitted |
 | Date & Time      | Get current time, format, manipulate, or compare dates                    |
 | Text Formatter   | Transform, clean, or extract text strings (Uppercase, Replace, Regex)     |
 | Calculator       | Perform mathematical operations on numbers or variables                   |
@@ -855,6 +875,7 @@ The live app on Vercel and local development use the **same** database, so the s
 | `SANDBOX_MAX_OUTPUT_KB` | The most a Code node or one expression may return, in KB, default 1024 |
 | `MAX_ITEMS_PER_NODE` | Items one node may process in a list, default 100 |
 | `WAIT_MAX_DAYS` | The longest a Wait node may wait, in days, default 7 (the limit of Inngest's free plan) |
+| `FORM_RATE_LIMIT_PER_MINUTE` | Submissions per minute for one hosted form, default 30 |
 | `MAX_FILE_SIZE_MB`, `MAX_USER_STORAGE_MB`, `FILE_RETENTION_DAYS` | Workflow file limits, defaults 10, 200 and 7 |
 | `MAX_UNCOMPRESSED_FILE_MB`, `MAX_ZIP_ENTRIES` | What an XLSX or DOCX file may unpack to, defaults 50 and 2000 |
 | `PDF_MAX_PAGES`, `PDF_EXTRACT_TIMEOUT_SECONDS` | Pages read from a PDF and the time allowed, defaults 200 and 20 |

@@ -4,6 +4,7 @@ import { CredentialType } from "@prisma/client";
 import {
   AlertTriangle,
   ArrowDownUp,
+  ClipboardList,
   CopyMinus,
   Group,
   Hourglass,
@@ -24,6 +25,7 @@ import {
   getChatModelProvider,
 } from "../../lib/chat-model-providers";
 import type { ChatModelNodeType } from "../chat-model-field";
+import { DEFAULT_THANK_YOU_MESSAGE } from "@/lib/form-fields";
 import {
   APPROVAL_CHANNELS,
   APPROVAL_DEFAULT_TIMEOUT_AMOUNT,
@@ -134,6 +136,70 @@ const waitUnitOptions = [
   { value: "days", label: "Days" },
 ];
 
+// The settings of a hosted form page, shared by the Form Trigger, the Form
+// node and the Wait node's "On Form Submitted"
+const formPageFields = (
+  operations?: string[],
+  variableSuffix?: string
+): IntegrationField[] => [
+  {
+    name: "formTitle",
+    label: "Form Title",
+    placeholder: "Contact us",
+    required: true,
+    operations,
+  },
+  {
+    name: "formDescription",
+    label: "Form Description",
+    type: "textarea",
+    placeholder: "We answer within one working day.",
+    operations,
+  },
+  {
+    name: "formFields",
+    label: "Fields",
+    type: "formFields",
+    variableSuffix,
+    description:
+      "Text, Email, Number, Dropdown, Date, File Upload and Checkbox. An uploaded file is stored like other workflow files (same size limit, removed after the retention period) and can be used as a file variable, for example in an email's Attachments.",
+    required: true,
+    operations,
+  },
+  {
+    name: "submitLabel",
+    label: "Button Label",
+    placeholder: "Submit",
+    operations,
+  },
+  {
+    name: "afterSubmit",
+    label: "After Submit",
+    type: "select",
+    defaultValue: "message",
+    options: [
+      { value: "message", label: "Show a message" },
+      { value: "redirect", label: "Redirect to a URL" },
+    ],
+    operations,
+  },
+  {
+    name: "thankYouMessage",
+    label: "Thank-you Message",
+    type: "textarea",
+    placeholder: DEFAULT_THANK_YOU_MESSAGE,
+    description: "Used for Show a message.",
+    operations,
+  },
+  {
+    name: "redirectUrl",
+    label: "Redirect URL",
+    placeholder: "https://example.com/thanks",
+    description: "Used for Redirect to a URL. Must start with http:// or https://.",
+    operations,
+  },
+];
+
 export const waitConfig: IntegrationConfig = {
   label: "Wait",
   description:
@@ -144,8 +210,9 @@ export const waitConfig: IntegrationConfig = {
     { value: "interval", label: "After Time Interval" },
     { value: "until", label: "At Specified Time" },
     { value: "webhook", label: "On Webhook Call" },
+    { value: "form", label: "On Form Submitted" },
   ],
-  hint: "The resume URL is {{execution.resumeUrl}} (or {{ $execution.resumeUrl }}). It is different for every execution and is available from the start, so a node before this one can send it out, for example as an approval link in an email. What the call sent is at {{<name>.body}} and {{<name>.query}}; {{<name>.timedOut}} is true when nobody called in time.",
+  hint: "The resume URL is {{execution.resumeUrl}} (or {{ $execution.resumeUrl }}). It is different for every execution and is available from the start, so a node before this one can send it out, for example as an approval link in an email. What the call sent is at {{<name>.body}} and {{<name>.query}}; {{<name>.timedOut}} is true when nobody called in time. For On Form Submitted the link to send is {{execution.formUrl}}, and the answers are at {{<name>.form}}.",
   fields: [
     {
       name: "amount",
@@ -173,13 +240,14 @@ export const waitConfig: IntegrationConfig = {
       required: true,
       operations: ["until"],
     },
+    ...formPageFields(["form"], ".form"),
     {
       name: "timeoutAmount",
       label: "Timeout",
       placeholder: "24",
       description:
-        "How long to wait for the call. Empty: as long as the server allows (7 days unless WAIT_MAX_DAYS is set).",
-      operations: ["webhook"],
+        "How long to wait for the call or the form. Empty: as long as the server allows (7 days unless WAIT_MAX_DAYS is set).",
+      operations: ["webhook", "form"],
     },
     {
       name: "timeoutUnit",
@@ -187,7 +255,7 @@ export const waitConfig: IntegrationConfig = {
       type: "select",
       defaultValue: "hours",
       options: waitUnitOptions,
-      operations: ["webhook"],
+      operations: ["webhook", "form"],
     },
     {
       name: "onTimeout",
@@ -199,19 +267,66 @@ export const waitConfig: IntegrationConfig = {
         { value: "continue", label: "Continue the workflow" },
         { value: "fail", label: "Fail the workflow" },
       ],
-      operations: ["webhook"],
+      operations: ["webhook", "form"],
     },
   ],
 };
 
 export const WaitNode = createIntegrationNode(waitConfig, (data) => {
   if (data.operation === "webhook") return "Until the resume URL is called";
+  if (data.operation === "form") return "Until the form is submitted";
   if (data.operation === "until") {
     return data.dateTime ? `Until ${data.dateTime}` : undefined;
   }
 
   return data.amount ? `For ${data.amount} ${data.unit || "minutes"}` : undefined;
 });
+
+// =========================================================================
+// FORM (the next page of a multi-step form)
+// =========================================================================
+export const formConfig: IntegrationConfig = {
+  label: "Form",
+  description:
+    "The next page of a form. Put it after a Form Trigger (with other nodes in between if you like): the person filling in the form is shown this page next, and the workflow waits until they submit it. Pages can use what was answered before, for example a title of Hello {{form.your_name}}.",
+  logo: ClipboardList,
+  defaultVariableName: "formPage",
+  hint: "The answers are at {{<name>.<field>}}. The After Submit setting of the last page that was submitted ends the form. The execution shows as Waiting while the page is open and can be cancelled.",
+  fields: [
+    ...formPageFields(),
+    {
+      name: "timeoutAmount",
+      label: "Timeout",
+      placeholder: "1",
+      defaultValue: "1",
+      description:
+        "How long the page stays open. Empty: as long as the server allows.",
+    },
+    {
+      name: "timeoutUnit",
+      label: "Timeout Unit",
+      type: "select",
+      defaultValue: "hours",
+      options: waitUnitOptions,
+    },
+    {
+      name: "onTimeout",
+      label: "When The Page Is Not Submitted",
+      type: "select",
+      defaultValue: "fail",
+      required: true,
+      options: [
+        { value: "fail", label: "Fail the workflow" },
+        { value: "continue", label: "Continue the workflow" },
+      ],
+    },
+  ],
+};
+
+export const FormNode = createIntegrationNode(
+  formConfig,
+  (data) => data.formTitle || undefined
+);
 
 // =========================================================================
 // SEND AND WAIT FOR APPROVAL
@@ -961,6 +1076,34 @@ export const ErrorTriggerNode = createIntegrationNode(
     data.scope === "all"
       ? "When any of my workflows fails"
       : "When this workflow fails"
+);
+
+export const formTriggerConfig: IntegrationConfig = {
+  label: "Form Trigger",
+  description:
+    "Starts when someone submits this workflow's form. The form is a public page hosted here; share its address. The workflow has to be active.",
+  logo: ClipboardList,
+  trigger: true,
+  formUrl: true,
+  formVariable: "form",
+  summary: "On form submission",
+  hint: "The answers are at {{form.<field>}}; {{formMeta.submittedAt}} is when the form was sent. Add a Form node later in the workflow for a second page. Submissions are limited per form per minute (FORM_RATE_LIMIT_PER_MINUTE, default 30).",
+  fields: [
+    ...formPageFields(),
+    {
+      name: "captcha",
+      label: "Require a CAPTCHA (Cloudflare Turnstile)",
+      type: "switch",
+      defaultValue: "false",
+      description:
+        "Visitors pass a Turnstile check before they can submit. Needs TURNSTILE_SITE_KEY and TURNSTILE_SECRET_KEY on the server; without them the form works without the check.",
+    },
+  ],
+};
+
+export const FormTriggerNode = createIntegrationNode(
+  formTriggerConfig,
+  (data) => data.formTitle || undefined
 );
 
 export const telegramTriggerConfig: IntegrationConfig = {

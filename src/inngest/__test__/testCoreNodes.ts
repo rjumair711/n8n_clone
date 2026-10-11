@@ -6295,6 +6295,390 @@ const main = async () => {
     assert.match(read("src/features/executions/lib/executor-registry.ts"), /\[NodeType\.APPROVAL\]: approvalExecutor/);
   });
 
+  // ---------------------------------------------------------------- FORMS
+  console.log("Forms");
+
+  const forms = await import("@/lib/form-fields");
+
+  await test("form fields are read from the node into a clean list with unique names", () => {
+    assert.equal(forms.toFieldName("Your name"), "your_name");
+    assert.equal(forms.toFieldName("  E-mail address!  "), "e_mail_address");
+    assert.equal(forms.toFieldName("2nd choice"), "field_2nd_choice");
+    assert.equal(forms.toFieldName("نام"), "field");
+    assert.equal(forms.toFieldName("Café"), "cafe");
+
+    const saved = JSON.stringify([
+      { label: "Your name", type: "text", required: true },
+      { label: "Email", type: "email", required: true },
+      { label: "Size", type: "dropdown", options: "Small, Medium\nLarge, Small" },
+      { label: "", type: "text" },
+      { label: "Your name", type: "text" },
+      { label: "CV", type: "file" },
+      { label: "Odd", type: "password", options: "a,b" },
+      "junk",
+    ]);
+
+    assert.deepEqual(forms.parseFormFields(saved), [
+      { name: "your_name", label: "Your name", type: "text", required: true, options: [] },
+      { name: "email", label: "Email", type: "email", required: true, options: [] },
+      { name: "size", label: "Size", type: "dropdown", required: false, options: ["Small", "Medium", "Large"] },
+      // A second field with the same label gets a name of its own
+      { name: "your_name_2", label: "Your name", type: "text", required: false, options: [] },
+      { name: "cv", label: "CV", type: "file", required: false, options: [] },
+      // An unknown type is a text field, without options
+      { name: "odd", label: "Odd", type: "text", required: false, options: [] },
+    ]);
+
+    for (const bad of ["", "not json", "{}", undefined, null, 5]) {
+      assert.deepEqual(forms.parseFormFields(bad), []);
+    }
+    assert.equal(
+      forms.parseFormFields(Array.from({ length: 50 }, (_, index) => ({ label: `F${index}` }))).length,
+      forms.MAX_FORM_FIELDS
+    );
+
+    // The seven field types of the task
+    assert.deepEqual(
+      forms.FORM_FIELD_TYPES.map((type) => type.value),
+      ["text", "email", "number", "dropdown", "date", "file", "checkbox"]
+    );
+
+    // Saving the dialog drops rows without a label
+    assert.equal(
+      forms.cleanFormFields(JSON.stringify([{ label: " " }, { label: "Name", type: "text", required: true, options: "" }])),
+      JSON.stringify([{ label: "Name", type: "text", required: true, options: "" }])
+    );
+
+    assert.equal(forms.getFormFieldsProblem([]), "the form has no fields");
+    assert.match(
+      forms.getFormFieldsProblem(forms.parseFormFields([{ label: "Size", type: "dropdown" }])) ?? "",
+      /dropdown "Size" has no options/
+    );
+    assert.equal(forms.getFormFieldsProblem(forms.parseFormFields(saved)), null);
+  });
+
+  await test("a submission is checked field by field, and only the form's own fields are read", () => {
+    const fields = forms.parseFormFields([
+      { label: "Name", type: "text", required: true },
+      { label: "Email", type: "email", required: true },
+      { label: "Age", type: "number" },
+      { label: "Size", type: "dropdown", options: "S, M", required: true },
+      { label: "Day", type: "date" },
+      { label: "CV", type: "file", required: true },
+      { label: "Terms", type: "checkbox", required: true },
+      { label: "News", type: "checkbox" },
+    ]);
+
+    const good = forms.validateFormValues(
+      fields,
+      {
+        name: "  Ali  ",
+        email: "ali@example.com",
+        age: "31.5",
+        size: "M",
+        day: "2026-02-28",
+        terms: "true",
+        // Not a field of the form
+        isAdmin: "true",
+      },
+      new Set(["cv"])
+    );
+    assert.deepEqual(good.errors, {});
+    assert.deepEqual(good.values, {
+      name: "Ali",
+      email: "ali@example.com",
+      age: 31.5,
+      size: "M",
+      day: "2026-02-28",
+      cv: null,
+      terms: true,
+      news: false,
+    });
+
+    const bad = forms.validateFormValues(fields, {
+      name: "   ",
+      email: "not-an-email",
+      age: "many",
+      size: "XL",
+      day: "2026-02-30",
+      terms: "",
+    });
+    assert.deepEqual(bad.errors, {
+      name: "This field is required",
+      email: "Enter an email address",
+      age: "Enter a number",
+      size: "Choose one of the options",
+      day: "Enter a date",
+      cv: "A file is required",
+      terms: "This box has to be ticked",
+    });
+
+    // Optional fields that were left empty are null, not an error
+    const optional = forms.validateFormValues(
+      forms.parseFormFields([{ label: "Age", type: "number" }, { label: "Day", type: "date" }, { label: "CV", type: "file" }]),
+      {}
+    );
+    assert.deepEqual(optional, { values: { age: null, day: null, cv: null }, errors: {} });
+
+    assert.match(
+      forms.validateFormValues(forms.parseFormFields([{ label: "Note" }]), { note: "x".repeat(5001) }).errors.note,
+      /At most 5000 characters/
+    );
+    for (const date of ["28-02-2026", "2026-13-01", "2026-2-3", "tomorrow"]) {
+      assert.ok(forms.validateFormValues(fields, { day: date }).errors.day, date);
+    }
+  });
+
+  await test("a form page is built from the node, with a redirect only to http(s)", async () => {
+    const data = {
+      formTitle: "Hello {{name}}",
+      formDescription: " Tell us more ",
+      formFields: JSON.stringify([{ label: "Why", type: "text" }]),
+      afterSubmit: "message",
+      thankYouMessage: "",
+      redirectUrl: "https://example.com/thanks",
+    };
+
+    // A Form Trigger's page is shown before any run: nothing is filled in
+    assert.deepEqual(forms.buildFormPage(data), {
+      title: "Hello {{name}}",
+      description: "Tell us more",
+      fields: [{ name: "why", label: "Why", type: "text", required: false, options: [] }],
+      submitLabel: "Submit",
+      thankYouMessage: forms.DEFAULT_THANK_YOU_MESSAGE,
+      // "Show a message": the redirect URL is not used
+      redirectUrl: "",
+    });
+
+    // A page of a running workflow can use what was answered before
+    const { renderTemplate } = await import("@/features/executions/lib/templates");
+    const rendered = forms.buildFormPage(
+      { ...data, afterSubmit: "redirect", submitLabel: "Next" },
+      (text) => renderTemplate(text, { name: "Ali" })
+    );
+    assert.equal(rendered.title, "Hello Ali");
+    assert.equal(rendered.submitLabel, "Next");
+    assert.equal(rendered.redirectUrl, "https://example.com/thanks");
+
+    for (const url of ["javascript:alert(1)", "/relative", "data:text/html,x", ""]) {
+      assert.equal(forms.buildFormPage({ ...data, afterSubmit: "redirect", redirectUrl: url }).redirectUrl, "", url);
+    }
+    assert.equal(forms.buildFormPage({}).title, "Form");
+
+    // The editor's test run gets a value of the right kind for every field
+    const { buildTestPayload } = await import("@/features/workflows/server/test-payloads");
+    const payload = buildTestPayload("FORM_TRIGGER", {
+      formFields: JSON.stringify([
+        { label: "Name", type: "text" },
+        { label: "Email", type: "email" },
+        { label: "Age", type: "number" },
+        { label: "Size", type: "dropdown", options: "S, M" },
+        { label: "Terms", type: "checkbox" },
+      ]),
+    });
+    assert.deepEqual(payload.form, {
+      name: "Sample Name",
+      email: "ali@example.com",
+      age: 42,
+      size: "S",
+      terms: true,
+    });
+  });
+
+  await test("the link to a waiting form is the execution's own, and not its resume URL", () =>
+    withKeys("form-key-A", undefined, async () => {
+      const token = wait.createFormToken("exec1");
+
+      assert.match(token, /^[A-Za-z0-9_-]{43}$/);
+      assert.notEqual(token, wait.createResumeToken("exec1"));
+      assert.notEqual(token, wait.createFormToken("exec2"));
+
+      assert.equal(wait.verifyFormToken("exec1", token), true);
+      assert.equal(wait.verifyFormToken("exec2", token), false);
+      assert.equal(wait.verifyFormToken("exec1", ""), false);
+      // One cannot be used as the other
+      assert.equal(wait.verifyFormToken("exec1", wait.createResumeToken("exec1")), false);
+      assert.equal(wait.verifyResumeToken("exec1", token), false);
+
+      assert.equal(
+        wait.buildFormUrl("https://app.example.com", "exec1"),
+        `https://app.example.com/forms/wait/exec1/${token}`
+      );
+
+      await withKeys("form-key-B", undefined, () => {
+        assert.equal(wait.verifyFormToken("exec1", token), false);
+      });
+      await withKeys("form-key-B", "form-key-A", () => {
+        assert.equal(wait.verifyFormToken("exec1", token), true);
+      });
+
+      // {{execution.formUrl}} sits next to the resume URL, and both are
+      // left out of what a webhook's caller is sent
+      const context = wait.withResumeUrl({ a: 1 }, "https://x/resume", "https://x/form");
+      assert.deepEqual(context, {
+        a: 1,
+        execution: { resumeUrl: "https://x/resume", formUrl: "https://x/form" },
+      });
+      assert.deepEqual(wait.withoutResumeUrl(context), { a: 1 });
+    })
+  );
+
+  await test("uploads are limited before they are read, and nothing is stored for an invalid form", async () => {
+    const submission = await import("@/features/forms/server/submission");
+    const files = await import("@/lib/workflow-files");
+
+    const fields = forms.parseFormFields([
+      { label: "Name", type: "text", required: true },
+      { label: "CV", type: "file" },
+      { label: "Photo", type: "file" },
+    ]);
+
+    // Two file fields at the file size limit, plus room for the text
+    assert.equal(
+      submission.getMaxSubmissionBytes(fields),
+      2 * files.MAX_FILE_BYTES + 1024 * 1024
+    );
+    assert.equal(submission.getMaxSubmissionBytes(forms.parseFormFields([{ label: "Name" }])), 1024 * 1024);
+
+    const request = (headers: Record<string, string>, body: FormData | string) =>
+      new Request("https://app.example.com/api/forms/f1", { method: "POST", headers, body });
+
+    // Says it is larger than the form allows: refused without reading it
+    const tooLarge = await submission.readFormData(
+      request({ "content-length": String(50 * 1024 * 1024), "content-type": "multipart/form-data; boundary=x" }, "--x--"),
+      fields
+    );
+    assert.deepEqual(tooLarge, { ok: false, status: 413, error: "The form is too large to submit" });
+
+    const unreadable = await submission.readFormData(
+      request({ "content-type": "application/json" }, "{}"),
+      fields
+    );
+    assert.equal(unreadable.ok, false);
+
+    // A missing required field: the errors come back and no file is stored
+    // (storing one would need the database, which this test does not have)
+    const invalid = new FormData();
+    invalid.set("name", "");
+    invalid.set("cv", new File(["hello"], "cv.txt", { type: "text/plain" }));
+    const result = await submission.readFormSubmission({ form: invalid, fields, userId: "user-1" });
+    assert.equal(result.ok, false);
+    assert.deepEqual(!result.ok && result.errors, { name: "This field is required" });
+
+    // A file over the per-file limit is an error on its field
+    const big = new FormData();
+    big.set("name", "Ali");
+    big.set("cv", new File([new Uint8Array(files.MAX_FILE_BYTES + 1)], "big.bin"));
+    const oversized = await submission.readFormSubmission({ form: big, fields, userId: "user-1" });
+    assert.equal(oversized.ok, false);
+    assert.match((!oversized.ok && oversized.errors?.cv) || "", /The file is too large\. The limit is 10 MB/);
+
+    // Without files nothing needs storing: the values come back
+    const plain = new FormData();
+    plain.set("name", "Ali");
+    plain.set("extra", "ignored");
+    // An empty file input is not a file
+    plain.set("cv", new File([], ""));
+    assert.deepEqual(await submission.readFormSubmission({ form: plain, fields, userId: "user-1" }), {
+      ok: true,
+      values: { name: "Ali", cv: null, photo: null },
+    });
+
+    // Files go through the same store as every other workflow file
+    const { readFileSync } = await import("node:fs");
+    assert.match(readFileSync("src/features/forms/server/submission.ts", "utf8"), /await saveWorkflowFile\(\{/);
+  });
+
+  await test("the Form node and the Wait node's form mode pause with a wait-for-event", async () => {
+    const { formExecutor } = await import("@/features/executions/components/core/executors");
+    const data = { formTitle: "More", formFields: JSON.stringify([{ label: "Why" }]) };
+
+    // Outside an execution there is nobody to show a page to
+    await assert.rejects(
+      formExecutor({ ...baseParams, step: createWaitStep().step, data, context: {} }),
+      /Form node: a form can only be shown inside a workflow execution/
+    );
+    await assert.rejects(
+      waitExecutor({ ...baseParams, step: createWaitStep().step, data: { ...data, operation: "form" }, context: {} }),
+      /Wait node: a form can only be shown inside a workflow execution/
+    );
+    await assert.rejects(
+      formExecutor({ ...baseParams, step: createWaitStep().step, inline: true, data, context: {} }),
+      /cannot be used as an AI Agent tool/
+    );
+    await assert.rejects(
+      formExecutor({ ...baseParams, step: createWaitStep().step, data: { ...data, timeoutAmount: "soon" }, context: {} }),
+      /Form node: Timeout must be a number/
+    );
+
+    const { readFileSync } = await import("node:fs");
+    const read = (path: string) => readFileSync(path, "utf8");
+
+    const formWait = read("src/features/forms/server/wait.ts");
+    assert.match(formWait, /step\.waitForEvent\(`\$\{stepId\}-wait`/);
+    assert.match(formWait, /async\.data\.executionId == "\$\{executionId\}" && async\.data\.nodeId == "\$\{nodeId\}"/);
+    assert.match(formWait, /waitingFor: WAITING_FOR_FORM/);
+    assert.equal(forms.FORM_SUBMITTED_EVENT, "workflows/form.submitted");
+
+    // A Form Trigger starts a run; a Form node shows one page for a list
+    const { getStartNodeIds, buildGraph: graphOf } = await import("@/inngest/engine");
+    const graph = graphOf(
+      [
+        { id: "t", type: "FORM_TRIGGER" },
+        { id: "m", type: "MANUAL_TRIGGER" },
+        { id: "f", type: "FORM" },
+      ],
+      [{ fromNodeId: "t", toNodeId: "f", fromOutput: "main", toInput: "main" }]
+    );
+    assert.deepEqual(getStartNodeIds(graph, "FORM_TRIGGER"), ["t"]);
+    assert.match(read("src/inngest/items.ts"), /"FORM",/);
+    assert.match(read("src/features/executions/lib/executor-registry.ts"), /\[NodeType\.FORM\]: formExecutor/);
+    assert.match(read("src/features/executions/lib/executor-registry.ts"), /\[NodeType\.FORM_TRIGGER\]: contextTriggerExecutor/);
+    assert.match(read("src/config/trigger-sources.ts"), /FORM_TRIGGER: TRIGGER_SOURCES\.FORM/);
+  });
+
+  await test("a form is rate limited, checks its CAPTCHA first, and a page is submitted once", async () => {
+    const { readFileSync } = await import("node:fs");
+    const read = (path: string) => readFileSync(path, "utf8");
+
+    const trigger = read("src/app/api/forms/[formId]/route.ts");
+    // Per form, before the form is even looked up
+    assert.match(trigger, /rateLimitResponse\(`form:\$\{formId\}`, FORM_RATE_LIMIT\)/);
+    assert.ok(trigger.indexOf("rateLimitResponse(") < trigger.indexOf("loadTriggerForm(formId)"));
+    // The CAPTCHA is checked before anything is stored or started
+    assert.ok(trigger.indexOf("verifyTurnstileToken(") < trigger.indexOf("readFormSubmission({"));
+    assert.ok(trigger.indexOf("readFormSubmission({") < trigger.indexOf("startWorkflowExecution({"));
+    assert.match(trigger, /trigger: NodeType\.FORM_TRIGGER/);
+
+    const rateLimit = read("src/lib/rate-limit.ts");
+    assert.match(rateLimit, /FORM_RATE_LIMIT =\s*Number\(process\.env\.FORM_RATE_LIMIT_PER_MINUTE\) \|\| 30/);
+
+    // Only the form of an active workflow is served, and the CAPTCHA is
+    // optional: it needs the form's switch and the server's keys
+    const hosted = read("src/features/forms/server/trigger.ts");
+    assert.match(hosted, /type: NodeType\.FORM_TRIGGER,\s*workflow: \{ active: true \}/);
+    assert.match(hosted, /data\.captcha === "true" \? getTurnstileConfig\(\) : null/);
+
+    const { verifyTurnstileToken } = await import("@/lib/turnstile");
+    // No answer is a no, without asking Cloudflare
+    assert.equal(await verifyTurnstileToken("", "secret"), false);
+    assert.equal(await verifyTurnstileToken(null, "secret"), false);
+    assert.equal(await verifyTurnstileToken("x".repeat(5000), "secret"), false);
+
+    // A page of a running execution: the token is checked before the
+    // database, and the first submission claims the page
+    const page = read("src/app/api/forms/wait/[executionId]/[token]/route.ts");
+    const post = page.slice(page.indexOf("export async function POST"));
+    assert.ok(post.indexOf("verifyFormToken(") < post.indexOf("loadWaitingForm("));
+    assert.match(post, /where: \{ \.\.\.where, waitingFor: WAITING_FOR_FORM \},\s*data: \{ waitingFor: WAITING_FOR_FORM_SUBMITTED \}/);
+    assert.ok(post.indexOf("claimed.count === 0") < post.indexOf("readFormSubmission({"));
+    assert.match(post, /name: FORM_SUBMITTED_EVENT/);
+
+    // The hosted pages need no sign-in and are kept out of search engines
+    assert.match(read("src/app/forms/[formId]/page.tsx"), /robots: \{ index: false \}/);
+    assert.match(read("src/app/forms/wait/[executionId]/[token]/page.tsx"), /verifyFormToken\(executionId, token\)/);
+  });
+
   console.log(`\n${passed} checks passed`);
 };
 

@@ -14,6 +14,7 @@ export const TRIGGER_SOURCES = {
     GMAIL: "gmail",
     TYPEFORM: "typeform",
     RSS: "rss",
+    FORM: "form",
     // Started by a call to the public API (/api/v1)
     API: "api",
     // Started by an Error Trigger after another execution failed
@@ -35,6 +36,7 @@ const LABELS: Record<string, string> = {
     [TRIGGER_SOURCES.GMAIL]: "Gmail",
     [TRIGGER_SOURCES.TYPEFORM]: "Typeform",
     [TRIGGER_SOURCES.RSS]: "RSS Feed",
+    [TRIGGER_SOURCES.FORM]: "Form",
     [TRIGGER_SOURCES.API]: "API",
     [TRIGGER_SOURCES.ERROR]: "Error Trigger",
     [TRIGGER_SOURCES.WORKFLOW]: "Another workflow",
@@ -57,6 +59,7 @@ export const TRIGGER_TYPE_SOURCES: Record<string, string> = {
     GMAIL_TRIGGER: TRIGGER_SOURCES.GMAIL,
     TYPEFORM_TRIGGER: TRIGGER_SOURCES.TYPEFORM,
     RSS_FEED_TRIGGER: TRIGGER_SOURCES.RSS,
+    FORM_TRIGGER: TRIGGER_SOURCES.FORM,
     ERROR_TRIGGER: TRIGGER_SOURCES.ERROR,
     EXECUTE_WORKFLOW_TRIGGER: TRIGGER_SOURCES.WORKFLOW,
 };
