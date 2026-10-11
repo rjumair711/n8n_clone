@@ -39,6 +39,7 @@ const SUB_PORT_HOST_TYPES = new Set([
   "AI_AGENT",
   "TEXT_CLASSIFIER",
   "INFORMATION_EXTRACTOR",
+  "ANALYZE_DOCUMENT",
   // Its Cheap and Strong ports take model nodes
   "MODEL_ROUTER",
 ]);

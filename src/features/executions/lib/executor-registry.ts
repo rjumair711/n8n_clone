@@ -65,6 +65,7 @@ import {
   qwenExecutor,
 } from '../components/chat-model/executor';
 import {
+  analyzeDocumentExecutor,
   informationExtractorExecutor,
   textClassifierExecutor,
   vectorStoreExecutor,
@@ -155,6 +156,7 @@ const baseExecutors: Record<NodeType, NodeExecutor<any>> = {
   [NodeType.MODEL_ROUTER]: contextTriggerExecutor,
   [NodeType.TEXT_CLASSIFIER]: textClassifierExecutor,
   [NodeType.INFORMATION_EXTRACTOR]: informationExtractorExecutor,
+  [NodeType.ANALYZE_DOCUMENT]: analyzeDocumentExecutor,
   [NodeType.VECTOR_STORE]: vectorStoreExecutor,
   [NodeType.MCP_CLIENT_TOOL]: mcpClientExecutor,
   [NodeType.EDIT_FIELDS]: editFieldsExecutor,
