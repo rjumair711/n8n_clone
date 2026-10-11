@@ -394,6 +394,8 @@ OCR and vision for a file a workflow has: a Form Trigger upload, an HTTP Request
 | Telegram Trigger    | Runs when your bot receives a message. The bot's webhook is registered when the workflow is activated. A voice message is given as a file at `{{telegram.voice}}` |
 | WhatsApp Trigger    | Runs when your WhatsApp Business number receives a message (verify token + signature check). With a WhatsApp credential selected, a voice message is given as a file at `{{whatsapp.voice}}` |
 | Gmail Trigger       | Runs when a new email arrives; polls every 1, 5, 15 or 60 minutes with an optional Gmail search filter      |
+| Messenger Trigger   | Runs when someone messages your Facebook Page (verify token + signature check; see "Messenger and Instagram") |
+| Instagram Trigger   | Runs when your Instagram professional account receives a direct message (verify token + signature check)    |
 | Typeform Trigger    | Runs when a typeform is submitted; answers are available by question title                                 |
 | Shopify Trigger     | Runs when an order is created, paid, fulfilled or cancelled, a product is created or updated, a customer is created or a checkout changes (HMAC signature check; see "Shopify and WooCommerce") |
 | WooCommerce Trigger | Runs when an order is created, updated or paid, or a product or customer changes (signature check; optional order status filter) |
@@ -404,7 +406,7 @@ OCR and vision for a file a workflow has: a Form Trigger upload, an HTTP Request
 | Error Trigger       | Runs when a workflow fails (this workflow, or all of your workflows), for alerts                           |
 | When Executed by Another Workflow | Start of a sub-workflow called by an Execute Workflow node or an AI Agent tool               |
 
-Telegram, WhatsApp, Typeform, Shopify, WooCommerce and Stripe need `NEXT_PUBLIC_APP_URL` to be a public https address. Every webhook route is rate limited per workflow.
+Telegram, WhatsApp, Messenger, Instagram, Typeform, Shopify, WooCommerce and Stripe need `NEXT_PUBLIC_APP_URL` to be a public https address. Every webhook route is rate limited per workflow.
 
 ## Duplicate deliveries and retry
 
@@ -414,6 +416,7 @@ Providers re-send an event when they are unsure it arrived. Each trigger remembe
 | ------- | ------------- |
 | Stripe | The event id |
 | WhatsApp | The message id |
+| Messenger, Instagram | The message id (`mid`) |
 | Telegram | The update id |
 | Typeform | The submission's event id |
 | Shopify | The event id Shopify sends with every attempt (`X-Shopify-Event-Id`), per event type |
@@ -612,11 +615,34 @@ Two store nodes and two triggers. The nodes can also be AI Agent tools: reading 
 | Slack       | Slack notifications |
 | Telegram    | Bot messaging: text, or a file with a caption, and the Telegram Trigger for incoming messages |
 | WhatsApp    | Text, template and file messages via the WhatsApp Business Cloud API, and the WhatsApp Trigger |
+| Messenger   | Text and picture replies to people who wrote to your Facebook Page, and the Messenger Trigger |
+| Instagram   | Text and picture direct messages, the Instagram Trigger, and photo posts (with the Instagram / Facebook Post node) |
 | Twilio      | SMS and WhatsApp messages |
 | Email       | SMTP email, with file attachments |
 | Gmail       | Email through a connected Google account, with file attachments |
 | Resend      | Email through the Resend API, with file attachments |
 | SendGrid    | Email through the SendGrid API, with file attachments |
+
+## Messenger and Instagram
+
+Three nodes and two triggers on Meta's Graph API. As AI Agent tools all three nodes are "write", so they ask for approval by default.
+
+| Node | What it does |
+| ---- | ------------ |
+| Messenger | Sends a text or a picture to someone who wrote to your Facebook Page |
+| Instagram | Sends a text or a picture as a direct message from your Instagram professional account |
+| Instagram / Facebook Post | Publishes a photo with a caption on the Instagram account or on the Facebook Page |
+| Messenger Trigger, Instagram Trigger | Start a run for each incoming message, with `chatInput` and `sessionId` for an AI Agent |
+
+* **Who can be written to.** A Page or an Instagram account can only message people who wrote to it first, and by their id from the trigger (`{{messenger.from}}`, `{{instagram.from}}`), not by name or phone number. A plain reply arrives within 24 hours of the person's last message. **Message Type** offers Meta's tags for later messages (human agent, post-purchase update and so on); they are not for promotion.
+* **Two ways an Instagram account is connected**, chosen on the node as **Account Connected**: through a Facebook Page (a *Facebook Page* credential, calls go to `graph.facebook.com`) or with Instagram Login (an *Instagram* credential, calls go to `graph.instagram.com`). Messenger and Facebook Page posts always use the Facebook Page credential.
+* **The token** is sent in an `Authorization` header to those two hosts only, never in an address.
+* **Pictures.** Meta does not take an upload for these calls: it downloads the picture from a web address. The **Image** field takes a public `https` address, or a file variable. A file is handed over as its signed download link (valid 15 minutes), so the app has to run on a public `https` address for that. An address on a private network is refused.
+* **Instagram posts** take JPEG only, between 4:5 and 1.91:1 in shape, with a caption of up to 2200 characters. The node makes a container, waits until Instagram has prepared it (up to 20 seconds) and publishes it. With a Facebook Page credential and no Instagram Account ID, the Instagram account connected to the Page is looked up.
+* **A post is public as soon as the node has run** and is not taken back when a later node fails.
+* **Triggers** use the same two checks as the WhatsApp Trigger: Meta's verify token when the webhook is saved, and the `X-Hub-Signature-256` signature (made with the app secret) on every event. Echoes of the account's own messages, deleted messages, read and delivery receipts and reactions start nothing. Button taps and quick replies do, with their payload at `{{messenger.payload}}`. Attachments are given as a list of `{ type, url }`; they are not downloaded.
+* **One address per Meta app.** Meta sends all of an app's Page (or Instagram) events to one Callback URL, so one app feeds one workflow per channel.
+* Receiving messages from people who are not testers of the app needs Meta's app review (`pages_messaging`, `instagram_manage_messages` or `instagram_business_manage_messages`); posting needs `pages_manage_posts` or `instagram_content_publish` / `instagram_business_content_publish`.
 
 ---
 
@@ -642,6 +668,8 @@ Supported credential types:
 | NOTION        | Notion nodes  |
 | TELEGRAM      | Telegram node and Telegram Trigger |
 | WHATSAPP      | WhatsApp node (Cloud API access token) |
+| FACEBOOK_PAGE | Messenger node, Facebook Page posts, and Instagram through a Page (Page access token) |
+| INSTAGRAM     | Instagram node and posts for an account that uses Instagram Login (Instagram access token) |
 | TWILIO        | Twilio node (`AccountSID:AuthToken`) |
 | RESEND        | Resend node (API key) |
 | SENDGRID      | SendGrid node (API key) |
@@ -681,7 +709,7 @@ Supported credential types:
   * A request has to match by what it uses: `http://localhost:11434` is allowed by `localhost:11434`, not by `127.0.0.1:11434`, because `localhost` can also resolve to `::1` and every address of a name has to be allowed. Use the same form in the node as in the list. The Chat Model node's default Ollama address is `http://localhost:11434/v1`, so for that the entry is `localhost:11434`.
   * A range with a port (`10.0.0.0/24:5432`) is not supported. Entries that cannot be read are ignored and named in a warning at startup.
   * `ALLOW_PRIVATE_NETWORK_REQUESTS=true` still works and opens **every** private address; the allowlist then has no effect. It logs a warning at startup recommending the allowlist, which is the safer choice.
-* **Webhooks:** per-node secrets or provider signatures (Stripe, WhatsApp, Typeform, Telegram, Shopify, WooCommerce), and a per-workflow rate limit.
+* **Webhooks:** per-node secrets or provider signatures (Stripe, WhatsApp, Messenger, Instagram, Typeform, Telegram, Shopify, WooCommerce), and a per-workflow rate limit.
   * Every secret, token and signature is compared in constant time (`secretsMatch` in `src/lib/webhook-security.ts`, built on `crypto.timingSafeEqual`).
   * **Stripe and Typeform events older than 5 minutes are refused**, so a captured request cannot be sent again later. Stripe signs its own timestamp. Typeform's signature has none, so the submission's `submitted_at` (which is inside the signed body) is used. A Typeform delivery that is retried more than 5 minutes after the form was submitted, for example after the app was down, is therefore refused and shows as failed in Typeform.
   * **Telegram:** activating a workflow registers the bot's webhook with a `secret_token`, and every update has to carry it in `X-Telegram-Bot-Api-Secret-Token`. The token is derived from `ENCRYPTION_KEY`; without that key no webhook is registered and no update is accepted.

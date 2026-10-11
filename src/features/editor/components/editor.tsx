@@ -164,6 +164,8 @@ export const Editor = ({ workflowId }: { workflowId: string }) => {
             NodeType.GOOGLE_FORM_TRIGGER,
             NodeType.TELEGRAM_TRIGGER,
             NodeType.WHATSAPP_TRIGGER,
+            NodeType.MESSENGER_TRIGGER,
+            NodeType.INSTAGRAM_TRIGGER,
             NodeType.GMAIL_TRIGGER,
             NodeType.TYPEFORM_TRIGGER,
             NodeType.SHOPIFY_TRIGGER,

@@ -1,5 +1,6 @@
 import { NodeType } from "@prisma/client";
 import { buildSampleFormValues, parseFormFields } from "@/lib/form-fields";
+import { parseMetaMessages } from "@/lib/meta-messaging";
 import {
     buildShopifyTriggerData,
     buildWoocommerceTriggerData,
@@ -20,6 +21,8 @@ export const TESTABLE_TRIGGERS = [
     NodeType.GOOGLE_FORM_TRIGGER,
     NodeType.TELEGRAM_TRIGGER,
     NodeType.WHATSAPP_TRIGGER,
+    NodeType.MESSENGER_TRIGGER,
+    NodeType.INSTAGRAM_TRIGGER,
     NodeType.GMAIL_TRIGGER,
     NodeType.TYPEFORM_TRIGGER,
     NodeType.SHOPIFY_TRIGGER,
@@ -40,6 +43,8 @@ export const TRIGGER_LABELS: Record<TestableTrigger, string> = {
     GOOGLE_FORM_TRIGGER: "Google Form",
     TELEGRAM_TRIGGER: "Telegram",
     WHATSAPP_TRIGGER: "WhatsApp",
+    MESSENGER_TRIGGER: "Messenger",
+    INSTAGRAM_TRIGGER: "Instagram",
     GMAIL_TRIGGER: "Gmail",
     TYPEFORM_TRIGGER: "Typeform",
     SHOPIFY_TRIGGER: "Shopify",
@@ -158,6 +163,39 @@ export const buildTestPayload = (
                 },
                 chatInput: message.text.body,
                 sessionId: `whatsapp-${message.from}`,
+            };
+        }
+
+        case NodeType.MESSENGER_TRIGGER:
+        case NodeType.INSTAGRAM_TRIGGER: {
+            const channel =
+                trigger === NodeType.MESSENGER_TRIGGER ? "messenger" : "instagram";
+            const accountId = "100000000000001";
+
+            // Built from a delivery of the shape Meta sends, by the same
+            // code that reads a real one
+            const [message] = parseMetaMessages(channel, {
+                object: channel === "messenger" ? "page" : "instagram",
+                entry: [
+                    {
+                        id: accountId,
+                        time: now.getTime(),
+                        messaging: [
+                            {
+                                sender: { id: "200000000000002" },
+                                recipient: { id: accountId },
+                                timestamp: now.getTime(),
+                                message: { mid: "m_sample", text: "Hello from a test run" },
+                            },
+                        ],
+                    },
+                ],
+            });
+
+            return {
+                [channel]: message.data,
+                chatInput: message.chatInput,
+                sessionId: message.sessionId,
             };
         }
 

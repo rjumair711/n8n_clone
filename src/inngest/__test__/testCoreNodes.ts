@@ -8777,6 +8777,508 @@ pour()</code></pre>
     assert.equal(getStartNodeIds(buildGraph(cart.nodes, cart.connections), "SCHEDULE_TRIGGER").length, 1);
   });
 
+  // ---------------------------------------------- MESSENGER AND INSTAGRAM
+  console.log("Messenger and Instagram");
+
+  const meta = await import("@/features/executions/components/apps/meta");
+  const metaMessaging = await import("@/lib/meta-messaging");
+  const metaOptions = await import("@/features/executions/lib/meta-options");
+
+  await test("only messages from people start a run, each once", () => {
+    const page = "100000000000001";
+    const person = "200000000000002";
+    const event = (content: Record<string, unknown>, sender = person) => ({
+      sender: { id: sender },
+      recipient: { id: sender === page ? person : page },
+      timestamp: 1760000000000,
+      ...content,
+    });
+    const delivery = (object: string, ...messaging: unknown[]) => ({
+      object,
+      entry: [{ id: page, time: 1760000000001, messaging }],
+    });
+
+    const [message] = metaMessaging.parseMetaMessages(
+      "messenger",
+      delivery("page", event({ message: { mid: "m_1", text: "Do you deliver to Hunza?" } }))
+    );
+    assert.equal(message.dedupeKey, "m_1");
+    assert.equal(message.chatInput, "Do you deliver to Hunza?");
+    assert.equal(message.sessionId, `messenger-${person}`);
+    assert.equal(message.data.from, person);
+    assert.equal(message.data.accountId, page);
+    assert.equal(message.data.type, "message");
+    assert.equal(message.data.text, "Do you deliver to Hunza?");
+    assert.equal(message.data.messageId, "m_1");
+    assert.equal(message.data.timestamp, 1760000000000);
+    assert.deepEqual(message.data.attachments, []);
+    assert.equal("payload" in message.data, false);
+
+    // Instagram sends the same shape under its own object, and its
+    // conversations are kept apart from Messenger's
+    const [direct] = metaMessaging.parseMetaMessages(
+      "instagram",
+      delivery("instagram", event({ message: { mid: "ig_1", text: "Hi", reply_to: { mid: "ig_0" } } }))
+    );
+    assert.equal(direct.sessionId, `instagram-${person}`);
+    assert.equal(direct.data.replyToMessageId, "ig_0");
+    // A delivery for the other channel starts nothing
+    assert.deepEqual(metaMessaging.parseMetaMessages("instagram", delivery("page", event({ message: { mid: "m_1", text: "Hi" } }))), []);
+    assert.deepEqual(metaMessaging.parseMetaMessages("messenger", delivery("instagram", event({ message: { mid: "m_1", text: "Hi" } }))), []);
+    assert.deepEqual(metaMessaging.parseMetaMessages("messenger", delivery("whatsapp_business_account", event({ message: { mid: "m_1", text: "Hi" } }))), []);
+
+    // A picture, a quick reply and a tapped button
+    const [picture, quick, tapped, oldTap] = metaMessaging.parseMetaMessages(
+      "messenger",
+      delivery(
+        "page",
+        event({ message: { mid: "m_2", attachments: [{ type: "image", payload: { url: "https://scontent.example.com/a.jpg" } }, { type: "fallback", payload: { url: "javascript:alert(1)" } }, "odd"] } }),
+        event({ message: { mid: "m_3", text: "Yes", quick_reply: { payload: "CONFIRM_ORDER" } } }),
+        event({ postback: { mid: "m_4", title: "Track my order", payload: "TRACK" } }),
+        event({ postback: { title: "Get started", payload: "START" } })
+      )
+    );
+    assert.deepEqual(picture.data.attachments, [{ type: "image", url: "https://scontent.example.com/a.jpg" }, { type: "fallback" }]);
+    assert.equal(picture.chatInput, "");
+    assert.equal(quick.data.payload, "CONFIRM_ORDER");
+    assert.equal(quick.chatInput, "Yes");
+    assert.equal(tapped.data.type, "postback");
+    assert.equal(tapped.data.text, "Track my order");
+    assert.equal(tapped.data.payload, "TRACK");
+    assert.equal(tapped.chatInput, "Track my order");
+    assert.equal(tapped.dedupeKey, "m_4");
+    // A tap without an id is still recognised when it is sent again
+    assert.equal(oldTap.dedupeKey, `postback:${person}:1760000000000:START`);
+
+    // The account's own messages, deleted ones, receipts and reactions
+    assert.deepEqual(
+      metaMessaging.parseMetaMessages(
+        "messenger",
+        delivery(
+          "page",
+          event({ message: { mid: "m_5", text: "Our reply", is_echo: true } }),
+          event({ message: { mid: "m_6", text: "From us" } }, page),
+          event({ message: { mid: "m_7", is_deleted: true } }),
+          event({ message: { mid: "m_8" } }),
+          event({ message: { text: "no id" } }),
+          event({ read: { watermark: 1760000000000 } }),
+          event({ delivery: { mids: ["m_5"] } }),
+          event({ reaction: { mid: "m_1", action: "react", emoji: "❤" } }),
+          { message: { mid: "m_9", text: "no sender" } },
+          null
+        )
+      ),
+      []
+    );
+
+    // Anything that is not a delivery
+    for (const body of [null, "text", [], {}, { object: "page" }, { object: "page", entry: "x" }, { object: "page", entry: [null, { id: page }, { id: page, messaging: "x" }] }, { object: "page", entry: [{ id: page, changes: [{ field: "feed", value: {} }] }] }]) {
+      assert.deepEqual(metaMessaging.parseMetaMessages("messenger", body), []);
+    }
+  });
+
+  await test("the Messenger and Instagram webhooks use WhatsApp's verify token and signature checks", async () => {
+    const { readFileSync } = await import("node:fs");
+    const read = (path: string) => readFileSync(path, "utf8");
+
+    const handler = read("src/lib/meta-webhook.ts").replace(/\/\/.*$/gm, "");
+
+    // Saving the webhook in the Meta app: the token, in constant time
+    assert.match(handler, /return !!verifyToken && secretsMatch\(provided, verifyToken\.trim\(\)\);/);
+    assert.match(handler, /if \(query\.get\("hub\.mode"\) !== "subscribe" \|\| !verified\) \{\s*return new NextResponse\("Verification failed", \{ status: 403 \}\);/);
+    // Every event: HMAC-SHA256 of the exact bytes with the app secret
+    assert.match(handler, /request\.headers\.get\("x-hub-signature-256"\)/);
+    assert.match(handler, /createHmac\("sha256", appSecret\.trim\(\)\)\s*\.update\(rawBody, "utf8"\)\s*\.digest\("hex"\);\s*return secretsMatch\(signature, expected\);/);
+    assert.match(handler, /if \(!appSecret\) return false;/);
+    // Nothing is read as JSON, and no run starts, before the check passed
+    const refused = handler.indexOf("{ status: 401 }");
+    assert.ok(refused > 0 && handler.indexOf("JSON.parse(rawBody)") > refused);
+    assert.ok(handler.indexOf("startWorkflowExecution({") > refused);
+    assert.match(handler, /dedupeKey: message\.dedupeKey,/);
+    assert.match(handler, /rateLimitResponse\(`\$\{channel\}:\$\{workflowId\}`\)/);
+    assert.match(handler, /findTriggerNodes\(workflowId, nodeType\)/);
+    // Never compared with === and never logged
+    assert.equal(/(verifyToken|appSecret|signature|provided|expected)\s*[!=]==?\s*[\w"'`(]/.test(handler), false);
+    assert.equal(/console\.\w+\([^)]*(secret|token|signature)/i.test(handler), false);
+
+    for (const [channel, type, label] of [["messenger", "MESSENGER_TRIGGER", "Messenger"], ["instagram", "INSTAGRAM_TRIGGER", "Instagram"]]) {
+      const route = read(`src/app/api/webhooks/${channel}/[workflowId]/route.ts`);
+
+      assert.ok(route.includes(`channel: "${channel}",`), channel);
+      assert.ok(route.includes(`nodeType: NodeType.${type},`), channel);
+      assert.ok(route.includes(`label: "${label}",`), channel);
+      assert.match(route, /export const GET = handlers\.GET;\s*export const POST = handlers\.POST;/, channel);
+    }
+
+    // The WhatsApp route still does the same two checks itself
+    const whatsapp = read("src/app/api/webhooks/whatsapp/[workflowId]/route.ts");
+    assert.match(whatsapp, /return secretsMatch\(signature, expected\);/);
+
+    // The trigger's two secrets never travel with a template
+    const { toTemplateData } = await import("@/features/templates/lib/template-data");
+    const template = toTemplateData(
+      [{ id: "t", type: "INSTAGRAM_TRIGGER", position: { x: 0, y: 0 }, data: { verifyToken: "my-verify-token", appSecret: "0123456789abcdef" } }],
+      []
+    );
+    assert.deepEqual(template.nodes[0].data, {});
+  });
+
+  await test("a Messenger or Instagram message is built the way the Graph API takes it", () => {
+    const messenger = (data: Record<string, string>, context: Record<string, unknown> = {}, imageUrl?: string) =>
+      meta.buildMessageCall("messenger", { recipientId: "200000000000002", ...data }, context, imageUrl);
+    const instagram = (data: Record<string, string>, context: Record<string, unknown> = {}, imageUrl?: string) =>
+      meta.buildMessageCall("instagram", { recipientId: "300000000000003", ...data }, context, imageUrl);
+
+    const reply = messenger({ message: "{{output}}", recipientId: "{{messenger.from}}" }, { output: "We do deliver.", messenger: { from: "200000000000002" } });
+    assert.deepEqual(reply, {
+      origin: "https://graph.facebook.com",
+      method: "POST",
+      path: "/me/messages",
+      body: {
+        recipient: { id: "200000000000002" },
+        messaging_type: "RESPONSE",
+        message: { text: "We do deliver." },
+      },
+    });
+    assert.equal(messenger({ message: "Hi", pageId: "100000000000001" }).path, "/100000000000001/messages");
+    // The id goes into the address: a number, or nothing
+    for (const pageId of ["my-page", "1/../2", "me/accounts", "12"]) {
+      assert.throws(() => messenger({ message: "Hi", pageId }), /Page ID must be the account's numeric ID/, pageId);
+    }
+    for (const recipientId of ["ali.khan", "+923001234567", "123", "1 OR 1"]) {
+      assert.throws(() => messenger({ message: "Hi", recipientId }), /Recipient ID must be the number Meta gave for this person, for example \{\{messenger\.from\}\}/, recipientId);
+    }
+    assert.throws(() => meta.buildMessageCall("messenger", { message: "Hi" }, {}), /Messenger node: Recipient ID is required/);
+    assert.throws(() => messenger({ message: "  " }), /Messenger node: Message is required/);
+    assert.throws(() => messenger({ message: "x".repeat(metaOptions.MESSENGER_MAX_TEXT + 1) }), /the message has 2001 characters; Messenger takes at most 2000/);
+    assert.doesNotThrow(() => messenger({ message: "x".repeat(metaOptions.MESSENGER_MAX_TEXT) }));
+
+    // After the 24 hours: a tag
+    assert.deepEqual(messenger({ message: "Your order has shipped", replyType: "POST_PURCHASE_UPDATE" }).body, {
+      recipient: { id: "200000000000002" },
+      messaging_type: "MESSAGE_TAG",
+      tag: "POST_PURCHASE_UPDATE",
+      message: { text: "Your order has shipped" },
+    });
+    assert.throws(() => messenger({ message: "Sale!", replyType: "PROMOTION" }), /Unsupported message type "PROMOTION"/);
+
+    const picture = messenger({ operation: "send_image", image: "photo.file" }, {}, "https://app.example.com/api/files/f1?expires=1&signature=s");
+    assert.deepEqual(picture.body!.message, {
+      attachment: { type: "image", payload: { url: "https://app.example.com/api/files/f1?expires=1&signature=s", is_reusable: false } },
+    });
+    assert.throws(() => messenger({ operation: "send_image" }), /Messenger node: Image is required/);
+    assert.throws(() => messenger({ operation: "broadcast", message: "Hi" }), /Unsupported operation "broadcast"/);
+
+    // Instagram: its own limit, no messaging_type for a plain reply, and
+    // the host of the way the account is connected
+    const direct = instagram({ message: "Thanks!" });
+    assert.equal(direct.origin, "https://graph.facebook.com");
+    assert.equal(direct.path, "/me/messages");
+    assert.deepEqual(direct.body, { recipient: { id: "300000000000003" }, message: { text: "Thanks!" } });
+    const login = instagram({ message: "Thanks!", connection: "instagram", accountId: "17841400000000000" });
+    assert.equal(login.origin, "https://graph.instagram.com");
+    assert.equal(login.path, "/17841400000000000/messages");
+    assert.throws(() => instagram({ message: "x".repeat(metaOptions.INSTAGRAM_MAX_TEXT + 1) }), /Instagram takes at most 1000/);
+    assert.deepEqual(instagram({ message: "A person is answering", replyType: "HUMAN_AGENT" }).body, {
+      recipient: { id: "300000000000003" },
+      messaging_type: "MESSAGE_TAG",
+      tag: "HUMAN_AGENT",
+      message: { text: "A person is answering" },
+    });
+    // Messenger's other tags do not exist on Instagram
+    assert.throws(() => instagram({ message: "Hi", replyType: "ACCOUNT_UPDATE" }), /Unsupported message type/);
+    assert.deepEqual((instagram({ operation: "send_image", image: "https://example.com/a.jpg" }, {}, "https://example.com/a.jpg").body!.message as any).attachment, {
+      type: "image",
+      payload: { url: "https://example.com/a.jpg" },
+    });
+    assert.throws(() => instagram({ message: "Hi", recipientId: "@ali" }), /for example \{\{instagram\.from\}\}/);
+  });
+
+  await test("a photo post is one call on Facebook and a container plus a publish on Instagram", async () => {
+    const image = "https://cdn.example.com/photo.jpg";
+
+    assert.deepEqual(meta.buildFacebookPhotoCall({ image, caption: "New in: {{product}}" }, { product: "Shawls" }, image), {
+      origin: "https://graph.facebook.com",
+      method: "POST",
+      path: "/me/photos",
+      body: { url: image, caption: "New in: Shawls" },
+    });
+    assert.deepEqual(meta.buildFacebookPhotoCall({ image, pageId: "100000000000001" }, {}, image).body, { url: image });
+    assert.equal(meta.buildFacebookPhotoCall({ image, pageId: "100000000000001" }, {}, image).path, "/100000000000001/photos");
+    assert.throws(() => meta.buildFacebookPhotoCall({ caption: "No picture" }, {}, ""), /Instagram \/ Facebook Post node: Image is required/);
+    assert.throws(() => meta.buildFacebookPhotoCall({ image, pageId: "../me" }, {}, image), /Page ID must be the account's numeric ID/);
+
+    const calls = meta.buildInstagramPhotoCalls({ image, caption: "Hello #hunza" }, {}, { accountId: "17841400000000000", imageUrl: image });
+    assert.deepEqual(calls.container, {
+      origin: "https://graph.facebook.com",
+      method: "POST",
+      path: "/17841400000000000/media",
+      body: { image_url: image, caption: "Hello #hunza" },
+    });
+    assert.deepEqual(calls.status("17900000000000001"), {
+      origin: "https://graph.facebook.com",
+      method: "GET",
+      path: "/17900000000000001",
+      query: { fields: "status_code,status" },
+    });
+    assert.deepEqual(calls.publish("17900000000000001"), {
+      origin: "https://graph.facebook.com",
+      method: "POST",
+      path: "/17841400000000000/media_publish",
+      body: { creation_id: "17900000000000001" },
+    });
+    assert.deepEqual(calls.permalink("18000000000000002").query, { fields: "permalink" });
+    // With Instagram Login everything goes to Instagram's own host
+    const login = meta.buildInstagramPhotoCalls({ image, connection: "instagram" }, {}, { accountId: "me", imageUrl: image });
+    assert.equal(login.container.origin, "https://graph.instagram.com");
+    assert.equal(login.container.path, "/me/media");
+    assert.deepEqual(login.container.body, { image_url: image });
+    assert.equal(login.publish("1").origin, "https://graph.instagram.com");
+    assert.throws(
+      () => meta.buildInstagramPhotoCalls({ image, caption: "x".repeat(metaOptions.INSTAGRAM_MAX_CAPTION + 1) }, {}, { accountId: "me", imageUrl: image }),
+      /the caption has 2201 characters; Instagram takes at most 2200/
+    );
+
+    // The picture: a public https address is passed on as it is
+    const resolve = (value: string, context: Record<string, unknown> = {}) =>
+      meta.resolveImageUrl({ label: "Instagram", value, context, userId: "user-1" });
+    assert.equal(await resolve("https://93.184.216.34/photo.jpg"), "https://93.184.216.34/photo.jpg");
+    assert.equal(await resolve("{{item.imageUrl}}", { item: { imageUrl: "https://93.184.216.34/a.jpg" } }), "https://93.184.216.34/a.jpg");
+    await assert.rejects(resolve("http://93.184.216.34/photo.jpg"), /Instagram node: the image address must start with https:\/\//);
+    await assert.rejects(resolve("ftp://93.184.216.34/photo.jpg"), /must start with https:\/\//);
+    // Meta is not pointed at a private address
+    const before = process.env.ALLOW_PRIVATE_NETWORK_REQUESTS;
+    delete process.env.ALLOW_PRIVATE_NETWORK_REQUESTS;
+    try {
+      await assert.rejects(resolve("https://169.254.169.254/latest/meta-data"));
+      await assert.rejects(resolve("https://10.0.0.5/photo.jpg"));
+      await assert.rejects(resolve("https://localhost/photo.jpg"));
+    } finally {
+      if (before !== undefined) process.env.ALLOW_PRIVATE_NETWORK_REQUESTS = before;
+    }
+    // Anything else has to be a file variable
+    await assert.rejects(resolve("not a file"), /Instagram node: "not a file" is not a file/);
+    await assert.rejects(resolve("   "), /Instagram node: File is required/);
+
+    const { readFileSync } = await import("node:fs");
+    const source = readFileSync("src/features/executions/components/apps/meta.ts", "utf8");
+    // A file is given as its signed download link, for its owner only, and
+    // only from an app Meta can reach
+    assert.match(source, /file = await getOwnedWorkflowFile\(fileId, userId\);/);
+    assert.match(source, /return buildFileDownloadUrl\(appUrl, file\.id\);/);
+    assert.match(source, /jpegOnly \? mimeType !== "image\/jpeg" : !mimeType\.startsWith\("image\/"\)/);
+    assert.match(source, /NEXT_PUBLIC_APP_URL has to be a public https address/);
+    // Instagram: the container is made in one step and published in the
+    // next, so a retry cannot publish the picture twice
+    assert.ok(source.indexOf("social-post-${nodeId}-instagram-container") < source.indexOf("social-post-${nodeId}-instagram-publish"));
+    assert.match(source, /jpegOnly: true,/);
+  });
+
+  await test("a Graph API call carries the token in a header and reports Meta's own error", async () => {
+    type Call = { method: string; url: string; auth: unknown; type: unknown; body: string };
+    const calls: Call[] = [];
+
+    const api = createServer((req, res) => {
+      const chunks: Buffer[] = [];
+      req.on("data", (chunk) => chunks.push(chunk));
+      req.on("end", () => {
+        calls.push({ method: req.method ?? "", url: req.url ?? "", auth: req.headers.authorization, type: req.headers["content-type"], body: Buffer.concat(chunks).toString() });
+
+        const json = (status: number, body: unknown) => {
+          res.writeHead(status, { "Content-Type": "application/json" });
+          res.end(JSON.stringify(body));
+        };
+
+        if (req.url?.includes("/me/messages")) return json(200, { recipient_id: "200000000000002", message_id: "m_out_1" });
+        if (req.url?.includes("/window/messages")) {
+          return json(400, { error: { message: "(#10) This message is sent outside of allowed window.", type: "OAuthException", code: 10, error_subcode: 2018278, fbtrace_id: "A1" } });
+        }
+        if (req.url?.includes("/expired/")) {
+          return json(401, { error: { message: "Error validating access token: Session has expired.", type: "OAuthException", code: 190 } });
+        }
+        if (req.url?.includes("/friendly/")) {
+          return json(400, { error: { message: "Invalid parameter", error_user_msg: "The aspect ratio is not supported.", code: 36003 } });
+        }
+        if (req.url?.includes("/soft/")) return json(200, { error: { message: "Unsupported get request.", code: 100 } });
+        if (req.url?.includes("/moved/")) {
+          res.writeHead(302, { Location: "http://127.0.0.1:1/elsewhere" });
+          return res.end();
+        }
+        if (req.url?.includes("/html/")) {
+          res.writeHead(502, { "Content-Type": "text/html" });
+          return res.end("<html>Bad gateway</html>");
+        }
+        if (req.url?.includes("/status")) return json(200, { status_code: "FINISHED", id: "17900000000000001" });
+
+        json(200, []);
+      });
+    });
+    await new Promise<void>((resolve) => api.listen(0, "127.0.0.1", resolve));
+    const origin = `http://127.0.0.1:${(api.address() as AddressInfo).port}`;
+    const token = "EAAG-secret-page-token";
+
+    const send = (call: Partial<import("@/features/executions/components/apps/meta").GraphCall> & { path: string }) =>
+      meta.sendGraphRequest({ label: "Messenger", call: { origin, method: "POST", ...call }, token });
+
+    try {
+      const sent = await send({ path: "/me/messages", body: { recipient: { id: "200000000000002" }, message: { text: "سلام" } } });
+      assert.deepEqual(sent, { recipient_id: "200000000000002", message_id: "m_out_1" });
+      assert.equal(calls[0].method, "POST");
+      // The version is in the path, and the token nowhere in the address
+      assert.equal(calls[0].url, `/${metaOptions.GRAPH_API_VERSION}/me/messages`);
+      assert.equal(calls[0].auth, `Bearer ${token}`);
+      assert.equal(calls[0].type, "application/json");
+      assert.deepEqual(JSON.parse(calls[0].body), { recipient: { id: "200000000000002" }, message: { text: "سلام" } });
+
+      await send({ method: "GET", path: "/17900000000000001/status", query: { fields: "status_code,status" } });
+      assert.equal(calls[1].method, "GET");
+      assert.equal(calls[1].url, `/${metaOptions.GRAPH_API_VERSION}/17900000000000001/status?fields=status_code%2Cstatus`);
+      assert.equal(calls[1].type, undefined);
+      assert.equal(calls[1].body, "");
+      for (const call of calls) assert.equal(call.url.includes("access_token"), false);
+
+      const failure = async (path: string) => {
+        try {
+          await send({ path, body: {} });
+        } catch (error) {
+          const message = (error as Error).message;
+          assert.equal(message.includes(token), false, message);
+          return message;
+        }
+        throw new Error(`${path} did not fail`);
+      };
+
+      assert.equal(await failure("/window/messages"), "Messenger API error [400]: (#10) This message is sent outside of allowed window. (code 10)");
+      assert.equal(await failure("/expired/messages"), "Messenger API error [401]: Error validating access token: Session has expired. (code 190)");
+      // What Meta wrote for the user comes first
+      assert.equal(await failure("/friendly/media"), "Messenger API error [400]: The aspect ratio is not supported. (code 36003)");
+      // An error inside a 200 answer is an error
+      assert.equal(await failure("/soft/x"), "Messenger API error [200]: Unsupported get request. (code 100)");
+      assert.equal(await failure("/html/x"), "Messenger API error [502]: Bad Gateway");
+      // The token is not carried along a redirect
+      const seen = calls.length;
+      assert.equal(await failure("/moved/x"), "Messenger node failed: Meta could not be reached");
+      assert.equal(calls.length, seen + 1);
+      // An answer that is not an object is nothing
+      assert.deepEqual(await send({ path: "/other" }), {});
+    } finally {
+      await new Promise((resolve) => api.close(resolve));
+    }
+
+    const { readFileSync } = await import("node:fs");
+    const source = readFileSync("src/features/executions/components/apps/meta.ts", "utf8");
+    assert.equal(/access_token/.test(source), false);
+    assert.match(source, /Authorization: `Bearer \$\{token\}`,/);
+    assert.match(source, /redirect: "error",/);
+    // Only Meta's two hosts are ever called
+    assert.deepEqual(metaOptions.GRAPH_ORIGINS, { facebook: "https://graph.facebook.com", instagram: "https://graph.instagram.com" });
+    assert.equal(source.match(/\bfetch\(/g)?.length, 1);
+  });
+
+  await test("the three nodes check their settings before they use a credential, and are registered", async () => {
+    const run = (executor: typeof meta.messengerExecutor, data: Record<string, string>) =>
+      executor({ ...baseParams, data, context: {} });
+
+    await assert.rejects(run(meta.messengerExecutor, {}), /Messenger node: Recipient ID is required/);
+    await assert.rejects(run(meta.messengerExecutor, { recipientId: "200000000000002" }), /Messenger node: Message is required/);
+    await assert.rejects(run(meta.messengerExecutor, { recipientId: "200000000000002", operation: "send_image" }), /Messenger node: Image is required/);
+    // Everything is in order: the credential is next
+    await assert.rejects(run(meta.messengerExecutor, { recipientId: "200000000000002", message: "Hi" }), /Messenger node: Credential is required/);
+    await assert.rejects(run(meta.instagramExecutor, { recipientId: "ali" }), /Instagram node: Recipient ID must be the number/);
+    await assert.rejects(run(meta.instagramExecutor, { recipientId: "300000000000003", message: "Hi" }), /Instagram node: Credential is required/);
+
+    await assert.rejects(run(meta.socialPostExecutor, {}), /Instagram \/ Facebook Post node: Image is required/);
+    await assert.rejects(run(meta.socialPostExecutor, { operation: "story" }), /Unsupported operation "story"/);
+    await assert.rejects(run(meta.socialPostExecutor, { image: "photo.file", accountId: "my_account" }), /Instagram Account ID must be the account's numeric ID/);
+    await assert.rejects(run(meta.socialPostExecutor, { image: "photo.file", caption: "x".repeat(2201) }), /Instagram takes at most 2200/);
+    await assert.rejects(run(meta.socialPostExecutor, { image: "photo.file" }), /Instagram \/ Facebook Post node: Credential is required/);
+    await assert.rejects(run(meta.socialPostExecutor, { operation: "facebook_photo", image: "photo.file", pageId: "x" }), /Page ID must be/);
+    await assert.rejects(run(meta.socialPostExecutor, { operation: "facebook_photo", image: "photo.file" }), /Credential is required/);
+
+    const { readFileSync, readdirSync } = await import("node:fs");
+    const read = (path: string) => readFileSync(path, "utf8");
+
+    const registry = read("src/features/executions/lib/executor-registry.ts");
+    assert.match(
+      registry,
+      /\[NodeType\.MESSENGER\]: messengerExecutor,\s*\[NodeType\.INSTAGRAM\]: instagramExecutor,\s*\[NodeType\.SOCIAL_POST\]: socialPostExecutor,\s*\[NodeType\.MESSENGER_TRIGGER\]: contextTriggerExecutor,\s*\[NodeType\.INSTAGRAM_TRIGGER\]: contextTriggerExecutor,/
+    );
+    const components = read("src/config/node-components.ts");
+    const selector = read("src/components/node-selector.tsx");
+    for (const [type, component] of [["MESSENGER", "MessengerNode"], ["MESSENGER_TRIGGER", "MessengerTriggerNode"], ["INSTAGRAM", "InstagramNode"], ["INSTAGRAM_TRIGGER", "InstagramTriggerNode"], ["SOCIAL_POST", "SocialPostNode"]]) {
+      assert.ok(components.includes(`[NodeType.${type}]: ${component},`), type);
+      assert.ok(selector.includes(`type: NodeType.${type},`), type);
+    }
+
+    const { TRIGGER_TYPE_SOURCES, formatTriggerSource } = await import("@/config/trigger-sources");
+    assert.equal(formatTriggerSource(TRIGGER_TYPE_SOURCES.MESSENGER_TRIGGER), "Messenger");
+    assert.equal(formatTriggerSource(TRIGGER_TYPE_SOURCES.INSTAGRAM_TRIGGER), "Instagram");
+    for (const type of ["MESSENGER_TRIGGER", "INSTAGRAM_TRIGGER"]) {
+      const graph = buildGraph(
+        [{ id: "t", type, data: {} }, { id: "n", type: "SET_VARIABLE", data: {} }] as never,
+        [{ fromNodeId: "t", toNodeId: "n", fromOutput: "source-1", toInput: "target-1" }] as never
+      );
+      assert.deepEqual(getStartNodeIds(graph, type as never), ["t"], type);
+    }
+    const { getNodeLabel } = await import("@/config/node-labels");
+    assert.equal(getNodeLabel("SOCIAL_POST"), "Instagram / Facebook Post");
+    assert.equal(getNodeLabel("MESSENGER_TRIGGER"), "Messenger Trigger");
+
+    // As AI Agent tools all of them send or publish: "write", so they ask
+    // for approval by default
+    for (const [type, operations] of [["MESSENGER", ["send_message", "send_image"]], ["INSTAGRAM", ["send_message", "send_image"]], ["SOCIAL_POST", ["instagram_photo", "facebook_photo"]]] as const) {
+      assert.equal(agentTools.getToolRisk(type, {}), "write", type);
+      for (const operation of operations) {
+        assert.equal(agentTools.getToolRisk(type, { operation }), "write", `${type} ${operation}`);
+      }
+    }
+    assert.equal(agentTools.getDefaultToolName("SOCIAL_POST"), "instagram_or_facebook_post");
+
+    // Which credential a node asks for
+    const nodes = read("src/features/executions/components/apps/nodes.tsx");
+    assert.match(nodes, /values\.connection === "instagram"\s*\? CredentialType\.INSTAGRAM\s*: CredentialType\.FACEBOOK_PAGE;/);
+    assert.match(nodes, /values\.operation === "facebook_photo"\s*\? CredentialType\.FACEBOOK_PAGE\s*: instagramCredential\(values\),/);
+    assert.match(nodes, /webhookPath: "messenger",/);
+    assert.match(nodes, /webhookPath: "instagram",/);
+    // The dialogs offer exactly what the executors take
+    assert.deepEqual([...nodes.slice(nodes.indexOf("export const socialPostConfig")).matchAll(/\{ value: "(\w+_photo)", label:/g)].map((found) => found[1]), meta.POST_OPERATIONS);
+
+    const credentialForm = read("src/features/credentials/components/credential.tsx");
+    for (const type of ["FACEBOOK_PAGE", "INSTAGRAM"]) {
+      assert.ok(credentialForm.includes(`{ value: CredentialType.${type},`), type);
+      assert.ok(credentialForm.includes(`[CredentialType.${type}]: {`), type);
+    }
+
+    // A test run from the editor has the shape a real message has
+    const { buildTestPayload, TESTABLE_TRIGGERS } = await import("@/features/workflows/server/test-payloads");
+    for (const [type, channel] of [["MESSENGER_TRIGGER", "messenger"], ["INSTAGRAM_TRIGGER", "instagram"]] as const) {
+      assert.ok((TESTABLE_TRIGGERS as readonly string[]).includes(type));
+      const payload: any = buildTestPayload(type, {});
+      assert.equal(payload[channel].text, "Hello from a test run");
+      assert.equal(payload.chatInput, "Hello from a test run");
+      assert.equal(payload.sessionId, `${channel}-${payload[channel].from}`);
+      // The reply node accepts the sender it is given
+      assert.doesNotThrow(() => meta.buildMessageCall(channel, { recipientId: `{{${channel}.from}}`, message: "{{chatInput}}" }, payload));
+    }
+
+    const folder = readdirSync("prisma/migrations").find((name) => name.endsWith("_instagram_messenger"));
+    assert.ok(folder, "migration");
+    assert.deepEqual(
+      read(`prisma/migrations/${folder}/migration.sql`)
+        .split(/\r?\n/)
+        .filter((line) => line.trim() && !line.startsWith("--")),
+      [
+        `ALTER TYPE "CredentialType" ADD VALUE 'FACEBOOK_PAGE';`,
+        `ALTER TYPE "CredentialType" ADD VALUE 'INSTAGRAM';`,
+        `ALTER TYPE "NodeType" ADD VALUE 'MESSENGER';`,
+        `ALTER TYPE "NodeType" ADD VALUE 'MESSENGER_TRIGGER';`,
+        `ALTER TYPE "NodeType" ADD VALUE 'INSTAGRAM';`,
+        `ALTER TYPE "NodeType" ADD VALUE 'INSTAGRAM_TRIGGER';`,
+        `ALTER TYPE "NodeType" ADD VALUE 'SOCIAL_POST';`,
+      ]
+    );
+  });
+
   console.log(`\n${passed} checks passed`);
 };
 

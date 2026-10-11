@@ -8,6 +8,15 @@ import {
   SPEECH_FORMATS,
 } from "../../lib/audio-options";
 import {
+  DEFAULT_REPLY_TYPE,
+  INSTAGRAM_CONNECTIONS,
+  INSTAGRAM_MAX_CAPTION,
+  INSTAGRAM_MAX_TEXT,
+  INSTAGRAM_REPLY_TYPES,
+  MESSENGER_MAX_TEXT,
+  MESSENGER_REPLY_TYPES,
+} from "../../lib/meta-options";
+import {
   SHOPIFY_EVENTS,
   WOOCOMMERCE_EVENTS,
   eventLabel,
@@ -956,6 +965,252 @@ export const sshConfig: IntegrationConfig = {
 
 export const SshNode = createIntegrationNode(sshConfig, (data) =>
   data.command ? data.command.split(/\r?\n/)[0].slice(0, 40) : undefined
+);
+
+// =========================================================================
+// MESSENGER / INSTAGRAM
+// =========================================================================
+const metaImageField = (operations: string[], description: string): IntegrationField => ({
+  name: "image",
+  label: "Image",
+  placeholder: "https://example.com/photo.jpg or image.file",
+  description,
+  required: true,
+  operations,
+});
+
+const META_IMAGE_HELP =
+  "A public https address of the picture, or a file variable. Meta fetches a file from this app through its 15-minute download link, so the app has to be on a public https address.";
+
+// Verify token and app secret, as on the WhatsApp Trigger
+const metaTriggerFields: IntegrationField[] = [
+  {
+    name: "verifyToken",
+    label: "Verify Token",
+    placeholder: "any-text-you-choose",
+    description: "Type the same text into Meta's Verify Token field.",
+    required: true,
+  },
+  {
+    name: "appSecret",
+    label: "App Secret",
+    placeholder: "From Meta app > App settings > Basic",
+    description:
+      "Used to check that each message really comes from Meta. Messages are rejected without it.",
+    required: true,
+  },
+];
+
+export const messengerConfig: IntegrationConfig = {
+  label: "Messenger",
+  description:
+    "Send a message to someone who wrote to your Facebook Page. A Page can only write to people who messaged it first.",
+  logo: "/logos/messenger.svg",
+  credentialType: CredentialType.FACEBOOK_PAGE,
+  credentialLabel: "Facebook Page Credential",
+  defaultVariableName: "messenger",
+  operations: [
+    { value: "send_message", label: "Send Text Message" },
+    { value: "send_image", label: "Send Image" },
+  ],
+  fields: [
+    {
+      name: "recipientId",
+      label: "Recipient ID",
+      placeholder: "{{messenger.from}}",
+      description:
+        "The id Meta gave for this person in the Messenger Trigger. A name or phone number does not work.",
+      required: true,
+    },
+    {
+      name: "message",
+      label: "Message",
+      type: "textarea",
+      placeholder: "Thanks for your message! {{output}}",
+      description: `Up to ${MESSENGER_MAX_TEXT} characters.`,
+      required: true,
+      operations: ["send_message"],
+    },
+    metaImageField(["send_image"], META_IMAGE_HELP),
+    {
+      name: "replyType",
+      label: "Message Type",
+      type: "select",
+      defaultValue: DEFAULT_REPLY_TYPE,
+      required: true,
+      options: MESSENGER_REPLY_TYPES,
+      description:
+        "An ordinary reply only arrives within 24 hours of the person's last message. The other types are for the cases Meta allows after that, and must not be used for promotion.",
+    },
+    {
+      name: "pageId",
+      label: "Page ID",
+      placeholder: "{{messenger.accountId}}",
+      description: "Leave empty for the Page the credential belongs to.",
+    },
+  ],
+};
+
+export const MessengerNode = createIntegrationNode(messengerConfig, (data) =>
+  data.recipientId ? `To: ${data.recipientId}` : undefined
+);
+
+export const messengerTriggerConfig: IntegrationConfig = {
+  label: "Messenger Trigger",
+  description:
+    "Starts when someone messages your Facebook Page. Activate the workflow first. Then, in your Meta app, add the Messenger product, enter the Webhook URL below and your Verify Token, subscribe the Page to the messages and messaging_postbacks fields, and copy the App Secret here.",
+  logo: "/logos/messenger.svg",
+  trigger: true,
+  webhookPath: "messenger",
+  summary: "On message",
+  hint: "Available variables: {{messenger.text}}, {{messenger.from}}, {{messenger.accountId}} (your Page), {{messenger.type}} (message or postback), {{messenger.payload}} for a tapped button or quick reply, and {{json messenger.attachments}} (each with a type and a url), plus {{chatInput}} and {{sessionId}} for an AI Agent. Reply with a Messenger node using Recipient ID {{messenger.from}}.",
+  fields: metaTriggerFields,
+};
+
+export const MessengerTriggerNode = createIntegrationNode(
+  messengerTriggerConfig,
+  (data) => (data.appSecret ? "On message" : "Not Configured")
+);
+
+const instagramConnectionField: IntegrationField = {
+  name: "connection",
+  label: "Account Connected",
+  type: "select",
+  defaultValue: INSTAGRAM_CONNECTIONS[0].value,
+  required: true,
+  options: INSTAGRAM_CONNECTIONS,
+  description:
+    "How your Meta app reaches the Instagram account. It decides which credential is used.",
+};
+
+const instagramCredential = (values: { connection?: string }) =>
+  values.connection === "instagram"
+    ? CredentialType.INSTAGRAM
+    : CredentialType.FACEBOOK_PAGE;
+
+export const instagramConfig: IntegrationConfig = {
+  label: "Instagram",
+  description:
+    "Send a direct message from your Instagram professional account to someone who wrote to it. An account can only write to people who messaged it first.",
+  logo: "/logos/instagram.svg",
+  credentialTypeFor: instagramCredential,
+  credentialLabel: "Credential",
+  defaultVariableName: "instagram",
+  operations: [
+    { value: "send_message", label: "Send Direct Message" },
+    { value: "send_image", label: "Send Image" },
+  ],
+  fields: [
+    instagramConnectionField,
+    {
+      name: "recipientId",
+      label: "Recipient ID",
+      placeholder: "{{instagram.from}}",
+      description:
+        "The id Meta gave for this person in the Instagram Trigger. A user name does not work.",
+      required: true,
+    },
+    {
+      name: "message",
+      label: "Message",
+      type: "textarea",
+      placeholder: "Thanks for your message! {{output}}",
+      description: `Up to ${INSTAGRAM_MAX_TEXT} characters.`,
+      required: true,
+      operations: ["send_message"],
+    },
+    metaImageField(["send_image"], META_IMAGE_HELP),
+    {
+      name: "replyType",
+      label: "Message Type",
+      type: "select",
+      defaultValue: DEFAULT_REPLY_TYPE,
+      required: true,
+      options: INSTAGRAM_REPLY_TYPES,
+      description:
+        "An ordinary reply only arrives within 24 hours of the person's last message.",
+    },
+    {
+      name: "accountId",
+      label: "Account ID",
+      placeholder: "{{instagram.accountId}}",
+      description:
+        "Leave empty for the account (or Page) the credential belongs to.",
+    },
+  ],
+};
+
+export const InstagramNode = createIntegrationNode(instagramConfig, (data) =>
+  data.recipientId ? `To: ${data.recipientId}` : undefined
+);
+
+export const instagramTriggerConfig: IntegrationConfig = {
+  label: "Instagram Trigger",
+  description:
+    "Starts when your Instagram professional account receives a direct message. Activate the workflow first. Then, in your Meta app, open the Instagram product's webhooks, enter the Webhook URL below and your Verify Token, subscribe to the messages field (and messaging_postbacks for buttons), and copy the App Secret here. With Instagram Login it is the Instagram app secret.",
+  logo: "/logos/instagram.svg",
+  trigger: true,
+  webhookPath: "instagram",
+  summary: "On direct message",
+  hint: "Available variables: {{instagram.text}}, {{instagram.from}}, {{instagram.accountId}} (your account), {{instagram.type}}, {{instagram.payload}} for a tapped button or quick reply, and {{json instagram.attachments}} (each with a type and a url), plus {{chatInput}} and {{sessionId}} for an AI Agent. Reply with an Instagram node using Recipient ID {{instagram.from}}.",
+  fields: metaTriggerFields,
+};
+
+export const InstagramTriggerNode = createIntegrationNode(
+  instagramTriggerConfig,
+  (data) => (data.appSecret ? "On direct message" : "Not Configured")
+);
+
+export const socialPostConfig: IntegrationConfig = {
+  label: "Instagram / Facebook Post",
+  description:
+    "Publish a photo with a caption on your Instagram professional account or your Facebook Page. The post is public as soon as the node has run.",
+  logo: "/logos/social-post.svg",
+  credentialTypeFor: (values) =>
+    values.operation === "facebook_photo"
+      ? CredentialType.FACEBOOK_PAGE
+      : instagramCredential(values),
+  credentialLabel: "Credential",
+  defaultVariableName: "post",
+  hint: "The result has {{post.id}} and {{post.url}}, the link to the post. Fields support {{variables}}. As an AI Agent tool this node publishes what the model writes: keep Require approval on.",
+  operations: [
+    { value: "instagram_photo", label: "Instagram Photo Post" },
+    { value: "facebook_photo", label: "Facebook Page Photo Post" },
+  ],
+  fields: [
+    { ...instagramConnectionField, operations: ["instagram_photo"] },
+    metaImageField(
+      ["instagram_photo"],
+      `${META_IMAGE_HELP} Instagram takes JPEG only, between 4:5 and 1.91:1 in shape.`
+    ),
+    metaImageField(["facebook_photo"], META_IMAGE_HELP),
+    {
+      name: "caption",
+      label: "Caption",
+      type: "textarea",
+      placeholder: "New arrivals this week. #newin",
+      description: `Up to ${INSTAGRAM_MAX_CAPTION} characters on Instagram.`,
+    },
+    {
+      name: "accountId",
+      label: "Instagram Account ID",
+      placeholder: "17841400000000000",
+      description:
+        "Leave empty: with a Facebook Page credential the Instagram account connected to the Page is used.",
+      operations: ["instagram_photo"],
+    },
+    {
+      name: "pageId",
+      label: "Page ID",
+      placeholder: "100000000000000",
+      description: "Leave empty for the Page the credential belongs to.",
+      operations: ["facebook_photo"],
+    },
+  ],
+};
+
+export const SocialPostNode = createIntegrationNode(socialPostConfig, (data) =>
+  data.image ? operationLabel(socialPostConfig, data.operation) : "Not Configured"
 );
 
 // =========================================================================

@@ -53,6 +53,11 @@ import {
   woocommerceExecutor,
 } from '../components/apps/stores';
 import {
+  instagramExecutor,
+  messengerExecutor,
+  socialPostExecutor,
+} from '../components/apps/meta';
+import {
   telegramTriggerExecutor,
   whatsappTriggerExecutor,
 } from '../components/apps/voice';
@@ -192,6 +197,11 @@ const baseExecutors: Record<NodeType, NodeExecutor<any>> = {
   [NodeType.WOOCOMMERCE]: woocommerceExecutor,
   [NodeType.SHOPIFY_TRIGGER]: contextTriggerExecutor,
   [NodeType.WOOCOMMERCE_TRIGGER]: contextTriggerExecutor,
+  [NodeType.MESSENGER]: messengerExecutor,
+  [NodeType.INSTAGRAM]: instagramExecutor,
+  [NodeType.SOCIAL_POST]: socialPostExecutor,
+  [NodeType.MESSENGER_TRIGGER]: contextTriggerExecutor,
+  [NodeType.INSTAGRAM_TRIGGER]: contextTriggerExecutor,
   [NodeType.RSS_READ]: rssReadExecutor,
   [NodeType.RSS_FEED_TRIGGER]: contextTriggerExecutor,
   [NodeType.GOOGLE_DRIVE]: googleDriveExecutor,

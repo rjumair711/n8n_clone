@@ -27,6 +27,8 @@ export type ExecuteTrigger = Extract<
     | "GOOGLE_FORM_TRIGGER"
     | "TELEGRAM_TRIGGER"
     | "WHATSAPP_TRIGGER"
+    | "MESSENGER_TRIGGER"
+    | "INSTAGRAM_TRIGGER"
     | "GMAIL_TRIGGER"
     | "TYPEFORM_TRIGGER"
     | "SHOPIFY_TRIGGER"
