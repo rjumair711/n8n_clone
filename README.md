@@ -256,6 +256,25 @@ Each tool in the agent's settings has a **Require approval** switch. When the mo
 * **Output:** `{{output}}` and `{{<variableName>.output}}`, plus `intermediateSteps` when enabled.
 * **Chat panel:** workflows with a Chat Trigger get an "Open chat" button in the editor to talk to the agent.
 
+### Guardrails
+
+Checks a text and sends the run on through its **Pass** or **Fail** output. Put it before an AI Agent to check what a user wrote (Text To Check `{{chatInput}}`), or after one to check the answer (`{{output}}`); **The Text Is** says which.
+
+| Check | How | When it fails |
+| ----- | --- | ------------- |
+| Personal data | In the app, by pattern: email addresses, phone numbers, card numbers (13 to 19 digits that pass the card check digit) and national IDs (US Social Security number, Pakistan CNIC, India Aadhaar, UK National Insurance number). Each kind has a switch | Only with **Block**. With **Mask** each value becomes `[EMAIL]`, `[PHONE]`, `[CARD]` or `[ID]` and the text passes |
+| Maximum length | In the app, in characters | The text is longer |
+| Prompt injection | A chat model on the node's **Model** port judges the text: for a user's message, whether it tries to override the assistant's instructions or bypass its restrictions (a jailbreak); for an answer, whether the assistant was manipulated (it reveals its instructions, drops its rules) | The model says so |
+| Allowed topics | The same model decides whether the text is about one of the topics you list; greetings and thanks pass | It is about something else |
+
+* **The result** is at `{{guardrails.passed}}`, `{{guardrails.reason}}` (one line, why it failed), `{{json guardrails.violations}}` (every failed check) and `{{guardrails.text}}`, **the checked text with personal data masked**. Give `{{guardrails.text}}` to the next node instead of the original. Only the kinds and counts of what was found are reported, never the values.
+* **Connect the Fail output** to what should happen then, for example a node that sends a polite refusal. An output with nothing connected simply ends that branch.
+* **The model is only called when it has to be:** not when the text already failed on length or blocked personal data, and not for an empty text. It is given the masked text, so what was found is not sent to the model provider. Both model checks share one call, which is recorded in the usage figures and held to the AI budget.
+* **A model check without a model on the port is an error**, not a pass. An answer of the model that cannot be read fails the text: a guard that cannot tell does not wave things through. If the model itself cannot be reached, the node fails like any other AI node.
+* **Use a cheap, fast model** for the port; the check is a yes or no question. Of a very long text the model reads the first 6000 and the last 2000 characters.
+* **What it does not promise.** Personal data is found by the usual ways it is written, not every way: a phone number spelled out in words, a name or a street address is not caught, and a ten or eleven digit order number is taken for a phone number. A model's verdict on prompt injection can be wrong in both directions. Guardrails is one layer next to tool approval, tool risk levels and the agent's own instructions, not a replacement for them.
+* In a list it checks every item on its own and routes each one.
+
 ### Persistent memory (Postgres Memory)
 
 A second node for the agent's Memory port, next to the simple Memory node. It keeps everything in the app's own database, so it needs no credential.
@@ -378,6 +397,7 @@ They are on the Chat Model, DeepSeek, Kimi and Qwen nodes (`{{chatModel.modelUse
 | Vector Store | Insert, search and delete documents by meaning (RAG), with OpenAI, Gemini or OpenAI-compatible embeddings. Text splitting, metadata filters, reranking, and pgvector when the database has it (see "Vector Store and Document Loader") |
 | Document Loader | Loads a Google Drive folder or a Notion database into a Vector Store collection, skipping documents that have not changed |
 | MCP Client | Gives an AI Agent the tools of an MCP server (Streamable HTTP, or SSE for older servers) |
+| Guardrails | Checks text before or after an agent: personal data (mask or block), maximum length, prompt injection and allowed topics, with Pass and Fail outputs (see "Guardrails") |
 
 ### MCP: client and server
 

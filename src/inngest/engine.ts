@@ -43,6 +43,8 @@ const TRIGGER_TYPES = new Set([
 const SUB_PORT_HOST_TYPES = new Set([
   "AI_AGENT",
   "TEXT_CLASSIFIER",
+  // Its Model port is only used by the checks a model makes
+  "GUARDRAILS",
   "INFORMATION_EXTRACTOR",
   "ANALYZE_DOCUMENT",
   // Its Rerank Model port takes a model node
@@ -213,6 +215,8 @@ export const getActiveOutputs = (
     case "SWITCH":
     // The classifier picks one category output, like a Switch rule
     case "TEXT_CLASSIFIER":
+    // Guardrails leaves through Pass or Fail
+    case "GUARDRAILS":
       return typeof context.matchedBranch === "string"
         ? [context.matchedBranch]
         : [];

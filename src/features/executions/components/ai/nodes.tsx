@@ -1,7 +1,7 @@
 "use client";
 
 import { CredentialType } from "@prisma/client";
-import { Braces, BrainCircuit, DatabaseZap, FolderSync, Plug, ScanEye, ScanText, ServerCog, Tags } from "lucide-react";
+import { Braces, BrainCircuit, DatabaseZap, FolderSync, Plug, ScanEye, ScanText, ServerCog, ShieldCheck, Tags } from "lucide-react";
 import { createIntegrationNode } from "../integration-node";
 import type { IntegrationConfig, IntegrationField } from "../integration-dialog";
 import {
@@ -12,6 +12,11 @@ import {
   RERANKERS,
 } from "../../lib/rag-options";
 import { SPLIT_MODES } from "../../lib/text-splitter";
+import {
+  GUARD_DIRECTIONS,
+  GUARD_OUTPUTS,
+  PII_MODES,
+} from "../../lib/guardrails";
 import {
   FACT_MAX_PER_CONTACT,
   MEMORY_DEFAULT_MESSAGES,
@@ -80,6 +85,104 @@ export const TextClassifierNode = createIntegrationNode(
     return count ? `${count} categor${count === 1 ? "y" : "ies"}` : "Not Configured";
   }
 );
+
+// =========================================================================
+// GUARDRAILS
+// =========================================================================
+const piiSwitch = (name: string, label: string, description: string): IntegrationField => ({
+  name,
+  label,
+  type: "switch",
+  defaultValue: "true",
+  description,
+  showWhen: (values) => values.pii === "mask" || values.pii === "block",
+});
+
+export const guardrailsConfig: IntegrationConfig = {
+  label: "Guardrails",
+  description:
+    "Checks a text and sends the run on through Pass or Fail. Put it before an AI Agent to check what a user wrote, or after one to check the answer. Personal data and length are checked in the app; prompt injection and allowed topics need a (cheap) model on the Model port.",
+  logo: ShieldCheck,
+  defaultVariableName: "guardrails",
+  subInputs: MODEL_PORT,
+  getOutputs: () => GUARD_OUTPUTS,
+  hint: "The checked text, with personal data masked, is at {{<name>.text}}: give that to the next node instead of the original. {{<name>.passed}} is true or false, {{<name>.reason}} says why it failed and {{json <name>.violations}} lists every failed check. Connect the Fail output to what should happen then, for example a polite refusal.",
+  fields: [
+    {
+      name: "inputText",
+      label: "Text To Check",
+      type: "textarea",
+      placeholder: "{{chatInput}}   or, after an agent:   {{output}}",
+      required: true,
+    },
+    {
+      name: "direction",
+      label: "The Text Is",
+      type: "select",
+      defaultValue: "input",
+      required: true,
+      options: GUARD_DIRECTIONS,
+      description: "It changes what the model looks for in the prompt injection check.",
+    },
+    {
+      name: "pii",
+      label: "Personal Data",
+      type: "select",
+      defaultValue: "mask",
+      required: true,
+      options: PII_MODES,
+      description:
+        "Found by pattern, in the app: no model sees it. Masking replaces each value with a placeholder such as [EMAIL] and lets the text pass.",
+    },
+    piiSwitch("piiEmail", "Email Addresses", "name@example.com"),
+    piiSwitch(
+      "piiPhone",
+      "Phone Numbers",
+      "With a country code, a leading zero or the usual grouping. A plain number of ten or eleven digits counts too, so an order number of that length is masked as well."
+    ),
+    piiSwitch("piiCard", "Card Numbers", "13 to 19 digits that pass the card check digit."),
+    piiSwitch(
+      "piiNationalId",
+      "National ID Numbers",
+      "US Social Security number, Pakistan CNIC, India Aadhaar and UK National Insurance number, as they are usually written."
+    ),
+    {
+      name: "maxLength",
+      label: "Maximum Length",
+      placeholder: "4000",
+      description: "In characters. A longer text fails. Leave empty for no limit.",
+    },
+    {
+      name: "detectInjection",
+      label: "Detect Prompt Injection",
+      type: "switch",
+      defaultValue: "false",
+      description:
+        "Asks the connected model whether the text tries to override the assistant's instructions (a jailbreak), or, for an answer, whether the assistant was manipulated. A model can be wrong either way: treat it as one layer, not the only one.",
+    },
+    {
+      name: "allowedTopics",
+      label: "Allowed Topics",
+      type: "textarea",
+      placeholder: "orders and delivery\nreturns and refunds\nour products",
+      description:
+        "One per line. With topics listed, the connected model decides whether the text is about one of them; greetings and thanks pass. Leave empty for no restriction.",
+    },
+  ],
+};
+
+export const GuardrailsNode = createIntegrationNode(guardrailsConfig, (data) => {
+  const checks = [
+    data.pii === "mask" ? "mask PII" : data.pii === "block" ? "block PII" : "",
+    data.maxLength ? `max ${data.maxLength}` : "",
+    data.detectInjection === "true" ? "injection" : "",
+    data.allowedTopics?.trim() ? "topics" : "",
+  ].filter(Boolean);
+
+  return data.inputText
+    ? checks.join(", ") || "No checks"
+    : "Not Configured";
+});
 
 // =========================================================================
 // INFORMATION EXTRACTOR

@@ -84,7 +84,7 @@ const RUN_ONCE_TYPES = new Set([
 
 // Decide per item which output it leaves through; the item itself is
 // forwarded unchanged
-const ROUTER_TYPES = new Set(["IF", "FILTER", "SWITCH", "TEXT_CLASSIFIER"]);
+const ROUTER_TYPES = new Set(["IF", "FILTER", "SWITCH", "TEXT_CLASSIFIER", "GUARDRAILS"]);
 
 // Written by the routers for the engine, not data of the item
 const ROUTING_KEYS = new Set(["ifResult", "filterPassed", "matchedBranch"]);
