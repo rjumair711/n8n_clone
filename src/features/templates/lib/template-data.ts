@@ -20,7 +20,8 @@ export type TemplateConnection = {
 const PRIVATE_KEYS = new Set([
   // Which stored credential a node uses
   "credentialId",
-  // Webhook, Typeform and Google Form secrets; the Stripe signing secret
+  // Webhook, Typeform, WooCommerce and Google Form secrets; the Stripe and
+  // Shopify signing secrets
   "secret",
   "signingSecret",
   // WhatsApp Trigger

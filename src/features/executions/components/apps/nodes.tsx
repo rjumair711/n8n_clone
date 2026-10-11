@@ -7,6 +7,11 @@ import {
   DEFAULT_VOICE,
   SPEECH_FORMATS,
 } from "../../lib/audio-options";
+import {
+  SHOPIFY_EVENTS,
+  WOOCOMMERCE_EVENTS,
+  eventLabel,
+} from "../../lib/store-options";
 import { createIntegrationNode } from "../integration-node";
 import type { IntegrationConfig, IntegrationField } from "../integration-dialog";
 import {
@@ -951,4 +956,612 @@ export const sshConfig: IntegrationConfig = {
 
 export const SshNode = createIntegrationNode(sshConfig, (data) =>
   data.command ? data.command.split(/\r?\n/)[0].slice(0, 40) : undefined
+);
+
+// =========================================================================
+// SHOPIFY / WOOCOMMERCE
+// =========================================================================
+const STORE_LIST_HINT =
+  "A list operation returns its items at {{json <name>.items}} and their number at {{<name>.count}}: add a Split Out node with Input List <name> to run the next nodes once per item. Fields support {{variables}}; when this node is an AI Agent tool, use {{$fromAI \"name\" \"what it is\"}} for values the agent should fill in.";
+
+const storeFieldsField = (operations: string[], placeholder: string): IntegrationField => ({
+  name: "fields",
+  label: "Fields",
+  placeholder,
+  description:
+    "Comma-separated. Only these fields are returned, which keeps a long list small.",
+  operations,
+});
+
+const storeLimitField = (operations: string[]): IntegrationField => ({
+  name: "limit",
+  label: "Limit",
+  placeholder: "20",
+  description: "How many to return (up to 100).",
+  operations,
+});
+
+export const shopifyConfig: IntegrationConfig = {
+  label: "Shopify",
+  description:
+    "Work with the orders, products, customers and inventory of a Shopify store, and list its abandoned checkouts.",
+  logo: "/logos/shopify.svg",
+  credentialType: CredentialType.SHOPIFY,
+  credentialLabel: "Shopify Credential",
+  defaultVariableName: "shopify",
+  hint: STORE_LIST_HINT,
+  operations: [
+    { value: "get_order", label: "Get Order" },
+    { value: "list_orders", label: "List Orders" },
+    { value: "update_order", label: "Update Order" },
+    { value: "get_product", label: "Get Product" },
+    { value: "list_products", label: "List Products" },
+    { value: "create_product", label: "Create Product" },
+    { value: "update_product", label: "Update Product" },
+    { value: "get_customer", label: "Get Customer" },
+    { value: "search_customers", label: "Search Customers" },
+    { value: "create_customer", label: "Create Customer" },
+    { value: "update_customer", label: "Update Customer" },
+    { value: "get_inventory", label: "Get Inventory Level" },
+    { value: "set_inventory", label: "Set Inventory Level" },
+    { value: "adjust_inventory", label: "Adjust Inventory Level" },
+    { value: "list_locations", label: "List Locations" },
+    { value: "list_abandoned_checkouts", label: "List Abandoned Checkouts" },
+  ],
+  fields: [
+    {
+      name: "shopDomain",
+      label: "Shop Domain",
+      placeholder: "my-store.myshopify.com",
+      description:
+        "The store's myshopify.com address, not its public domain. The credential's token is only sent there.",
+      required: true,
+    },
+    {
+      name: "orderId",
+      label: "Order ID",
+      placeholder: "{{shopify.order.id}}",
+      description: "The long number in the order's address in Shopify admin, not #1001.",
+      required: true,
+      operations: ["get_order", "update_order"],
+    },
+    {
+      name: "status",
+      label: "Status",
+      type: "select",
+      defaultValue: "any",
+      options: [
+        { value: "any", label: "Any" },
+        { value: "open", label: "Open" },
+        { value: "closed", label: "Closed" },
+        { value: "cancelled", label: "Cancelled" },
+      ],
+      operations: ["list_orders"],
+    },
+    {
+      name: "financialStatus",
+      label: "Payment Status",
+      placeholder: "paid",
+      description: "paid, pending, authorized, partially_paid, refunded, voided or unpaid.",
+      operations: ["list_orders"],
+    },
+    {
+      name: "fulfillmentStatus",
+      label: "Fulfillment Status",
+      placeholder: "unfulfilled",
+      description: "unfulfilled, shipped, partial or unshipped.",
+      operations: ["list_orders"],
+    },
+    {
+      name: "createdAfter",
+      label: "Created After",
+      placeholder: "2026-01-31",
+      description: "Only orders created after this date.",
+      operations: ["list_orders"],
+    },
+    {
+      name: "note",
+      label: "Note",
+      type: "textarea",
+      placeholder: "Confirmation sent on WhatsApp",
+      operations: ["update_order"],
+    },
+    {
+      name: "productId",
+      label: "Product ID",
+      placeholder: "{{shopify.product.id}}",
+      required: true,
+      operations: ["get_product", "update_product"],
+    },
+    {
+      name: "title",
+      label: "Title",
+      placeholder: "Cotton T-shirt",
+      required: true,
+      operations: ["create_product"],
+    },
+    {
+      name: "title",
+      label: "Title",
+      placeholder: "Cotton T-shirt",
+      operations: ["list_products", "update_product"],
+    },
+    {
+      name: "description",
+      label: "Description",
+      type: "textarea",
+      placeholder: "<p>Soft cotton, regular fit.</p>",
+      description: "Text or HTML.",
+      operations: ["create_product", "update_product"],
+    },
+    {
+      name: "price",
+      label: "Price",
+      placeholder: "19.99",
+      operations: ["create_product"],
+    },
+    {
+      name: "sku",
+      label: "SKU",
+      placeholder: "TSHIRT-M-BLUE",
+      operations: ["create_product"],
+    },
+    {
+      name: "vendor",
+      label: "Vendor",
+      placeholder: "Acme",
+      operations: ["create_product", "update_product"],
+    },
+    {
+      name: "productType",
+      label: "Product Type",
+      placeholder: "Shirts",
+      operations: ["create_product", "update_product"],
+    },
+    {
+      name: "productStatus",
+      label: "Product Status",
+      placeholder: "active",
+      description: "active, draft or archived.",
+      operations: ["list_products", "create_product", "update_product"],
+    },
+    {
+      name: "customerId",
+      label: "Customer ID",
+      placeholder: "{{shopify.order.customer.id}}",
+      required: true,
+      operations: ["get_customer", "update_customer"],
+    },
+    {
+      name: "query",
+      label: "Search",
+      placeholder: "email:ali@example.com",
+      description:
+        "Shopify's customer search: a name, or a field such as email:, phone: or country:.",
+      required: true,
+      operations: ["search_customers"],
+    },
+    {
+      name: "email",
+      label: "Email",
+      placeholder: "customer@example.com",
+      operations: ["update_order", "create_customer", "update_customer"],
+    },
+    {
+      name: "phone",
+      label: "Phone",
+      placeholder: "+923001234567",
+      description: "With country code. Shopify refuses a number another customer has.",
+      operations: ["create_customer", "update_customer"],
+    },
+    {
+      name: "firstName",
+      label: "First Name",
+      placeholder: "Ali",
+      operations: ["create_customer", "update_customer"],
+    },
+    {
+      name: "lastName",
+      label: "Last Name",
+      placeholder: "Khan",
+      operations: ["create_customer", "update_customer"],
+    },
+    {
+      name: "tags",
+      label: "Tags",
+      placeholder: "vip, whatsapp-confirmed",
+      description: "Comma-separated. On an update they replace the existing tags.",
+      operations: [
+        "update_order",
+        "create_product",
+        "update_product",
+        "create_customer",
+        "update_customer",
+      ],
+    },
+    {
+      name: "inventoryItemId",
+      label: "Inventory Item ID",
+      placeholder: "{{shopify.variants.0.inventory_item_id}}",
+      description:
+        "A variant's inventory_item_id, from Get Product (variants.0.inventory_item_id). It is not the product or variant ID.",
+      required: true,
+      operations: ["get_inventory", "set_inventory", "adjust_inventory"],
+    },
+    {
+      name: "locationId",
+      label: "Location ID",
+      placeholder: "From List Locations",
+      required: true,
+      operations: ["set_inventory", "adjust_inventory"],
+    },
+    {
+      name: "locationId",
+      label: "Location ID",
+      placeholder: "From List Locations",
+      description: "Leave empty for every location.",
+      operations: ["get_inventory"],
+    },
+    {
+      name: "quantity",
+      label: "Quantity",
+      placeholder: "25",
+      description:
+        "Set: the new stock. Adjust: how much to add, or a negative number to take away.",
+      required: true,
+      operations: ["set_inventory", "adjust_inventory"],
+    },
+    {
+      name: "minAgeMinutes",
+      label: "Abandoned At Least (minutes ago)",
+      placeholder: "60",
+      description: "Checkouts that were last touched this long ago or longer. Default 60.",
+      operations: ["list_abandoned_checkouts"],
+    },
+    {
+      name: "maxAgeMinutes",
+      label: "Abandoned At Most (minutes ago)",
+      placeholder: "120",
+      description:
+        "Leave out older ones. With a schedule that runs every hour, 60 and 120 give each checkout one reminder.",
+      operations: ["list_abandoned_checkouts"],
+    },
+    {
+      name: "contactOnly",
+      label: "Only With Contact Details",
+      type: "switch",
+      defaultValue: "true",
+      description: "Leave out checkouts that have no email address and no phone number.",
+      operations: ["list_abandoned_checkouts"],
+    },
+    storeLimitField([
+      "list_orders",
+      "list_products",
+      "search_customers",
+      "list_abandoned_checkouts",
+    ]),
+    storeFieldsField(
+      [
+        "get_order",
+        "list_orders",
+        "get_product",
+        "list_products",
+        "get_customer",
+        "search_customers",
+      ],
+      "id, name, email, total_price"
+    ),
+    {
+      name: "fieldsJson",
+      label: "Additional Fields",
+      type: "textarea",
+      placeholder: '{\n  "metafields": [],\n  "note_attributes": [{ "name": "source", "value": "rxj" }]\n}',
+      description: "A JSON object in Shopify's field names, merged into what is sent.",
+      operations: [
+        "update_order",
+        "create_product",
+        "update_product",
+        "create_customer",
+        "update_customer",
+      ],
+    },
+    {
+      name: "apiVersion",
+      label: "API Version",
+      placeholder: "2025-01",
+      description: "Leave empty unless you need a newer version of the Admin API.",
+    },
+  ],
+};
+
+export const ShopifyNode = createIntegrationNode(shopifyConfig, (data) =>
+  data.shopDomain ? operationLabel(shopifyConfig, data.operation) : "Not Configured"
+);
+
+export const shopifyTriggerConfig: IntegrationConfig = {
+  label: "Shopify Trigger",
+  description:
+    "Starts when something happens in your Shopify store. In Shopify admin open Settings > Notifications > Webhooks, create a webhook for the event with format JSON and the Webhook URL below, then copy the signing secret shown on that page into this node. The workflow has to be active.",
+  logo: "/logos/shopify.svg",
+  trigger: true,
+  webhookPath: "shopify",
+  summary: "On store event",
+  hint: "Available variables: {{shopify.event}}, {{shopify.id}}, {{shopify.email}}, {{shopify.phone}}, {{shopify.customerName}} and {{shopify.shopDomain}}. Everything Shopify sent is at {{json shopify.order}} (or shopify.product, shopify.customer, shopify.checkout), for example {{shopify.order.name}} and {{shopify.order.total_price}}.",
+  fields: [
+    {
+      name: "event",
+      label: "Event",
+      type: "select",
+      defaultValue: SHOPIFY_EVENTS[0].value,
+      required: true,
+      options: SHOPIFY_EVENTS,
+      description:
+        "Create the webhook in Shopify for the same event. Other events sent to the URL are ignored.",
+    },
+    {
+      name: "signingSecret",
+      label: "Signing Secret",
+      placeholder: "From Settings > Notifications > Webhooks",
+      description:
+        "Used to check that each event really comes from your store. Events are rejected without it. For a webhook made by a custom app, it is the app's API secret key.",
+      required: true,
+    },
+  ],
+};
+
+export const ShopifyTriggerNode = createIntegrationNode(
+  shopifyTriggerConfig,
+  (data) =>
+    data.signingSecret
+      ? eventLabel(SHOPIFY_EVENTS, data.event) ?? "On store event"
+      : "Not Configured"
+);
+
+export const woocommerceConfig: IntegrationConfig = {
+  label: "WooCommerce",
+  description:
+    "Work with the orders, products and customers of a WooCommerce store through its REST API.",
+  logo: "/logos/woocommerce.svg",
+  credentialType: CredentialType.WOOCOMMERCE,
+  credentialLabel: "WooCommerce Credential",
+  defaultVariableName: "woocommerce",
+  hint: STORE_LIST_HINT,
+  operations: [
+    { value: "get_order", label: "Get Order" },
+    { value: "list_orders", label: "List Orders" },
+    { value: "update_order", label: "Update Order" },
+    { value: "add_order_note", label: "Add Order Note" },
+    { value: "get_product", label: "Get Product" },
+    { value: "list_products", label: "List Products" },
+    { value: "create_product", label: "Create Product" },
+    { value: "update_product", label: "Update Product" },
+    { value: "get_customer", label: "Get Customer" },
+    { value: "list_customers", label: "List Customers" },
+    { value: "create_customer", label: "Create Customer" },
+    { value: "update_customer", label: "Update Customer" },
+  ],
+  fields: [
+    {
+      name: "storeUrl",
+      label: "Store URL",
+      placeholder: "https://shop.example.com",
+      description:
+        "The shop's https address. The credential's key and secret are sent there with every request.",
+      required: true,
+    },
+    {
+      name: "orderId",
+      label: "Order ID",
+      placeholder: "{{woocommerce.order.id}}",
+      required: true,
+      operations: ["get_order", "update_order", "add_order_note"],
+    },
+    {
+      name: "status",
+      label: "Status",
+      placeholder: "processing",
+      description:
+        "pending, processing, on-hold, completed, cancelled, refunded or failed.",
+      operations: ["list_orders", "update_order"],
+    },
+    {
+      name: "search",
+      label: "Search",
+      placeholder: "ali@example.com",
+      operations: ["list_orders", "list_products", "list_customers"],
+    },
+    {
+      name: "createdAfter",
+      label: "Created After",
+      placeholder: "2026-01-31",
+      description: "Only orders created after this date.",
+      operations: ["list_orders"],
+    },
+    {
+      name: "customerNote",
+      label: "Customer Note",
+      type: "textarea",
+      placeholder: "Please leave the parcel with the guard.",
+      description: "The note on the order that the customer wrote, or you write for them.",
+      operations: ["update_order"],
+    },
+    {
+      name: "note",
+      label: "Note",
+      type: "textarea",
+      placeholder: "Confirmation sent on WhatsApp",
+      required: true,
+      operations: ["add_order_note"],
+    },
+    {
+      name: "noteForCustomer",
+      label: "Send To Customer",
+      type: "switch",
+      defaultValue: "false",
+      description:
+        "On: WooCommerce emails the note to the customer. Off: only shop staff see it.",
+      operations: ["add_order_note"],
+    },
+    {
+      name: "productId",
+      label: "Product ID",
+      placeholder: "{{woocommerce.product.id}}",
+      required: true,
+      operations: ["get_product", "update_product"],
+    },
+    {
+      name: "name",
+      label: "Name",
+      placeholder: "Cotton T-shirt",
+      required: true,
+      operations: ["create_product"],
+    },
+    {
+      name: "name",
+      label: "Name",
+      placeholder: "Cotton T-shirt",
+      operations: ["update_product"],
+    },
+    {
+      name: "price",
+      label: "Regular Price",
+      placeholder: "19.99",
+      operations: ["create_product", "update_product"],
+    },
+    {
+      name: "description",
+      label: "Description",
+      type: "textarea",
+      placeholder: "<p>Soft cotton, regular fit.</p>",
+      operations: ["create_product", "update_product"],
+    },
+    {
+      name: "sku",
+      label: "SKU",
+      placeholder: "TSHIRT-M-BLUE",
+      operations: ["list_products", "create_product", "update_product"],
+    },
+    {
+      name: "stockQuantity",
+      label: "Stock Quantity",
+      placeholder: "25",
+      description: "Setting it also switches on stock management for the product.",
+      operations: ["create_product", "update_product"],
+    },
+    {
+      name: "productStatus",
+      label: "Product Status",
+      placeholder: "publish",
+      description: "publish, draft, pending or private.",
+      operations: ["list_products", "create_product", "update_product"],
+    },
+    {
+      name: "customerId",
+      label: "Customer ID",
+      placeholder: "{{woocommerce.order.customer_id}}",
+      required: true,
+      operations: ["get_customer", "update_customer"],
+    },
+    {
+      name: "email",
+      label: "Email",
+      placeholder: "customer@example.com",
+      required: true,
+      operations: ["create_customer"],
+    },
+    {
+      name: "email",
+      label: "Email",
+      placeholder: "customer@example.com",
+      operations: ["list_customers", "update_customer"],
+    },
+    {
+      name: "firstName",
+      label: "First Name",
+      placeholder: "Ali",
+      operations: ["create_customer", "update_customer"],
+    },
+    {
+      name: "lastName",
+      label: "Last Name",
+      placeholder: "Khan",
+      operations: ["create_customer", "update_customer"],
+    },
+    storeLimitField(["list_orders", "list_products", "list_customers"]),
+    storeFieldsField(
+      [
+        "get_order",
+        "list_orders",
+        "get_product",
+        "list_products",
+        "get_customer",
+        "list_customers",
+      ],
+      "id, status, total, billing"
+    ),
+    {
+      name: "fieldsJson",
+      label: "Additional Fields",
+      type: "textarea",
+      placeholder: '{\n  "billing": { "phone": "+923001234567" },\n  "meta_data": [{ "key": "source", "value": "rxj" }]\n}',
+      description: "A JSON object in WooCommerce's field names, merged into what is sent.",
+      operations: [
+        "update_order",
+        "create_product",
+        "update_product",
+        "create_customer",
+        "update_customer",
+      ],
+    },
+  ],
+};
+
+export const WoocommerceNode = createIntegrationNode(woocommerceConfig, (data) =>
+  data.storeUrl ? operationLabel(woocommerceConfig, data.operation) : "Not Configured"
+);
+
+export const woocommerceTriggerConfig: IntegrationConfig = {
+  label: "WooCommerce Trigger",
+  description:
+    "Starts when something happens in your WooCommerce store. Activate the workflow first, then in WordPress open WooCommerce > Settings > Advanced > Webhooks, add a webhook with status Active, the topic for the event, the Webhook URL below as Delivery URL, and the same Secret as here.",
+  logo: "/logos/woocommerce.svg",
+  trigger: true,
+  webhookPath: "woocommerce",
+  summary: "On store event",
+  hint: "Available variables: {{woocommerce.event}}, {{woocommerce.id}}, {{woocommerce.email}}, {{woocommerce.phone}}, {{woocommerce.customerName}} and {{woocommerce.storeUrl}}. Everything WooCommerce sent is at {{json woocommerce.order}} (or woocommerce.product, woocommerce.customer), for example {{woocommerce.order.number}} and {{woocommerce.order.total}}.",
+  fields: [
+    {
+      name: "event",
+      label: "Event",
+      type: "select",
+      defaultValue: WOOCOMMERCE_EVENTS[0].value,
+      required: true,
+      options: WOOCOMMERCE_EVENTS,
+      description:
+        "Order paid: give the WooCommerce webhook the topic Order updated. The run starts once per order, when it first has a payment date.",
+    },
+    {
+      name: "orderStatus",
+      label: "Only When The Order Status Is",
+      placeholder: "processing",
+      description:
+        "For order events: pending, processing, on-hold, completed, cancelled, refunded or failed. An order starts one run per status.",
+    },
+    {
+      name: "secret",
+      label: "Secret",
+      placeholder: "any-long-random-text",
+      description:
+        "Type the same text into the webhook's Secret field in WooCommerce. Events that are not signed with it are rejected.",
+      required: true,
+    },
+  ],
+};
+
+export const WoocommerceTriggerNode = createIntegrationNode(
+  woocommerceTriggerConfig,
+  (data) =>
+    data.secret
+      ? eventLabel(WOOCOMMERCE_EVENTS, data.event) ?? "On store event"
+      : "Not Configured"
 );

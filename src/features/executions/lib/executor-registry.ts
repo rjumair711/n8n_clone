@@ -49,6 +49,10 @@ import {
   transcribeAudioExecutor,
 } from '../components/apps/audio';
 import {
+  shopifyExecutor,
+  woocommerceExecutor,
+} from '../components/apps/stores';
+import {
   telegramTriggerExecutor,
   whatsappTriggerExecutor,
 } from '../components/apps/voice';
@@ -184,6 +188,10 @@ const baseExecutors: Record<NodeType, NodeExecutor<any>> = {
   [NodeType.TRANSCRIBE_AUDIO]: transcribeAudioExecutor,
   [NodeType.TEXT_TO_SPEECH]: textToSpeechExecutor,
   [NodeType.TYPEFORM_TRIGGER]: contextTriggerExecutor,
+  [NodeType.SHOPIFY]: shopifyExecutor,
+  [NodeType.WOOCOMMERCE]: woocommerceExecutor,
+  [NodeType.SHOPIFY_TRIGGER]: contextTriggerExecutor,
+  [NodeType.WOOCOMMERCE_TRIGGER]: contextTriggerExecutor,
   [NodeType.RSS_READ]: rssReadExecutor,
   [NodeType.RSS_FEED_TRIGGER]: contextTriggerExecutor,
   [NodeType.GOOGLE_DRIVE]: googleDriveExecutor,
