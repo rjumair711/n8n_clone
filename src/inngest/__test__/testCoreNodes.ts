@@ -3078,11 +3078,35 @@ const main = async () => {
     assert.match(devHeaders["Content-Security-Policy-Report-Only"], /'unsafe-eval'/);
     assert.equal(/report-uri/.test(devHeaders["Content-Security-Policy-Report-Only"]), false);
 
-    // The exception point: nothing is embeddable today...
-    assert.deepEqual(security.EMBEDDABLE_PATH_PREFIXES, []);
+    // The one exception: the hosted chat page the website widget frames.
+    // It sets its own frame-ancestors per widget; nothing else of the app
+    // may be framed, not even the widget's API or its script.
+    assert.deepEqual(security.EMBEDDABLE_PATH_PREFIXES, ["/chat"]);
     assert.equal(security.allPathsExcept([]), "/:path*");
+    for (const path of ["/chat", "/chat/node_1"]) {
+      const headers = headersFor(rules, path);
 
-    // ...and a prefix added there, and only that, may be framed
+      assert.equal(headers["X-Frame-Options"], undefined, path);
+      assert.equal(/frame-ancestors/.test(headers["Content-Security-Policy-Report-Only"]), false, path);
+      assert.equal(headers["X-Content-Type-Options"], "nosniff", path);
+    }
+    for (const path of [
+      "/",
+      "/workflows",
+      "/login",
+      "/chats",
+      "/workflows/chat",
+      "/forms/node_1",
+      "/approvals",
+      "/widget.js",
+      "/api/chat/node_1/config",
+      "/api/chat/node_1/messages",
+    ]) {
+      assert.equal(headersFor(rules, path)["X-Frame-Options"], "DENY", path);
+    }
+    assert.match(headersFor(rules, "/forms/node_1")["Content-Security-Policy-Report-Only"], /frame-ancestors 'none'/);
+
+    // A prefix listed there, and only that, may be framed
     const embeddable = security.getSecurityHeaderRules({ production: true, embeddablePrefixes: ["/embed"] });
     for (const path of ["/embed", "/embed/chat/wf_1"]) {
       const headers = headersFor(embeddable, path);
@@ -6677,6 +6701,266 @@ const main = async () => {
     // The hosted pages need no sign-in and are kept out of search engines
     assert.match(read("src/app/forms/[formId]/page.tsx"), /robots: \{ index: false \}/);
     assert.match(read("src/app/forms/wait/[executionId]/[token]/page.tsx"), /verifyFormToken\(executionId, token\)/);
+  });
+
+  // ---------------------------------------------------------- CHAT WIDGET
+  console.log("Website chat widget");
+
+  const chat = await import("@/lib/chat-widget");
+  const chatToken = await import("@/lib/chat-widget-token");
+
+  await test("a Chat Trigger's settings become a widget with safe values", () => {
+    // Nothing saved: not public, with the defaults
+    const defaults = chat.parseChatWidgetSettings({});
+    assert.equal(defaults.public, false);
+    assert.equal(defaults.title, "Chat with us");
+    assert.equal(defaults.color, "#2563eb");
+    assert.equal(defaults.direction, "ltr");
+    assert.deepEqual(defaults.allowedDomains, []);
+    assert.equal(defaults.handoff.enabled, false);
+    assert.equal(chat.parseChatWidgetSettings(null).public, false);
+
+    const settings = chat.parseChatWidgetSettings({
+      chatPublic: true,
+      chatTitle: "  Help desk  ",
+      chatColor: "#FF8800",
+      chatWelcome: "Hi!",
+      chatAvatarUrl: "https://cdn.example.com/logo.png",
+      chatDirection: "auto",
+      chatAllowedDomains: "example.com, https://Shop.Example.com/cart\n*.example.org",
+      handoffEnabled: true,
+      handoffChannel: "slack",
+      handoffWebhookUrl: "https://hooks.slack.com/services/T/B/x",
+    });
+    assert.equal(settings.public, true);
+    assert.equal(settings.title, "Help desk");
+    assert.equal(settings.color, "#ff8800");
+    assert.equal(settings.avatarUrl, "https://cdn.example.com/logo.png");
+    assert.deepEqual(settings.allowedDomains, ["example.com", "shop.example.com", "*.example.org"]);
+    assert.equal(settings.handoff.label, "Talk to a human");
+    assert.equal(settings.handoff.channel, "slack");
+
+    // A colour or avatar that is not one cannot reach the page
+    for (const color of ["red", "#fff", "#12345g", "url(javascript:x)", ""]) {
+      assert.equal(chat.normalizeChatColor(color), "#2563eb", color);
+    }
+    for (const avatar of ["javascript:alert(1)", "data:image/png;base64,x", "http://example.com/a.png", 'https://x/a.png" onerror="x']) {
+      assert.equal(chat.parseChatWidgetSettings({ chatAvatarUrl: avatar }).avatarUrl, "", avatar);
+    }
+    assert.equal(chat.parseChatWidgetSettings({ handoffChannel: "pager" }).handoff.channel, "email");
+
+    // The browser is told how the chat looks, and nothing about where a
+    // handoff goes
+    const shown = chat.toPublicChatConfig("node1", settings);
+    assert.deepEqual(shown, {
+      id: "node1",
+      title: "Help desk",
+      color: "#ff8800",
+      welcomeMessage: "Hi!",
+      avatarUrl: "https://cdn.example.com/logo.png",
+      direction: "ltr",
+      handoffLabel: "Talk to a human",
+    });
+    assert.equal(/hooks\.slack\.com/.test(JSON.stringify(shown)), false);
+    assert.equal(chat.toPublicChatConfig("node1", defaults).handoffLabel, null);
+
+    // The embed snippet and the hosted page
+    assert.equal(
+      chat.buildEmbedSnippet("https://app.example.com", "node1"),
+      '<script src="https://app.example.com/widget.js" data-id="node1" async></script>'
+    );
+    assert.equal(chat.buildChatPageUrl("https://app.example.com", "node1"), "https://app.example.com/chat/node1");
+  });
+
+  await test("Urdu and Arabic are shown right to left", async () => {
+    assert.equal(chat.detectDirection("Hello"), "ltr");
+    assert.equal(chat.detectDirection("آپ کی کیا مدد کر سکتا ہوں؟"), "rtl");
+    assert.equal(chat.detectDirection("مرحبا"), "rtl");
+    assert.equal(chat.detectDirection("123 ... سلام"), "rtl");
+    assert.equal(chat.detectDirection("RXJ سے بات کریں"), "ltr");
+    assert.equal(chat.detectDirection(""), "ltr");
+
+    // Automatic follows the title and welcome message; a choice wins
+    assert.equal(chat.parseChatWidgetSettings({ chatTitle: "ہم سے بات کریں" }).direction, "rtl");
+    assert.equal(chat.parseChatWidgetSettings({ chatTitle: "Chat", chatWelcome: "سلام" }).direction, "ltr");
+    assert.equal(chat.parseChatWidgetSettings({ chatTitle: "Chat", chatDirection: "rtl" }).direction, "rtl");
+    assert.equal(chat.parseChatWidgetSettings({ chatTitle: "سلام", chatDirection: "ltr" }).direction, "ltr");
+
+    const { readFileSync } = await import("node:fs");
+    const page = readFileSync("src/app/chat/[id]/route.ts", "utf8");
+    const script = readFileSync("public/widget-chat.js", "utf8");
+    const loader = readFileSync("public/widget.js", "utf8");
+
+    // The page's direction, each message's own direction, and the button
+    // on the left of a right-to-left site
+    assert.match(page, /<html lang="en" dir="\$\{direction\}">/);
+    assert.match(script, /bubble\.dir = "auto";/);
+    assert.match(loader, /var side = rtl \? "left" : "right";/);
+    assert.match(readFileSync("public/widget-chat.css", "utf8"), /text-align: start;/);
+  });
+
+  await test("only the allowed domains may show the widget", () => {
+    const { isDomainAllowed, buildFrameAncestors, parseAllowedDomains } = chat;
+
+    // An empty list: any site
+    assert.equal(isDomainAllowed("https://anything.example", []), true);
+    assert.equal(isDomainAllowed(null, []), true);
+    assert.equal(buildFrameAncestors([]), "frame-ancestors *");
+
+    const allowed = parseAllowedDomains("example.com, *.example.org");
+    assert.equal(isDomainAllowed("https://example.com", allowed), true);
+    assert.equal(isDomainAllowed("http://EXAMPLE.com:8080", allowed), true);
+    assert.equal(isDomainAllowed("example.com", allowed), true);
+    assert.equal(isDomainAllowed("https://shop.example.org", allowed), true);
+    assert.equal(isDomainAllowed("https://a.b.example.org", allowed), true);
+    assert.equal(isDomainAllowed("https://example.org", allowed), true);
+    // Not a subdomain of a host listed without "*.", and no look-alikes
+    assert.equal(isDomainAllowed("https://shop.example.com", allowed), false);
+    assert.equal(isDomainAllowed("https://example.com.evil.net", allowed), false);
+    assert.equal(isDomainAllowed("https://notexample.org", allowed), false);
+    assert.equal(isDomainAllowed("https://evil.net/?example.com", allowed), false);
+    assert.equal(isDomainAllowed(null, allowed), false);
+    assert.equal(isDomainAllowed("not a url at all ", allowed), false);
+
+    assert.equal(
+      buildFrameAncestors(allowed),
+      "frame-ancestors 'self' https://example.com:* http://example.com:* https://*.example.org:* http://*.example.org:* https://example.org:* http://example.org:*"
+    );
+
+    // Only host names survive (a single word is one, like localhost), so no
+    // quote, semicolon or bare "*" can reach the header
+    assert.deepEqual(
+      parseAllowedDomains("example.com; script-src *, 'none', *, a b, exam ple.com, ok.example.com"),
+      ["script-src", "a", "b", "exam", "ple.com", "ok.example.com"]
+    );
+    for (const entry of parseAllowedDomains("x.com; y, 'self' *.z.com\nhttps://q.com/p?x=1")) {
+      assert.match(entry, /^(\*\.)?[a-z0-9.-]+$/, entry);
+    }
+  });
+
+  await test("each visitor has a session of their own, and an answer needs its token", () =>
+    withKeys("chat-key-A", undefined, async () => {
+      // Made in the browser: only this shape is accepted
+      assert.equal(chat.isValidChatSessionId("0123456789abcdef0123456789abcdef"), true);
+      for (const bad of ["short", "", "x".repeat(65), "has space 0123456789", "../../etc/passwd0000", 12345678901234567, null]) {
+        assert.equal(chat.isValidChatSessionId(bad), false, String(bad));
+      }
+
+      // Buffer Memory's {{sessionId}}: per widget and per visitor
+      const key = chat.toChatSessionKey("node1", "0123456789abcdef");
+      assert.equal(key, "widget:node1:0123456789abcdef");
+      assert.notEqual(key, chat.toChatSessionKey("node2", "0123456789abcdef"));
+
+      const token = chatToken.createChatReplyToken("exec1", key);
+      assert.match(token, /^[A-Za-z0-9_-]{43}$/);
+      assert.equal(chatToken.verifyChatReplyToken("exec1", key, token), true);
+      // Not for another run, and not from another visitor's conversation
+      assert.equal(chatToken.verifyChatReplyToken("exec2", key, token), false);
+      assert.equal(chatToken.verifyChatReplyToken("exec1", chat.toChatSessionKey("node1", "another-visitor-00"), token), false);
+      assert.equal(chatToken.verifyChatReplyToken("exec1", key, ""), false);
+      assert.equal(chatToken.verifyChatReplyToken("exec1", key, null), false);
+      assert.equal(chatToken.verifyChatReplyToken("exec1", key, wait.createResumeToken("exec1")), false);
+
+      await withKeys("chat-key-B", undefined, () => {
+        assert.equal(chatToken.verifyChatReplyToken("exec1", key, token), false);
+      });
+
+      // Only the agent's answer is shown, never the rest of the run's data
+      assert.equal(chat.readPublicReply({ output: " Hello! ", webhook: { secret: "x" } }), "Hello!");
+      assert.equal(chat.readPublicReply({ output: { city: "Lahore" } }), '{\n  "city": "Lahore"\n}');
+      for (const output of [null, undefined, "text", {}, { output: "" }, { output: 5 }, { aiAgentOutput: { output: "x" } }]) {
+        assert.equal(chat.readPublicReply(output), null);
+      }
+
+      const { readFileSync } = await import("node:fs");
+      const script = readFileSync("public/widget-chat.js", "utf8");
+
+      // The session id is kept in the browser, and storage that is blocked
+      // does not break the chat
+      assert.match(script, /try \{\s*return window\.localStorage\.getItem\(storageKey\);\s*\} catch \(error\) \{\s*return null;/);
+      assert.match(script, /try \{\s*window\.localStorage\.setItem\(storageKey, value\);\s*\} catch \(error\) \{/);
+      // What people and the bot wrote is never put on the page as HTML
+      assert.equal(/innerHTML|insertAdjacentHTML|document\.write/.test(script), false);
+      // No streaming: the typing indicator is shown while the answer is fetched
+      assert.match(script, /typing\.hidden = !value;/);
+
+      const widget = readFileSync("src/features/chat-widget/server/widget.ts", "utf8");
+      assert.match(widget, /sessionId: sessionKey,/);
+      assert.match(widget, /type: NodeType\.CHAT_TRIGGER,\s*workflow: \{ active: true \}/);
+      assert.match(widget, /if \(!settings\.public\) return null;/);
+      assert.match(widget, /where: \{ id: executionId, workflowId: widget\.workflowId \}/);
+    })
+  );
+
+  await test("the widget and each visitor are rate limited, and a handoff pauses the bot", async () => {
+    const { readFileSync } = await import("node:fs");
+    const read = (path: string) => readFileSync(path, "utf8");
+
+    const limits = read("src/lib/rate-limit.ts");
+    assert.match(limits, /CHAT_WIDGET_RATE_LIMIT =\s*Number\(process\.env\.CHAT_WIDGET_RATE_LIMIT_PER_MINUTE\) \|\| 60/);
+    assert.match(limits, /CHAT_VISITOR_RATE_LIMIT =\s*Number\(process\.env\.CHAT_VISITOR_RATE_LIMIT_PER_MINUTE\) \|\| 10/);
+
+    // Per widget first, then per visitor (session and address), before the
+    // widget is even looked up
+    const http = read("src/features/chat-widget/server/http.ts");
+    assert.match(http, /rateLimitResponse\(`chat:\$\{id\}`, CHAT_WIDGET_RATE_LIMIT\)/);
+    assert.match(http, /`chat-visitor:\$\{id\}:\$\{sessionId\}`/);
+    assert.match(http, /`chat-ip:\$\{id\}:\$\{ip\}`/);
+    assert.ok(http.indexOf("CHAT_WIDGET_RATE_LIMIT)") < http.indexOf("CHAT_VISITOR_RATE_LIMIT)"));
+    assert.ok(http.indexOf("CHAT_VISITOR_RATE_LIMIT)") < http.indexOf("loadChatWidget(id)"));
+    assert.ok(http.indexOf("isValidChatSessionId(sessionId)") < http.indexOf("rateLimitResponse("));
+
+    // Sending a message and asking for a person are the limited requests
+    const messages = read("src/app/api/chat/[id]/messages/route.ts");
+    const post = messages.slice(messages.indexOf("export async function POST"));
+    assert.match(post, /limited: true/);
+    assert.match(read("src/app/api/chat/[id]/handoff/route.ts"), /limited: true/);
+    // While a person has the conversation no run is started
+    assert.ok(post.indexOf("isChatPaused(sessionKey)") < post.indexOf("startChatExecution({"));
+    assert.equal(chat.CHAT_PAUSED_REPLY, "This conversation was passed to a person. They will get back to you.");
+
+    // The conversation goes to the person, with everything in it as text
+    const handoff = chat.buildHandoffMessage({
+      title: "Help desk",
+      workflowName: "Support <bot>",
+      contact: "ali@example.com",
+      transcript: [
+        { role: "user", content: "Where is my order? <b>now</b>", createdAt: new Date() },
+        { role: "assistant", content: "Let me check {{execution.resumeUrl}}", createdAt: new Date() },
+      ],
+    });
+    assert.equal(handoff.subject, "Chat handoff: Help desk");
+    assert.match(handoff.text, /A visitor of "Help desk" asked to talk to a human/);
+    assert.match(handoff.text, /How to reach them: ali@example\.com/);
+    assert.match(handoff.text, /Visitor: Where is my order\? <b>now<\/b>\nBot: Let me check \{\{execution\.resumeUrl\}\}/);
+    assert.doesNotMatch(handoff.html, /<b>now<\/b>/);
+    assert.match(handoff.html, /&lt;b&gt;now&lt;\/b&gt;/);
+    assert.match(handoff.html, /Support &lt;bot&gt;/);
+    assert.match(
+      chat.buildHandoffMessage({ title: "T", workflowName: "W", contact: "", transcript: [] }).text,
+      /They left no contact details\./
+    );
+
+    // Sent through the same code as approvals, as a variable (never a template)
+    const widget = read("src/features/chat-widget/server/widget.ts");
+    assert.match(widget, /await sendChannelMessage\(\{/);
+    // The bot is only paused once the person was really told
+    assert.ok(widget.indexOf("await sendChannelMessage({") < widget.lastIndexOf("role: ROLE_HANDOFF,"));
+    assert.deepEqual(chat.HANDOFF_CHANNELS.map((channel) => channel.value), ["email", "slack", "whatsapp"]);
+
+    // The hosted page sets who may frame it, and widget.js asks before it
+    // draws a button
+    const page = read("src/app/chat/[id]/route.ts");
+    assert.match(page, /headers\(buildFrameAncestors\(widget\.settings\.allowedDomains\)\)/);
+    assert.match(page, /headers\("frame-ancestors 'none'"\)/);
+    assert.match(page, /JSON\.stringify\(config\)\.replace\(\/<\/g, "\\\\u003c"\)/);
+    const config = read("src/app/api/chat/[id]/config/route.ts");
+    assert.match(config, /isDomainAllowed\(origin, widget\.settings\.allowedDomains\)/);
+    assert.match(read("public/widget.js"), /script\.getAttribute\("data-id"\)/);
+
+    // Old conversations are removed, and only the widget's own rows
+    assert.match(read("src/inngest/execution-cleanup.ts"), /sessionId: \{ startsWith: "widget:" \}, createdAt: \{ lt: cutoff \}/);
+    assert.equal(chat.CHAT_TRANSCRIPT_RETENTION_DAYS, 30);
   });
 
   console.log(`\n${passed} checks passed`);

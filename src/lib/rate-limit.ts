@@ -10,6 +10,11 @@ export const WEBHOOK_RATE_LIMIT =
     Number(process.env.WEBHOOK_RATE_LIMIT_PER_MINUTE) || 120;
 export const API_RATE_LIMIT =
     Number(process.env.API_RATE_LIMIT_PER_MINUTE) || 120;
+// Messages per minute for one public chat widget, and for one visitor of it
+export const CHAT_WIDGET_RATE_LIMIT =
+    Number(process.env.CHAT_WIDGET_RATE_LIMIT_PER_MINUTE) || 60;
+export const CHAT_VISITOR_RATE_LIMIT =
+    Number(process.env.CHAT_VISITOR_RATE_LIMIT_PER_MINUTE) || 10;
 // Submissions per minute for one hosted form
 export const FORM_RATE_LIMIT =
     Number(process.env.FORM_RATE_LIMIT_PER_MINUTE) || 30;

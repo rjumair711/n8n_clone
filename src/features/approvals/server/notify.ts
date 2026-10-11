@@ -69,10 +69,7 @@ export const getDeliveryProblem = (
 };
 
 /**
- * Sends the request through the chosen channel, using the same code as the
- * Email, Telegram and WhatsApp nodes. Call it inside a step. The message is
- * handed to those nodes as a variable, never as a template: the tool's
- * arguments were written by a model and must not be evaluated.
+ * Sends the request through the chosen channel. Call it inside a step.
  */
 export const sendApprovalNotification = async ({
   delivery,
@@ -89,10 +86,55 @@ export const sendApprovalNotification = async ({
   step: StepTools;
   context: WorkflowContext;
 }): Promise<void> => {
+  if (getApprovalChannel(delivery) === "in_app") return;
+
+  try {
+    await sendChannelMessage({
+      delivery,
+      text: buildApprovalText(message),
+      email: buildApprovalEmail(message),
+      userId,
+      nodeId,
+      step,
+      context,
+    });
+  } catch (error) {
+    throw new Error(
+      `the approval request ${error instanceof Error ? error.message : "could not be sent"}`
+    );
+  }
+};
+
+/**
+ * Sends a message to a person by email, Slack, Telegram or WhatsApp, using
+ * the same code as those nodes (and so their credentials and daily caps).
+ * Used for approval requests and for a website chat's "Talk to a human".
+ *
+ * The message is handed to the nodes as a variable, never as a template:
+ * it holds text written by a model or by a stranger, which must not be
+ * evaluated. An error reads "could not be sent by <channel>: <why>".
+ */
+export const sendChannelMessage = async ({
+  delivery,
+  text,
+  email,
+  userId,
+  nodeId,
+  step,
+  context,
+}: {
+  delivery: ApprovalDelivery;
+  text: string;
+  email: { subject: string; html: string };
+  userId: string;
+  nodeId: string;
+  // Outside a workflow run there are no steps: pass {} as StepTools
+  step: StepTools;
+  context: WorkflowContext;
+}): Promise<void> => {
   const channel = getApprovalChannel(delivery);
   if (channel === "in_app") return;
 
-  const text = buildApprovalText(message);
   const recipient = renderTemplate(delivery.recipient, context).trim();
 
   const base = {
@@ -106,8 +148,6 @@ export const sendApprovalNotification = async ({
   try {
     switch (channel) {
       case "email": {
-        const email = buildApprovalEmail(message);
-
         await emailExecutor({
           ...base,
           data: {
@@ -177,7 +217,7 @@ export const sendApprovalNotification = async ({
   } catch (error) {
     // The executors' own messages can be long; none of them contains the links
     throw new Error(
-      `the approval request could not be sent by ${CHANNEL_NAMES[channel]}: ${error instanceof Error ? error.message : "unknown error"}`
+      `could not be sent by ${CHANNEL_NAMES[channel]}: ${error instanceof Error ? error.message : "unknown error"}`
     );
   }
 };

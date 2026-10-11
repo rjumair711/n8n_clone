@@ -40,6 +40,7 @@ The platform is designed as a scalable SaaS product with:
 * Wait node: pause a run for a time, until a date, or until its resume URL is called (see "Waiting executions")
 * Human approval: AI Agent tools that wait for a person's Approve or Reject, and a Send and Wait for Approval node
 * Hosted forms: a Form Trigger with its own public page, multi-step forms with the Form node, and a Wait node that resumes on a form
+* Website chat widget: a public Chat Trigger with an embed snippet, a hosted chat page, per-visitor memory and a handoff to a person
 * Inngest background execution system
 * Dynamic time-based execution engine via an automated Background Ticker (`* * * * *` clock matching system)
 * Shared execution context
@@ -252,6 +253,21 @@ Each tool in the agent's settings has a **Require approval** switch. When the mo
 * **Output:** `{{output}}` and `{{<variableName>.output}}`, plus `intermediateSteps` when enabled.
 * **Chat panel:** workflows with a Chat Trigger get an "Open chat" button in the editor to talk to the agent.
 
+### Website chat widget
+
+Switch on **Make chat public** in the Chat Trigger's settings, save and activate the workflow, and anyone can chat with it:
+
+* **Embed snippet:** `<script src="<app>/widget.js" data-id="<id>" async></script>`, shown in the settings to copy. It adds a floating chat button to a website; a click opens the chat window. On a phone the window fills the screen.
+* **Hosted chat page:** `<app>/chat/<id>`, the same chat on a page of its own. The widget shows this page in a frame, so the website's styles and scripts cannot reach into the conversation.
+* **Look:** title, colour, welcome message (shown first, not sent to the workflow) and an avatar (the https address of an image).
+* **Urdu and Arabic:** the chat's direction is Automatic (from the title and welcome message), left to right, or right to left. Right to left mirrors the layout and puts the button on the left; every message is always shown in the direction of its own text.
+* **One conversation per visitor.** A visitor's browser makes a session id and keeps it in its storage (when storage is blocked the chat still works until the page is closed). The workflow gets it as `{{sessionId}}`, in the form `widget:<id>:<visitor>`, so a Buffer Memory node remembers each visitor separately. A returning visitor sees their conversation again; **New chat** starts a fresh one.
+* **Allowed domains:** a list of sites that may show the widget (`example.com`, `*.example.com`). Browsers refuse to frame the chat anywhere else, and `widget.js` shows no button there. Empty means any site. The hosted chat page itself is always reachable by its link.
+* **Rate limits:** 60 messages per minute per widget (`CHAT_WIDGET_RATE_LIMIT_PER_MINUTE`) and 10 per minute per visitor (`CHAT_VISITOR_RATE_LIMIT_PER_MINUTE`), counted both by session id and by address.
+* **Answers are not streamed.** The agent's answer is produced in a background run, so the chat shows a typing indicator and then the whole answer. Only the agent's answer (`output`) is ever sent to the visitor, never the rest of the run's data. The workflow must keep "Save execution data" on: the answer is read from the run's saved output.
+* **"Talk to a human" (optional):** a button under the chat. The visitor can leave an email or phone number; the conversation is sent to the person you set, by email (SMTP credential), Slack (incoming webhook) or WhatsApp, and the bot stops answering in that conversation. Messages written afterwards are kept and answered with a short note. The person replies through their own channel: there is no agent inbox in the app. If the message cannot be sent, the visitor is told and the bot keeps answering.
+* Conversations of the widget are stored for 30 days. Every message is a workflow execution and counts toward the plan's monthly executions. A message has at most 4000 characters.
+
 ## Model nodes
 
 | Node | Description |
@@ -349,7 +365,7 @@ They are on the Chat Model, DeepSeek, Kimi and Qwen nodes (`{{chatModel.modelUse
 | Manual Trigger      | Manual execution on user demand                                                                            |
 | Schedule Trigger    | Time-based automatic triggers evaluated each minute using custom Cron intervals (e.g., `*/5 * * * *`)       |
 | Webhook Trigger     | Runs on any HTTP request to `/api/webhooks/trigger/<workflowId>`, protected by a per-node secret. Respond immediately, when the last node finishes, or with a Respond to Webhook node |
-| Chat Trigger        | Runs when a message is sent from the editor's chat panel; provides `chatInput` and `sessionId`             |
+| Chat Trigger        | Runs when a message is sent from the editor's chat panel, or (with "Make chat public") from the hosted chat page or the website widget; provides `chatInput` and `sessionId` |
 | Telegram Trigger    | Runs when your bot receives a message. The bot's webhook is registered when the workflow is activated      |
 | WhatsApp Trigger    | Runs when your WhatsApp Business number receives a message (verify token + signature check)                |
 | Gmail Trigger       | Runs when a new email arrives; polls every 1, 5, 15 or 60 minutes with an optional Gmail search filter      |
@@ -555,14 +571,14 @@ Supported credential types:
   | Header | Value | Where |
   | ------ | ----- | ----- |
   | `Strict-Transport-Security` | `max-age=63072000; includeSubDomains` | everywhere, in production only |
-  | `X-Frame-Options` | `DENY` | everywhere |
+  | `X-Frame-Options` | `DENY` | everywhere except the hosted chat page `/chat/<id>` |
   | `X-Content-Type-Options` | `nosniff` | everywhere |
   | `Permissions-Policy` | camera, microphone, geolocation, payment, USB and the motion sensors switched off | everywhere |
   | `Referrer-Policy` | `strict-origin-when-cross-origin` | pages (API routes that need one set their own) |
   | `Content-Security-Policy-Report-Only` | the policy described below | pages |
 
   * **The Content-Security-Policy is report-only.** Browsers report what it would block and block nothing. Reports go to the app's Sentry project, or to `CSP_REPORT_URI` if that is set. It allows the app's own origin, inline scripts and styles (Next.js and the UI libraries need them), images from any https address, connections to any https or wss address, and Cloudflare's Turnstile; it refuses plugins, foreign `<base>` and form targets, and being framed. The plan is to tighten it from the reports and then enforce it.
-  * **An embeddable route has one place to be allowed.** No page can be shown in a frame on another site. When an embeddable chat widget is added, its path prefix goes into `EMBEDDABLE_PATH_PREFIXES` in `src/config/security-headers.ts`; only those paths then lose `X-Frame-Options` and `frame-ancestors 'none'`, and the route sets which sites may embed it.
+  * **Only the website chat widget can be embedded.** No page can be shown in a frame on another site, with one exception: the hosted chat page `/chat/<id>`, which the widget frames. `/chat` is the only entry of `EMBEDDABLE_PATH_PREFIXES` in `src/config/security-headers.ts`; only those paths lose `X-Frame-Options` and `frame-ancestors 'none'`. The chat page then sends its own enforcing `Content-Security-Policy: frame-ancestors ...` for each widget: the widget's allowed domains, any site when the list is empty, and `'none'` when there is no such public chat. The widget's API (`/api/chat/...`), its script and every other page stay `DENY`.
   * `preload` is not in the HSTS header: it is hard to undo. Add it there once every subdomain is https for good.
 * **Duplicate deliveries:** an event a provider sends twice starts one run, not two (see below).
 * **Webhook responses** are served with a sandbox policy so a workflow cannot run scripts on the app's origin.
@@ -876,6 +892,7 @@ The live app on Vercel and local development use the **same** database, so the s
 | `MAX_ITEMS_PER_NODE` | Items one node may process in a list, default 100 |
 | `WAIT_MAX_DAYS` | The longest a Wait node may wait, in days, default 7 (the limit of Inngest's free plan) |
 | `FORM_RATE_LIMIT_PER_MINUTE` | Submissions per minute for one hosted form, default 30 |
+| `CHAT_WIDGET_RATE_LIMIT_PER_MINUTE`, `CHAT_VISITOR_RATE_LIMIT_PER_MINUTE` | Messages per minute for one public chat widget, and for one visitor of it. Defaults 60 and 10 |
 | `MAX_FILE_SIZE_MB`, `MAX_USER_STORAGE_MB`, `FILE_RETENTION_DAYS` | Workflow file limits, defaults 10, 200 and 7 |
 | `MAX_UNCOMPRESSED_FILE_MB`, `MAX_ZIP_ENTRIES` | What an XLSX or DOCX file may unpack to, defaults 50 and 2000 |
 | `PDF_MAX_PAGES`, `PDF_EXTRACT_TIMEOUT_SECONDS` | Pages read from a PDF and the time allowed, defaults 200 and 20 |
