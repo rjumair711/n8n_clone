@@ -42,6 +42,8 @@ const TRIGGER_TYPES = new Set([
 // Nodes with "sub-" ports that other nodes plug into as configuration
 const SUB_PORT_HOST_TYPES = new Set([
   "AI_AGENT",
+  // An agent on another agent's Tools port, with a model and tools of its own
+  "AI_AGENT_TOOL",
   "TEXT_CLASSIFIER",
   // Its Model port is only used by the checks a model makes
   "GUARDRAILS",

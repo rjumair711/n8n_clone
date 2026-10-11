@@ -13,7 +13,7 @@ import {
 } from "./ui/sheet"
 import { Input } from "@/components/ui/input"
 import { NodeType } from "@prisma/client"
-import { Braces, BrainCircuit, ShieldCheck, DatabaseZap, FolderSync, ServerCog, FileInput, FileOutput, FileText, PencilRuler, Plug, Rss, ScanText, Tags } from "lucide-react"
+import { Braces, BrainCircuit, Lightbulb, ShieldCheck, DatabaseZap, FolderSync, ServerCog, FileInput, FileOutput, FileText, PencilRuler, Plug, Rss, ScanText, Tags } from "lucide-react"
 import { AlertTriangle, ArrowDownUp, CopyMinus, Group, ListEnd, OctagonX, Reply, Sigma, Split, Workflow } from "lucide-react"
 import { Clock, FilterIcon, GlobeIcon, MousePointerIcon, Send, VariableIcon, ChevronDown, ChevronRight, Code2, Bot, MemoryStickIcon, Search, Type, Calculator, GitBranch, GitFork, Merge, Repeat, Webhook, MessageSquare } from "lucide-react"
 import { toast } from "sonner"
@@ -380,6 +380,18 @@ const aiNodes: NodeTypeOption[] = [
         label: "Model Router",
         description: "For an AI Agent's Chat Model port: a cheap model first, a stronger one when it fails",
         icon: Route
+    },
+    {
+        type: NodeType.THINK_TOOL,
+        label: "Think Tool",
+        description: "A tool for an AI Agent: lets it write down its reasoning before it goes on",
+        icon: Lightbulb
+    },
+    {
+        type: NodeType.AI_AGENT_TOOL,
+        label: "AI Agent Tool",
+        description: "An agent with its own model and tools that another agent can hand tasks to",
+        icon: Bot
     },
     {
         type: NodeType.GUARDRAILS,

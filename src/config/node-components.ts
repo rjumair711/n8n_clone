@@ -62,6 +62,7 @@ import {
     WhatsappTriggerNode,
 } from '@/features/executions/components/core/nodes';
 import {
+    AgentToolNode,
     AnalyzeDocumentNode,
     DocumentLoaderNode,
     GmailTriggerNode,
@@ -72,6 +73,7 @@ import {
     PostgresMemoryNode,
     StructuredOutputParserNode,
     TextClassifierNode,
+    ThinkToolNode,
     VectorStoreNode,
 } from '@/features/executions/components/ai/nodes';
 import {
@@ -200,6 +202,8 @@ export const nodeComponents: NodeTypes = {
     [NodeType.MCP_SERVER_TRIGGER]: McpServerTriggerNode,
     [NodeType.POSTGRES_MEMORY]: PostgresMemoryNode,
     [NodeType.GUARDRAILS]: GuardrailsNode,
+    [NodeType.THINK_TOOL]: ThinkToolNode,
+    [NodeType.AI_AGENT_TOOL]: AgentToolNode,
     [NodeType.RSS_READ]: RssReadNode,
     [NodeType.RSS_FEED_TRIGGER]: RssFeedTriggerNode,
     [NodeType.GOOGLE_DRIVE]: GoogleDriveNode,

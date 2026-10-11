@@ -58,6 +58,10 @@ import {
   socialPostExecutor,
 } from '../components/apps/meta';
 import { documentLoaderExecutor } from '../components/ai/document-loader';
+import {
+  agentToolExecutor,
+  thinkToolExecutor,
+} from '../components/ai/agent-tool';
 import { mcpServerTriggerExecutor } from '../components/ai/mcp-server-trigger';
 import {
   telegramTriggerExecutor,
@@ -181,6 +185,8 @@ const baseExecutors: Record<NodeType, NodeExecutor<any>> = {
   [NodeType.MODEL_ROUTER]: contextTriggerExecutor,
   [NodeType.TEXT_CLASSIFIER]: textClassifierExecutor,
   [NodeType.GUARDRAILS]: guardrailsExecutor,
+  [NodeType.THINK_TOOL]: thinkToolExecutor,
+  [NodeType.AI_AGENT_TOOL]: agentToolExecutor,
   [NodeType.INFORMATION_EXTRACTOR]: informationExtractorExecutor,
   [NodeType.ANALYZE_DOCUMENT]: analyzeDocumentExecutor,
   [NodeType.VECTOR_STORE]: vectorStoreExecutor,

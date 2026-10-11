@@ -909,6 +909,33 @@ Workflow: Chat Trigger → **Guardrails** (Text To Check `{{chatInput}}`) → on
 
 **In a list.** Trigger manually → Code returning three texts (one with an email address) → Split Out → Guardrails (Block). **Expect:** two items leave through Pass and one through Fail.
 
+## T13h. Think Tool and AI Agent Tool
+
+Needs the `think_and_agent_tool` migration applied and a model credential. Use the test account.
+
+**Think Tool.** Chat Trigger → AI Agent (Return Intermediate Steps on) with a model and a **Think Tool** on its Tools port, System Message `Before you answer a question that needs a calculation, use the think tool to plan.`
+
+| # | Do | Expect |
+|---|----|--------|
+| 1 | Ask "A shawl costs 2,400 and a cap 650. I buy 3 shawls and 2 caps with a 10% discount. What do I pay?" | the answer (7,650); the intermediate steps hold a `think` call with the agent's reasoning and the result "Thought noted." |
+| 2 | Open the agent's settings | the tool is listed with risk **Read**, and Require approval off |
+| 3 | Put the Think Tool in the normal flow between two nodes and run | the data passes through unchanged |
+
+**AI Agent Tool.** Chat Trigger → AI Agent ("manager") with a model. On its Tools port an **AI Agent Tool** (Name `research_agent`, Description `Looks things up on the web and returns a short answer with links.`), which has its own model on its Model port and a Web Search node on its Tools port.
+
+| # | Do | Expect |
+|---|----|--------|
+| 1 | Open the manager's settings | `research_agent` is listed with its description, risk **Write**, Require approval on (on a newly added agent) |
+| 2 | Ask "What is the capital of Bhutan? Use your research agent." | the run pauses for approval showing the task; after approving, the manager answers from the sub-agent's reply |
+| 3 | Switch Require approval off for the tool, ask again | no pause; the manager's intermediate steps show one `research_agent` call with a `prompt` and its answer |
+| 4 | The usage page | separate lines for the manager and for the AI Agent Tool, each under its own name |
+| 5 | Remove the model from the AI Agent Tool, run | the run fails at once: `AI Agent Tool "research_agent": connect a chat model to its Model port` |
+| 6 | Empty its Description | the dialog asks for it; a saved node fails the run with "Description is required" |
+| 7 | Connect an SSH node to the AI Agent Tool's Tools port | the run fails: `AI Agent Tool "research_agent": dangerous tool connected ...`; with its Allow Dangerous Tools on it runs |
+| 8 | Put the AI Agent Tool in the normal flow | "connect it to an AI Agent's Tools port. It does not run as a step of its own." |
+| 9 | A second AI Agent Tool on the first one's Tools port (three levels) | works; the innermost agent's answer travels up |
+| 10 | Set a monthly AI budget that is used up | the manager fails on the budget before anything is called |
+
 ## T14. Text Classifier and Information Extractor
 
 Trigger manually → Set Variable (name `message`, value `My order 5512 arrived broken, I want a refund. - Sara, sara@example.com`).

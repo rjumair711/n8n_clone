@@ -3,6 +3,7 @@ const NODE_LABELS: Record<string, string> = {
     INITIAL: "Start",
     HTTP_REQUEST: "HTTP Request",
     AI_AGENT: "AI Agent",
+    AI_AGENT_TOOL: "AI Agent Tool",
     OPENAI: "OpenAI",
     DEEPSEEK: "DeepSeek",
     BUFFER_MEMORY: "Memory",
