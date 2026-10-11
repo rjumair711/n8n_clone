@@ -167,6 +167,7 @@ export const Editor = ({ workflowId }: { workflowId: string }) => {
             NodeType.GMAIL_TRIGGER,
             NodeType.TYPEFORM_TRIGGER,
             NodeType.RSS_FEED_TRIGGER,
+            NodeType.FORM_TRIGGER,
             NodeType.EXECUTE_WORKFLOW_TRIGGER,
             NodeType.CHAT_TRIGGER,
             // Last: a workflow's Error Trigger only handles its failures

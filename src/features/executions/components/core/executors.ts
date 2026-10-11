@@ -10,6 +10,8 @@ import { parseJsonField } from "../../lib/integration";
 import { parseKeyValues } from "../../lib/key-values";
 import { markExecutionResumed, markExecutionWaiting } from "../../server/pause";
 import { requestApproval } from "@/features/approvals/server/wait";
+import { waitForFormSubmission } from "@/features/forms/server/wait";
+import { buildFormPage } from "@/lib/form-fields";
 import {
   APPROVAL_DEFAULT_TIMEOUT_AMOUNT,
   APPROVAL_DEFAULT_TIMEOUT_UNIT,
@@ -343,6 +345,14 @@ type WaitData = {
   amount?: string;
   unit?: string;
   dateTime?: string;
+  // For "form": the page to show (see FormPageData)
+  formTitle?: string;
+  formDescription?: string;
+  formFields?: string;
+  submitLabel?: string;
+  afterSubmit?: string;
+  thankYouMessage?: string;
+  redirectUrl?: string;
   // For "webhook": how long to wait for the call. Empty: the maximum.
   timeoutAmount?: string;
   timeoutUnit?: string;
@@ -350,7 +360,29 @@ type WaitData = {
   onTimeout?: string;
 };
 
-const WAIT_MODES = ["interval", "until", "webhook"];
+// How long a form page stays open: the node's Timeout, or the longest wait
+const parseFormTimeout = (
+  label: string,
+  data: { timeoutAmount?: string; timeoutUnit?: string },
+  context: WorkflowContext
+): number => {
+  const timeout = renderTemplate(data.timeoutAmount, context).trim();
+
+  if (!timeout) return getMaxWaitMs();
+
+  try {
+    return parseWaitDuration(timeout, data.timeoutUnit, "Timeout");
+  } catch (error) {
+    throw new NonRetriableError(
+      (error instanceof Error ? error.message : "Timeout is not valid").replace(
+        /^Wait node:/,
+        `${label}:`
+      )
+    );
+  }
+};
+
+const WAIT_MODES = ["interval", "until", "webhook", "form"];
 
 type WaitResumeEvent = {
   data?: {
@@ -389,6 +421,35 @@ export const waitExecutor: NodeExecutor<WaitData> = async ({
 
   if (!WAIT_MODES.includes(mode)) {
     throw new NonRetriableError(`Wait node: Unsupported resume mode "${mode}"`);
+  }
+
+  // "On Form Submitted": the page at {{execution.formUrl}}
+  if (mode === "form") {
+    const result = await waitForFormSubmission({
+      step,
+      stepId: `wait-${nodeId}-form`,
+      label: "Wait node",
+      executionId,
+      nodeId,
+      buildPage: () =>
+        buildFormPage(data, (text) => renderTemplate(text, context)),
+      timeoutMs: parseFormTimeout("Wait node", data, context),
+    });
+
+    if (!result.submitted && data.onTimeout === "fail") {
+      throw new NonRetriableError(
+        "Wait node: the form was not submitted before the timeout"
+      );
+    }
+
+    return {
+      ...context,
+      [variableName]: {
+        resumedBy: result.submitted ? "form" : "timeout",
+        timedOut: !result.submitted,
+        form: result.values,
+      },
+    };
   }
 
   // Worked out inside a step, so it is decided once: Inngest re-runs this
@@ -597,4 +658,68 @@ export const approvalExecutor: NodeExecutor<ApprovalData> = async ({
       approvalId: result.approvalId,
     },
   };
+};
+
+// =========================================================================
+// FORM (the next page of a multi-step form)
+// =========================================================================
+type FormNodeData = {
+  variableName?: string;
+  formTitle?: string;
+  formDescription?: string;
+  // The fields, as a JSON string (see lib/form-fields.ts)
+  formFields?: string;
+  submitLabel?: string;
+  // "message" (default) | "redirect"
+  afterSubmit?: string;
+  thankYouMessage?: string;
+  redirectUrl?: string;
+  timeoutAmount?: string;
+  timeoutUnit?: string;
+  // "fail" (default) | "continue"
+  onTimeout?: string;
+};
+
+/**
+ * Shows the next page of a hosted form and waits until it is submitted.
+ * The person who submitted the Form Trigger's page is shown this one next;
+ * the page is also at {{execution.formUrl}}.
+ */
+export const formExecutor: NodeExecutor<FormNodeData> = async ({
+  data,
+  nodeId,
+  context,
+  step,
+  executionId,
+  inline,
+}) => {
+  if (inline) {
+    throw new NonRetriableError(
+      "Form node: it cannot be used as an AI Agent tool"
+    );
+  }
+
+  const variableName = data.variableName?.trim() || "formPage";
+
+  const result = await waitForFormSubmission({
+    step,
+    stepId: `form-${nodeId}`,
+    label: "Form node",
+    executionId,
+    nodeId,
+    buildPage: () => buildFormPage(data, (text) => renderTemplate(text, context)),
+    timeoutMs: parseFormTimeout("Form node", data, context),
+  });
+
+  if (!result.submitted) {
+    if (data.onTimeout !== "continue") {
+      throw new NonRetriableError(
+        "Form node: the page was not submitted before the timeout"
+      );
+    }
+
+    return { ...context, [variableName]: { timedOut: true } };
+  }
+
+  return { ...context, [variableName]: result.values };
 };

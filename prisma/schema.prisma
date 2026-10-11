@@ -346,6 +346,8 @@ enum NodeType {
   MODEL_ROUTER
   WAIT
   APPROVAL
+  FORM_TRIGGER
+  FORM
 }
 
 model Node {
@@ -439,6 +441,8 @@ model Execution {
   // "webhook") and when the wait, or its timeout, ends
   waitingFor   String?
   waitingUntil DateTime?
+  // For "form": the page that is shown and the node that waits for it
+  waitingData  Json?
 
   nodes     ExecutionNode[]
   approvals ApprovalRequest[]

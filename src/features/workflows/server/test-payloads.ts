@@ -1,4 +1,5 @@
 import { NodeType } from "@prisma/client";
+import { buildSampleFormValues, parseFormFields } from "@/lib/form-fields";
 
 // Triggers the editor's Execute button can run once with sample data
 export const TESTABLE_TRIGGERS = [
@@ -12,6 +13,7 @@ export const TESTABLE_TRIGGERS = [
     NodeType.GMAIL_TRIGGER,
     NodeType.TYPEFORM_TRIGGER,
     NodeType.RSS_FEED_TRIGGER,
+    NodeType.FORM_TRIGGER,
     NodeType.ERROR_TRIGGER,
     NodeType.EXECUTE_WORKFLOW_TRIGGER,
 ] as const;
@@ -29,6 +31,7 @@ export const TRIGGER_LABELS: Record<TestableTrigger, string> = {
     GMAIL_TRIGGER: "Gmail",
     TYPEFORM_TRIGGER: "Typeform",
     RSS_FEED_TRIGGER: "RSS Feed",
+    FORM_TRIGGER: "Form",
     ERROR_TRIGGER: "Error Trigger",
     EXECUTE_WORKFLOW_TRIGGER: "Sub-workflow",
 };
@@ -178,6 +181,13 @@ export const buildTestPayload = (
                 },
             };
         }
+
+        case NodeType.FORM_TRIGGER:
+            // A value of the right kind for every field of the form
+            return {
+                form: buildSampleFormValues(parseFormFields(nodeData.formFields)),
+                formMeta: { formId: "test", submittedAt: now.toISOString() },
+            };
 
         case NodeType.RSS_FEED_TRIGGER:
             return {

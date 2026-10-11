@@ -60,6 +60,7 @@ import { redactString } from "@/lib/redaction";
 import { getAppUrl } from "@/lib/app-url";
 import {
   EXECUTION_CANCEL_EVENT,
+  getFormLink,
   getResumeLink,
   withResumeUrl,
 } from "@/lib/execution-wait";
@@ -291,9 +292,12 @@ export const executeWorkflow =
       // The token of this execution's resume URL is kept out of it as well:
       // the logs say where the URL went, not what it is
       const resumeLink = getResumeLink(getAppUrl(), execution.id);
+      const formLink = getFormLink(getAppUrl(), execution.id);
       const redactor = createRunRedactor(
         credentialValues ?? [],
-        resumeLink ? [resumeLink.token] : []
+        [resumeLink?.token, formLink?.token].filter(
+          (token): token is string => !!token
+        )
       );
       const saveNodeData = saveExecutionData !== false;
 
@@ -640,7 +644,9 @@ export const executeWorkflow =
           event.data.InitialData ||
             event.data.initialData ||
             {},
-          resumeLink?.url
+          resumeLink?.url,
+          // The form of a Wait node set to "On Form Submitted"
+          formLink?.url
         ),
         runNode,
       });

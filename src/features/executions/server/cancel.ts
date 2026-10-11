@@ -1,4 +1,4 @@
-import { ExecutionStatus } from "@prisma/client";
+import { ExecutionStatus, Prisma } from "@prisma/client";
 import prisma from "@/lib/db";
 import { inngest } from "@/inngest/client";
 import { NotFoundError, assertOwnership } from "@/lib/ownership";
@@ -67,6 +67,7 @@ export const cancelExecution = async (executionId: string, userId: string) => {
                           completedAt.getTime() - execution.startedAt.getTime(),
                       waitingFor: null,
                       waitingUntil: null,
+                      waitingData: Prisma.DbNull,
                   },
               })
             : { count: 0 };

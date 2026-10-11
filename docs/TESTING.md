@@ -837,6 +837,58 @@ Each needs its own account and credential. Test one at a time.
 | Typeform Trigger | set the same Secret in Typeform's webhook settings, submit the form | `typeform.answers` keyed by question title |
 | Stripe Trigger | `stripe trigger payment_intent.succeeded`, then resend the same event from the Stripe dashboard | one execution, not two |
 
+## T19a. Forms
+
+Needs the Inngest dev server next to the app and the `forms` migration applied. Use the test account. Open the form in a private window to see it as a visitor does.
+
+**a) Form Trigger.** New workflow: **Form Trigger** → Set Variable (name `greeting`, value `Hello {{form.your_name}}, size {{form.size}}`). In the trigger: Form Title `Order`, Form Description `Tell us what you need`, and these fields: `Your name` (Text, required), `Email` (Email, required), `Quantity` (Number), `Size` (Dropdown, options `Small, Medium, Large`, required), `Delivery date` (Date), `Drawing` (File Upload), `I accept the terms` (Checkbox, required). Save and activate.
+
+| Do | Expect |
+|----|--------|
+| Look at the trigger's settings | a **Form URL** `<app>/forms/<id>`, and under each field its variable, e.g. `{{form.your_name}}` |
+| Open the Form URL signed out | the title, description and all seven fields; no sign-in |
+| Submit it empty | the browser (or the page) asks for the required fields |
+| Fill it in with a small file and submit | the thank-you message; a new execution with trigger "Form" |
+| Open the execution | `greeting` is `Hello <name>, size <size>`; `form.quantity` is a number, `form.i_accept_the_terms` is `true`, `form.drawing` is a file with `fileName`, `size` and `url` |
+| Add an Email node with Attachments `form.drawing` and submit again | the mail arrives with the uploaded file |
+| Upload a file larger than 10 MB | "The file is too large. The limit is 10 MB"; no execution starts |
+| `curl -X POST <app>/api/forms/<id> -F your_name=Ali -F email=bad -F size=XL` | `400` with errors for `email`, `size` and `i_accept_the_terms` |
+| Add `-F isAdmin=true` to a valid curl | the execution's `form` has no `isAdmin` |
+| Deactivate the workflow and reload the form | "This form is not available. It may have been switched off." |
+| Click Execute in the editor | a test run whose `form` has a sample value for every field |
+| After Submit `Redirect to a URL` with `https://example.com`, submit | the browser goes to example.com |
+
+**b) Rate limit and CAPTCHA.**
+
+| Do | Expect |
+|----|--------|
+| Send the valid curl more than 30 times in a minute | `429` with "The limit is 30 per minute" |
+| Switch on **Require a CAPTCHA** with `TURNSTILE_SITE_KEY` and `TURNSTILE_SECRET_KEY` set (Cloudflare's test keys work) | the form shows the Turnstile widget; it cannot be submitted before the check passes |
+| Send the valid curl without `cf-turnstile-response` | `400`: "Please complete the check that you are not a robot..."; no execution, no stored file |
+| Remove the two keys and restart | the form works without the widget |
+
+**c) Multi-step form.** Form Trigger (as above) → **Form** (Form Title `Thanks {{form.your_name}}`, one field `Why this size` (Text, required), Timeout `1` `Hours`) → Set Variable (name `reason`, value `{{formPage.why_this_size}}`).
+
+| Do | Expect |
+|----|--------|
+| Submit the first page | "One moment...", then a second page titled `Thanks <name>` |
+| Meanwhile look at the execution | **Waiting**, "Paused until a form is submitted", with a Form URL and a Cancel button |
+| Submit the second page | the thank-you message; the execution succeeds and `reason` is what you typed |
+| Submit the first page, then cancel the execution before the second | the open page cannot be submitted: "This form was already submitted, or it is no longer open" |
+| Set the Form node's Timeout to `1` `Minutes`, submit page one and wait | "Fail the workflow": Failed with "the page was not submitted before the timeout"; "Continue the workflow": Success with `formPage.timedOut` true |
+| Copy the second page's address from the execution page into two tabs and submit both | the second submission gets "This form was already submitted" |
+
+**d) Wait node, On Form Submitted.** Trigger manually → Set Variable (name `link`, value `{{execution.formUrl}}`) → **Wait** (Resume `On Form Submitted`, Form Title `Your address`, one field `Street` (Text, required)) → Set Variable (name `street`, value `{{wait.form.street}}`).
+
+| Do | Expect |
+|----|--------|
+| Execute and open the execution | Waiting, with the **Form URL** (`<app>/forms/wait/<executionId>/<token>`) |
+| Look at the first Set Variable's output | the same address ending in `[REDACTED]` |
+| Open the Form URL signed out, fill it in, submit | the thank-you message; the run continues and `street` is what you typed |
+| Open the Form URL again | "This form was already submitted, or it is no longer open." |
+| Change one character of the token | "This form is not available." |
+| Call the run's resume URL path with the form token (`/api/webhooks/wait/<executionId>/<form token>`) | `404`: the form link is not the resume URL |
+
 ## T19b. Webhook hardening
 
 `<app>` is the app's address and `<wf>` the id of an active workflow with the trigger named in the row.

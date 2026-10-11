@@ -17,7 +17,7 @@ import { Braces, DatabaseZap, FileInput, FileOutput, FileText, PencilRuler, Plug
 import { AlertTriangle, ArrowDownUp, CopyMinus, Group, ListEnd, OctagonX, Reply, Sigma, Split, Workflow } from "lucide-react"
 import { Clock, FilterIcon, GlobeIcon, MousePointerIcon, Send, VariableIcon, ChevronDown, ChevronRight, Code2, Bot, MemoryStickIcon, Search, Type, Calculator, GitBranch, GitFork, Merge, Repeat, Webhook, MessageSquare } from "lucide-react"
 import { toast } from "sonner"
-import { Hourglass, Lock, Route, UserCheck } from "lucide-react"
+import { ClipboardList, Hourglass, Lock, Route, UserCheck } from "lucide-react"
 import { getRequiredPlanForNode } from "@/config/plans"
 import { TOOL_APPROVAL_DEFAULT_BY_RISK } from "@/lib/approvals"
 import { useCurrentPlan } from "@/features/subscription/hook/use-current-plan"
@@ -62,6 +62,12 @@ const triggerNodes: NodeTypeOption[] = [
         label: "Webhook",
         description: "Runs the flow when an HTTP request hits this workflow's webhook URL",
         icon: Webhook,
+    },
+    {
+        type: NodeType.FORM_TRIGGER,
+        label: "Form Trigger",
+        description: "Runs the flow when someone submits this workflow's hosted form",
+        icon: ClipboardList,
     },
     {
         type: NodeType.CHAT_TRIGGER,
@@ -263,6 +269,12 @@ const logicNodes: NodeTypeOption[] = [
         label: "Wait",
         description: "Pause for a time, until a date, or until a resume URL is called",
         icon: Hourglass,
+    },
+    {
+        type: NodeType.FORM,
+        label: "Form",
+        description: "Show the next page of a multi-step form and wait for it",
+        icon: ClipboardList,
     },
     {
         type: NodeType.APPROVAL,

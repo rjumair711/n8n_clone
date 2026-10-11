@@ -71,6 +71,8 @@ const RUN_ONCE_TYPES = new Set([
   "WAIT",
   // One question for the whole list; the items leave through its answer
   "APPROVAL",
+  // One page for the whole list
+  "FORM",
   "RESPOND_TO_WEBHOOK",
   "WEBHOOK_RESPONSE",
   "STOP_AND_ERROR",

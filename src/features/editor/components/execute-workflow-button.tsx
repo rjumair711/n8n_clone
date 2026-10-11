@@ -30,6 +30,7 @@ export type ExecuteTrigger = Extract<
     | "GMAIL_TRIGGER"
     | "TYPEFORM_TRIGGER"
     | "RSS_FEED_TRIGGER"
+    | "FORM_TRIGGER"
     | "EXECUTE_WORKFLOW_TRIGGER"
     | "ERROR_TRIGGER"
     | "CHAT_TRIGGER"

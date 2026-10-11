@@ -158,11 +158,15 @@ export const ExecutionView = ({
                                 ? "Paused at a Wait node until its resume URL is called"
                                 : execution.waitingFor === "approval"
                                     ? "Paused until an approval request is answered"
-                                    : "Paused at a Wait node"}
+                                    : execution.waitingFor === "form"
+                                        ? "Paused until a form is submitted"
+                                        : execution.waitingFor === "form-submitted"
+                                            ? "A form was submitted; the workflow is about to continue"
+                                            : "Paused at a Wait node"}
                         </p>
                         {execution.waitingUntil && (
                             <p className="text-sm">
-                                {execution.waitingFor === "webhook"
+                                {execution.waitingFor === "webhook" || execution.waitingFor === "form"
                                     ? "Times out"
                                     : execution.waitingFor === "approval"
                                         ? "The request expires"
@@ -174,6 +178,19 @@ export const ExecutionView = ({
                         {execution.waitingFor === "approval" && (
                             <div className="text-foreground">
                                 <PendingApprovals executionId={executionId} />
+                            </div>
+                        )}
+                        {execution.formUrl && (
+                            <div className="space-y-1">
+                                <p className="text-sm">
+                                    Form URL. Anyone who has it can fill in this form:
+                                </p>
+                                <Input
+                                    value={execution.formUrl}
+                                    readOnly
+                                    className="font-mono text-xs bg-background text-foreground"
+                                    onFocus={(event) => event.target.select()}
+                                />
                             </div>
                         )}
                         {execution.resumeUrl && (
