@@ -9890,6 +9890,565 @@ pour()</code></pre>
     assert.ok(credentialForm.includes("[CredentialType.COHERE]: {"));
   });
 
+  // --------------------------------- MCP SERVER TRIGGER AND SSE TRANSPORT
+  console.log("MCP Server Trigger, and the MCP Client's SSE transport");
+
+  const mcpServerLib = await import("@/lib/mcp-server");
+  const mcpTrigger = await import("@/features/executions/components/ai/mcp-server-trigger");
+  const mcpClientLib = await import("@/features/executions/components/ai/mcp");
+
+  await test("each MCP Server Trigger node is one tool, with a schema made from its parameters", () => {
+    assert.equal(mcpServerLib.normalizeToolName("Look up order!"), "Look_up_order");
+    assert.equal(mcpServerLib.normalizeToolName("  look_up-order  "), "look_up-order");
+    assert.equal(mcpServerLib.normalizeToolName("آرڈر"), "");
+    assert.equal(mcpServerLib.normalizeToolName("x".repeat(80)).length, 64);
+    assert.equal(mcpServerLib.normalizeToolName(undefined), "");
+
+    // Parameters, one per line: required unless they say optional
+    assert.deepEqual(
+      mcpServerLib.parseToolParameters(
+        [
+          "orderId (string): The order number, like 1001",
+          "includeItems (boolean, optional): Also return the line items",
+          "limit (integer)",
+          "tags (list optional): Labels to filter by",
+          "amount (number) : How much",
+          "customer (object)",
+          "note",
+          "",
+          "not a parameter line!",
+          "9lives (string): names start with a letter",
+        ].join("\r\n")
+      ),
+      {
+        type: "object",
+        properties: {
+          orderId: { type: "string", description: "The order number, like 1001" },
+          includeItems: { type: "boolean", description: "Also return the line items" },
+          limit: { type: "integer" },
+          tags: { type: "array", description: "Labels to filter by" },
+          amount: { type: "number", description: "How much" },
+          customer: { type: "object" },
+          note: { type: "string" },
+        },
+        required: ["orderId", "limit", "amount", "customer", "note"],
+      }
+    );
+    assert.deepEqual(mcpServerLib.parseToolParameters(""), { type: "object", properties: {} });
+    // A kind the node does not know is a string
+    assert.deepEqual(mcpServerLib.parseToolParameters("when (date)").properties.when, { type: "string" });
+
+    // A JSON Schema typed in takes the place of the lines, when it is one
+    const custom = '{"type":"object","properties":{"status":{"type":"string","enum":["open","closed"]}},"required":["status", 5],"additionalProperties":false}';
+    assert.deepEqual(mcpServerLib.readToolSchema({ inputSchema: custom, parameters: "ignored (string)" }), {
+      type: "object",
+      properties: { status: { type: "string", enum: ["open", "closed"] } },
+      required: ["status"],
+      additionalProperties: false,
+    });
+    for (const broken of ["{not json", '"text"', '{"type":"string"}', "[]"]) {
+      assert.deepEqual(mcpServerLib.readToolSchema({ inputSchema: broken, parameters: "orderId" }).required, ["orderId"], broken);
+    }
+    assert.deepEqual(mcpServerLib.readToolSchema({ inputSchema: '{"type":"object"}' }), { type: "object", properties: {} });
+
+    // The tools of a workflow
+    const tools = mcpServerLib.readMcpTools([
+      { id: "n1", data: { toolName: "look up order", toolDescription: " Finds an order. ", parameters: "orderId", resultPath: " order.status " } },
+      { id: "n2", data: { toolName: "look_up_order", toolDescription: "Same name: left out" } },
+      { id: "n3", data: { toolName: "", toolDescription: "No name" } },
+      { id: "n4", data: null },
+      { id: "n5", data: { toolName: "list_orders" } },
+    ]);
+    assert.deepEqual(tools.map((tool) => [tool.nodeId, tool.name]), [["n1", "look_up_order"], ["n5", "list_orders"]]);
+    assert.equal(tools[0].description, "Finds an order.");
+    assert.equal(tools[0].resultPath, "order.status");
+    assert.deepEqual(tools[1].inputSchema, { type: "object", properties: {} });
+
+    // Arguments are checked before the workflow runs
+    const schema = mcpServerLib.parseToolParameters("orderId (string)\ncount (integer, optional)\nprice (number, optional)\ntags (list, optional)\nflag (boolean, optional)");
+    assert.equal(mcpServerLib.validateToolArguments(schema, { orderId: "1001" }), null);
+    assert.equal(mcpServerLib.validateToolArguments(schema, { orderId: "1001", count: 2, price: 2, tags: ["a"], flag: false, extra: { anything: true } }), null);
+    assert.equal(mcpServerLib.validateToolArguments(schema, { orderId: "1001", price: 2.5, count: null }), null);
+    assert.equal(mcpServerLib.validateToolArguments(schema, {}), "Missing required parameter: orderId");
+    assert.equal(mcpServerLib.validateToolArguments(schema, { orderId: null }), "Missing required parameter: orderId");
+    assert.equal(mcpServerLib.validateToolArguments(schema, { orderId: 1001 }), 'Parameter "orderId" must be of type string, not integer');
+    assert.equal(mcpServerLib.validateToolArguments(schema, { orderId: "1", count: 2.5 }), 'Parameter "count" must be of type integer, not number');
+    assert.equal(mcpServerLib.validateToolArguments(schema, { orderId: "1", tags: "a" }), 'Parameter "tags" must be a list, not string');
+    assert.equal(mcpServerLib.validateToolArguments(schema, { orderId: "1", flag: "yes" }), 'Parameter "flag" must be of type boolean, not string');
+    assert.equal(mcpServerLib.validateToolArguments(schema, ["1001"]), "The arguments must be an object");
+    assert.equal(mcpServerLib.validateToolArguments(mcpServerLib.parseToolParameters("a\nb"), {}), "Missing required parameters: a, b");
+  });
+
+  await test("a tool call returns the run's answer: a Respond to Webhook body, the Result variable, or everything", () => {
+    const text = (result: { content: { text: string }[] }) => result.content[0].text;
+    const output = { mcp: { tool: "look_up_order", arguments: { orderId: "1001" }, nodeId: "n1" }, mcpToolMatched: true, order: { status: "shipped", items: [{ name: "Shawl" }] }, agent: { output: "It has shipped." } };
+    const done = { status: "SUCCESS", executionId: "exec_1", output };
+
+    // Everything the run produced, without what it was started with
+    assert.deepEqual(JSON.parse(text(mcpServerLib.describeRunResult(done, ""))), { order: output.order, agent: output.agent });
+    assert.equal(mcpServerLib.describeRunResult(done, "").isError, undefined);
+    // The Result variable: text as it is, anything else as JSON
+    assert.equal(text(mcpServerLib.describeRunResult(done, "agent.output")), "It has shipped.");
+    assert.deepEqual(JSON.parse(text(mcpServerLib.describeRunResult(done, "order.items"))), [{ name: "Shawl" }]);
+    assert.equal(text(mcpServerLib.describeRunResult(done, "order.items.0.name")), "Shawl");
+    const missing = mcpServerLib.describeRunResult(done, "order.total");
+    assert.equal(missing.isError, true);
+    assert.match(text(missing), /it has no value at "order\.total"/);
+    // What the run was started with cannot be asked for either
+    assert.equal(mcpServerLib.describeRunResult(done, "mcp.nodeId").isError, true);
+
+    // A Respond to Webhook node decides exactly what the caller gets, also
+    // when the workflow does not save its output
+    assert.equal(text(mcpServerLib.describeRunResult({ status: "RUNNING", executionId: "exec_1", hasResponse: true, responseBody: '{"status":"shipped"}' }, "agent.output")), '{"status":"shipped"}');
+    assert.equal(text(mcpServerLib.describeRunResult({ status: "SUCCESS", executionId: "exec_1", hasResponse: true, responseBody: null }, "")), "");
+
+    const failed = mcpServerLib.describeRunResult({ status: "FAILED", executionId: "exec_1", error: "HTTP Request node: the server answered 500" }, "");
+    assert.equal(failed.isError, true);
+    assert.equal(text(failed), "The workflow failed: HTTP Request node: the server answered 500");
+
+    assert.match(text(mcpServerLib.describeRunResult({ status: "WAITING", executionId: "exec_1" }, "")), /paused at a Wait or approval step .* \(execution exec_1\)/);
+    const running = mcpServerLib.describeRunResult({ status: "RUNNING", executionId: "exec_1" }, "");
+    assert.equal(running.isError, true);
+    assert.match(text(running), /still running \(execution exec_1\)/);
+    assert.match(text(mcpServerLib.describeRunResult({ status: "SUCCESS", executionId: "exec_1", output: null }, "")), /set not to save its output: add a Respond to Webhook node/);
+
+    // A very long answer is cut
+    const long = mcpServerLib.toToolResult("x".repeat(mcpServerLib.MCP_MAX_RESULT_CHARACTERS + 50));
+    assert.equal(long.content[0].text.length, mcpServerLib.MCP_MAX_RESULT_CHARACTERS + "... [truncated]".length);
+    assert.deepEqual(mcpServerLib.toToolResult(undefined), { content: [{ type: "text", text: "null" }] });
+  });
+
+  await test("the MCP server answers initialize, tools/list and tools/call, and nothing it does not know", async () => {
+    const calls: { tool: string; args: unknown }[] = [];
+    const server = {
+      name: "Order desk",
+      tools: mcpServerLib.readMcpTools([
+        { id: "n1", data: { toolName: "look_up_order", toolDescription: "Finds an order.", parameters: "orderId (string): The order number" } },
+        { id: "n2", data: { toolName: "explode" } },
+      ]),
+      callTool: async (tool: { name: string }, args: Record<string, unknown>) => {
+        calls.push({ tool: tool.name, args });
+        if (tool.name === "explode") throw new Error("database password is hunter2");
+        return mcpServerLib.toToolResult({ status: "shipped" });
+      },
+    };
+    const ask = (message: unknown) => mcpServerLib.handleMcpMessage(message, server);
+    const request = (method: string, params?: unknown, id: number | string = 1) => ask({ jsonrpc: "2.0", id, method, ...(params ? { params } : {}) });
+
+    // The client's protocol version when the server speaks it, else its newest
+    const hello: any = await request("initialize", { protocolVersion: "2025-03-26", capabilities: {}, clientInfo: { name: "test", version: "1" } });
+    assert.deepEqual(hello, {
+      jsonrpc: "2.0",
+      id: 1,
+      result: {
+        protocolVersion: "2025-03-26",
+        capabilities: { tools: { listChanged: false } },
+        serverInfo: { name: "Order desk", version: "1.0.0" },
+      },
+    });
+    assert.equal(((await request("initialize", { protocolVersion: "1999-01-01" })) as any).result.protocolVersion, mcpServerLib.MCP_PROTOCOL_VERSIONS[0]);
+    assert.equal(((await request("initialize", { protocolVersion: "2024-11-05" })) as any).result.protocolVersion, "2024-11-05");
+
+    assert.deepEqual(await request("ping", undefined, "abc"), { jsonrpc: "2.0", id: "abc", result: {} });
+
+    const listed: any = await request("tools/list");
+    assert.deepEqual(listed.result.tools, [
+      {
+        name: "look_up_order",
+        description: "Finds an order.",
+        inputSchema: { type: "object", properties: { orderId: { type: "string", description: "The order number" } }, required: ["orderId"] },
+      },
+      { name: "explode", description: 'Runs the "explode" workflow tool', inputSchema: { type: "object", properties: {} } },
+    ]);
+    // Nothing of the node travels: no id, no token, no Result setting
+    assert.equal(/nodeId|secret|resultPath/.test(JSON.stringify(listed)), false);
+
+    const called: any = await request("tools/call", { name: "look_up_order", arguments: { orderId: "1001" } }, 7);
+    assert.deepEqual(called, { jsonrpc: "2.0", id: 7, result: { content: [{ type: "text", text: '{\n  "status": "shipped"\n}' }] } });
+    assert.deepEqual(calls, [{ tool: "look_up_order", args: { orderId: "1001" } }]);
+
+    // Wrong arguments: told to the model as a tool result, and the workflow does not run
+    const wrong: any = await request("tools/call", { name: "look_up_order", arguments: {} });
+    assert.equal(wrong.result.isError, true);
+    assert.equal(wrong.result.content[0].text, "Missing required parameter: orderId");
+    assert.equal(calls.length, 1);
+
+    assert.deepEqual(await request("tools/call", { name: "drop_tables", arguments: {} }), { jsonrpc: "2.0", id: 1, error: { code: -32602, message: "Unknown tool: drop_tables" } });
+    assert.equal(((await request("tools/call", {})) as any).error.message, "Unknown tool: (no name)");
+
+    // A run that could not be started says so, and nothing of why
+    const exploded: any = await request("tools/call", { name: "explode" });
+    assert.equal(exploded.result.isError, true);
+    assert.equal(exploded.result.content[0].text, "The tool could not be run. Try again later.");
+    assert.equal(JSON.stringify(exploded).includes("hunter2"), false);
+
+    assert.deepEqual(await request("resources/list"), { jsonrpc: "2.0", id: 1, result: { resources: [] } });
+    assert.deepEqual(await request("prompts/list"), { jsonrpc: "2.0", id: 1, result: { prompts: [] } });
+    assert.deepEqual(await request("sampling/createMessage"), { jsonrpc: "2.0", id: 1, error: { code: -32601, message: "Method not found: sampling/createMessage" } });
+
+    // Notifications and stray responses get no answer
+    assert.equal(await ask({ jsonrpc: "2.0", method: "notifications/initialized" }), null);
+    assert.equal(await ask({ jsonrpc: "2.0", method: "notifications/cancelled", params: { requestId: 7 } }), null);
+    assert.equal(await ask({ jsonrpc: "2.0", id: 3, result: {} }), null);
+    // A tool call sent as a notification runs nothing
+    assert.equal(await ask({ jsonrpc: "2.0", method: "tools/call", params: { name: "look_up_order", arguments: { orderId: "1" } } }), null);
+    assert.equal(calls.length, 2);
+
+    for (const bad of [null, "text", 5, {}, { id: 1, method: "ping" }, { jsonrpc: "1.0", id: 1, method: "ping" }, { jsonrpc: "2.0", id: 1, method: 5 }]) {
+      const answer: any = await ask(bad);
+      assert.equal(answer.error.code, -32600, JSON.stringify(bad));
+    }
+
+    // A body: one message, or a batch
+    assert.deepEqual(await mcpServerLib.handleMcpBody({ jsonrpc: "2.0", method: "notifications/initialized" }, server), { status: 202, body: null });
+    const batch = await mcpServerLib.handleMcpBody(
+      [{ jsonrpc: "2.0", id: 1, method: "ping" }, { jsonrpc: "2.0", method: "notifications/initialized" }, { jsonrpc: "2.0", id: 2, method: "tools/list" }],
+      server
+    );
+    assert.equal(batch.status, 200);
+    assert.deepEqual((batch.body as any[]).map((answer) => answer.id), [1, 2]);
+    assert.equal((await mcpServerLib.handleMcpBody([], server)).status, 400);
+    assert.equal((await mcpServerLib.handleMcpBody(new Array(21).fill({ jsonrpc: "2.0", id: 1, method: "ping" }), server)).status, 400);
+    assert.deepEqual(await mcpServerLib.handleMcpBody([{ jsonrpc: "2.0", method: "notifications/initialized" }], server), { status: 202, body: null });
+
+    // The token of a request
+    assert.equal(mcpServerLib.readBearerToken("Bearer abc.DEF-123"), "abc.DEF-123");
+    assert.equal(mcpServerLib.readBearerToken("bearer   abc "), "abc");
+    for (const header of [null, undefined, "", "abc", "Basic abc", "Bearer", "Bearer a b"]) assert.equal(mcpServerLib.readBearerToken(header), "");
+  });
+
+  await test("the MCP Client talks to the MCP server, over Streamable HTTP", async () => {
+    const ran: unknown[] = [];
+    const server = {
+      name: "Order desk",
+      tools: mcpServerLib.readMcpTools([{ id: "n1", data: { toolName: "look_up_order", toolDescription: "Finds an order.", parameters: "orderId (string)" } }]),
+      callTool: async (_tool: unknown, args: Record<string, unknown>) => {
+        ran.push(args);
+        return mcpServerLib.toToolResult(`Order ${String(args.orderId)} has shipped.`);
+      },
+    };
+
+    // What the route does around the protocol: token, body, answer
+    const token = "a-long-random-token-0123456789";
+    const http = createServer((req, res) => {
+      const chunks: Buffer[] = [];
+      req.on("data", (chunk) => chunks.push(chunk));
+      req.on("end", async () => {
+        if (mcpServerLib.readBearerToken(req.headers.authorization) !== token) {
+          res.writeHead(401, { "Content-Type": "application/json" });
+          return res.end('{"error":"Invalid or missing bearer token"}');
+        }
+
+        const answer = await mcpServerLib.handleMcpBody(JSON.parse(Buffer.concat(chunks).toString()), server);
+
+        if (answer.body === null) return res.writeHead(answer.status).end();
+
+        res.writeHead(answer.status, { "Content-Type": "application/json" });
+        res.end(JSON.stringify(answer.body));
+      });
+    });
+    await new Promise<void>((resolve) => http.listen(0, "127.0.0.1", resolve));
+    const url = `http://127.0.0.1:${(http.address() as AddressInfo).port}/api/mcp/wf_1`;
+
+    // The test servers are local
+    const beforePrivate = process.env.ALLOW_PRIVATE_NETWORK_REQUESTS;
+    process.env.ALLOW_PRIVATE_NETWORK_REQUESTS = "true";
+
+    try {
+      const client = new mcpClientLib.McpHttpClient(url, new Headers({ Authorization: `Bearer ${token}` }));
+      await client.initialize();
+
+      assert.deepEqual((await client.listTools()).map((tool) => tool.name), ["look_up_order"]);
+      assert.deepEqual(await client.callTool("look_up_order", { orderId: "1001" }), {
+        content: [{ type: "text", text: "Order 1001 has shipped." }],
+      });
+      assert.deepEqual(ran, [{ orderId: "1001" }]);
+
+      // As an agent's tools, through the MCP Client node
+      const tools = await mcpClientLib.buildMcpTools({
+        data: { endpoint: url, authentication: "bearer" },
+        secret: token,
+        context: {},
+        takenNames: new Set(),
+      });
+      assert.deepEqual(Object.keys(tools), ["look_up_order"]);
+      assert.equal(await (tools.look_up_order as any).execute({ orderId: "1002" }, {}), "Order 1002 has shipped.");
+      assert.deepEqual(await (tools.look_up_order as any).execute({}, {}), { error: "Missing required parameter: orderId" });
+
+      // Without the token nothing is offered
+      await assert.rejects(new mcpClientLib.McpHttpClient(url, new Headers()).initialize(), /MCP server answered 401/);
+    } finally {
+      if (beforePrivate === undefined) delete process.env.ALLOW_PRIVATE_NETWORK_REQUESTS;
+      else process.env.ALLOW_PRIVATE_NETWORK_REQUESTS = beforePrivate;
+      await new Promise((resolve) => http.close(resolve));
+    }
+  });
+
+  await test("the MCP Client's SSE transport: an event stream for answers, POST for messages", async () => {
+    assert.equal(mcpClientLib.resolveMcpTransport(undefined), "http");
+    assert.equal(mcpClientLib.resolveMcpTransport("http"), "http");
+    assert.equal(mcpClientLib.resolveMcpTransport("sse"), "sse");
+    assert.equal(mcpClientLib.resolveMcpTransport("stdio"), "http");
+
+    assert.deepEqual(mcpClientLib.parseSseEvent("event: endpoint\ndata: /messages?session=1"), { event: "endpoint", data: "/messages?session=1" });
+    assert.deepEqual(mcpClientLib.parseSseEvent('data: {"a":1}'), { event: "message", data: '{"a":1}' });
+    assert.deepEqual(mcpClientLib.parseSseEvent("id: 4\nevent: message\ndata: line one\ndata:line two"), { event: "message", data: "line one\nline two" });
+    assert.equal(mcpClientLib.parseSseEvent(": keep-alive"), null);
+    assert.equal(mcpClientLib.parseSseEvent("event: ping"), null);
+
+    type Stream = import("node:http").ServerResponse;
+    const streams = new Map<string, Stream>();
+    const posts: { session: string; auth: unknown; message: any }[] = [];
+    let opened = 0;
+    let closed = 0;
+
+    const send = (stream: Stream, text: string) => stream.write(text);
+
+    const sse = createServer((req, res) => {
+      const url = new URL(req.url ?? "/", "http://local");
+
+      if (req.method === "GET" && url.pathname.endsWith("/sse")) {
+        if (url.pathname.startsWith("/denied")) return res.writeHead(403).end("no");
+        if (url.pathname.startsWith("/json")) {
+          res.writeHead(200, { "Content-Type": "application/json" });
+          return res.end("{}");
+        }
+
+        const session = String(++opened);
+        streams.set(session, res);
+        req.on("close", () => {
+          closed++;
+          streams.delete(session);
+        });
+
+        res.writeHead(200, { "Content-Type": "text/event-stream", "Cache-Control": "no-cache" });
+        send(res, ": welcome\n\n");
+
+        if (url.pathname.startsWith("/elsewhere")) return void send(res, "event: endpoint\ndata: https://attacker.example.com/messages\n\n");
+        if (url.pathname.startsWith("/silent")) return;
+
+        // CRLF line ends, and the event cut in the middle of one
+        send(res, "event: endpoint\r\ndata: /messages?session=");
+        setTimeout(() => send(res, `${session}\r`), 5);
+        setTimeout(() => send(res, "\n\r\n"), 10);
+        return;
+      }
+
+      if (req.method === "POST" && url.pathname === "/messages") {
+        const chunks: Buffer[] = [];
+        req.on("data", (chunk) => chunks.push(chunk));
+        req.on("end", () => {
+          const session = url.searchParams.get("session") ?? "";
+          const message = JSON.parse(Buffer.concat(chunks).toString());
+          posts.push({ session, auth: req.headers.authorization, message });
+
+          res.writeHead(202).end();
+          if (message.id === undefined) return;
+
+          const results: Record<string, unknown> = {
+            initialize: { protocolVersion: "2024-11-05", capabilities: { tools: {} }, serverInfo: { name: "legacy", version: "1" } },
+            "tools/list": { tools: [{ name: "echo", description: "Says it back", inputSchema: { type: "object", properties: { text: { type: "string" } } } }, { name: "other" }] },
+            "tools/call": { content: [{ type: "text", text: `echo: ${message.params?.arguments?.text}` }] },
+          };
+          const answer =
+            message.params?.name === "broken"
+              ? { jsonrpc: "2.0", id: message.id, error: { code: -32000, message: "The tool broke" } }
+              : { jsonrpc: "2.0", id: message.id, result: results[message.method] };
+
+          // The answer comes on the stream, not in the POST's response
+          const stream = streams.get(session);
+          if (stream) send(stream, `event: message\ndata: ${JSON.stringify(answer)}\n\n`);
+        });
+        return;
+      }
+
+      res.writeHead(404).end();
+    });
+    await new Promise<void>((resolve) => sse.listen(0, "127.0.0.1", resolve));
+    const base = `http://127.0.0.1:${(sse.address() as AddressInfo).port}`;
+    const headers = () => new Headers({ Authorization: "Bearer sse-token" });
+
+    // The test servers are local
+    const beforePrivate = process.env.ALLOW_PRIVATE_NETWORK_REQUESTS;
+    process.env.ALLOW_PRIVATE_NETWORK_REQUESTS = "true";
+
+    try {
+      const client = new mcpClientLib.McpSseClient(`${base}/sse`, headers());
+      await client.open();
+      await client.initialize();
+
+      assert.deepEqual((await client.listTools()).map((tool) => tool.name), ["echo", "other"]);
+      assert.deepEqual(await client.callTool("echo", { text: "سلام" }), { content: [{ type: "text", text: "echo: سلام" }] });
+      await assert.rejects(client.callTool("broken", {}), /The tool broke/);
+
+      assert.deepEqual(posts.map((post) => post.message.method), ["initialize", "notifications/initialized", "tools/list", "tools/call", "tools/call"]);
+      // Every message goes to the address the server named, with the credential
+      assert.ok(posts.every((post) => post.session === "1" && post.auth === "Bearer sse-token"));
+      assert.equal(posts[0].message.params.protocolVersion, "2024-11-05");
+
+      // Closing ends the stream; nothing can be asked afterwards
+      client.close();
+      await assert.rejects(client.listTools(), /MCP connection closed/);
+      await new Promise((resolve) => setTimeout(resolve, 50));
+      assert.equal(closed, 1);
+
+      // The node: tools are listed once, and every call opens and closes its own stream
+      const before = opened;
+      const tools = await mcpClientLib.buildMcpTools({
+        data: { endpoint: `${base}/sse`, transport: "sse", authentication: "bearer", includeTools: "echo" },
+        secret: "sse-token",
+        context: {},
+        takenNames: new Set(),
+      });
+      assert.deepEqual(Object.keys(tools), ["echo"]);
+      assert.equal(await (tools.echo as any).execute({ text: "one" }, {}), "echo: one");
+      assert.equal(await (tools.echo as any).execute({ text: "two" }, {}), "echo: two");
+      assert.equal(opened, before + 3);
+      await new Promise((resolve) => setTimeout(resolve, 50));
+      assert.equal(streams.size, 0, "no stream is left open");
+
+      // Run as a step, the node lists the tools over SSE too
+      const listed: any = await mcpClientLib.mcpClientExecutor({ ...baseParams, data: { endpoint: `${base}/sse`, transport: "sse" }, context: {} });
+      assert.deepEqual(listed.mcp, { tools: [{ name: "echo", description: "Says it back" }, { name: "other", description: "" }], count: 2 });
+      await new Promise((resolve) => setTimeout(resolve, 50));
+      assert.equal(streams.size, 0);
+
+      // What can go wrong when connecting
+      await assert.rejects(new mcpClientLib.McpSseClient(`${base}/denied/sse`, headers()).open(), /MCP server answered 403/);
+      await assert.rejects(new mcpClientLib.McpSseClient(`${base}/json/sse`, headers()).open(), /did not open an event stream at this URL\. If it uses Streamable HTTP, change Transport\./);
+      // The credential is never sent to another site than the server's
+      await assert.rejects(new mcpClientLib.McpSseClient(`${base}/elsewhere/sse`, headers()).open(), /asked for messages to be sent to another site/);
+      assert.equal(posts.some((post) => post.session === ""), false);
+      await assert.rejects(
+        mcpClientLib.mcpClientExecutor({ ...baseParams, data: { endpoint: `${base}/json/sse`, transport: "sse" }, context: {} }),
+        /MCP Client node failed: MCP server did not open an event stream/
+      );
+    } finally {
+      if (beforePrivate === undefined) delete process.env.ALLOW_PRIVATE_NETWORK_REQUESTS;
+      else process.env.ALLOW_PRIVATE_NETWORK_REQUESTS = beforePrivate;
+      for (const stream of streams.values()) stream.end();
+      await new Promise((resolve) => sse.close(resolve));
+    }
+
+    // The existing node (no Transport saved) still uses Streamable HTTP
+    const { readFileSync } = await import("node:fs");
+    const source = readFileSync("src/features/executions/components/ai/mcp.ts", "utf8");
+    assert.match(source, /if \(resolveMcpTransport\(data\.transport\) === "sse"\) \{/);
+    assert.match(source, /if \(target\.origin !== new URL\(this\.url\)\.origin\) \{/);
+    // Both of its requests go through the SSRF guard, like the other transport's
+    assert.equal(/\bfetch\(/.test(source.replace(/safeFetch\(/g, "")), false);
+    assert.equal(source.match(/await safeFetch\(/g)?.length, 3);
+  });
+
+  await test("only the trigger of the tool that was called passes the run on, and the route checks the token first", async () => {
+    // By node id for a real call, by tool name for a test run
+    assert.equal(mcpTrigger.isCalledTool({ tool: "look_up_order", nodeId: "n1" }, "n1", "anything"), true);
+    assert.equal(mcpTrigger.isCalledTool({ tool: "look_up_order", nodeId: "n1" }, "n2", "look_up_order"), false);
+    assert.equal(mcpTrigger.isCalledTool({ tool: "look_up_order" }, "n2", "look up order"), true);
+    assert.equal(mcpTrigger.isCalledTool({ tool: "list_orders" }, "n2", "look_up_order"), false);
+    for (const call of [undefined, null, "look_up_order", {}, { tool: 5 }]) assert.equal(mcpTrigger.isCalledTool(call, "n1", "look_up_order"), false);
+
+    const call = { mcp: { tool: "list_orders", arguments: {}, nodeId: "listTrigger" } };
+    const matched: any = await mcpTrigger.mcpServerTriggerExecutor({ ...baseParams, nodeId: "listTrigger", data: { toolName: "list_orders" }, context: call });
+    assert.equal(matched.mcpToolMatched, true);
+    assert.equal(matched.mcp, call.mcp);
+    const other: any = await mcpTrigger.mcpServerTriggerExecutor({ ...baseParams, nodeId: "lookupTrigger", data: { toolName: "look_up_order" }, context: call });
+    assert.equal(other.mcpToolMatched, false);
+
+    // Two tools in one workflow: a call runs its own branch only
+    const graph = buildGraph(
+      [
+        { id: "lookupTrigger", type: "MCP_SERVER_TRIGGER", data: { toolName: "look_up_order" } },
+        { id: "listTrigger", type: "MCP_SERVER_TRIGGER", data: { toolName: "list_orders" } },
+        { id: "lookup", type: "HTTP_REQUEST", data: {} },
+        { id: "list", type: "HTTP_REQUEST", data: {} },
+        { id: "manual", type: "MANUAL_TRIGGER", data: {} },
+        { id: "other", type: "SET_VARIABLE", data: {} },
+      ] as never,
+      [
+        { fromNodeId: "lookupTrigger", toNodeId: "lookup", fromOutput: "source-1", toInput: "target-1" },
+        { fromNodeId: "listTrigger", toNodeId: "list", fromOutput: "source-1", toInput: "target-1" },
+        { fromNodeId: "manual", toNodeId: "other", fromOutput: "source-1", toInput: "target-1" },
+      ] as never
+    );
+    assert.deepEqual(getStartNodeIds(graph, "MCP_SERVER_TRIGGER" as never), ["lookupTrigger", "listTrigger"]);
+
+    const ran: string[] = [];
+    await runWorkflowGraph({
+      graph,
+      trigger: "MCP_SERVER_TRIGGER" as never,
+      context: call,
+      runNode: async (node: any, context: any) => {
+        ran.push(node.id);
+        return node.type === "MCP_SERVER_TRIGGER"
+          ? mcpTrigger.mcpServerTriggerExecutor({ ...baseParams, nodeId: node.id, data: node.data, context })
+          : context;
+      },
+    });
+    assert.deepEqual(ran, ["lookupTrigger", "listTrigger", "list"]);
+
+    const { readFileSync, readdirSync } = await import("node:fs");
+    const read = (path: string) => readFileSync(path, "utf8");
+    const route = read("src/app/api/mcp/[id]/route.ts").replace(/\/\/.*$/gm, "");
+
+    // The token: from the Authorization header only, compared in constant
+    // time, and too short a one protects nothing
+    assert.match(route, /const provided = readBearerToken\(request\.headers\.get\("authorization"\)\);/);
+    assert.match(route, /return secret\.length >= MCP_MIN_TOKEN_LENGTH && secretsMatch\(provided, secret\);/);
+    assert.equal(/searchParams/.test(route), false, "no token in the address");
+    assert.equal(/(provided|secret)\s*[!=]==?\s*[\w"'`(]/.test(route), false);
+    assert.equal(/console\.\w+\([^)]*(secret|token|provided)/i.test(route), false);
+    assert.match(route, /"WWW-Authenticate": 'Bearer realm="mcp"'/);
+    // Throttled before the check, and nothing is read or run before it passed
+    const refused = route.indexOf("{ status: 401,") > -1 ? route.indexOf("{ status: 401,") : route.indexOf("status: 401");
+    assert.ok(refused > 0);
+    assert.ok(route.indexOf("rateLimitResponse(`mcp:${workflowId}`)") < route.indexOf("readBearerToken(request"));
+    assert.ok(route.indexOf("JSON.parse(await request.text())") > refused);
+    assert.ok(route.indexOf("handleMcpBody(body,") > refused);
+    // Only an active workflow's triggers, and only the tools of the nodes whose token was sent
+    assert.match(route, /findTriggerNodes\(\s*workflowId,\s*NodeType\.MCP_SERVER_TRIGGER\s*\)/);
+    assert.match(route, /tools: readMcpTools\(allowedNodes\),/);
+    assert.match(route, /mcp: \{ tool: tool\.name, arguments: args, nodeId: tool\.nodeId \},/);
+    assert.match(route, /export \{ methodNotAllowed as GET, methodNotAllowed as DELETE \};/);
+    assert.equal(mcpServerLib.MCP_MIN_TOKEN_LENGTH, 16);
+
+    // Registered everywhere a trigger is
+    const nodes = read("src/features/executions/components/ai/nodes.tsx");
+    assert.match(nodes, /const MCP_MIN_TOKEN_LENGTH = 16;/);
+    assert.match(nodes, /endpointUrl: \{\s*path: "\/api\/mcp",/);
+    assert.match(nodes, /name: "transport",\s*label: "Transport",\s*type: "select",\s*defaultValue: "http",/);
+    assert.match(read("src/features/executions/lib/executor-registry.ts"), /\[NodeType\.MCP_SERVER_TRIGGER\]: mcpServerTriggerExecutor,/);
+    assert.ok(read("src/config/node-components.ts").includes("[NodeType.MCP_SERVER_TRIGGER]: McpServerTriggerNode,"));
+    assert.ok(read("src/components/node-selector.tsx").includes("type: NodeType.MCP_SERVER_TRIGGER,"));
+    assert.match(read("src/features/executions/components/integration-dialog.tsx"), /\$\{config\.endpointUrl\.path\}\/\$\{params\.workflowId\}/);
+    const { TRIGGER_TYPE_SOURCES, formatTriggerSource } = await import("@/config/trigger-sources");
+    assert.equal(formatTriggerSource(TRIGGER_TYPE_SOURCES.MCP_SERVER_TRIGGER), "MCP tool call");
+    const { getNodeLabel } = await import("@/config/node-labels");
+    assert.equal(getNodeLabel("MCP_SERVER_TRIGGER"), "MCP Server Trigger");
+
+    // The token never travels with a template
+    const { toTemplateData } = await import("@/features/templates/lib/template-data");
+    assert.deepEqual(
+      toTemplateData([{ id: "t", type: "MCP_SERVER_TRIGGER", position: { x: 0, y: 0 }, data: { toolName: "look_up_order", secret: "a-long-random-token-0123456789" } }], []).nodes[0].data,
+      { toolName: "look_up_order" }
+    );
+
+    // A test run from the editor is a call of the node's own tool
+    const { buildTestPayload, TESTABLE_TRIGGERS } = await import("@/features/workflows/server/test-payloads");
+    assert.ok((TESTABLE_TRIGGERS as readonly string[]).includes("MCP_SERVER_TRIGGER"));
+    const payload: any = buildTestPayload("MCP_SERVER_TRIGGER", { toolName: "look up order", parameters: "orderId (string)\ncount (integer, optional)\nurgent (boolean)\ntags (list)" });
+    assert.deepEqual(payload, { mcp: { tool: "look_up_order", arguments: { orderId: "sample", count: 1, urgent: true, tags: ["sample"] } } });
+    assert.equal(mcpTrigger.isCalledTool(payload.mcp, "any-node", "look up order"), true);
+    assert.equal(mcpServerLib.validateToolArguments(mcpServerLib.readToolSchema({ parameters: "orderId (string)\ncount (integer, optional)\nurgent (boolean)\ntags (list)" }), payload.mcp.arguments), null);
+
+    const folder = readdirSync("prisma/migrations").find((name) => name.endsWith("_mcp_server_trigger"));
+    assert.ok(folder, "migration");
+    assert.deepEqual(
+      read(`prisma/migrations/${folder}/migration.sql`).split(/\r?\n/).filter((line) => line.trim() && !line.startsWith("--")),
+      [`ALTER TYPE "NodeType" ADD VALUE 'MCP_SERVER_TRIGGER';`]
+    );
+  });
+
   console.log(`\n${passed} checks passed`);
 };
 

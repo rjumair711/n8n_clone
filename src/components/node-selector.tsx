@@ -13,7 +13,7 @@ import {
 } from "./ui/sheet"
 import { Input } from "@/components/ui/input"
 import { NodeType } from "@prisma/client"
-import { Braces, DatabaseZap, FolderSync, FileInput, FileOutput, FileText, PencilRuler, Plug, Rss, ScanText, Tags } from "lucide-react"
+import { Braces, DatabaseZap, FolderSync, ServerCog, FileInput, FileOutput, FileText, PencilRuler, Plug, Rss, ScanText, Tags } from "lucide-react"
 import { AlertTriangle, ArrowDownUp, CopyMinus, Group, ListEnd, OctagonX, Reply, Sigma, Split, Workflow } from "lucide-react"
 import { Clock, FilterIcon, GlobeIcon, MousePointerIcon, Send, VariableIcon, ChevronDown, ChevronRight, Code2, Bot, MemoryStickIcon, Search, Type, Calculator, GitBranch, GitFork, Merge, Repeat, Webhook, MessageSquare } from "lucide-react"
 import { toast } from "sonner"
@@ -128,6 +128,12 @@ const triggerNodes: NodeTypeOption[] = [
         label: "WooCommerce Trigger",
         description: "Runs the flow when an order is created or paid, or a product changes, in your WooCommerce store",
         icon: "/logos/woocommerce.svg",
+    },
+    {
+        type: NodeType.MCP_SERVER_TRIGGER,
+        label: "MCP Server Trigger",
+        description: "Makes the workflow a tool that MCP clients such as Claude or Cursor can call",
+        icon: ServerCog,
     },
     {
         type: NodeType.EXECUTE_WORKFLOW_TRIGGER,

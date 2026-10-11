@@ -1,7 +1,7 @@
 "use client";
 
 import { CredentialType } from "@prisma/client";
-import { Braces, DatabaseZap, FolderSync, Plug, ScanEye, ScanText, Tags } from "lucide-react";
+import { Braces, DatabaseZap, FolderSync, Plug, ScanEye, ScanText, ServerCog, Tags } from "lucide-react";
 import { createIntegrationNode } from "../integration-node";
 import type { IntegrationConfig, IntegrationField } from "../integration-dialog";
 import {
@@ -12,6 +12,10 @@ import {
   RERANKERS,
 } from "../../lib/rag-options";
 import { SPLIT_MODES } from "../../lib/text-splitter";
+
+// Kept in step with MCP_MIN_TOKEN_LENGTH in src/lib/mcp-server.ts (a test
+// compares them); that file is not imported here to keep it off the page
+const MCP_MIN_TOKEN_LENGTH = 16;
 import { OTHER_CATEGORY_ID, parseAttributes, parseCategories } from "../../lib/ai-fields";
 import { ANALYZE_MODES } from "../../lib/vision";
 
@@ -500,13 +504,26 @@ export const mcpClientConfig: IntegrationConfig = {
   credentialTypeFor: (values) => MCP_CREDENTIALS[values.authentication || "none"],
   credentialLabel: "Credential",
   defaultVariableName: "mcp",
-  hint: "The server must use the Streamable HTTP transport (one URL, usually ending in /mcp). Servers that only run locally over stdio, or the older SSE transport, are not supported.",
+  hint: "Streamable HTTP is one URL, usually ending in /mcp. Older servers use SSE: one URL, usually ending in /sse, that the client keeps open. Servers that only run locally over stdio are not supported.",
   fields: [
     {
       name: "endpoint",
       label: "Endpoint",
       placeholder: "https://example.com/mcp",
       required: true,
+    },
+    {
+      name: "transport",
+      label: "Transport",
+      type: "select",
+      defaultValue: "http",
+      required: true,
+      options: [
+        { value: "http", label: "Streamable HTTP" },
+        { value: "sse", label: "SSE (older servers)" },
+      ],
+      description:
+        "How the server is spoken to. Try Streamable HTTP first; choose SSE when the server's address ends in /sse or it answers 404 or 405.",
     },
     {
       name: "authentication",
@@ -538,6 +555,100 @@ export const McpClientNode = createIntegrationNode(mcpClientConfig, (data) => {
     return data.endpoint;
   }
 });
+
+// =========================================================================
+// MCP SERVER TRIGGER
+// =========================================================================
+export const mcpServerTriggerConfig: IntegrationConfig = {
+  label: "MCP Server Trigger",
+  description:
+    "Makes this workflow a tool that MCP clients (Claude, Cursor, another agent) can call. Each MCP Server Trigger node is one tool: a call runs the workflow from this node and returns its result. The workflow has to be active.",
+  logo: ServerCog,
+  trigger: true,
+  endpointUrl: {
+    path: "/api/mcp",
+    label: "MCP Server URL",
+    help: "Add this to the MCP client as a Streamable HTTP server, with the header Authorization: Bearer <your token>. All MCP Server Trigger nodes of the workflow share it.",
+  },
+  summary: "On tool call",
+  hint: "Available variables: {{mcp.arguments.<parameter>}} for what the caller passed, {{json mcp.arguments}} and {{mcp.tool}}. What the caller gets back: the body of a Respond to Webhook node if one runs, otherwise the Result variable, otherwise everything the run produced. With several MCP Server Trigger nodes, only the branch of the tool that was called runs.",
+  fields: [
+    {
+      name: "toolName",
+      label: "Tool Name",
+      placeholder: "look_up_order",
+      description:
+        "Letters, digits, _ and -. This is what the calling model sees, so say what the tool does.",
+      required: true,
+    },
+    {
+      name: "toolDescription",
+      label: "Tool Description",
+      type: "textarea",
+      placeholder:
+        "Finds an order by its number and returns its status, items and delivery date.",
+      description:
+        "The calling model decides from this when to use the tool. Say what it does and what it returns.",
+      required: true,
+    },
+    {
+      name: "parameters",
+      label: "Parameters",
+      type: "textarea",
+      placeholder:
+        "orderId (string): The order number, like 1001\nincludeItems (boolean, optional): Also return the line items",
+      description:
+        "One per line, as name (type): description. Types: string, number, integer, boolean, list, object. A parameter is required unless it says optional.",
+    },
+    {
+      name: "inputSchema",
+      label: "Input Schema (JSON)",
+      type: "textarea",
+      placeholder:
+        '{\n  "type": "object",\n  "properties": { "orderId": { "type": "string" } },\n  "required": ["orderId"]\n}',
+      description:
+        "For a schema the lines above cannot express. A JSON Schema of type object; when filled in, it is used instead of Parameters.",
+      warning: (value) => {
+        if (!value.trim()) return undefined;
+
+        try {
+          const schema = JSON.parse(value);
+
+          return schema && typeof schema === "object" && schema.type === "object"
+            ? undefined
+            : 'The schema must be a JSON object with "type": "object". Parameters are used instead.';
+        } catch {
+          return "This is not valid JSON. Parameters are used instead.";
+        }
+      },
+    },
+    {
+      name: "resultPath",
+      label: "Result",
+      placeholder: "agent.output",
+      description:
+        "The variable to return to the caller. Leave empty to return everything the run produced.",
+    },
+    {
+      name: "secret",
+      label: "Bearer Token",
+      placeholder: "a-long-random-text-of-16-or-more-characters",
+      description:
+        "Callers must send it as Authorization: Bearer <token>. Use the same token on every MCP Server Trigger of the workflow; a tool is only offered to callers that have its node's token.",
+      required: true,
+      warning: (value) =>
+        value.trim() && value.trim().length < MCP_MIN_TOKEN_LENGTH
+          ? `Use at least ${MCP_MIN_TOKEN_LENGTH} characters. Calls with a shorter token are refused.`
+          : undefined,
+    },
+  ],
+};
+
+export const McpServerTriggerNode = createIntegrationNode(
+  mcpServerTriggerConfig,
+  (data) =>
+    data.toolName && data.secret ? `Tool: ${data.toolName}` : "Not Configured"
+);
 
 // =========================================================================
 // GMAIL TRIGGER
