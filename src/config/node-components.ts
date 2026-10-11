@@ -55,6 +55,7 @@ import {
     StopAndErrorNode,
     SummarizeNode,
     TelegramTriggerNode,
+    WaitNode,
     WhatsappTriggerNode,
 } from '@/features/executions/components/core/nodes';
 import {
@@ -126,6 +127,7 @@ export const nodeComponents: NodeTypes = {
     [NodeType.RESPOND_TO_WEBHOOK]: RespondToWebhookNode,
     [NodeType.ERROR_TRIGGER]: ErrorTriggerNode,
     [NodeType.STOP_AND_ERROR]: StopAndErrorNode,
+    [NodeType.WAIT]: WaitNode,
     [NodeType.TELEGRAM_TRIGGER]: TelegramTriggerNode,
     [NodeType.WHATSAPP_TRIGGER]: WhatsappTriggerNode,
     [NodeType.GMAIL]: GmailNode,

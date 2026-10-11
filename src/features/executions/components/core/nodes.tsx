@@ -6,6 +6,7 @@ import {
   ArrowDownUp,
   CopyMinus,
   Group,
+  Hourglass,
   ListEnd,
   OctagonX,
   Route,
@@ -116,6 +117,95 @@ export const StopAndErrorNode = createIntegrationNode(
   stopAndErrorConfig,
   (data) => data.errorMessage
 );
+
+// =========================================================================
+// WAIT
+// =========================================================================
+const waitUnitOptions = [
+  { value: "seconds", label: "Seconds" },
+  { value: "minutes", label: "Minutes" },
+  { value: "hours", label: "Hours" },
+  { value: "days", label: "Days" },
+];
+
+export const waitConfig: IntegrationConfig = {
+  label: "Wait",
+  description:
+    "Pauses the workflow for a while, until a date, or until its resume URL is called. Nothing runs while it waits: the execution shows as Waiting and can be cancelled from the Executions page.",
+  logo: Hourglass,
+  defaultVariableName: "wait",
+  operations: [
+    { value: "interval", label: "After Time Interval" },
+    { value: "until", label: "At Specified Time" },
+    { value: "webhook", label: "On Webhook Call" },
+  ],
+  hint: "The resume URL is {{execution.resumeUrl}} (or {{ $execution.resumeUrl }}). It is different for every execution and is available from the start, so a node before this one can send it out, for example as an approval link in an email. What the call sent is at {{<name>.body}} and {{<name>.query}}; {{<name>.timedOut}} is true when nobody called in time.",
+  fields: [
+    {
+      name: "amount",
+      label: "Wait Amount",
+      placeholder: "10",
+      defaultValue: "1",
+      required: true,
+      operations: ["interval"],
+    },
+    {
+      name: "unit",
+      label: "Wait Unit",
+      type: "select",
+      defaultValue: "minutes",
+      required: true,
+      options: waitUnitOptions,
+      operations: ["interval"],
+    },
+    {
+      name: "dateTime",
+      label: "Date and Time",
+      placeholder: "2026-12-24T09:00:00Z",
+      description:
+        "An ISO date, or a {{variable}} that holds one. Without a time zone it is read as UTC. A time that has already passed does not wait.",
+      required: true,
+      operations: ["until"],
+    },
+    {
+      name: "timeoutAmount",
+      label: "Timeout",
+      placeholder: "24",
+      description:
+        "How long to wait for the call. Empty: as long as the server allows (7 days unless WAIT_MAX_DAYS is set).",
+      operations: ["webhook"],
+    },
+    {
+      name: "timeoutUnit",
+      label: "Timeout Unit",
+      type: "select",
+      defaultValue: "hours",
+      options: waitUnitOptions,
+      operations: ["webhook"],
+    },
+    {
+      name: "onTimeout",
+      label: "On Timeout",
+      type: "select",
+      defaultValue: "continue",
+      required: true,
+      options: [
+        { value: "continue", label: "Continue the workflow" },
+        { value: "fail", label: "Fail the workflow" },
+      ],
+      operations: ["webhook"],
+    },
+  ],
+};
+
+export const WaitNode = createIntegrationNode(waitConfig, (data) => {
+  if (data.operation === "webhook") return "Until the resume URL is called";
+  if (data.operation === "until") {
+    return data.dateTime ? `Until ${data.dateTime}` : undefined;
+  }
+
+  return data.amount ? `For ${data.amount} ${data.unit || "minutes"}` : undefined;
+});
 
 // =========================================================================
 // LIST NODES

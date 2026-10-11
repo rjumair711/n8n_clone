@@ -2,13 +2,14 @@
 
 import { ExecutionStatus } from "@prisma/client"
 import { formatTriggerSource } from "@/config/trigger-sources";
-import { CheckCircle2Icon, ClockIcon, Loader2Icon, RotateCcwIcon, XCircleIcon } from "lucide-react"
+import { BanIcon, CheckCircle2Icon, ClockIcon, HourglassIcon, Loader2Icon, RotateCcwIcon, XCircleIcon } from "lucide-react"
 import { useRouter } from "next/navigation"
 import Link from "next/link"
 import { useState } from "react"
-import { useRetryExecution, useSuspenseExecution } from "../hooks/use-executions"
+import { useCancelExecution, useRetryExecution, useSuspenseExecution } from "../hooks/use-executions"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
-import { formatDistanceToNow } from "date-fns"
+import { format, formatDistanceToNow } from "date-fns"
+import { Input } from "@/components/ui/input"
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible"
 import { Button } from "@/components/ui/button"
 import { ExecutionAiUsage } from "@/features/ai-usage/components/execution-ai-usage"
@@ -22,6 +23,8 @@ const getStatusIcon = (status: ExecutionStatus) => {
             return <XCircleIcon className="size-5 text-red-600" />
         case ExecutionStatus.RUNNING:
             return <Loader2Icon className="size-5 text-blue-600" />
+        case ExecutionStatus.WAITING:
+            return <HourglassIcon className="size-5 text-amber-600" />
         default:
             return <ClockIcon className="size-5 text-muted-foreground" />
     }
@@ -40,6 +43,10 @@ export const ExecutionView = ({
     const [showStackTrace, setShowStackTrace] = useState(false)
     const router = useRouter()
     const retryExecution = useRetryExecution()
+    const cancelExecution = useCancelExecution()
+
+    const isWaiting = execution.status === ExecutionStatus.WAITING
+    const isUnfinished = isWaiting || execution.status === ExecutionStatus.RUNNING
 
     // Runs the workflow again from the same trigger with the same data
     const handleRetry = () => {
@@ -68,7 +75,20 @@ export const ExecutionView = ({
                             Execution for {execution.workflow.name}
                         </CardDescription>
                     </div>
-                    {execution.status !== ExecutionStatus.RUNNING && execution.trigger && (
+                    {isWaiting && (
+                        <Button
+                            variant="outline"
+                            size="sm"
+                            className="ml-auto"
+                            onClick={() => cancelExecution.mutate({ id: executionId })}
+                            disabled={cancelExecution.isPending}
+                            title="Stops the execution: the nodes after the Wait node will not run"
+                        >
+                            <BanIcon className="size-4" />
+                            Cancel
+                        </Button>
+                    )}
+                    {!isUnfinished && execution.trigger && (
                         <Button
                             variant="outline"
                             size="sm"
@@ -130,6 +150,35 @@ export const ExecutionView = ({
                         <p className="text-sm">{execution.inngestEventId}s</p>
                     </div>
                 </div>
+                {isWaiting && (
+                    <div className="mt-6 p-4 rounded-md space-y-3 bg-amber-50 text-amber-900 dark:bg-amber-950/40 dark:text-amber-200">
+                        <p className="text-sm font-medium">
+                            {execution.waitingFor === "webhook"
+                                ? "Paused at a Wait node until its resume URL is called"
+                                : "Paused at a Wait node"}
+                        </p>
+                        {execution.waitingUntil && (
+                            <p className="text-sm">
+                                {execution.waitingFor === "webhook" ? "Times out" : "Continues"}{" "}
+                                {formatDistanceToNow(execution.waitingUntil, { addSuffix: true })}{" "}
+                                ({format(execution.waitingUntil, "PPpp")})
+                            </p>
+                        )}
+                        {execution.resumeUrl && (
+                            <div className="space-y-1">
+                                <p className="text-sm">
+                                    Resume URL. Anyone who has it can continue this execution:
+                                </p>
+                                <Input
+                                    value={execution.resumeUrl}
+                                    readOnly
+                                    className="font-mono text-xs bg-background text-foreground"
+                                    onFocus={(event) => event.target.select()}
+                                />
+                            </div>
+                        )}
+                    </div>
+                )}
                 {execution.error && (
                     <div className="mt-6 p-4 bg-red-50 rounded-md space-y-3">
                         <div>

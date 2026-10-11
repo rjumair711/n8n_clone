@@ -17,7 +17,7 @@ import { Braces, DatabaseZap, FileInput, FileOutput, FileText, PencilRuler, Plug
 import { AlertTriangle, ArrowDownUp, CopyMinus, Group, ListEnd, OctagonX, Reply, Sigma, Split, Workflow } from "lucide-react"
 import { Clock, FilterIcon, GlobeIcon, MousePointerIcon, Send, VariableIcon, ChevronDown, ChevronRight, Code2, Bot, MemoryStickIcon, Search, Type, Calculator, GitBranch, GitFork, Merge, Repeat, Webhook, MessageSquare } from "lucide-react"
 import { toast } from "sonner"
-import { Lock, Route } from "lucide-react"
+import { Hourglass, Lock, Route } from "lucide-react"
 import { getRequiredPlanForNode } from "@/config/plans"
 import { useCurrentPlan } from "@/features/subscription/hook/use-current-plan"
 import { UpgradeModal } from "@/components/upgrade-modal"
@@ -256,6 +256,12 @@ const logicNodes: NodeTypeOption[] = [
         label: "Delay",
         description: "Pause workflow for a specific duration",
         icon: Clock,
+    },
+    {
+        type: NodeType.WAIT,
+        label: "Wait",
+        description: "Pause for a time, until a date, or until a resume URL is called",
+        icon: Hourglass,
     },
     {
         type: NodeType.BUFFER_MEMORY,

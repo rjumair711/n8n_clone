@@ -37,6 +37,7 @@ The platform is designed as a scalable SaaS product with:
 * Per-item execution after list nodes (see below)
 * Sub-workflows: one workflow can call another and use its result
 * Error handling: Retry On Fail, Continue on error, Error Trigger, Stop and Error
+* Wait node: pause a run for a time, until a date, or until its resume URL is called (see "Waiting executions")
 * Inngest background execution system
 * Dynamic time-based execution engine via an automated Background Ticker (`* * * * *` clock matching system)
 * Shared execution context
@@ -44,7 +45,27 @@ The platform is designed as a scalable SaaS product with:
 * Execution persistence in PostgreSQL
 * Realtime execution updates
 * Retry handling and failure propagation
-* Execution cancellation support
+* Waiting executions can be cancelled
+
+## Waiting executions
+
+The **Wait** node pauses a run and continues it later. While it is paused nothing runs and no request is held open: the pause is an Inngest `step.sleepUntil` or `step.waitForEvent`, and the execution has the status **Waiting**.
+
+| Resume | The run continues |
+| ------ | ----------------- |
+| After Time Interval | after an amount of seconds, minutes, hours or days |
+| At Specified Time | at a date and time (ISO, e.g. `2026-12-24T09:00:00Z`; no time zone means UTC). A time in the past does not wait |
+| On Webhook Call | when the execution's resume URL is called (GET, POST, PUT or PATCH) |
+
+* **Resume URL.** Every execution has its own: `<app>/api/webhooks/wait/<executionId>/<token>`. The token is an HMAC of the execution id made with `ENCRYPTION_KEY`, so the URL cannot be guessed and nothing is stored for it. It is available from the first node on as `{{execution.resumeUrl}}` (or `{{ $execution.resumeUrl }}`), so a node before the Wait node can send it out, for example as an approval link in an email. Whoever has the URL can continue that one execution, so send it only to who should decide.
+* **What the call sent** is under the Wait node's variable (default `wait`): `{{wait.body}}`, `{{wait.query}}`, `{{wait.headers}}`, `{{wait.method}}`, and `{{wait.resumedBy}}` (`webhook`, `timeout` or `timer`).
+* **Timeout.** On Webhook Call takes an optional timeout and what to do when nobody called in time: **Continue the workflow** (`{{wait.timedOut}}` is true) or **Fail the workflow**. Without a timeout it waits the longest the server allows.
+* **Longest wait.** 7 days, which is the most Inngest's free plan can sleep. Set `WAIT_MAX_DAYS` on a plan that allows more.
+* **Cancel.** A waiting execution has a **Cancel** button on its page. It is marked Failed with "Cancelled by the user while it was waiting", the Inngest run is stopped, and the nodes after the Wait node never run. The page also shows when the wait ends and, for On Webhook Call, the resume URL.
+* The resume URL answers `409` while the execution is not waiting for a call (it has not reached the Wait node yet, was already resumed, or has finished) and `404` for a wrong token. One URL serves every Wait node of the execution, one call per wait.
+* The token is replaced by `[REDACTED]` in stored node input and output, and "All Workflow Data" webhook responses leave the URL out.
+* A link opened by a mail scanner or a link preview counts as a call. For approvals that matter, link to a page or form that sends a POST instead.
+* Waiting executions are not removed by the retention cleanup, cannot be run again until they finish or are cancelled, and a Wait node cannot be an AI Agent tool. After a list node the Wait node pauses once for the whole list.
 
 ## Per-item execution
 
@@ -117,10 +138,12 @@ Each node execution stores:
 
 | Status  | Meaning   |
 | ------- | --------- |
-| initial | Waiting   |
-| loading | Executing |
+| initial | Not run yet |
+| loading | Executing, or paused at a Wait node |
 | success | Completed |
 | error   | Failed    |
+
+An execution is Running, Waiting (paused at a Wait node), Success or Failed.
 
 ---
 
@@ -329,6 +352,7 @@ Every execution also keeps the trigger and the data it started with, so it can b
 | Loop             | Run the connected nodes once for every item in a list                     |
 | Stop and Error   | Fail the workflow with your own message                                   |
 | Delay            | Pause workflow                                                            |
+| Wait             | Pause for a time, until a date, or until the execution's resume URL is called; timeout that continues or fails; cancellable |
 | Date & Time      | Get current time, format, manipulate, or compare dates                    |
 | Text Formatter   | Transform, clean, or extract text strings (Uppercase, Replace, Regex)     |
 | Calculator       | Perform mathematical operations on numbers or variables                   |
@@ -797,6 +821,7 @@ The live app on Vercel and local development use the **same** database, so the s
 | `WEBHOOK_RESPONSE_TIMEOUT_MS` | How long a webhook waits for the workflow's response, default 25000 |
 | `SANDBOX_MAX_OUTPUT_KB` | The most a Code node or one expression may return, in KB, default 1024 |
 | `MAX_ITEMS_PER_NODE` | Items one node may process in a list, default 100 |
+| `WAIT_MAX_DAYS` | The longest a Wait node may wait, in days, default 7 (the limit of Inngest's free plan) |
 | `MAX_FILE_SIZE_MB`, `MAX_USER_STORAGE_MB`, `FILE_RETENTION_DAYS` | Workflow file limits, defaults 10, 200 and 7 |
 | `MAX_UNCOMPRESSED_FILE_MB`, `MAX_ZIP_ENTRIES` | What an XLSX or DOCX file may unpack to, defaults 50 and 2000 |
 | `PDF_MAX_PAGES`, `PDF_EXTRACT_TIMEOUT_SECONDS` | Pages read from a PDF and the time allowed, defaults 200 and 20 |
@@ -818,7 +843,6 @@ Nodes that are not built yet. Each new integration is a config passed to `create
 | Browser Automation | Deliberately not built: it needs a headless browser service that cannot run on standard serverless functions, and it is easy to abuse. If added, the plan is a node that uses the user's own hosted-browser API key |
 | MongoDB, Redis, Supabase (REST) | More data stores next to Postgres and MySQL |
 | Slack / Discord bots | Bot-token nodes and triggers; today both send through webhook URLs |
-| Wait (resume on webhook) | Pausing a run until an external call |
 
 Also not built: a true n8n items model for every node from the trigger onward (items start at a list node), pgvector for the Vector Store, and the stdio / SSE transports for MCP.
 

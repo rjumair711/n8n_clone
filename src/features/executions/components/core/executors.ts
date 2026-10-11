@@ -8,6 +8,16 @@ import { sendWorkflowExecution } from "@/inngest/utils";
 import { renderTemplate } from "../../lib/templates";
 import { parseJsonField } from "../../lib/integration";
 import { parseKeyValues } from "../../lib/key-values";
+import {
+  WAITING_FOR_TIME,
+  WAITING_FOR_WEBHOOK,
+  WAIT_RESUME_EVENT,
+  formatWaitDuration,
+  getMaxWaitMs,
+  parseWaitDate,
+  parseWaitDuration,
+  withoutResumeUrl,
+} from "@/lib/execution-wait";
 
 // =========================================================================
 // TRIGGERS WHOSE DATA IS ALREADY IN THE CONTEXT WHEN THE RUN STARTS
@@ -69,7 +79,8 @@ export const respondToWebhookExecutor: NodeExecutor<
     case "allData": {
       // Everything the workflow has produced so far, without the request
       const { webhook: _webhook, ...rest } = context;
-      body = JSON.stringify(rest);
+      // Nor the URL that resumes this run at a Wait node
+      body = JSON.stringify(withoutResumeUrl(rest));
       if (!hasContentType) headers["Content-Type"] = "application/json";
       break;
     }
@@ -313,5 +324,201 @@ export const executeWorkflowExecutor: NodeExecutor<ExecuteWorkflowData> = async 
   return {
     ...context,
     [variableName]: result,
+  };
+};
+
+// =========================================================================
+// WAIT
+// =========================================================================
+type WaitData = {
+  variableName?: string;
+  // "interval" (default) | "until" | "webhook"
+  operation?: string;
+  amount?: string;
+  unit?: string;
+  dateTime?: string;
+  // For "webhook": how long to wait for the call. Empty: the maximum.
+  timeoutAmount?: string;
+  timeoutUnit?: string;
+  // "continue" (default) | "fail"
+  onTimeout?: string;
+};
+
+const WAIT_MODES = ["interval", "until", "webhook"];
+
+type WaitResumeEvent = {
+  data?: {
+    webhook?: {
+      method?: string;
+      headers?: Record<string, string>;
+      query?: Record<string, string>;
+      body?: unknown;
+    };
+  };
+} | null;
+
+/**
+ * Pauses the run for an amount of time, until a date, or until its resume
+ * URL ({{execution.resumeUrl}}) is called. The pause is an Inngest sleep or
+ * wait-for-event, so nothing runs and nothing is held open meanwhile; the
+ * execution shows as "Waiting" and can be cancelled.
+ */
+export const waitExecutor: NodeExecutor<WaitData> = async ({
+  data,
+  nodeId,
+  context,
+  step,
+  executionId,
+  inline,
+}) => {
+  // An agent's tool call has to answer within the agent's own step
+  if (inline) {
+    throw new NonRetriableError(
+      "Wait node: it cannot be used as an AI Agent tool"
+    );
+  }
+
+  const variableName = data.variableName?.trim() || "wait";
+  const mode = data.operation || "interval";
+
+  if (!WAIT_MODES.includes(mode)) {
+    throw new NonRetriableError(`Wait node: Unsupported resume mode "${mode}"`);
+  }
+
+  // Worked out inside a step, so it is decided once: Inngest re-runs this
+  // function after every step, and "now" or {{ $now }} would move each time
+  const started = await step.run(`wait-${nodeId}-start`, async () => {
+    const now = Date.now();
+    const maxMs = getMaxWaitMs();
+    let until: number;
+
+    try {
+      if (mode === "until") {
+        until = parseWaitDate(renderTemplate(data.dateTime, context)).getTime();
+
+        if (until - now > maxMs) {
+          throw new Error(
+            `Wait node: Date and Time is more than the maximum of ${formatWaitDuration(maxMs)} away`
+          );
+        }
+      } else if (mode === "interval") {
+        until =
+          now +
+          parseWaitDuration(
+            renderTemplate(data.amount, context),
+            data.unit,
+            "Wait Amount",
+            maxMs
+          );
+      } else {
+        const timeout = renderTemplate(data.timeoutAmount, context).trim();
+
+        until =
+          now +
+          (timeout
+            ? parseWaitDuration(timeout, data.timeoutUnit, "Timeout", maxMs)
+            : maxMs);
+      }
+    } catch (error) {
+      throw new NonRetriableError(
+        error instanceof Error ? error.message : "Wait node: invalid settings"
+      );
+    }
+
+    // A time that has already passed: the run simply goes on
+    const skip = mode !== "webhook" && until <= now;
+
+    // Outside an execution (unit tests) there is nothing to mark
+    if (!skip && executionId) {
+      await prisma.execution.updateMany({
+        where: { id: executionId, status: ExecutionStatus.RUNNING },
+        data: {
+          status: ExecutionStatus.WAITING,
+          waitingFor: mode === "webhook" ? WAITING_FOR_WEBHOOK : WAITING_FOR_TIME,
+          waitingUntil: new Date(until),
+        },
+      });
+
+      await prisma.executionNode.updateMany({
+        where: { executionId, nodeId, status: ExecutionStatus.RUNNING },
+        data: { status: ExecutionStatus.WAITING },
+      });
+    }
+
+    return { until: new Date(until).toISOString(), skip };
+  });
+
+  let resumedBy: "timer" | "webhook" | "timeout" = "timer";
+  let webhook: NonNullable<NonNullable<WaitResumeEvent>["data"]>["webhook"];
+
+  if (!started.skip) {
+    if (mode === "webhook") {
+      const event = (await step.waitForEvent(`wait-${nodeId}-webhook`, {
+        event: WAIT_RESUME_EVENT,
+        timeout: new Date(started.until),
+        // Only the call to this execution's own resume URL
+        if: `async.data.executionId == "${executionId ?? ""}"`,
+      })) as WaitResumeEvent;
+
+      resumedBy = event ? "webhook" : "timeout";
+      webhook = event?.data?.webhook;
+    } else {
+      await step.sleepUntil(`wait-${nodeId}-sleep`, new Date(started.until));
+    }
+
+    if (executionId) {
+      await step.run(`wait-${nodeId}-resume`, async () => {
+        const resumed = await prisma.execution.updateMany({
+          where: { id: executionId, status: ExecutionStatus.WAITING },
+          data: {
+            status: ExecutionStatus.RUNNING,
+            waitingFor: null,
+            waitingUntil: null,
+          },
+        });
+
+        if (resumed.count === 0) {
+          const current = await prisma.execution.findUnique({
+            where: { id: executionId },
+            select: { status: true },
+          });
+
+          // Cancelled just as the wait ended: the run must not go on.
+          // (Still RUNNING means this step is being retried.)
+          if (current?.status !== ExecutionStatus.RUNNING) {
+            throw new NonRetriableError(
+              "Wait node: the execution was cancelled while it was waiting"
+            );
+          }
+        }
+
+        await prisma.executionNode.updateMany({
+          where: { executionId, nodeId, status: ExecutionStatus.WAITING },
+          data: { status: ExecutionStatus.RUNNING },
+        });
+      });
+    }
+  }
+
+  if (resumedBy === "timeout" && data.onTimeout === "fail") {
+    throw new NonRetriableError(
+      "Wait node: the resume URL was not called before the timeout"
+    );
+  }
+
+  return {
+    ...context,
+    [variableName]: {
+      resumedBy,
+      timedOut: resumedBy === "timeout",
+      ...(mode === "webhook"
+        ? {
+            method: webhook?.method ?? null,
+            headers: webhook?.headers ?? {},
+            query: webhook?.query ?? {},
+            body: webhook?.body ?? null,
+          }
+        : {}),
+    },
   };
 };

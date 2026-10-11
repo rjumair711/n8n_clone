@@ -57,6 +57,12 @@ import { dateTimeChannel } from "./channels/datetime";
 import { textFormatterChannel } from "./channels/textformatter";
 import { createRunRedactor } from "@/lib/execution-redaction";
 import { redactString } from "@/lib/redaction";
+import { getAppUrl } from "@/lib/app-url";
+import {
+  EXECUTION_CANCEL_EVENT,
+  getResumeLink,
+  withResumeUrl,
+} from "@/lib/execution-wait";
 
 const toJson = (value: unknown) => value as Prisma.InputJsonValue;
 
@@ -89,6 +95,11 @@ export const executeWorkflow =
           "production"
           ? 3
           : 0,
+
+      // Cancelling a waiting execution ends its sleep or wait-for-event
+      cancelOn: [
+        { event: EXECUTION_CANCEL_EVENT, match: "data.executionId" },
+      ],
 
       onFailure: async ({
         event,
@@ -277,7 +288,13 @@ export const executeWorkflow =
       // What is stored about the run goes through this first. The run
       // itself always works with the real data. Runs that started before
       // this existed have neither value in their saved step result.
-      const redactor = createRunRedactor(credentialValues ?? []);
+      // The token of this execution's resume URL is kept out of it as well:
+      // the logs say where the URL went, not what it is
+      const resumeLink = getResumeLink(getAppUrl(), execution.id);
+      const redactor = createRunRedactor(
+        credentialValues ?? [],
+        resumeLink ? [resumeLink.token] : []
+      );
       const saveNodeData = saveExecutionData !== false;
 
       // =========================================
@@ -617,10 +634,14 @@ export const executeWorkflow =
       const context = await runWorkflowGraph({
         graph,
         trigger: event.data.trigger,
-        context:
+        // {{execution.resumeUrl}} is there from the first node on, so the
+        // URL can be sent out before a Wait node pauses the run
+        context: withResumeUrl(
           event.data.InitialData ||
-          event.data.initialData ||
-          {},
+            event.data.initialData ||
+            {},
+          resumeLink?.url
+        ),
         runNode,
       });
 

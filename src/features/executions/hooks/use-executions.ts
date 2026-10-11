@@ -45,3 +45,26 @@ export const useRetryExecution = () => {
         },
     }))
 }
+
+
+/**
+ * Hook to cancel an execution that is paused at a Wait node
+ */
+
+export const useCancelExecution = () => {
+    const trpc = useTRPC()
+    const queryClient = useQueryClient()
+
+    return useMutation(trpc.executions.cancel.mutationOptions({
+        onSuccess: (cancelled) => {
+            toast.success("Execution cancelled")
+            queryClient.invalidateQueries(trpc.executions.getMany.queryOptions({}))
+            queryClient.invalidateQueries(trpc.executions.getOne.queryOptions({ id: cancelled.id }))
+        },
+        onError: (error, variables) => {
+            toast.error(error.message)
+            // It may have been resumed in the meantime: show what it is now
+            queryClient.invalidateQueries(trpc.executions.getOne.queryOptions({ id: variables.id }))
+        },
+    }))
+}

@@ -187,6 +187,63 @@ curl -i -X POST "<webhook url>" \
 
 **c) Retry button.** Open the failed execution from (a) on the Executions page. **Expect:** a **Retry** button that starts a new execution.
 
+## T6b. Wait node
+
+Needs the Inngest dev server (`npm run inngest:dev`) next to the app, and the `wait_node` migration applied. Use the test account.
+
+**a) Time interval and the Waiting status.** Trigger manually → Set Variable (name `before`, value `1`) → **Wait** (Resume `After Time Interval` · Wait Amount `1` · Wait Unit `Minutes`) → Set Variable (name `after`, value `{{wait.resumedBy}}`).
+
+| Do | Expect |
+|----|--------|
+| Execute, then open the Executions page | the run is listed as **Waiting** with an hourglass |
+| Open the execution | "Paused at a Wait node", "Continues in 1 minute", a **Cancel** button and no Retry button |
+| Look at the canvas and the log panel | the Wait node is still in progress; its log line says Waiting |
+| Look at the run in the Inngest dev server | it is sleeping: no step is running |
+| Wait a minute, reload | **Success**, and `after` is `timer` |
+| Set Wait Amount to `30` and Wait Unit to `Days`, execute | the run fails: "Wait Amount is longer than the maximum of 7 days" |
+
+**b) Until a date.** Change the Wait node to Resume `At Specified Time` with a Date and Time two minutes from now in UTC, e.g. `2026-10-11T12:34:00Z`.
+
+| Do | Expect |
+|----|--------|
+| Execute | Waiting, "Continues in 2 minutes" with that time; then Success |
+| Date and Time `2020-01-01T00:00:00Z` | Success at once, never Waiting |
+| Date and Time `next week` | the run fails: "Date and Time must be a date like ..." |
+
+**c) Resume URL.** Trigger manually → Set Variable (name `link`, value `{{execution.resumeUrl}}`) → **Wait** (Variable Name `approval` · Resume `On Webhook Call` · Timeout empty) → Set Variable (name `answer`, value `{{approval.body.approved}} / {{approval.query.by}}`).
+
+| Do | Expect |
+|----|--------|
+| Execute and open the execution | Waiting, "Paused at a Wait node until its resume URL is called", "Times out in 7 days", and the **Resume URL** in a box |
+| Look at the first Set Variable's output in the log panel | `link` is the same address ending in `[REDACTED]`: the token is not stored |
+| `curl -X POST "<resume URL>?by=ali" -H "Content-Type: application/json" -d '{"approved": true}'` | `{"success":true,...,"message":"The workflow continues"}` |
+| Reload the execution | Success; `answer` is `true / ali`; `approval.resumedBy` is `webhook` |
+| Send the same curl again | `409`, "This execution is not waiting for a webhook call" |
+| Change one character of the token and send | `404`, "This resume URL is not valid" |
+| Execute again, and call the new run's URL with the old run's token | `404`: every execution has its own URL |
+| Open a new run's resume URL in the browser (a GET) | the run continues; `approval.method` is `GET` |
+| Put an **Email** or **Gmail** node before the Wait node with `{{execution.resumeUrl}}` in the message | the mail contains the full working URL |
+
+**d) Timeout.** In (c) set Timeout `1`, Timeout Unit `Minutes`.
+
+| On Timeout | Expect after a minute without a call |
+|------------|--------------------------------------|
+| `Continue the workflow` | Success; `approval.timedOut` is `true`, `approval.resumedBy` is `timeout` |
+| `Fail the workflow` | Failed: "Wait node: the resume URL was not called before the timeout" |
+
+**e) Cancel.** Run (c) with the timeout empty and open the execution.
+
+| Do | Expect |
+|----|--------|
+| Click **Cancel** | "Execution cancelled"; the status is **Failed** with "Cancelled by the user while it was waiting"; the Retry button is back |
+| Call its resume URL | `409` |
+| Look at the run in the Inngest dev server | Cancelled; the last Set Variable never ran |
+| Run (a) with 1 minute, cancel it, wait two minutes | still Failed; `after` was never set |
+| Signed in as the second account, open the first account's waiting execution by its URL | "not found": it cannot be seen or cancelled |
+| Open a finished execution | no Cancel button |
+
+**f) Lists and agents.** Put the Wait node (30 seconds) after a Split Out with three items. **Expect:** one pause, then the following node runs for all three items. Plug a Wait node into an AI Agent's Tools port and ask the agent to use it. **Expect:** the tool call fails with "it cannot be used as an AI Agent tool".
+
 ## T7. Sub-workflows
 
 Workflow A, name it `Child`: **When Executed by Another Workflow** → Set Variable (name `greeting`, value `Hello {{name}}`). Save.

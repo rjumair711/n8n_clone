@@ -8,7 +8,7 @@ import { useRouter } from "next/navigation"
 import { useExecutionsParams } from "../hooks/use-executions-params"
 import { Execution, ExecutionStatus } from "@prisma/client"
 import { useSuspenseExecutions } from "../hooks/use-executions"
-import { CheckCircle2Icon, ClockIcon, Loader2Icon, XCircleIcon } from "lucide-react"
+import { CheckCircle2Icon, ClockIcon, HourglassIcon, Loader2Icon, XCircleIcon } from "lucide-react"
 import { formatTriggerSource } from "@/config/trigger-sources"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { toast } from "sonner"
@@ -150,6 +150,8 @@ const getStatusIcon = (status: ExecutionStatus) => {
             return <XCircleIcon className="size-5 text-green-600" />
         case ExecutionStatus.RUNNING:
             return <Loader2Icon className="size-5 text-green-600" />
+        case ExecutionStatus.WAITING:
+            return <HourglassIcon className="size-5 text-amber-600" />
         default:
             return <ClockIcon className="size-5 text-muted-foreground" />
     }
