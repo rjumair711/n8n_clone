@@ -399,7 +399,7 @@ export const AIAgentDialog = ({
                             <FormLabel>Tool Name</FormLabel>
                             <FormControl>
                               <Input
-                                placeholder={getDefaultToolName(tool.type)}
+                                placeholder={getDefaultToolName(tool.type, tool.data)}
                                 {...field}
                                 value={field.value ?? ""}
                               />

@@ -10965,6 +10965,208 @@ pour()</code></pre>
     );
   });
 
+  // -------------------------------------- THINK TOOL AND AI AGENT TOOL
+  console.log("Think Tool and AI Agent Tool");
+
+  const agentToolNodes = await import("@/features/executions/components/ai/agent-tool");
+
+  await test("the Think Tool takes a thought and changes nothing", async () => {
+    // What the model has to fill in is fixed by the tool, whatever is in its settings
+    assert.deepEqual(agentTools.getToolParameters("THINK_TOOL", { toolDescription: "x {{$fromAI \"other\"}}" }), [
+      { key: "thought", type: "string", description: "Your reasoning, written out." },
+    ]);
+    // Any other node is still read from its fields
+    assert.deepEqual(
+      agentTools.getToolParameters("HTTP_REQUEST", { endpoint: 'https://example.com/{{$fromAI "id" "The order id"}}' }),
+      agentTools.extractAIParameters({ endpoint: 'https://example.com/{{$fromAI "id" "The order id"}}' })
+    );
+
+    assert.equal(agentTools.getToolRisk("THINK_TOOL", {}), "read");
+    assert.equal(agentTools.getToolLabel("THINK_TOOL"), "Think");
+    assert.equal(agentTools.getDefaultToolName("THINK_TOOL"), "think");
+    assert.equal(agentTools.getDefaultToolDescription("THINK_TOOL", {}), agentTools.THINK_TOOL_DESCRIPTION);
+    assert.match(agentTools.THINK_TOOL_DESCRIPTION, /It gets no new information and changes nothing\./);
+    assert.equal(agentTools.getDefaultToolDescription("THINK_TOOL", { toolDescription: "  Think before every refund.  " }), "Think before every refund.");
+    // It never waits for a person, also on agents that ask by default
+    assert.equal(approvals.toolRequiresApproval({ saved: undefined, risk: agentTools.getToolRisk("THINK_TOOL", {}), defaultByRisk: true }), false);
+
+    // As a tool: an acknowledgement. The data around it is not touched.
+    const context = { chatInput: "Refund order 7", order: { id: 7 }, ai: { thought: "The order is older than 14 days, so no refund." } };
+    const output: any = await agentToolNodes.thinkToolExecutor({ ...baseParams, data: {}, context, inline: true });
+    assert.deepEqual(output, { ...context, thought: "Thought noted." });
+    assert.equal(output.order, context.order);
+    // As an ordinary step it passes the data on as it is
+    assert.equal(await agentToolNodes.thinkToolExecutor({ ...baseParams, data: {}, context }), context);
+
+    const { readFileSync } = await import("node:fs");
+    const source = readFileSync("src/features/executions/components/ai/agent-tool.ts", "utf8");
+    const think = source.slice(source.indexOf("export const thinkToolExecutor"), source.indexOf("// AI AGENT TOOL"));
+    // No step, no database, no request
+    assert.equal(/step\.|prisma|fetch\(|await /.test(think), false);
+
+    // In an agent's loop: the model thinks, is told it was noted, and answers
+    let thoughts = 0;
+    const model = new MockLanguageModelV3({
+      doGenerate: async () =>
+        ++thoughts === 1
+          ? { ...toolCallResult("call-1", { thought: "First check the order date." }), content: [{ type: "tool-call" as const, toolCallId: "call-1", toolName: "think", input: JSON.stringify({ thought: "First check the order date." }) }] }
+          : textResult("The order is too old for a refund."),
+    });
+    const result = await agentLoop.runAgentLoop({
+      model,
+      messages: [{ role: "user", content: "Refund order 7" }],
+      tools: {
+        think: defineTool({
+          description: agentTools.getDefaultToolDescription("THINK_TOOL", {}),
+          inputSchema: agentTools.buildToolInputSchema(agentTools.getToolParameters("THINK_TOOL", {})),
+          execute: async (input: any) =>
+            ((await agentToolNodes.thinkToolExecutor({ ...baseParams, data: {}, context: { ai: input }, inline: true })) as any).thought,
+        }),
+      },
+    });
+    assert.equal(result.output, "The order is too old for a refund.");
+    assert.equal(result.toolCalls, 1);
+    // The thought itself is in the steps the agent returns
+    assert.deepEqual(result.intermediateSteps.map((entry) => [entry.action.tool, entry.action.toolInput, entry.observation]), [
+      ["think", { thought: "First check the order date." }, "Thought noted."],
+    ]);
+    // A call without a thought is refused by the tool's schema
+    assert.equal(agentTools.buildToolInputSchema(agentTools.getToolParameters("THINK_TOOL", {})).safeParse({}).success, false);
+  });
+
+  await test("an AI Agent Tool is an agent with its own model and tools, called with a task", async () => {
+    assert.deepEqual(agentTools.getToolParameters("AI_AGENT_TOOL", {}).map((parameter) => parameter.key), ["prompt"]);
+    assert.match(agentTools.getToolParameters("AI_AGENT_TOOL", {})[0].description ?? "", /It sees nothing of this conversation/);
+    const schema = agentTools.buildToolInputSchema(agentTools.getToolParameters("AI_AGENT_TOOL", {}));
+    assert.equal(schema.safeParse({ prompt: "Find the delivery time to Hunza." }).success, true);
+    assert.equal(schema.safeParse({}).success, false);
+
+    // Its name and description are the node's own
+    assert.equal(agentTools.getDefaultToolName("AI_AGENT_TOOL", { toolName: "Research Agent!" }), "Research_Agent");
+    assert.equal(agentTools.getDefaultToolName("AI_AGENT_TOOL", {}), "agent");
+    assert.equal(agentTools.getDefaultToolName("AI_AGENT_TOOL"), "agent");
+    // Other nodes keep the name of their kind
+    assert.equal(agentTools.getDefaultToolName("WEB_SEARCH", { toolName: "ignored?" }), "ignored");
+    assert.equal(agentTools.getDefaultToolName("WEB_SEARCH", {}), "web_search");
+    assert.equal(agentTools.getDefaultToolDescription("AI_AGENT_TOOL", { toolDescription: " Researches a topic. " }), "Researches a topic.");
+    assert.equal(agentTools.getDefaultToolDescription("AI_AGENT_TOOL", {}), "Hands a task to another AI agent and returns its answer.");
+
+    // Calling another agent is "write": on new agents a person approves the
+    // call, because what it does with its own tools is not asked about again
+    assert.equal(agentTools.getToolRisk("AI_AGENT_TOOL", {}), "write");
+    assert.equal(approvals.toolRequiresApproval({ saved: undefined, risk: "write", defaultByRisk: true }), true);
+    assert.equal(approvals.toolRequiresApproval({ saved: false, risk: "write", defaultByRisk: true }), false);
+
+    // What is wrong with a node is found before the calling agent starts
+    const tool = { id: "researcher", type: "AI_AGENT_TOOL", data: { toolName: "research_agent", toolDescription: "Researches a topic." } };
+    const nodes = [
+      { id: "agent", type: "AI_AGENT", data: {} },
+      tool,
+      { id: "model", type: "OPENAI", data: {} },
+      { id: "search", type: "WEB_SEARCH", data: { operation: "tavily" } },
+      { id: "ssh", type: "SSH", data: {} },
+    ];
+    const edge = (fromNodeId: string, toNodeId: string, toInput: string) => ({ fromNodeId, toNodeId, fromOutput: "source-1", toInput });
+    const ready = [edge("researcher", "agent", "sub-tools"), edge("model", "researcher", "sub-model"), edge("search", "researcher", "sub-tools")];
+
+    assert.equal(agentToolNodes.getAgentToolProblem(tool, nodes, ready), null);
+    assert.equal(
+      agentToolNodes.getAgentToolProblem(tool, nodes, [edge("researcher", "agent", "sub-tools"), edge("search", "researcher", "sub-tools")]),
+      'AI Agent Tool "research_agent": connect a chat model to its Model port'
+    );
+    assert.match(
+      agentToolNodes.getAgentToolProblem({ ...tool, data: { toolName: "research_agent" } }, nodes, ready) ?? "",
+      /^AI Agent Tool "research_agent": Description is required\./
+    );
+    // Its own dangerous tools need its own switch
+    const withSsh = [...ready, edge("ssh", "researcher", "sub-tools")];
+    assert.match(
+      agentToolNodes.getAgentToolProblem(tool, nodes, withSsh) ?? "",
+      /^AI Agent Tool "research_agent": dangerous tool connected \("SSH Command": it runs commands on a server\)\./
+    );
+    assert.equal(agentToolNodes.getAgentToolProblem({ ...tool, data: { ...tool.data, allowDangerousTools: "true" } }, nodes, withSsh), null);
+    // A tool of the calling agent is not this agent's tool
+    assert.equal(agentToolNodes.getAgentToolProblem(tool, nodes, [...ready, edge("ssh", "agent", "sub-tools")]), null);
+    assert.equal(agentToolNodes.getAgentToolProblem({ id: "x", data: null }, nodes, []), "AI Agent Tool: connect a chat model to its Model port");
+
+    // For the calling agent: only its AI Agent Tool nodes, all at once
+    assert.equal(agentToolNodes.getAgentToolProblems([nodes[3], tool] as never, nodes as never, ready), null);
+    assert.match(
+      agentToolNodes.getAgentToolProblems([tool, { id: "second", type: "AI_AGENT_TOOL", data: {} }] as never, nodes as never, ready) ?? "",
+      /^AI Agent Tool: connect a chat model to its Model port$/
+    );
+
+    // What it refuses before it would call a model
+    const run = (params: Record<string, unknown>) =>
+      agentToolNodes.agentToolExecutor({ ...baseParams, data: tool.data, context: {}, ...params } as never);
+    await assert.rejects(run({}), /AI Agent Tool "research_agent": connect it to an AI Agent's Tools port\. It does not run as a step of its own\./);
+    await assert.rejects(run({ inline: true }), /AI Agent Tool "research_agent": the calling agent gave no task/);
+    await assert.rejects(run({ inline: true, context: { ai: { prompt: "   " } } }), /gave no task/);
+    await assert.rejects(
+      run({ inline: true, agentDepth: agentTools.AGENT_TOOL_MAX_DEPTH + 1, context: { ai: { prompt: "Go" } } }),
+      /agents are calling agents more than 3 deep/
+    );
+    // With a task and no model connected, the agent itself says what is missing
+    await assert.rejects(run({ inline: true, agentDepth: 1, context: { ai: { prompt: "Find the delivery time." } } }), /a Chat Model node must be connected to the Chat Model port/);
+
+    // In the workflow's graph the agent tool, its model and its tools are
+    // configuration: only the calling agent is a step
+    const graph = buildGraph(
+      [{ id: "chat", type: "CHAT_TRIGGER", data: {} }, ...nodes.filter((node) => node.id !== "ssh"), { id: "mainModel", type: "ANTHROPIC", data: {} }, { id: "think", type: "THINK_TOOL", data: {} }] as never,
+      [
+        edge("chat", "agent", "target-1"),
+        edge("mainModel", "agent", "sub-model"),
+        edge("think", "agent", "sub-tools"),
+        ...ready,
+      ] as never
+    );
+    assert.deepEqual(graph.order, ["chat", "agent"]);
+
+    const { readFileSync, readdirSync } = await import("node:fs");
+    const read = (path: string) => readFileSync(path, "utf8");
+    const source = read("src/features/executions/components/ai/agent-tool.ts");
+
+    // The task reaches the agent as a value: what a model wrote is never
+    // put where {{ }} would be run as an expression
+    assert.match(source, /text: "\{\{ai\.prompt\}\}",/);
+    assert.equal(/text: task|text: `/.test(source), false);
+    // Nothing in it asks for approval (it cannot pause), and only the answer goes back
+    assert.equal(/toolApprovalDefault|requireApproval:/.test(source.slice(source.indexOf("export const agentToolExecutor"))), false);
+    assert.match(source, /return \{ \.\.\.context, agentAnswer: answer \?\? "" \};/);
+    assert.match(source, /allowDangerousTools: data\.allowDangerousTools === "true",/);
+
+    const agent = read("src/features/editor/components/agent/executor.ts");
+    assert.ok(agent.indexOf("getAgentToolProblems(toolNodes, allNodes, connections)") < agent.indexOf("const candidates = await loadModelCandidates({"));
+    assert.match(agent, /agentDepth: \(agentDepth \?\? 0\) \+ 1,/);
+    assert.match(agent, /inputSchema: buildToolInputSchema\(getToolParameters\(toolNode\.type, toolData\)\),/);
+    assert.match(agent, /getDefaultToolName\(toolNode\.type, toolData\),/);
+
+    // Registered, with the ports of an agent, and its model calls are budgeted
+    const nodesFile = read("src/features/executions/components/ai/nodes.tsx");
+    assert.match(nodesFile, /subInputs: \[\s*\{ id: "sub-model", label: "Model" \},\s*\{ id: "sub-tools", label: "Tools" \},\s*\],/);
+    const registry = read("src/features/executions/lib/executor-registry.ts");
+    assert.match(registry, /\[NodeType\.THINK_TOOL\]: thinkToolExecutor,\s*\[NodeType\.AI_AGENT_TOOL\]: agentToolExecutor,/);
+    const components = read("src/config/node-components.ts");
+    const selector = read("src/components/node-selector.tsx");
+    for (const [type, component] of [["THINK_TOOL", "ThinkToolNode"], ["AI_AGENT_TOOL", "AgentToolNode"]]) {
+      assert.ok(components.includes(`[NodeType.${type}]: ${component},`), type);
+      assert.ok(selector.includes(`type: NodeType.${type},`), type);
+    }
+    const { AI_NODE_TYPES } = await import("@/lib/ai-cost");
+    assert.equal(AI_NODE_TYPES.has("AI_AGENT_TOOL"), true);
+    assert.equal(AI_NODE_TYPES.has("THINK_TOOL"), false);
+    const { getNodeLabel } = await import("@/config/node-labels");
+    assert.equal(getNodeLabel("AI_AGENT_TOOL"), "AI Agent Tool");
+    assert.equal(getNodeLabel("THINK_TOOL"), "Think Tool");
+
+    const folder = readdirSync("prisma/migrations").find((name) => name.endsWith("_think_and_agent_tool"));
+    assert.ok(folder, "migration");
+    assert.deepEqual(
+      read(`prisma/migrations/${folder}/migration.sql`).split(/\r?\n/).filter((line) => line.trim() && !line.startsWith("--")),
+      [`ALTER TYPE "NodeType" ADD VALUE 'THINK_TOOL';`, `ALTER TYPE "NodeType" ADD VALUE 'AI_AGENT_TOOL';`]
+    );
+  });
+
   console.log(`\n${passed} checks passed`);
 };
 

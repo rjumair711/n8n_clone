@@ -256,6 +256,27 @@ Each tool in the agent's settings has a **Require approval** switch. When the mo
 * **Output:** `{{output}}` and `{{<variableName>.output}}`, plus `intermediateSteps` when enabled.
 * **Chat panel:** workflows with a Chat Trigger get an "Open chat" button in the editor to talk to the agent.
 
+### Think Tool and AI Agent Tool
+
+Two nodes that only belong on an AI Agent's **Tools** port.
+
+**Think Tool** lets the agent stop and write down its reasoning or a plan before it goes on, which helps on tasks with several steps or before an action that is hard to undo.
+
+* It has no effect: nothing is stored, sent or changed. The agent is answered "Thought noted." and carries on.
+* The thought itself is in the agent's intermediate steps (switch on Return Intermediate Steps to see it).
+* It is a "read" tool, so it never asks for approval. Each thought counts as one tool call toward Max Tool Calls.
+* Its **Description** is what the agent is told the tool is for; use it to say when you want the agent to think.
+
+**AI Agent Tool** is an agent that another agent can hand a task to (multi-agent). It has a **Model** and a **Tools** port of its own, a Name and a Description the calling agent sees, and its own System Message.
+
+* **It sees only the task.** The calling model writes a `prompt` for it; nothing else of the conversation is passed on, and only its final answer comes back.
+* **Approval is decided once, at the top.** A run can only pause for a person in the agent that is a step of the workflow. So the tools of an AI Agent Tool run without asking, and the whole call is one tool of the calling agent: its risk level is "write", and on agents with the risk-based default it requires approval, showing the task. Switch that off per tool in the calling agent's settings when its tools are harmless.
+* **Dangerous tools** connected to it need its own **Allow Dangerous Tools** switch.
+* **Mistakes are found before the run starts:** no model on its port, no description, or a dangerous tool that is not allowed fails the calling agent with the reason, instead of reaching the model as a tool that "did not work".
+* Its model calls are recorded under its own name in the usage figures and held to the AI budget.
+* Agents can call agents up to three deep; two AI Agent Tool nodes that are each other's tool fail with that message.
+* It has no Memory or Structured Output Parser port: memory belongs to the agent the user talks to.
+
 ### Guardrails
 
 Checks a text and sends the run on through its **Pass** or **Fail** output. Put it before an AI Agent to check what a user wrote (Text To Check `{{chatInput}}`), or after one to check the answer (`{{output}}`); **The Text Is** says which.
@@ -397,6 +418,8 @@ They are on the Chat Model, DeepSeek, Kimi and Qwen nodes (`{{chatModel.modelUse
 | Vector Store | Insert, search and delete documents by meaning (RAG), with OpenAI, Gemini or OpenAI-compatible embeddings. Text splitting, metadata filters, reranking, and pgvector when the database has it (see "Vector Store and Document Loader") |
 | Document Loader | Loads a Google Drive folder or a Notion database into a Vector Store collection, skipping documents that have not changed |
 | MCP Client | Gives an AI Agent the tools of an MCP server (Streamable HTTP, or SSE for older servers) |
+| Think Tool | A tool for an AI Agent: it writes down its reasoning; nothing else happens (see "Think Tool and AI Agent Tool") |
+| AI Agent Tool | An agent with its own model, tools and description on another agent's Tools port (multi-agent) |
 | Guardrails | Checks text before or after an agent: personal data (mask or block), maximum length, prompt injection and allowed topics, with Pass and Fail outputs (see "Guardrails") |
 
 ### MCP: client and server

@@ -44,6 +44,10 @@ export interface NodeExecutorParams<
 
   // How many Execute Workflow nodes deep this run is
   callDepth?: number;
+
+  // How many AI Agent Tool nodes deep this agent is: 0 for an agent that is
+  // a step of the workflow
+  agentDepth?: number;
 }
 
 export type NodeExecutor<

@@ -11,10 +11,10 @@ import { executorRegistry } from "@/features/executions/lib/executor-registry";
 import { renderTemplate } from "@/features/executions/lib/templates";
 import {
   buildToolInputSchema,
-  extractAIParameters,
   getBlockedToolsMessage,
   getDefaultToolDescription,
   getDefaultToolName,
+  getToolParameters,
   getToolRisk,
   sanitizeToolName,
   uniqueToolName,
@@ -85,6 +85,7 @@ import {
   loadMcpSecret,
   type McpClientData,
 } from "@/features/executions/components/ai/mcp";
+import { getAgentToolProblems } from "@/features/executions/components/ai/agent-tool";
 
 export type AIAgentData = {
   // "auto": read the prompt from the previous node (chatInput), like n8n's
@@ -170,6 +171,7 @@ export const aiAgentExecutor: NodeExecutor<AIAgentData> = async ({
   executionId,
   workflowId,
   callDepth,
+  agentDepth,
 }) => {
   const maxIterations =
     Number(data.maxIterations) || AGENT_DEFAULT_MAX_ITERATIONS;
@@ -227,6 +229,15 @@ export const aiAgentExecutor: NodeExecutor<AIAgentData> = async ({
 
   if (blockedTools) {
     throw new NonRetriableError(blockedTools);
+  }
+
+  // An AI Agent Tool that is not ready (no model, no description, its own
+  // dangerous tools not allowed) is a mistake in the workflow: said now,
+  // not handed to the model later as a tool that failed
+  const agentToolProblems = getAgentToolProblems(toolNodes, allNodes, connections);
+
+  if (agentToolProblems) {
+    throw new NonRetriableError(agentToolProblems);
   }
 
   // =========================================================================
@@ -508,7 +519,8 @@ export const aiAgentExecutor: NodeExecutor<AIAgentData> = async ({
     const settings = data.toolSettings?.[toolNode.id] ?? {};
 
     const name = uniqueToolName(
-      sanitizeToolName(settings.name || "") || getDefaultToolName(toolNode.type),
+      sanitizeToolName(settings.name || "") ||
+        getDefaultToolName(toolNode.type, toolData),
       takenNames
     );
 
@@ -528,6 +540,8 @@ export const aiAgentExecutor: NodeExecutor<AIAgentData> = async ({
           executionId,
           workflowId,
           callDepth,
+          // An AI Agent Tool counts how deep agents call agents
+          agentDepth: (agentDepth ?? 0) + 1,
           inline: true,
         });
 
@@ -558,7 +572,7 @@ export const aiAgentExecutor: NodeExecutor<AIAgentData> = async ({
       description:
         settings.description?.trim() ||
         getDefaultToolDescription(toolNode.type, toolData),
-      inputSchema: buildToolInputSchema(extractAIParameters(toolData)),
+      inputSchema: buildToolInputSchema(getToolParameters(toolNode.type, toolData)),
     };
 
     if (needsApproval(toolNode)) {

@@ -67,6 +67,37 @@ export const extractAIParameters = (nodeData: unknown): AIParameter[] => {
   return [...parameters.values()];
 };
 
+// How deep agents may call agents (AI Agent Tool nodes)
+export const AGENT_TOOL_MAX_DEPTH = 3;
+
+export const THINK_TOOL_DESCRIPTION =
+  "Use this tool to think: write down your reasoning, a plan, or what you have learned so far before you go on. It gets no new information and changes nothing. Use it when a task has several steps, when a tool's result needs working through, or before an action that is hard to undo.";
+
+// Tools whose input is fixed by what they are, not read from their settings
+const BUILT_IN_PARAMETERS: Record<string, AIParameter[]> = {
+  THINK_TOOL: [
+    {
+      key: "thought",
+      type: "string",
+      description: "Your reasoning, written out.",
+    },
+  ],
+  AI_AGENT_TOOL: [
+    {
+      key: "prompt",
+      type: "string",
+      description:
+        "The task for this agent, in full. It sees nothing of this conversation, so include every detail it needs.",
+    },
+  ],
+};
+
+/**
+ * What the model has to fill in to call a tool node.
+ */
+export const getToolParameters = (nodeType: string, nodeData: unknown): AIParameter[] =>
+  BUILT_IN_PARAMETERS[nodeType] ?? extractAIParameters(nodeData);
+
 export const buildToolInputSchema = (parameters: AIParameter[]) => {
   // A tool without AI-filled fields still accepts free-form input, which
   // reaches the node as {{ai.query}} / context.ai.query
@@ -144,6 +175,8 @@ const TOOL_LABELS: Record<string, string> = {
   DOCUMENT_LOADER: "Document Loader",
   INFORMATION_EXTRACTOR: "Information Extractor",
   ANALYZE_DOCUMENT: "Analyze Document",
+  THINK_TOOL: "Think",
+  AI_AGENT_TOOL: "Agent",
   EXECUTE_WORKFLOW: "Call Workflow",
   SPLIT_OUT: "Split Out",
   REMOVE_DUPLICATES: "Remove Duplicates",
@@ -215,6 +248,8 @@ const READ_TOOL_TYPES = new Set([
   "TEXT_CLASSIFIER",
   // It only judges a text
   "GUARDRAILS",
+  // It only takes a note of the agent's reasoning
+  "THINK_TOOL",
   "OPENAI",
   "ANTHROPIC",
   "GEMINI",
@@ -331,8 +366,14 @@ export const sanitizeToolName = (name: string) =>
     .replace(/^_+|_+$/g, "")
     .slice(0, 64);
 
-export const getDefaultToolName = (nodeType: string) =>
-  sanitizeToolName(getToolLabel(nodeType).toLowerCase());
+// The name a node gives itself as a tool (an AI Agent Tool's Name)
+const ownToolName = (nodeData?: Record<string, unknown>) =>
+  typeof nodeData?.toolName === "string" ? sanitizeToolName(nodeData.toolName) : "";
+
+export const getDefaultToolName = (
+  nodeType: string,
+  nodeData?: Record<string, unknown>
+) => ownToolName(nodeData) || sanitizeToolName(getToolLabel(nodeType).toLowerCase());
 
 export const getDefaultToolDescription = (
   nodeType: string,
@@ -346,6 +387,20 @@ export const getDefaultToolDescription = (
 
   if (nodeType === "WEB_SEARCH") {
     return "Searches the web. Returns a list of results, each with a title, a url and a short snippet.";
+  }
+
+  if (nodeType === "THINK_TOOL") {
+    return (
+      (typeof nodeData.toolDescription === "string" && nodeData.toolDescription.trim()) ||
+      THINK_TOOL_DESCRIPTION
+    );
+  }
+
+  if (nodeType === "AI_AGENT_TOOL") {
+    return (
+      (typeof nodeData.toolDescription === "string" && nodeData.toolDescription.trim()) ||
+      "Hands a task to another AI agent and returns its answer."
+    );
   }
 
   if (nodeType === "READ_WEB_PAGE") {

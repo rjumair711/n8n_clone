@@ -1,7 +1,7 @@
 "use client";
 
 import { CredentialType } from "@prisma/client";
-import { Braces, BrainCircuit, DatabaseZap, FolderSync, Plug, ScanEye, ScanText, ServerCog, ShieldCheck, Tags } from "lucide-react";
+import { Bot, Braces, BrainCircuit, DatabaseZap, FolderSync, Lightbulb, Plug, ScanEye, ScanText, ServerCog, ShieldCheck, Tags } from "lucide-react";
 import { createIntegrationNode } from "../integration-node";
 import type { IntegrationConfig, IntegrationField } from "../integration-dialog";
 import {
@@ -12,6 +12,7 @@ import {
   RERANKERS,
 } from "../../lib/rag-options";
 import { SPLIT_MODES } from "../../lib/text-splitter";
+import { THINK_TOOL_DESCRIPTION } from "../../lib/agent-tools";
 import {
   GUARD_DIRECTIONS,
   GUARD_OUTPUTS,
@@ -84,6 +85,94 @@ export const TextClassifierNode = createIntegrationNode(
     const count = parseCategories(data.categories).length;
     return count ? `${count} categor${count === 1 ? "y" : "ies"}` : "Not Configured";
   }
+);
+
+// =========================================================================
+// THINK TOOL / AI AGENT TOOL
+// =========================================================================
+export const thinkToolConfig: IntegrationConfig = {
+  label: "Think Tool",
+  description:
+    "Connect it to an AI Agent's Tools port. The agent can then stop and write down its reasoning or a plan before it goes on, which helps on tasks with several steps. It has no effect on anything.",
+  logo: Lightbulb,
+  summary: "Lets the agent think",
+  hint: "What the agent wrote is in its intermediate steps when Return Intermediate Steps is on. The thought is not saved anywhere else and the tool never asks for approval.",
+  fields: [
+    {
+      name: "toolDescription",
+      label: "Description",
+      type: "textarea",
+      placeholder: THINK_TOOL_DESCRIPTION,
+      description:
+        "What the agent is told the tool is for. Leave empty for the text shown. Say here when you want it to think, for example before every refund.",
+    },
+  ],
+};
+
+export const ThinkToolNode = createIntegrationNode(thinkToolConfig);
+
+export const agentToolConfig: IntegrationConfig = {
+  label: "AI Agent Tool",
+  description:
+    "An agent that another agent can hand tasks to. Connect it to an AI Agent's Tools port, and give it a chat model and tools of its own on the ports underneath.",
+  logo: Bot,
+  subInputs: [
+    { id: "sub-model", label: "Model" },
+    { id: "sub-tools", label: "Tools" },
+  ],
+  summary: "An agent as a tool",
+  hint: "This agent sees only the task the calling agent writes for it, not the conversation. Its own tools run without asking for approval: whether a person approves is set once, for the whole call, with Require approval for this tool in the calling agent's settings (on by default on new agents).",
+  fields: [
+    {
+      name: "toolName",
+      label: "Name",
+      placeholder: "research_agent",
+      description: "What the calling agent calls it. Letters, digits, _ and -.",
+      required: true,
+    },
+    {
+      name: "toolDescription",
+      label: "Description",
+      type: "textarea",
+      placeholder:
+        "Researches a topic on the web and returns a short summary with sources. Use it for anything that needs current information.",
+      description:
+        "The calling agent decides from this when to hand a task over. Say what this agent is good at and what it returns.",
+      required: true,
+    },
+    {
+      name: "systemMessage",
+      label: "System Message",
+      type: "textarea",
+      placeholder:
+        "You are a careful researcher. Search, read the best two or three pages, and answer in under 200 words with the links you used.",
+      description: "This agent's own instructions.",
+    },
+    {
+      name: "maxIterations",
+      label: "Max Iterations",
+      placeholder: "10",
+      description: "How many times its model may be called for one task.",
+    },
+    {
+      name: "maxToolCalls",
+      label: "Max Tool Calls",
+      placeholder: "25",
+      description: "How many tool calls it may make for one task.",
+    },
+    {
+      name: "allowDangerousTools",
+      label: "Allow Dangerous Tools",
+      type: "switch",
+      defaultValue: "false",
+      description:
+        "Lets this agent use dangerous tools connected to it (SSH, raw SQL, deletes, Execute Workflow). Off: a run with one connected fails before it starts.",
+    },
+  ],
+};
+
+export const AgentToolNode = createIntegrationNode(agentToolConfig, (data) =>
+  data.toolName && data.toolDescription ? data.toolName : "Not Configured"
 );
 
 // =========================================================================
