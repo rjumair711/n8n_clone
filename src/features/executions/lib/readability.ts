@@ -185,10 +185,28 @@ const removeNoise = (element: ElementNode, insideContent = false) => {
   }
 };
 
+// Runs of whitespace become one space. Written so that it only matches
+// where something changes: a single space between two words is left alone,
+// which keeps a very large page fast.
+const collapse = (text: string) =>
+  text.replace(/[ \t\r\n\f\u00a0]{2,}|[\t\r\n\f\u00a0]/g, " ");
+
 const textOf = (node: PageNode): string =>
   isElement(node) ? node.children.map(textOf).join(" ") : node.text;
 
-const textLength = (node: PageNode) => textOf(node).replace(/\s+/g, " ").trim().length;
+// Asked for the same elements again and again while the content is chosen
+const lengthCache = new WeakMap<ElementNode, number>();
+
+const textLength = (node: PageNode): number => {
+  if (!isElement(node)) return collapse(node.text).trim().length;
+
+  const known = lengthCache.get(node);
+  if (known !== undefined) return known;
+
+  const length = collapse(textOf(node)).trim().length;
+  lengthCache.set(node, length);
+  return length;
+};
 
 const findAll = (element: ElementNode, test: (candidate: ElementNode) => boolean): ElementNode[] => {
   const found: ElementNode[] = [];
@@ -281,8 +299,6 @@ const BLOCK_TAGS = new Set([
   "figure", "h1", "h2", "h3", "h4", "h5", "h6", "hr", "li", "main", "ol", "p", "pre", "section",
   "summary", "table", "tbody", "td", "tfoot", "th", "thead", "tr", "ul",
 ]);
-
-const collapse = (text: string) => text.replace(/[ \t\r\n\f\u00a0]+/g, " ");
 
 // Inline text with its line breaks (from <br>) kept and everything else tidy
 const tidyLines = (text: string) =>

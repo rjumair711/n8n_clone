@@ -102,6 +102,10 @@ export type IntegrationConfig = {
     values: Partial<IntegrationFormValues>
   ) => { id: string; label: string }[];
   credentialLabel?: string;
+  // The node also works without its credential (it then does less): the
+  // dialog does not insist on one. `credentialHelp` says what it is for.
+  credentialOptional?: boolean;
+  credentialHelp?: string;
   // Omit for nodes that produce no result
   defaultVariableName?: string;
   // Omit for nodes that do a single thing
@@ -263,7 +267,7 @@ export const IntegrationDialog = ({
       valid = false;
     }
 
-    if (credentialType && !values.credentialId) {
+    if (credentialType && !config.credentialOptional && !values.credentialId) {
       form.setError("credentialId", {
         message: `${config.credentialLabel || "Credential"} is required`,
       });
@@ -379,7 +383,10 @@ export const IntegrationDialog = ({
               name="credentialId"
               render={({ field }) => (
                 <FormItem>
-                  <FormLabel>{config.credentialLabel || "Credential"}</FormLabel>
+                  <FormLabel>
+                    {config.credentialLabel || "Credential"}
+                    {config.credentialOptional && " (Optional)"}
+                  </FormLabel>
                   <Select
                     onValueChange={field.onChange}
                     value={field.value}
@@ -418,7 +425,20 @@ export const IntegrationDialog = ({
                     </SelectContent>
                   </Select>
                   <FormDescription>
+                    {config.credentialHelp ? `${config.credentialHelp} ` : ""}
                     Add one under Credentials if the list is empty.
+                    {config.credentialOptional && field.value && (
+                      <>
+                        {" "}
+                        <button
+                          type="button"
+                          className="underline"
+                          onClick={() => field.onChange("")}
+                        >
+                          Use none
+                        </button>
+                      </>
+                    )}
                   </FormDescription>
                   <FormMessage />
                 </FormItem>

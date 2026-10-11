@@ -45,6 +45,14 @@ import {
   webSearchExecutor,
 } from '../components/apps/web';
 import {
+  textToSpeechExecutor,
+  transcribeAudioExecutor,
+} from '../components/apps/audio';
+import {
+  telegramTriggerExecutor,
+  whatsappTriggerExecutor,
+} from '../components/apps/voice';
+import {
   contextTriggerExecutor,
   executeWorkflowExecutor,
   respondToWebhookExecutor,
@@ -138,8 +146,9 @@ const baseExecutors: Record<NodeType, NodeExecutor<any>> = {
   [NodeType.APPROVAL]: approvalExecutor,
   [NodeType.FORM_TRIGGER]: contextTriggerExecutor,
   [NodeType.FORM]: formExecutor,
-  [NodeType.TELEGRAM_TRIGGER]: contextTriggerExecutor,
-  [NodeType.WHATSAPP_TRIGGER]: contextTriggerExecutor,
+  // They pass the message on, and fetch a voice message as a file
+  [NodeType.TELEGRAM_TRIGGER]: telegramTriggerExecutor,
+  [NodeType.WHATSAPP_TRIGGER]: whatsappTriggerExecutor,
   [NodeType.GMAIL]: gmailExecutor,
   [NodeType.SPLIT_OUT]: splitOutExecutor,
   [NodeType.AGGREGATE]: aggregateExecutor,
@@ -172,6 +181,8 @@ const baseExecutors: Record<NodeType, NodeExecutor<any>> = {
   [NodeType.SENDGRID]: sendgridExecutor,
   [NodeType.WEB_SEARCH]: webSearchExecutor,
   [NodeType.READ_WEB_PAGE]: readWebPageExecutor,
+  [NodeType.TRANSCRIBE_AUDIO]: transcribeAudioExecutor,
+  [NodeType.TEXT_TO_SPEECH]: textToSpeechExecutor,
   [NodeType.TYPEFORM_TRIGGER]: contextTriggerExecutor,
   [NodeType.RSS_READ]: rssReadExecutor,
   [NodeType.RSS_FEED_TRIGGER]: contextTriggerExecutor,

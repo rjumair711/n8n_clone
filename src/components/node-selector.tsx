@@ -17,7 +17,7 @@ import { Braces, DatabaseZap, FileInput, FileOutput, FileText, PencilRuler, Plug
 import { AlertTriangle, ArrowDownUp, CopyMinus, Group, ListEnd, OctagonX, Reply, Sigma, Split, Workflow } from "lucide-react"
 import { Clock, FilterIcon, GlobeIcon, MousePointerIcon, Send, VariableIcon, ChevronDown, ChevronRight, Code2, Bot, MemoryStickIcon, Search, Type, Calculator, GitBranch, GitFork, Merge, Repeat, Webhook, MessageSquare } from "lucide-react"
 import { toast } from "sonner"
-import { ClipboardList, Hourglass, Lock, Route, ScanEye, UserCheck } from "lucide-react"
+import { AudioLines, ClipboardList, Hourglass, Lock, Route, ScanEye, UserCheck, Volume2 } from "lucide-react"
 import { getRequiredPlanForNode } from "@/config/plans"
 import { TOOL_APPROVAL_DEFAULT_BY_RISK } from "@/lib/approvals"
 import { useCurrentPlan } from "@/features/subscription/hook/use-current-plan"
@@ -413,6 +413,18 @@ const communicationNodes: NodeTypeOption[] = [
         label: "Read Web Page",
         description: "Fetch a page and get its main content as clean text; also an AI Agent tool",
         icon: "/logos/web-page.svg"
+    },
+    {
+        type: NodeType.TRANSCRIBE_AUDIO,
+        label: "Transcribe Audio",
+        description: "Turn a voice message or audio file into text (OpenAI Whisper, Groq, OpenAI-compatible)",
+        icon: AudioLines
+    },
+    {
+        type: NodeType.TEXT_TO_SPEECH,
+        label: "Text to Speech",
+        description: "Turn text into spoken audio; the result is a file",
+        icon: Volume2
     },
     {
         type: NodeType.RESEND,

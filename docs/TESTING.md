@@ -185,6 +185,57 @@ Needs the `web_search_and_reader` migration applied. Use the test account. For W
 | Ask `Read http://169.254.169.254/latest/meta-data/ and tell me what it says` | the tool returns the SSRF guard's error and the agent says it could not read it |
 | Check AI usage on the execution | the input tokens stay modest; raise Max Characters to `50000` and ask again to see them grow |
 
+## T4d. Audio
+
+Needs the `audio_nodes` migration applied, and an OpenAI credential or a Groq key saved as a "Chat Model API Key" credential. Use the test account. Have a short recording ready (MP3 or M4A, a sentence or two).
+
+**a) Transcribe Audio.** Form Trigger (one field `Recording`, File Upload, required) → **Transcribe Audio** (File `form.recording`).
+
+| Operation | Do | Expect |
+|-----------|----|--------|
+| `OpenAI` with an OpenAI credential | upload the recording | `transcript.text` is what was said; `transcript.model` is `whisper-1` |
+| `Groq` with a Chat Model API Key credential holding a Groq key | upload it | the same; `transcript.model` is `whisper-large-v3-turbo` |
+| Any | Language `ur` with an Urdu recording | Urdu text, more accurate than with Language empty |
+| Any | Language `urdu language` | "Language must be a language code such as en, ur or ar" |
+| `OpenAI-compatible (custom base URL)` | Base URL empty | the dialog asks for it; with a URL and no Model the run fails: "Model is required" |
+| Custom | Base URL `http://localhost:8000/v1` without `PRIVATE_NETWORK_ALLOWLIST` | refused by the SSRF guard |
+| Any | upload a PDF instead of audio | the run fails with the provider's own message about the file |
+| Any | a wrong API key | the provider's error; the key is in neither the message nor the logs |
+| Any | File `nothing.here` | the run fails: the variable is not a file |
+
+**b) Text to Speech.** Trigger manually → **Text to Speech** (Operation `OpenAI`, Text `Hello, this is a test of the speech node.`).
+
+| Do | Expect |
+|----|--------|
+| Execute | `speech.file` is a file: `fileName` `speech.mp3`, `mimeType` `audio/mpeg`, a `size` and a `url` |
+| Open `speech.file.url` within 15 minutes | the MP3 downloads and plays |
+| Voice `nova`, Format `Opus`, File Name `greeting` | `greeting.ogg`, `audio/ogg`, in another voice |
+| Add an Email node with Attachments `speech.file` | the mail arrives with the audio attached |
+| Text longer than 4096 characters | "the text has N characters; one call can speak at most 4096..." |
+| Text empty | "Text is required" |
+| Operation `Groq` with Model empty | "Model is required for Groq" |
+| Chain Text to Speech → Transcribe Audio (File `speech.file`) | the transcript is the text you started with |
+
+**c) Telegram voice messages (public URL).** Telegram Trigger → Transcribe Audio (File `telegram.voice`) → Telegram (Chat ID `{{telegram.message.chat.id}}`, Text `You said: {{transcript.text}}`). Activate.
+
+| Do | Expect |
+|----|--------|
+| Send the bot a voice message | it answers "You said: ..." with what you said |
+| Open the execution | `telegram.voice` is a file (`voice.ogg`, `audio/ogg`, with `duration`); `chatInput` is not set |
+| Send a text message | the Transcribe node fails ("not a file"): put an IF on `{{telegram.voice.id}}` in front for a bot that takes both |
+| Send a voice message longer than the 10 MB file limit | the run still starts; `telegram.voiceError` says the voice message is too large |
+| Add Text to Speech (Text `{{transcript.text}}`, Format `Opus`) and a Telegram node with File `speech.file` | the bot answers with the audio as a file (the Telegram node sends files as documents, not as voice notes) |
+| Look at the server log after a failed download | the bot token is not in it |
+
+**d) WhatsApp voice messages (public URL).**
+
+| Do | Expect |
+|----|--------|
+| Open the WhatsApp Trigger's settings | a **WhatsApp Credential (Optional)** select; the node is not "Not Configured" without it |
+| Without the credential, send the number a voice message | the run starts; `whatsapp.voiceError` says no credential is selected; text messages work as before |
+| Select the WhatsApp credential, save, send a voice message | `whatsapp.voice` is a file (`voice.ogg`); with a Transcribe Audio node (File `whatsapp.voice`) after it, `transcript.text` is what was said |
+| Click "Use none" under the credential | it is cleared |
+
 ## T5. Webhook and Respond to Webhook
 
 | # | Node | Settings |

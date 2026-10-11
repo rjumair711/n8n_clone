@@ -1115,7 +1115,7 @@ export const telegramTriggerConfig: IntegrationConfig = {
   credentialType: CredentialType.TELEGRAM,
   credentialLabel: "Telegram Bot Credential",
   summary: "On message",
-  hint: "Available variables: {{telegram.message.text}}, {{telegram.message.chat.id}}, {{telegram.message.from.first_name}}, plus {{chatInput}} and {{sessionId}} for an AI Agent. Reply with a Telegram node using Chat ID {{telegram.message.chat.id}}. A bot can serve one workflow at a time.",
+  hint: "Available variables: {{telegram.message.text}}, {{telegram.message.chat.id}}, {{telegram.message.from.first_name}}, plus {{chatInput}} and {{sessionId}} for an AI Agent. A voice message is downloaded and given as a file at {{telegram.voice}}: put a Transcribe Audio node with File telegram.voice after the trigger to get its text. Reply with a Telegram node using Chat ID {{telegram.message.chat.id}}. A bot can serve one workflow at a time.",
   fields: [],
 };
 
@@ -1128,8 +1128,14 @@ export const whatsappTriggerConfig: IntegrationConfig = {
   logo: "/logos/whatsapp.svg",
   trigger: true,
   webhookPath: "whatsapp",
+  // Only needed for voice messages: receiving text works without it
+  credentialType: CredentialType.WHATSAPP,
+  credentialLabel: "WhatsApp Credential",
+  credentialOptional: true,
+  credentialHelp:
+    "Select it to receive voice messages: they are downloaded with this access token and given as a file at {{whatsapp.voice}}.",
   summary: "On message",
-  hint: "Available variables: {{whatsapp.text}}, {{whatsapp.from}}, {{whatsapp.name}}, {{whatsapp.phoneNumberId}}, plus {{chatInput}} and {{sessionId}} for an AI Agent. Reply with a WhatsApp node using Recipient {{whatsapp.from}}.",
+  hint: "Available variables: {{whatsapp.text}}, {{whatsapp.from}}, {{whatsapp.name}}, {{whatsapp.phoneNumberId}}, plus {{chatInput}} and {{sessionId}} for an AI Agent. With a WhatsApp credential selected, a voice message is a file at {{whatsapp.voice}}: put a Transcribe Audio node with File whatsapp.voice after the trigger to get its text. Reply with a WhatsApp node using Recipient {{whatsapp.from}}.",
   fields: [
     {
       name: "verifyToken",

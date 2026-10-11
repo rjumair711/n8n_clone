@@ -126,6 +126,8 @@ const TOOL_LABELS: Record<string, string> = {
   RESEND: "Resend",
   SENDGRID: "SendGrid",
   WEB_SEARCH: "Web Search",
+  TRANSCRIBE_AUDIO: "Transcribe Audio",
+  TEXT_TO_SPEECH: "Text to Speech",
   READ_WEB_PAGE: "Read Web Page",
   EDIT_FIELDS: "Edit Fields",
   GOOGLE_DRIVE: "Google Drive",
@@ -196,6 +198,9 @@ const READ_TOOL_TYPES = new Set([
   // They fetch public pages and search results; nothing is changed anywhere
   "WEB_SEARCH",
   "READ_WEB_PAGE",
+  // They only make text from a file, or a file in the workflow's own storage
+  "TRANSCRIBE_AUDIO",
+  "TEXT_TO_SPEECH",
   "EXTRACT_FROM_FILE",
   "CONVERT_TO_FILE",
   "PDF_GENERATOR",
