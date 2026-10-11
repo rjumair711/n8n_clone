@@ -57,6 +57,7 @@ import {
   messengerExecutor,
   socialPostExecutor,
 } from '../components/apps/meta';
+import { documentLoaderExecutor } from '../components/ai/document-loader';
 import {
   telegramTriggerExecutor,
   whatsappTriggerExecutor,
@@ -202,6 +203,7 @@ const baseExecutors: Record<NodeType, NodeExecutor<any>> = {
   [NodeType.SOCIAL_POST]: socialPostExecutor,
   [NodeType.MESSENGER_TRIGGER]: contextTriggerExecutor,
   [NodeType.INSTAGRAM_TRIGGER]: contextTriggerExecutor,
+  [NodeType.DOCUMENT_LOADER]: documentLoaderExecutor,
   [NodeType.RSS_READ]: rssReadExecutor,
   [NodeType.RSS_FEED_TRIGGER]: contextTriggerExecutor,
   [NodeType.GOOGLE_DRIVE]: googleDriveExecutor,

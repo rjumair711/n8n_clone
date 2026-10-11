@@ -141,6 +141,7 @@ const TOOL_LABELS: Record<string, string> = {
   EXTRACT_FROM_FILE: "Extract from File",
   RSS_READ: "RSS Read",
   VECTOR_STORE: "Knowledge Base",
+  DOCUMENT_LOADER: "Document Loader",
   INFORMATION_EXTRACTOR: "Information Extractor",
   ANALYZE_DOCUMENT: "Analyze Document",
   EXECUTE_WORKFLOW: "Call Workflow",

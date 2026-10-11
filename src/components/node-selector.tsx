@@ -13,7 +13,7 @@ import {
 } from "./ui/sheet"
 import { Input } from "@/components/ui/input"
 import { NodeType } from "@prisma/client"
-import { Braces, DatabaseZap, FileInput, FileOutput, FileText, PencilRuler, Plug, Rss, ScanText, Tags } from "lucide-react"
+import { Braces, DatabaseZap, FolderSync, FileInput, FileOutput, FileText, PencilRuler, Plug, Rss, ScanText, Tags } from "lucide-react"
 import { AlertTriangle, ArrowDownUp, CopyMinus, Group, ListEnd, OctagonX, Reply, Sigma, Split, Workflow } from "lucide-react"
 import { Clock, FilterIcon, GlobeIcon, MousePointerIcon, Send, VariableIcon, ChevronDown, ChevronRight, Code2, Bot, MemoryStickIcon, Search, Type, Calculator, GitBranch, GitFork, Merge, Repeat, Webhook, MessageSquare } from "lucide-react"
 import { toast } from "sonner"
@@ -396,8 +396,14 @@ const aiNodes: NodeTypeOption[] = [
     {
         type: NodeType.VECTOR_STORE,
         label: "Vector Store",
-        description: "Save documents and search them by meaning (RAG). Works as an AI Agent tool",
+        description: "Save documents and search them by meaning (RAG), with metadata filters and reranking. Works as an AI Agent tool",
         icon: DatabaseZap
+    },
+    {
+        type: NodeType.DOCUMENT_LOADER,
+        label: "Document Loader",
+        description: "Load a Google Drive folder or a Notion database into a Vector Store collection, skipping unchanged documents",
+        icon: FolderSync
     },
     {
         type: NodeType.MCP_CLIENT_TOOL,

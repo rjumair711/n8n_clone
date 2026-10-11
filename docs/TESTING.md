@@ -948,6 +948,58 @@ Needs an OpenAI or Gemini credential (for embeddings).
 2. Change Operation to `Search Documents`, Query `When do you close?`. **Expect:** `vectorStore.matches[0].content` is that text.
 3. Connect the Search node to an AI Agent's Tools port with Query `{{$fromAI "query" "What to look up"}}` and ask the agent "How long do I have to return something?" **Expect:** "14 days".
 4. Operation `Delete Collection`. **Expect:** `deleted` is 1.
+5. The same node saved before this task keeps working: open an old workflow with a Vector Store and run its search without opening the node. **Expect:** the same result as before, plus `engine`.
+
+### Splitting, Document ID, filters and reranking
+
+Use the test account. `engine` in every search result should read `pgvector` once the `vector_store_upgrade` migration has run on a database with the extension, and `app` otherwise.
+
+| # | Do | Expect |
+|---|----|--------|
+| 1 | Insert, Split By `Markdown headings`, Collection `guide`, Text `# Delivery\nWe deliver in Lahore within two days.\n\n## Outside Lahore\nThree to five days.\n\n# Returns\nReturns are accepted for 14 days.` (with real line breaks) | `inserted` is 3 |
+| 2 | Search `guide` for `How long outside Lahore?` | the first match's content starts with `Delivery > Outside Lahore`, and its metadata has `heading` |
+| 3 | Insert a long text with Split By `Tokens`, Chunk Size `100`, Chunk Overlap `0` | chunks of about 400 characters |
+| 4 | Insert with Document ID `hours`, Text `We open at 9.`; run it again | first `inserted` 1; second `inserted` 0 and `unchanged` true, and no embedding call in the usage page for it |
+| 5 | Change the text to `We open at 10.` and run again | `inserted` 1, `replaced` 1; a search for opening hours finds only the new text |
+| 6 | Insert two texts into `mixed` with Metadata `{"source":"faq"}` and `{"source":"pricing"}`; Search with Metadata Filter `{"source":"pricing"}` | only the pricing chunk comes back, whatever the query |
+| 7 | Metadata Filter `[1]` | "Metadata Filter must be a JSON object" |
+| 8 | Search with Rerank With `Cohere Rerank` and a Cohere credential, Limit 2, in a collection with ten or more chunks | `reranked` true; matches have a `rerankScore`, highest first |
+| 9 | The same with `Jina Reranker` and a Jina credential | the same |
+| 10 | Rerank With `Cohere Rerank` and no Rerank Credential | the dialog asks for it; a saved node fails with "Rerank Credential is required" |
+| 11 | Rerank With `Connected chat model`, a model node on the **Rerank Model** port | `reranked` true; the usage page shows a chat call under the Vector Store's name |
+| 12 | Rerank With `Connected chat model` and nothing on the port | "connect a chat model ... to its Model port" |
+| 13 | As an AI Agent tool with a filter and a reranker set | the agent's answers come from the filtered collection |
+
+### pgvector (after the migration)
+
+| # | Do | Expect |
+|---|----|--------|
+| 1 | In the database: `SELECT extversion FROM pg_extension WHERE extname = 'vector';` and `\d vector_document` | a version; the column `embeddingVector` and four `vector_document_embedding_*_idx` indexes |
+| 2 | `npx prisma migrate diff --from-schema-datasource prisma/schema.prisma --to-schema-datamodel prisma/schema.prisma --script` | empty. If it wants to **drop** the four indexes, stop and say so: nothing may be generated from that |
+| 3 | Insert, then search | `engine` is `pgvector`, and the same top match as with `VECTOR_STORE_ENGINE=app` |
+| 4 | `SELECT count(*) FILTER (WHERE "embeddingVector" IS NULL) FROM vector_document WHERE collection = 'faq';` after a search of `faq` | 0 |
+| 5 | Restart with `VECTOR_STORE_ENGINE=app`, search | `engine` is `app`, same matches |
+| 6 | Insert with OpenAI embeddings and search the same collection with Gemini | no matches (another size), not an error |
+
+### Document Loader
+
+Needs a Google Account credential (reconnect it if it predates Drive access), a Notion integration credential, and an embeddings credential.
+
+| # | Do | Expect |
+|---|----|--------|
+| 1 | A Drive folder with a Google Doc that has headings, a text PDF, a `.txt`, a picture and a sub-folder. Trigger manually → **Document Loader** (Google Drive Folder, the folder's link, Collection `drive`, Split By `Markdown headings`) | `found` 4, `added` 3, `skipped` 1 (the picture, with its reason); the sub-folder is not counted |
+| 2 | Run it again | `unchanged` 3, `added` 0, `chunks` 0; no embedding calls |
+| 3 | Edit the Google Doc, run again | `updated` 1, `unchanged` 2; a search finds the new wording and not the old |
+| 4 | Vector Store search of `drive` with Metadata Filter `{"source":"google_drive"}` | matches with `title` and `url` in their metadata |
+| 5 | Delete the `.txt` from the folder, switch on **Remove Deleted Documents**, run | `removed` is that file's chunk count |
+| 6 | Max Documents `1` with **Remove Deleted Documents** on | `truncated` true and `removed` 0 |
+| 7 | Folder `my folder` | "Folder must be a Google Drive folder ID, or the folder's link" |
+| 8 | A folder the Google account cannot open | the run fails with Google's "File not found" |
+| 9 | Notion Database (share it with the integration first), Collection `notion` | one document per row: `added` equals the number of rows; a search finds text from a page and from a property |
+| 10 | Edit one Notion page, run again | `updated` 1, the rest `unchanged` |
+| 11 | A database that is not shared with the integration | the run fails with Notion's "Could not find database" |
+| 12 | Schedule Trigger (hourly) → Document Loader, activate | the collection follows the folder |
+
 
 ## T16. MCP Client
 

@@ -44,6 +44,8 @@ const SUB_PORT_HOST_TYPES = new Set([
   "TEXT_CLASSIFIER",
   "INFORMATION_EXTRACTOR",
   "ANALYZE_DOCUMENT",
+  // Its Rerank Model port takes a model node
+  "VECTOR_STORE",
   // Its Cheap and Strong ports take model nodes
   "MODEL_ROUTER",
 ]);

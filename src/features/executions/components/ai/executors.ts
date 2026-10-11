@@ -1,7 +1,7 @@
 import { createGoogleGenerativeAI } from "@ai-sdk/google";
 import { createOpenAI } from "@ai-sdk/openai";
+import { createHash } from "crypto";
 import {
-  cosineSimilarity,
   embed,
   embedMany,
   generateText,
@@ -14,7 +14,33 @@ import prisma from "@/lib/db";
 import { safeFetch } from "@/lib/ssrf";
 import type { NodeExecutor } from "@/features/executions/types";
 import { renderTemplate } from "../../lib/templates";
-import { loadCredentialSecret, parseJsonField } from "../../lib/integration";
+import {
+  loadCredentialSecret,
+  parseJsonField,
+  toIntegrationError,
+} from "../../lib/integration";
+import { DEFAULT_EMBEDDING_MODELS } from "../../lib/rag-options";
+import {
+  LLM_RERANK_SYSTEM,
+  buildLlmRerankPrompt,
+  parseLlmRanking,
+  rerankCandidateCount,
+  rerankWithApi,
+  resolveReranker,
+  type Ranked,
+} from "../../lib/rerank";
+import {
+  resolveSplitMode,
+  splitDocument,
+  type TextChunk,
+} from "../../lib/text-splitter";
+import {
+  findStoredDocument,
+  searchCollection,
+  storeChunks,
+  touchStoredDocument,
+  type DocumentSource,
+} from "@/lib/vector-search";
 import { loadConnectedModel } from "../../lib/connected-model";
 
 type ConnectedModel = Awaited<ReturnType<typeof loadConnectedModel>>;
@@ -33,7 +59,6 @@ import {
   extractJson,
   parseAttributes,
   parseCategories,
-  splitText,
 } from "../../lib/ai-fields";
 
 const toAiError = (label: string, error: any) =>
@@ -320,50 +345,67 @@ export const informationExtractorExecutor: NodeExecutor<
 // =========================================================================
 // VECTOR STORE
 // =========================================================================
-type VectorStoreData = {
-  variableName?: string;
-  credentialId?: string;
-  operation?: string;
-  collection?: string;
+export type EmbeddingSettings = {
   // "openai" | "gemini" | "compatible"
   embeddingProvider?: string;
   embeddingModel?: string;
   baseUrl?: string;
-  text?: string;
-  metadataJson?: string;
+};
+
+type SplitSettings = {
+  // "characters" (default) | "tokens" | "markdown"
+  splitBy?: string;
   chunkSize?: string;
   chunkOverlap?: string;
-  query?: string;
-  topK?: string;
 };
 
-export const DEFAULT_EMBEDDING_MODELS: Record<string, string> = {
-  openai: "text-embedding-3-small",
-  gemini: "gemini-embedding-001",
-};
+type VectorStoreData = EmbeddingSettings &
+  SplitSettings & {
+    variableName?: string;
+    credentialId?: string;
+    operation?: string;
+    collection?: string;
+    text?: string;
+    metadataJson?: string;
+    // Insert: names the document, so the same text is not embedded twice
+    // and a changed text replaces the old one
+    documentId?: string;
+    query?: string;
+    topK?: string;
+    // Search: a JSON object the chunks' metadata has to contain
+    metadataFilter?: string;
+    // Search: "none" (default) | "cohere" | "jina" | "model"
+    rerank?: string;
+    rerankModel?: string;
+    rerankCredentialId?: string;
+  };
 
-const MAX_CHUNKS_PER_INSERT = 200;
-// Similarity is computed in the app, so a collection is read into memory
-const MAX_DOCUMENTS_PER_SEARCH = 5000;
+export { DEFAULT_EMBEDDING_MODELS };
+
+export const MAX_CHUNKS_PER_INSERT = 200;
 const MAX_TOP_K = 20;
 
 // The provider and model an embedding call is recorded and priced under
-const getEmbeddingUsageKey = (data: VectorStoreData) => {
-  const provider = data.embeddingProvider || "openai";
+const getEmbeddingUsageKey = (settings: EmbeddingSettings) => {
+  const provider = settings.embeddingProvider || "openai";
 
   return {
     provider: provider === "compatible" ? "custom" : provider,
-    model: data.embeddingModel?.trim() || DEFAULT_EMBEDDING_MODELS[provider] || "",
+    model: settings.embeddingModel?.trim() || DEFAULT_EMBEDDING_MODELS[provider] || "",
   };
 };
 
-const createEmbeddingModel = (data: VectorStoreData, apiKey: string): EmbeddingModel => {
-  const provider = data.embeddingProvider || "openai";
+const createEmbeddingModel = (
+  label: string,
+  settings: EmbeddingSettings,
+  apiKey: string
+): EmbeddingModel => {
+  const provider = settings.embeddingProvider || "openai";
   const modelName =
-    data.embeddingModel?.trim() || DEFAULT_EMBEDDING_MODELS[provider];
+    settings.embeddingModel?.trim() || DEFAULT_EMBEDDING_MODELS[provider];
 
   if (!modelName) {
-    throw new NonRetriableError("Vector Store node: Embedding Model is required");
+    throw new NonRetriableError(`${label} node: Embedding Model is required`);
   }
 
   switch (provider) {
@@ -374,9 +416,9 @@ const createEmbeddingModel = (data: VectorStoreData, apiKey: string): EmbeddingM
       return createGoogleGenerativeAI({ apiKey }).embedding(modelName);
 
     case "compatible": {
-      const baseURL = data.baseUrl?.trim().replace(/\/+$/, "");
+      const baseURL = settings.baseUrl?.trim().replace(/\/+$/, "");
       if (!baseURL) {
-        throw new NonRetriableError("Vector Store node: Base URL is required");
+        throw new NonRetriableError(`${label} node: Base URL is required`);
       }
 
       return createOpenAI({
@@ -389,16 +431,175 @@ const createEmbeddingModel = (data: VectorStoreData, apiKey: string): EmbeddingM
 
     default:
       throw new NonRetriableError(
-        `Vector Store node: Unsupported embedding provider "${provider}"`
+        `${label} node: Unsupported embedding provider "${provider}"`
       );
   }
 };
 
 /**
- * A simple document store for retrieval (RAG): text is split into chunks,
- * embedded and saved per user and collection; a search returns the chunks
- * closest in meaning to the query. Connected to an AI Agent's Tools port
- * with Search and {{$fromAI "query"}}, it lets the agent look things up.
+ * The checks of the embedding settings that need no key, so a mistake is
+ * reported before anything is read or stored.
+ */
+export const checkEmbeddingSettings = (label: string, settings: EmbeddingSettings) => {
+  createEmbeddingModel(label, settings, "check");
+};
+
+/**
+ * Cuts a text into the chunks that will be embedded, or says why it cannot
+ * be stored.
+ */
+export const prepareChunks = (label: string, text: string, settings: SplitSettings) => {
+  const chunks = splitDocument(text, {
+    mode: settings.splitBy,
+    chunkSize: settings.chunkSize,
+    chunkOverlap: settings.chunkOverlap,
+  });
+
+  if (chunks.length === 0) {
+    throw new NonRetriableError(`${label} node: Text is empty`);
+  }
+
+  if (chunks.length > MAX_CHUNKS_PER_INSERT) {
+    throw new NonRetriableError(
+      `${label} node: the text makes ${chunks.length} chunks; the limit per document is ${MAX_CHUNKS_PER_INSERT}. Insert it in parts or use a larger chunk size.`
+    );
+  }
+
+  return chunks;
+};
+
+/**
+ * What decides whether a document has to be embedded again: its text, and
+ * everything that changes how it is cut, embedded or labelled.
+ */
+export const hashDocument = (
+  text: string,
+  settings: EmbeddingSettings & SplitSettings,
+  metadata: unknown
+) => {
+  const usage = getEmbeddingUsageKey(settings);
+
+  return createHash("sha256")
+    .update(
+      JSON.stringify([
+        usage.provider,
+        usage.model,
+        settings.baseUrl?.trim() ?? "",
+        resolveSplitMode(settings.splitBy),
+        String(settings.chunkSize ?? "").trim(),
+        String(settings.chunkOverlap ?? "").trim(),
+        metadata ?? null,
+        text.replace(/\r\n/g, "\n").trim(),
+      ]),
+      "utf8"
+    )
+    .digest("hex");
+};
+
+// A chunk's metadata: what the user gave, plus what the store knows itself
+const chunkMetadata = (
+  base: Prisma.InputJsonValue | undefined,
+  extra: Record<string, string | undefined>
+): Prisma.InputJsonValue | undefined => {
+  const known = Object.fromEntries(
+    Object.entries(extra).filter(([, value]) => value)
+  ) as Record<string, string>;
+
+  if (Object.keys(known).length === 0) return base;
+
+  // Metadata that is not an object (a text, a list) is kept as it was given
+  if (base !== undefined && (base === null || typeof base !== "object" || Array.isArray(base))) {
+    return base;
+  }
+
+  return { ...known, ...((base as Record<string, Prisma.InputJsonValue>) ?? {}) };
+};
+
+/**
+ * Embeds the chunks of one document and saves them, for use inside a step.
+ * With a `source` the document is skipped when the collection already has
+ * it with the same hash, and replaces its old chunks when it has changed.
+ */
+export const saveDocument = async ({
+  label,
+  settings,
+  apiKey,
+  scope,
+  userId,
+  collection,
+  chunks,
+  metadata,
+  extraMetadata = {},
+  source,
+}: {
+  label: string;
+  settings: EmbeddingSettings;
+  apiKey: string;
+  scope: AiUsageScope;
+  userId: string;
+  collection: string;
+  chunks: TextChunk[];
+  metadata?: Prisma.InputJsonValue;
+  extraMetadata?: Record<string, string | undefined>;
+  source?: DocumentSource;
+}) => {
+  if (source) {
+    const stored = await findStoredDocument(userId, collection, source.id);
+
+    if (stored?.contentHash === source.hash) {
+      if ((source.version ?? null) !== stored.sourceVersion) {
+        await touchStoredDocument(userId, collection, source.id, source.version ?? null);
+      }
+
+      return { status: "unchanged" as const, inserted: 0, replaced: 0 };
+    }
+  }
+
+  const { embeddings, usage } = await embedMany({
+    model: createEmbeddingModel(label, settings, apiKey),
+    values: chunks.map((chunk) => chunk.content),
+  });
+
+  await recordAiUsage({
+    scope,
+    ...getEmbeddingUsageKey(settings),
+    kind: "embedding",
+    usage: embeddingUsage(usage),
+  });
+
+  const stored = await storeChunks({
+    userId,
+    collection,
+    source,
+    chunks: chunks.map((chunk, index) => ({
+      content: chunk.content,
+      metadata: chunkMetadata(metadata, { ...extraMetadata, heading: chunk.heading }),
+      embedding: embeddings[index],
+    })),
+  });
+
+  return {
+    status: stored.replaced > 0 ? ("updated" as const) : ("added" as const),
+    ...stored,
+  };
+};
+
+const readJsonObject = (label: string, title: string, text: string) => {
+  const parsed = parseJsonField<unknown>(label, title, text);
+
+  if (parsed === null || typeof parsed !== "object" || Array.isArray(parsed)) {
+    throw new NonRetriableError(`${label} node: ${title} must be a JSON object`);
+  }
+
+  return parsed as Record<string, unknown>;
+};
+
+/**
+ * A document store for retrieval (RAG): text is split into chunks, embedded
+ * and saved per user and collection; a search returns the chunks closest in
+ * meaning to the query, optionally filtered by metadata and reranked.
+ * Connected to an AI Agent's Tools port with Search and {{$fromAI "query"}},
+ * it lets the agent look things up.
  */
 export const vectorStoreExecutor: NodeExecutor<VectorStoreData> = async ({
   data,
@@ -407,9 +608,11 @@ export const vectorStoreExecutor: NodeExecutor<VectorStoreData> = async ({
   context,
   step,
   allNodes,
+  connections,
   executionId,
   workflowId,
 }) => {
+  const label = "Vector Store";
   const variableName = data.variableName?.trim() || "vectorStore";
   const usageScope = getAiUsageScope({ userId, workflowId, executionId, nodeId, allNodes });
   const operation = data.operation || "search";
@@ -428,121 +631,200 @@ export const vectorStoreExecutor: NodeExecutor<VectorStoreData> = async ({
       return { ...context, [variableName]: result };
     }
 
-    const apiKey = await loadCredentialSecret({
-      step,
-      stepId: `vector-store-${nodeId}-get-credential`,
-      credentialId: data.credentialId,
-      userId,
-      label: "Vector Store",
-    });
+    if (operation !== "insert" && operation !== "search") {
+      throw new NonRetriableError(
+        `Vector Store node: Unsupported operation "${operation}"`
+      );
+    }
+
+    // Called once the fields are checked, so a mistake in them is
+    // reported before any credential is read
+    const loadEmbeddingKey = () =>
+      loadCredentialSecret({
+        step,
+        stepId: `vector-store-${nodeId}-get-credential`,
+        credentialId: data.credentialId,
+        userId,
+        label,
+      });
+
+    checkEmbeddingSettings(label, data);
 
     if (operation === "insert") {
       const text = renderTemplate(data.text, context);
-      const chunks = splitText(
-        text,
-        Number(renderTemplate(data.chunkSize, context)) || 1000,
-        Number(renderTemplate(data.chunkOverlap, context)) || 100
-      );
-
-      if (chunks.length === 0) {
-        throw new NonRetriableError("Vector Store node: Text is empty");
-      }
-
-      if (chunks.length > MAX_CHUNKS_PER_INSERT) {
-        throw new NonRetriableError(
-          `Vector Store node: the text makes ${chunks.length} chunks; the limit per run is ${MAX_CHUNKS_PER_INSERT}. Insert it in parts or use a larger chunk size.`
-        );
-      }
+      const split: SplitSettings = {
+        splitBy: data.splitBy,
+        chunkSize: renderTemplate(data.chunkSize, context),
+        chunkOverlap: renderTemplate(data.chunkOverlap, context),
+      };
+      const chunks = prepareChunks(label, text, split);
 
       const metadataText = renderTemplate(data.metadataJson, context).trim();
       const metadata = metadataText
-        ? parseJsonField<Prisma.InputJsonValue>("Vector Store", "Metadata", metadataText)
+        ? parseJsonField<Prisma.InputJsonValue>(label, "Metadata", metadataText)
         : undefined;
 
-      const result = await step.run(`vector-store-${nodeId}-insert`, async () => {
-        const { embeddings, usage } = await embedMany({
-          model: createEmbeddingModel(data, apiKey),
-          values: chunks,
-        });
-
-        await recordAiUsage({
-          scope: usageScope,
-          ...getEmbeddingUsageKey(data),
-          kind: "embedding",
-          usage: embeddingUsage(usage),
-        });
-
-        await prisma.vectorDocument.createMany({
-          data: chunks.map((content, index) => ({
-            userId,
-            collection,
-            content,
-            metadata,
-            embedding: embeddings[index],
-          })),
-        });
-
-        return { collection, inserted: chunks.length };
-      });
-
-      return { ...context, [variableName]: result };
-    }
-
-    if (operation === "search") {
-      const query = renderTemplate(data.query, context).trim();
-      if (!query) {
-        throw new NonRetriableError("Vector Store node: Query is empty");
+      const documentId = renderTemplate(data.documentId, context).trim();
+      if (documentId.length > 200) {
+        throw new NonRetriableError("Vector Store node: Document ID can have at most 200 characters");
       }
 
-      const topK = Math.min(
-        Math.max(Number(renderTemplate(data.topK, context)) || 4, 1),
-        MAX_TOP_K
-      );
+      const apiKey = await loadEmbeddingKey();
 
-      const result = await step.run(`vector-store-${nodeId}-search`, async () => {
-        const { embedding, usage } = await embed({
-          model: createEmbeddingModel(data, apiKey),
-          value: query,
-        });
-
-        await recordAiUsage({
+      const result = await step.run(`vector-store-${nodeId}-insert`, async () => {
+        const saved = await saveDocument({
+          label,
+          settings: data,
+          apiKey,
           scope: usageScope,
-          ...getEmbeddingUsageKey(data),
-          kind: "embedding",
-          usage: embeddingUsage(usage),
+          userId,
+          collection,
+          chunks,
+          metadata,
+          extraMetadata: { documentId },
+          source: documentId
+            ? { id: `doc:${documentId}`, hash: hashDocument(text, { ...data, ...split }, metadata) }
+            : undefined,
         });
-
-        const documents = await prisma.vectorDocument.findMany({
-          where: { userId, collection },
-          orderBy: { createdAt: "desc" },
-          take: MAX_DOCUMENTS_PER_SEARCH,
-        });
-
-        const matches = documents
-          // Chunks embedded with another model cannot be compared
-          .filter((document) => document.embedding.length === embedding.length)
-          .map((document) => ({
-            content: document.content,
-            metadata: document.metadata,
-            score: cosineSimilarity(embedding, document.embedding),
-          }))
-          .sort((a, b) => b.score - a.score)
-          .slice(0, topK);
 
         return {
-          matches,
-          count: matches.length,
-          // Ready to drop into a prompt
-          text: matches.map((match) => match.content).join("\n\n---\n\n"),
+          collection,
+          inserted: saved.inserted,
+          // With a Document ID: chunks of the old text that were removed,
+          // and whether the text was the one already stored
+          replaced: saved.replaced,
+          unchanged: saved.status === "unchanged",
         };
       });
 
       return { ...context, [variableName]: result };
     }
 
-    throw new NonRetriableError(
-      `Vector Store node: Unsupported operation "${operation}"`
+    const query = renderTemplate(data.query, context).trim();
+    if (!query) {
+      throw new NonRetriableError("Vector Store node: Query is empty");
+    }
+
+    const topK = Math.min(
+      Math.max(Number(renderTemplate(data.topK, context)) || 4, 1),
+      MAX_TOP_K
     );
+
+    const filterText = renderTemplate(data.metadataFilter, context).trim();
+    const filter = filterText ? readJsonObject(label, "Metadata Filter", filterText) : null;
+
+    const reranker = resolveReranker(data.rerank);
+
+    if ((reranker === "cohere" || reranker === "jina") && !data.rerankCredentialId) {
+      throw new NonRetriableError("Vector Store node: Rerank Credential is required");
+    }
+
+    const apiKey = await loadEmbeddingKey();
+
+    const rerankKey =
+      reranker === "cohere" || reranker === "jina"
+        ? await loadCredentialSecret({
+            step,
+            stepId: `vector-store-${nodeId}-get-rerank-credential`,
+            credentialId: data.rerankCredentialId,
+            userId,
+            label,
+          })
+        : "";
+
+    const rerankModel =
+      reranker === "model"
+        ? await loadConnectedModel({ label, nodeId, userId, allNodes, connections, step })
+        : null;
+
+    const result = await step.run(`vector-store-${nodeId}-search`, async () => {
+      const { embedding, usage } = await embed({
+        model: createEmbeddingModel(label, data, apiKey),
+        value: query,
+      });
+
+      await recordAiUsage({
+        scope: usageScope,
+        ...getEmbeddingUsageKey(data),
+        kind: "embedding",
+        usage: embeddingUsage(usage),
+      });
+
+      const found = await searchCollection({
+        userId,
+        collection,
+        embedding,
+        // A reranker chooses from more candidates than are returned
+        limit: reranker === "none" ? topK : rerankCandidateCount(topK),
+        filter,
+      });
+
+      let matches: {
+        content: string;
+        metadata: unknown;
+        score: number;
+        rerankScore?: number | null;
+      }[] = found.matches.map(({ content, metadata, score }) => ({ content, metadata, score }));
+      let reranked = false;
+      let rerankNote: string | undefined;
+
+      if (reranker !== "none" && matches.length > 0) {
+        const passages = matches.map((match) => match.content);
+        let ranking: Ranked[] | null;
+
+        if (rerankModel) {
+          const answer = await askConnectedModel({
+            model: rerankModel,
+            system: LLM_RERANK_SYSTEM,
+            prompt: buildLlmRerankPrompt(query, passages),
+            scope: usageScope,
+          });
+
+          ranking = parseLlmRanking(answer.text, passages.length);
+          if (!ranking) {
+            rerankNote = "The model's answer was not a list of passage numbers; the results are in their original order.";
+          }
+        } else {
+          ranking = await rerankWithApi({
+            provider: reranker as "cohere" | "jina",
+            apiKey: rerankKey,
+            model: renderTemplate(data.rerankModel, context),
+            query,
+            passages,
+            limit: topK,
+          }).catch(async (error) => {
+            throw await toIntegrationError(
+              reranker === "cohere" ? "Vector Store (Cohere rerank)" : "Vector Store (Jina rerank)",
+              error
+            );
+          });
+        }
+
+        if (ranking) {
+          matches = ranking.map(({ index, score }) => ({
+            ...matches[index],
+            rerankScore: score,
+          }));
+          reranked = true;
+        }
+      }
+
+      matches = matches.slice(0, topK);
+
+      return {
+        matches,
+        count: matches.length,
+        // Ready to drop into a prompt
+        text: matches.map((match) => match.content).join("\n\n---\n\n"),
+        // "pgvector", "pgvector-index", or "app" when the embeddings were
+        // compared in the app
+        engine: found.engine,
+        reranked,
+        ...(rerankNote ? { rerankNote } : {}),
+      };
+    });
+
+    return { ...context, [variableName]: result };
   } catch (error) {
     throw toAiError("Vector Store", error);
   }
