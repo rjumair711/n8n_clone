@@ -1005,6 +1005,37 @@ Needs a Google Account credential (reconnect it if it predates Drive access), a 
 
 Trigger manually → **MCP Client**: Endpoint = the URL of any MCP server that uses Streamable HTTP. **Expect:** `mcp.tools` lists the server's tools. Then connect it to an agent's Tools port and ask for something one of those tools does.
 
+**SSE transport.** Set **Transport** to `SSE (older servers)` and Endpoint to the `/sse` URL of a server that uses the older HTTP+SSE transport. **Expect:** `mcp.tools` lists its tools; as an agent tool it works the same. With a Streamable HTTP address and Transport SSE the node fails with "MCP server did not open an event stream at this URL. If it uses Streamable HTTP, change Transport." An existing MCP Client node (saved before this task) still works without being opened.
+
+## T16b. MCP Server Trigger (public URL)
+
+Needs the `mcp_server_trigger` migration applied. Use the test account. `<url>` is the node's MCP Server URL and `<token>` its Bearer Token.
+
+Workflow: **MCP Server Trigger** (Tool Name `look_up_order`, Tool Description `Finds an order by its number.`, Parameters `orderId (string): The order number` and `includeItems (boolean, optional)`, Bearer Token of 16 or more characters) → Set Variable `order` = `Order {{mcp.arguments.orderId}} has shipped.` Save and activate.
+
+| # | Do | Expect |
+|---|----|--------|
+| 1 | Click **Execute** in the editor | a run with a sample call: `mcp.tool` is `look_up_order`, `mcp.arguments.orderId` is `sample` |
+| 2 | `curl -s -X POST "<url>" -H "Authorization: Bearer <token>" -H "Content-Type: application/json" -d '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-03-26","capabilities":{},"clientInfo":{"name":"curl","version":"1"}}}'` | a result with `protocolVersion` `2025-03-26`, `capabilities.tools` and the workflow's name as `serverInfo.name` |
+| 3 | The same with `"method":"tools/list"` (no params) | one tool, `look_up_order`, with an `inputSchema` whose `required` is `["orderId"]` |
+| 4 | `"method":"tools/call","params":{"name":"look_up_order","arguments":{"orderId":"1001"}}` | after a moment, `content[0].text` is JSON holding `"order": "Order 1001 has shipped."`; one new execution with source "MCP tool call" |
+| 5 | Set the trigger's **Result** to `order`, save, call again | `content[0].text` is exactly `Order 1001 has shipped.` |
+| 6 | Call with `"arguments":{}` | `isError` true, "Missing required parameter: orderId"; **no** new execution |
+| 7 | Call with `"arguments":{"orderId":1001}` | `isError` true, 'Parameter "orderId" must be of type string, not integer' |
+| 8 | Without the `Authorization` header, with a wrong token, and with `?token=<token>` in the address instead | `401` each time, with a `WWW-Authenticate: Bearer` header; no execution |
+| 9 | Change the node's token to `short`, save, call with `Bearer short` | `401`: a token under 16 characters is refused. The dialog warned about it |
+| 10 | `curl -i "<url>"` (a GET) | `405` with `Allow: POST` |
+| 11 | `"method":"tools/call","params":{"name":"nope"}` | a JSON-RPC error, code `-32602`, "Unknown tool: nope" |
+| 12 | Deactivate the workflow, call | `404` |
+| 13 | Add a Respond to Webhook node (Respond With `Text`, Body `Shipped on Monday`) after the Set Variable, call | `content[0].text` is `Shipped on Monday`, whatever Result says |
+| 14 | Make a node after the trigger fail (an HTTP Request to a URL that answers 500), call | `isError` true, "The workflow failed: ..." with the node's error |
+| 15 | Put a Wait node (1 minute) after the trigger, call | the call answers at once that the workflow is paused |
+| 16 | Add a second MCP Server Trigger (`list_orders`, same token) with its own branch; `tools/list`, then call each tool | two tools; each call runs only its own branch (the other trigger shows as run, its branch does not) |
+| 17 | Give the second trigger a different token and list tools with each token | each token sees only its own tool |
+| 18 | In another workflow: Trigger manually → AI Agent with an **MCP Client** on its Tools port (Endpoint `<url>`, Authentication Bearer Auth with the token) and ask "Where is order 1001?" | the agent calls `look_up_order` and answers from its result |
+| 19 | Add `<url>` to Claude Desktop, Cursor or `npx @modelcontextprotocol/inspector` as a Streamable HTTP server with the Authorization header | the tool is listed and can be called |
+| 20 | Publish the workflow as a template and use it | the new workflow's trigger has no token |
+
 ---
 
 # Part 3: outside services

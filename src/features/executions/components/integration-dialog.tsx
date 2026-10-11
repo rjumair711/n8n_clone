@@ -130,6 +130,9 @@ export type IntegrationConfig = {
   // For triggers another service calls: shows the URL
   // <app>/api/webhooks/<webhookPath>/<workflowId> to copy
   webhookPath?: string;
+  // For a trigger with an address of its own that is not a webhook: shows
+  // <app><path>/<workflowId> to copy
+  endpointUrl?: { path: string; label: string; help: string };
   // For the Form Trigger: shows the form's address, <app>/forms/<node id>
   formUrl?: boolean;
   // The variable form values are shown under when the node has no
@@ -296,6 +299,10 @@ export const IntegrationDialog = ({
     ? `${process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000"}/api/webhooks/${config.webhookPath}/${params.workflowId}`
     : null;
 
+  const endpointUrl = config.endpointUrl
+    ? `${process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000"}${config.endpointUrl.path}/${params.workflowId}`
+    : null;
+
   const formUrl =
     config.formUrl && nodeId
       ? `${process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000"}/forms/${nodeId}`
@@ -393,6 +400,21 @@ export const IntegrationDialog = ({
                 />
                 <p className="text-sm text-muted-foreground">
                   Paste this as the Callback URL in the other service.
+                </p>
+              </div>
+            )}
+
+            {endpointUrl && (
+              <div className="space-y-2">
+                <FormLabel>{config.endpointUrl?.label}</FormLabel>
+                <Input
+                  value={endpointUrl}
+                  readOnly
+                  className="font-mono text-sm"
+                  onFocus={(event) => event.target.select()}
+                />
+                <p className="text-sm text-muted-foreground">
+                  {config.endpointUrl?.help}
                 </p>
               </div>
             )}

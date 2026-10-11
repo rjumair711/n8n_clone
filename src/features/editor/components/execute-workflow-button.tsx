@@ -35,6 +35,7 @@ export type ExecuteTrigger = Extract<
     | "WOOCOMMERCE_TRIGGER"
     | "RSS_FEED_TRIGGER"
     | "FORM_TRIGGER"
+    | "MCP_SERVER_TRIGGER"
     | "EXECUTE_WORKFLOW_TRIGGER"
     | "ERROR_TRIGGER"
     | "CHAT_TRIGGER"

@@ -36,6 +36,7 @@ const TRIGGER_TYPES = new Set([
   "WOOCOMMERCE_TRIGGER",
   "RSS_FEED_TRIGGER",
   "FORM_TRIGGER",
+  "MCP_SERVER_TRIGGER",
 ]);
 
 // Nodes with "sub-" ports that other nodes plug into as configuration
@@ -202,6 +203,11 @@ export const getActiveOutputs = (
 
     case "IF":
       return [context.ifResult === true ? "true" : "false"];
+
+    // Each MCP Server Trigger is one tool: only the one that was called
+    // passes the run on
+    case "MCP_SERVER_TRIGGER":
+      return context.mcpToolMatched === false ? [] : null;
 
     case "SWITCH":
     // The classifier picks one category output, like a Switch rule

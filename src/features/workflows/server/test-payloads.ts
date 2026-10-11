@@ -1,6 +1,7 @@
 import { NodeType } from "@prisma/client";
 import { buildSampleFormValues, parseFormFields } from "@/lib/form-fields";
 import { parseMetaMessages } from "@/lib/meta-messaging";
+import { normalizeToolName, readToolSchema } from "@/lib/mcp-server";
 import {
     buildShopifyTriggerData,
     buildWoocommerceTriggerData,
@@ -29,6 +30,7 @@ export const TESTABLE_TRIGGERS = [
     NodeType.WOOCOMMERCE_TRIGGER,
     NodeType.RSS_FEED_TRIGGER,
     NodeType.FORM_TRIGGER,
+    NodeType.MCP_SERVER_TRIGGER,
     NodeType.ERROR_TRIGGER,
     NodeType.EXECUTE_WORKFLOW_TRIGGER,
 ] as const;
@@ -51,6 +53,7 @@ export const TRIGGER_LABELS: Record<TestableTrigger, string> = {
     WOOCOMMERCE_TRIGGER: "WooCommerce",
     RSS_FEED_TRIGGER: "RSS Feed",
     FORM_TRIGGER: "Form",
+    MCP_SERVER_TRIGGER: "MCP tool call",
     ERROR_TRIGGER: "Error Trigger",
     EXECUTE_WORKFLOW_TRIGGER: "Sub-workflow",
 };
@@ -382,6 +385,32 @@ export const buildTestPayload = (
                 form: buildSampleFormValues(parseFormFields(nodeData.formFields)),
                 formMeta: { formId: "test", submittedAt: now.toISOString() },
             };
+
+        case NodeType.MCP_SERVER_TRIGGER: {
+            // A call of this node's tool, with a value of the right kind
+            // for every parameter
+            const samples: Record<string, unknown> = {
+                string: "sample",
+                number: 1.5,
+                integer: 1,
+                boolean: true,
+                array: ["sample"],
+                object: {},
+            };
+            const schema = readToolSchema(nodeData);
+
+            return {
+                mcp: {
+                    tool: normalizeToolName(nodeData.toolName),
+                    arguments: Object.fromEntries(
+                        Object.entries(schema.properties).map(([name, definition]) => [
+                            name,
+                            samples[String(definition?.type)] ?? "sample",
+                        ])
+                    ),
+                },
+            };
+        }
 
         case NodeType.RSS_FEED_TRIGGER:
             return {

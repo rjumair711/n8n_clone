@@ -359,7 +359,29 @@ They are on the Chat Model, DeepSeek, Kimi and Qwen nodes (`{{chatModel.modelUse
 | Structured Output Parser | Plugs into the AI Agent's Parser port to force a JSON structure |
 | Vector Store | Insert, search and delete documents by meaning (RAG), with OpenAI, Gemini or OpenAI-compatible embeddings. Text splitting, metadata filters, reranking, and pgvector when the database has it (see "Vector Store and Document Loader") |
 | Document Loader | Loads a Google Drive folder or a Notion database into a Vector Store collection, skipping documents that have not changed |
-| MCP Client | Gives an AI Agent the tools of an MCP server (Streamable HTTP transport) |
+| MCP Client | Gives an AI Agent the tools of an MCP server (Streamable HTTP, or SSE for older servers) |
+
+### MCP: client and server
+
+**MCP Client** gives an AI Agent the tools of an MCP server. Its **Transport** is *Streamable HTTP* (the default: one URL, usually ending in `/mcp`) or *SSE* for older servers (one URL, usually ending in `/sse`, that the client keeps open while the answers arrive on it). With SSE the node opens a connection for each tool call and closes it again, so nothing stays open when the agent stops; the credential is only sent to the server's own site. Servers that only run locally over stdio are not supported.
+
+**MCP Server Trigger** makes a workflow a tool that MCP clients (Claude, Cursor, another agent, or this app's own MCP Client node) can call.
+
+* **Address:** `<app>/api/mcp/<workflow id>`, Streamable HTTP, shown in the node. The workflow has to be active.
+* **Bearer token:** callers send `Authorization: Bearer <token>`. The token is typed into the node, has to be at least 16 characters, is compared in constant time and is never accepted in the address. Requests are rate limited per workflow before the token is checked.
+* **One trigger node is one tool:** a Tool Name, a Tool Description (the calling model decides from it when to use the tool) and its input schema.
+  * **Parameters** are one per line, `name (type): description`, with the types string, number, integer, boolean, list and object. A parameter is required unless it says `optional`: `includeItems (boolean, optional): Also return the line items`.
+  * **Input Schema (JSON)** takes a JSON Schema of type object for what the lines cannot express, and is then used instead.
+* **Several tools:** put several MCP Server Trigger nodes in the workflow, each with its own branch. A call runs only the branch of the tool that was called. Use the same token on all of them; a tool is only offered to callers that have its node's token.
+* **In the workflow** the call is at `{{mcp.arguments.<parameter>}}`, `{{json mcp.arguments}}` and `{{mcp.tool}}`. Arguments are checked against the schema first (required ones present, the right type at the first level); a wrong call is answered to the model as a tool error and does not start a run.
+* **What the caller gets back**, in this order:
+  1. the body of a **Respond to Webhook** node, as soon as one has run;
+  2. the variable named in the trigger's **Result** field, for example `agent.output`;
+  3. everything the run produced, as JSON.
+* A failed run is returned as a tool error with the run's error message. A run that reaches a Wait or approval step answers that it is paused. A run that takes longer than 50 seconds (`MCP_TOOL_TIMEOUT_MS`) answers that it is still running; it carries on, and its result is in the executions list.
+* A workflow set to "Don't save node input/output" has no result to return unless it uses a Respond to Webhook node.
+* The server is stateless: no sessions, no event stream (a `GET` is answered `405`, as the transport allows), tools only. It speaks protocol versions `2025-06-18`, `2025-03-26` and `2024-11-05`.
+* **Every tool call is a workflow execution** and counts as one. Whoever has the address and the token can run the workflow, so treat the token like a password and change it in the node to revoke access.
 
 ### Vector Store and Document Loader (RAG)
 
@@ -441,6 +463,7 @@ OCR and vision for a file a workflow has: a Form Trigger upload, an HTTP Request
 | Shopify Trigger     | Runs when an order is created, paid, fulfilled or cancelled, a product is created or updated, a customer is created or a checkout changes (HMAC signature check; see "Shopify and WooCommerce") |
 | WooCommerce Trigger | Runs when an order is created, updated or paid, or a product or customer changes (signature check; optional order status filter) |
 | Form Trigger        | Runs when someone submits the workflow's own hosted form at `/forms/<id>` (see "Forms")                    |
+| MCP Server Trigger  | Makes the workflow a tool of an MCP server at `/api/mcp/<workflow id>`, protected by a bearer token (see "MCP: client and server") |
 | RSS Feed Trigger    | Runs when a new item appears in an RSS or Atom feed; polls every 1, 5, 15, 60 minutes or daily             |
 | Google Form Trigger | Form submission automation                                                                                 |
 | Stripe Trigger      | Payment event automation                                                                                   |
@@ -751,7 +774,7 @@ Supported credential types:
   * A request has to match by what it uses: `http://localhost:11434` is allowed by `localhost:11434`, not by `127.0.0.1:11434`, because `localhost` can also resolve to `::1` and every address of a name has to be allowed. Use the same form in the node as in the list. The Chat Model node's default Ollama address is `http://localhost:11434/v1`, so for that the entry is `localhost:11434`.
   * A range with a port (`10.0.0.0/24:5432`) is not supported. Entries that cannot be read are ignored and named in a warning at startup.
   * `ALLOW_PRIVATE_NETWORK_REQUESTS=true` still works and opens **every** private address; the allowlist then has no effect. It logs a warning at startup recommending the allowlist, which is the safer choice.
-* **Webhooks:** per-node secrets or provider signatures (Stripe, WhatsApp, Messenger, Instagram, Typeform, Telegram, Shopify, WooCommerce), and a per-workflow rate limit.
+* **Webhooks:** per-node secrets or provider signatures (Stripe, WhatsApp, Messenger, Instagram, Typeform, Telegram, Shopify, WooCommerce), a bearer token for the MCP Server Trigger, and a per-workflow rate limit.
   * Every secret, token and signature is compared in constant time (`secretsMatch` in `src/lib/webhook-security.ts`, built on `crypto.timingSafeEqual`).
   * **Stripe and Typeform events older than 5 minutes are refused**, so a captured request cannot be sent again later. Stripe signs its own timestamp. Typeform's signature has none, so the submission's `submitted_at` (which is inside the signed body) is used. A Typeform delivery that is retried more than 5 minutes after the form was submitted, for example after the app was down, is therefore refused and shows as failed in Typeform.
   * **Telegram:** activating a workflow registers the bot's webhook with a `secret_token`, and every update has to carry it in `X-Telegram-Bot-Api-Secret-Token`. The token is derived from `ENCRYPTION_KEY`; without that key no webhook is registered and no update is accepted.
@@ -1082,6 +1105,7 @@ The live app on Vercel and local development use the **same** database, so the s
 | `WEBHOOK_RESPONSE_TIMEOUT_MS` | How long a webhook waits for the workflow's response, default 25000 |
 | `SANDBOX_MAX_OUTPUT_KB` | The most a Code node or one expression may return, in KB, default 1024 |
 | `MAX_ITEMS_PER_NODE` | Items one node may process in a list, default 100 |
+| `MCP_TOOL_TIMEOUT_MS` | How long an MCP Server Trigger's tool call waits for the run's result, default 50000 |
 | `VECTOR_STORE_ENGINE` | Set to `app` to make the Vector Store compare embeddings in the app even when pgvector is installed |
 | `WAIT_MAX_DAYS` | The longest a Wait node may wait, in days, default 7 (the limit of Inngest's free plan) |
 | `FORM_RATE_LIMIT_PER_MINUTE` | Submissions per minute for one hosted form, default 30 |
@@ -1110,7 +1134,7 @@ Nodes that are not built yet. Each new integration is a config passed to `create
 | MongoDB, Redis, Supabase (REST) | More data stores next to Postgres and MySQL |
 | Slack / Discord bots | Bot-token nodes and triggers; today both send through webhook URLs |
 
-Also not built: a true n8n items model for every node from the trigger onward (items start at a list node), a real tokenizer for the Vector Store's token splitting, and the stdio / SSE transports for MCP.
+Also not built: a true n8n items model for every node from the trigger onward (items start at a list node), a real tokenizer for the Vector Store's token splitting, and the stdio transport for MCP (it needs a process on the user's own machine).
 
 ---
 

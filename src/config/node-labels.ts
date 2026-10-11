@@ -22,6 +22,7 @@ const NODE_LABELS: Record<string, string> = {
     ANALYZE_DOCUMENT: "Analyze Image / Document",
     WEBHOOK_RESPONSE: "Webhook Callback",
     MCP_CLIENT_TOOL: "MCP Client",
+    MCP_SERVER_TRIGGER: "MCP Server Trigger",
     HUBSPOT: "HubSpot",
     WOOCOMMERCE: "WooCommerce",
     WOOCOMMERCE_TRIGGER: "WooCommerce Trigger",

@@ -19,6 +19,7 @@ export const TRIGGER_SOURCES = {
     WOOCOMMERCE: "woocommerce",
     RSS: "rss",
     FORM: "form",
+    MCP: "mcp",
     // Started by a call to the public API (/api/v1)
     API: "api",
     // Started by an Error Trigger after another execution failed
@@ -45,6 +46,7 @@ const LABELS: Record<string, string> = {
     [TRIGGER_SOURCES.WOOCOMMERCE]: "WooCommerce",
     [TRIGGER_SOURCES.RSS]: "RSS Feed",
     [TRIGGER_SOURCES.FORM]: "Form",
+    [TRIGGER_SOURCES.MCP]: "MCP tool call",
     [TRIGGER_SOURCES.API]: "API",
     [TRIGGER_SOURCES.ERROR]: "Error Trigger",
     [TRIGGER_SOURCES.WORKFLOW]: "Another workflow",
@@ -72,6 +74,7 @@ export const TRIGGER_TYPE_SOURCES: Record<string, string> = {
     WOOCOMMERCE_TRIGGER: TRIGGER_SOURCES.WOOCOMMERCE,
     RSS_FEED_TRIGGER: TRIGGER_SOURCES.RSS,
     FORM_TRIGGER: TRIGGER_SOURCES.FORM,
+    MCP_SERVER_TRIGGER: TRIGGER_SOURCES.MCP,
     ERROR_TRIGGER: TRIGGER_SOURCES.ERROR,
     EXECUTE_WORKFLOW_TRIGGER: TRIGGER_SOURCES.WORKFLOW,
 };
