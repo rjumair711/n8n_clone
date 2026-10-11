@@ -5930,6 +5930,371 @@ const main = async () => {
     assert.ok(route.indexOf("verifyResumeToken(") < route.indexOf("rateLimitResponse("));
   });
 
+  // ------------------------------------------------------- HUMAN APPROVAL
+  console.log("Human approval");
+
+  const approvals = await import("@/lib/approvals");
+  const approvalLinks = await import("@/lib/approval-links");
+
+  await test("Require approval is on for write and dangerous tools of new agents only", async () => {
+    const { toolRequiresApproval } = approvals;
+    const { getToolRisk } = agentTools;
+
+    const decide = (type: string, data: Record<string, unknown>, saved?: boolean, isNew = true) =>
+      toolRequiresApproval({ saved, risk: getToolRisk(type, data), defaultByRisk: isNew });
+
+    // New agent, nothing saved: by risk
+    assert.equal(decide("CALCULATOR", {}), false);
+    assert.equal(decide("HTTP_REQUEST", { method: "GET" }), false);
+    assert.equal(decide("HTTP_REQUEST", { method: "POST" }), true);
+    assert.equal(decide("GMAIL", { operation: "send_email" }), true);
+    assert.equal(decide("GMAIL", { operation: "search_messages" }), false);
+    assert.equal(decide("SSH", {}), true);
+    assert.equal(decide("POSTGRES", { operation: "execute_query" }), true);
+    assert.equal(decide("MCP_CLIENT_TOOL", {}), true);
+
+    // What was saved wins, either way
+    assert.equal(decide("SSH", {}, false), false);
+    assert.equal(decide("CALCULATOR", {}, true), true);
+
+    // An agent from before approvals keeps running as it did, until a
+    // tool is switched on
+    assert.equal(decide("GMAIL", { operation: "send_email" }, undefined, false), false);
+    assert.equal(decide("SSH", {}, undefined, false), false);
+    assert.equal(decide("GMAIL", { operation: "send_email" }, true, false), true);
+
+    // New AI Agent nodes are marked when they are added to the canvas
+    const { readFileSync } = await import("node:fs");
+    const selector = readFileSync("src/components/node-selector.tsx", "utf8");
+    assert.match(
+      selector,
+      /selection\.type === NodeType\.AI_AGENT\s*\? \{ toolApprovalDefault: TOOL_APPROVAL_DEFAULT_BY_RISK \}/
+    );
+    assert.equal(approvals.TOOL_APPROVAL_DEFAULT_BY_RISK, "risk");
+    assert.equal(approvals.TOOL_REJECTED_MESSAGE, "The user rejected this action");
+  });
+
+  await test("Approve and Reject links are signed, tied to their decision, and expire", () =>
+    withKeys("approval-key-A", undefined, async () => {
+      const now = Date.UTC(2026, 9, 11, 12, 0, 0);
+      const expiresAt = new Date(now + 3_600_000);
+      const { approveUrl, rejectUrl } = approvalLinks.buildApprovalLinks(
+        "https://app.example.com",
+        "req1",
+        expiresAt
+      );
+
+      const approve = new URL(approveUrl);
+      const reject = new URL(rejectUrl);
+      assert.equal(approve.pathname, "/api/approvals/req1");
+      assert.equal(approve.searchParams.get("decision"), "approve");
+      assert.equal(reject.searchParams.get("decision"), "reject");
+      assert.equal(approve.searchParams.get("expires"), String(Math.floor(expiresAt.getTime() / 1000)));
+      assert.notEqual(approve.searchParams.get("signature"), reject.searchParams.get("signature"));
+
+      const check = (id: string, url: URL, overrides: Record<string, string | null> = {}, at = now) => {
+        const read = (name: string) =>
+          name in overrides ? overrides[name] : url.searchParams.get(name);
+
+        return approvalLinks.verifyApprovalLink(id, read("decision"), read("expires"), read("signature"), at);
+      };
+
+      assert.equal(check("req1", approve), "valid");
+      assert.equal(check("req1", reject), "valid");
+      assert.equal(check("req1", approve, {}, now + 3_600_000), "valid");
+      assert.equal(check("req1", approve, {}, now + 3_601_000), "expired");
+
+      // A Reject link cannot be turned into an Approve link, a link is for
+      // one request, and its time cannot be pushed back
+      assert.equal(check("req1", reject, { decision: "approve" }), "invalid");
+      assert.equal(check("req2", approve), "invalid");
+      assert.equal(check("req1", approve, { expires: String(Math.floor(now / 1000) + 999_999) }), "invalid");
+      assert.equal(check("req1", approve, { signature: "x" }), "invalid");
+      assert.equal(check("req1", approve, { signature: null }), "invalid");
+      assert.equal(check("req1", approve, { expires: null }), "invalid");
+      assert.equal(check("req1", approve, { expires: "soon" }), "invalid");
+      assert.equal(check("req1", approve, { decision: "maybe" }), "invalid");
+      assert.equal(check("", approve), "invalid");
+
+      await withKeys("approval-key-B", undefined, () => {
+        assert.equal(check("req1", approve), "invalid");
+      });
+      await withKeys("approval-key-B", "approval-key-A", () => {
+        assert.equal(check("req1", approve), "valid");
+      });
+
+      // Not a Wait node resume token or a file link for the same id
+      assert.equal(
+        check("req1", approve, { signature: wait.createResumeToken("req1") }),
+        "invalid"
+      );
+    })
+  );
+
+  await test("the request shows the tool and its arguments as text, never as markup or a template", async () => {
+    const input = {
+      kind: "tool" as const,
+      title: "send_email",
+      details: { to: "a@example.com", body: '<img src=x onerror="alert(1)"> {{execution.resumeUrl}}' },
+      workflowName: "Support <bot>",
+      approveUrl: "https://app.example.com/api/approvals/req1?decision=approve&expires=1&signature=s",
+      rejectUrl: "https://app.example.com/api/approvals/req1?decision=reject&expires=1&signature=s",
+      expiresAt: new Date(Date.UTC(2026, 9, 12)),
+    };
+
+    const text = approvals.buildApprovalText(input);
+    assert.match(text, /An AI Agent wants to use the tool "send_email"/);
+    assert.match(text, /Workflow: Support <bot>/);
+    assert.match(text, /"to": "a@example\.com"/);
+    assert.match(text, /Approve: https:\/\/app\.example\.com\/api\/approvals\/req1\?decision=approve/);
+    assert.match(text, /Reject: https:\/\/app\.example\.com\/api\/approvals\/req1\?decision=reject/);
+    assert.match(text, /answered once and expires on 2026-10-12T00:00:00\.000Z/);
+
+    const email = approvals.buildApprovalEmail(input);
+    assert.equal(email.subject, "Approval needed: send_email");
+    assert.doesNotMatch(email.html, /<img/);
+    assert.match(email.html, /&lt;img src=x onerror=/);
+    assert.match(email.html, /Support &lt;bot&gt;/);
+    assert.match(email.html, /href="https:\/\/app\.example\.com\/api\/approvals\/req1\?decision=approve&amp;expires=1&amp;signature=s"/);
+    assert.match(email.html, />Approve<\/a>/);
+    assert.match(email.html, />Reject<\/a>/);
+
+    // A node's own title and message
+    const node = approvals.buildApprovalText({ ...input, kind: "node", title: "Refund 50?", details: "Order 7" });
+    assert.match(node, /^Approval needed: Refund 50\?/);
+    assert.match(node, /Details:\nOrder 7/);
+
+    // Long arguments are cut, long titles too
+    assert.ok(approvals.formatApprovalDetails("x".repeat(10_000)).length < 4100);
+    assert.match(approvals.formatApprovalDetails("x".repeat(10_000)), /\[cut\]$/);
+    assert.equal(approvals.formatApprovalDetails(null), "");
+    assert.ok(approvals.clipApprovalTitle("y".repeat(500)).length <= 203);
+    assert.equal(approvals.clipApprovalTitle("  "), "Approval");
+
+    // The channels hand the message over as a variable, so {{ }} in the
+    // model's arguments is never evaluated
+    const { readFileSync } = await import("node:fs");
+    const notify = readFileSync("src/features/approvals/server/notify.ts", "utf8");
+    assert.match(notify, /body: "\{\{\{approvalHtml\}\}\}"/);
+    assert.match(notify, /text: "\{\{\{approvalText\}\}\}"/);
+    assert.match(notify, /message: "\{\{\{approvalText\}\}\}"/);
+    assert.match(notify, /await assertPublicUrl\(webhookUrl\)/);
+  });
+
+  await test("the agent loop stops at a tool that needs approval and goes on with the answer", async () => {
+    let ran = 0;
+
+    const tools = {
+      // No execute: every call waits for a person
+      lookup: defineTool({
+        description: "Deletes something",
+        inputSchema: zod.object({ query: zod.string().optional() }),
+      }),
+      safe: defineTool({
+        description: "Reads something",
+        inputSchema: zod.object({ query: zod.string().optional() }),
+        execute: async () => {
+          ran++;
+          return { read: true };
+        },
+      }),
+    };
+
+    const first = new MockLanguageModelV3({
+      doGenerate: async () => toolCallResult("call-1", { query: "order 7" }),
+    });
+
+    const paused = await agentLoop.runAgentLoop({
+      model: first,
+      messages: [{ role: "user", content: "delete order 7" }],
+      tools,
+    });
+
+    assert.deepEqual(paused.pending, [
+      { toolCallId: "call-1", toolName: "lookup", input: { query: "order 7" } },
+    ]);
+    assert.equal(paused.output, "");
+    assert.equal(paused.iterations, 1);
+    assert.equal(paused.toolCalls, 0);
+    // Added once there is a result
+    assert.deepEqual(paused.intermediateSteps, []);
+    assert.equal(first.doGenerateCalls.length, 1);
+    assert.equal(ran, 0);
+
+    // Rejected: the model is told so and finishes
+    const rejected = agentLoop.appendToolResults(
+      [{ role: "user", content: "delete order 7" }, ...paused.responseMessages],
+      [{ toolCallId: "call-1", toolName: "lookup", result: approvals.TOOL_REJECTED_MESSAGE }]
+    );
+    assert.equal(rejected[rejected.length - 1].role, "tool");
+
+    const second = new MockLanguageModelV3({
+      doGenerate: async () => textResult("I did not delete it."),
+    });
+    const finished = await agentLoop.runAgentLoop({
+      model: second,
+      messages: rejected,
+      tools,
+    });
+
+    assert.equal(finished.output, "I did not delete it.");
+    assert.deepEqual(finished.pending, []);
+    const prompt = JSON.stringify(second.doGenerateCalls[0].prompt);
+    assert.match(prompt, /The user rejected this action/);
+    assert.match(prompt, /<tool_result tool=\\"lookup\\" trust=\\"untrusted-data\\">/);
+    assert.match(prompt, /call-1/);
+
+    // A tool that ran in the same turn keeps its result; the approved
+    // tool's result joins it in the same tool message
+    const merged = agentLoop.appendToolResults(
+      [
+        { role: "user", content: "go" },
+        {
+          role: "tool",
+          content: [
+            {
+              type: "tool-result",
+              toolCallId: "call-0",
+              toolName: "safe",
+              output: { type: "text", value: "ok" },
+            },
+          ],
+        },
+      ],
+      [{ toolCallId: "call-1", toolName: "lookup", result: { deleted: 1 } }]
+    );
+    assert.equal(merged.length, 2);
+    assert.equal((merged[1].content as unknown[]).length, 2);
+    assert.deepEqual(agentLoop.appendToolResults([], []), []);
+
+    // The executor: approval-required tools have no execute, the approved
+    // call runs in its own step, and a rejection is the documented text
+    const { readFileSync } = await import("node:fs");
+    const executor = readFileSync("src/features/editor/components/agent/executor.ts", "utf8");
+    assert.match(executor, /if \(needsApproval\(toolNode\)\) \{[^}]*tools\[name\] = tool\(definition\);/);
+    assert.match(executor, /stepId: `agent-approval-\$\{call\.toolCallId\}`/);
+    assert.match(executor, /step\.run\(`agent-tool-\$\{call\.toolCallId\}`/);
+    assert.match(executor, /approval\.outcome === "rejected"\s*\? TOOL_REJECTED_MESSAGE\s*: TOOL_EXPIRED_MESSAGE/);
+    // The channel is checked before the model is called
+    assert.ok(executor.indexOf("getDeliveryProblem(approvalDelivery") < executor.indexOf("await runAgentLoop("));
+  });
+
+  await test("Send and Wait for Approval leaves through Approved or Rejected", async () => {
+    const { getActiveOutputs } = await import("@/inngest/engine");
+    const { runNodeForItems } = await import("@/inngest/items");
+    const node = { id: "a1", type: "APPROVAL", data: { variableName: "ok" } };
+
+    assert.deepEqual(getActiveOutputs(node, { ok: { approved: true } }), ["approved"]);
+    assert.deepEqual(getActiveOutputs(node, { ok: { approved: false } }), ["rejected"]);
+    // Anything but a clear yes is a no
+    assert.deepEqual(getActiveOutputs(node, {}), ["rejected"]);
+    assert.deepEqual(getActiveOutputs(node, { ok: { approved: "true" } }), ["rejected"]);
+    assert.deepEqual(
+      getActiveOutputs({ id: "a2", type: "APPROVAL", data: {} }, { approval: { approved: true } }),
+      ["approved"]
+    );
+
+    // After a list node: one question, and the items follow the answer
+    for (const approved of [true, false]) {
+      let runs = 0;
+      const result = await runNodeForItems({
+        node,
+        context: {},
+        items: [
+          { json: { id: 1 }, vars: {} },
+          { json: { id: 2 }, vars: {} },
+        ],
+        getActiveOutputs,
+        execute: async (context) => {
+          runs++;
+          return { ...context, ok: { approved } };
+        },
+      });
+
+      assert.equal(runs, 1);
+      assert.deepEqual(Object.keys(result.outputItems ?? {}), [approved ? "approved" : "rejected"]);
+      assert.equal(result.outputItems?.[approved ? "approved" : "rejected"].length, 2);
+    }
+
+    // Outside an execution, or as an agent's tool, it does not ask anyone
+    const { approvalExecutor } = await import("@/features/executions/components/core/executors");
+    await assert.rejects(
+      approvalExecutor({ ...baseParams, data: { title: "ok?" }, context: {} }),
+      /an approval can only be asked for inside a workflow execution/
+    );
+    await assert.rejects(
+      approvalExecutor({ ...baseParams, inline: true, data: { title: "ok?" }, context: {} }),
+      /cannot be used as an AI Agent tool/
+    );
+    await assert.rejects(
+      approvalExecutor({ ...baseParams, data: { title: "ok?", timeoutAmount: "soon" }, context: {} }),
+      /Send and Wait for Approval node: Timeout must be a number/
+    );
+  });
+
+  await test("a channel that is not set up fails before anyone is asked, and answers are single use", async () => {
+    const { getDeliveryProblem, getApprovalChannel } = await import(
+      "@/features/approvals/server/notify"
+    );
+
+    assert.equal(getApprovalChannel({}), "in_app");
+    assert.equal(getApprovalChannel({ channel: "pigeon" }), "in_app");
+    assert.equal(getDeliveryProblem({}, {}), null);
+    assert.equal(getDeliveryProblem({ channel: "in_app" }, {}), null);
+
+    assert.match(getDeliveryProblem({ channel: "email" }, {}) ?? "", /SMTP credential/);
+    assert.match(getDeliveryProblem({ channel: "email", credentialId: "c1" }, {}) ?? "", /email address/);
+    assert.equal(
+      getDeliveryProblem({ channel: "email", credentialId: "c1", recipient: "{{boss}}" }, { boss: "b@example.com" }),
+      null
+    );
+    // A variable that turns out empty is a missing recipient
+    assert.match(
+      getDeliveryProblem({ channel: "email", credentialId: "c1", recipient: "{{boss}}" }, {}) ?? "",
+      /email address/
+    );
+    assert.match(getDeliveryProblem({ channel: "slack" }, {}) ?? "", /Slack webhook URL/);
+    assert.match(getDeliveryProblem({ channel: "telegram", credentialId: "c1" }, {}) ?? "", /chat ID/);
+    assert.match(
+      getDeliveryProblem({ channel: "whatsapp", credentialId: "c1", recipient: "92300" }, {}) ?? "",
+      /Phone Number ID/
+    );
+    assert.equal(
+      getDeliveryProblem(
+        { channel: "whatsapp", credentialId: "c1", recipient: "92300", phoneNumberId: "123" },
+        {}
+      ),
+      null
+    );
+
+    const { readFileSync } = await import("node:fs");
+    const read = (path: string) => readFileSync(path, "utf8");
+
+    // Answered once: only a request that is still pending and in time is
+    // updated, and the in-app buttons only reach the user's own requests
+    const requests = read("src/features/approvals/server/requests.ts");
+    assert.match(requests, /status: APPROVAL_STATUS\.PENDING,\s*expiresAt: \{ gt: now \}/);
+    assert.match(requests, /const owner = userId \? \{ userId \} : \{\};/);
+    assert.match(read("src/features/approvals/server/routers.ts"), /userId: ctx\.auth\.user\.id/);
+
+    // Opening a link answers nothing: only the page's button (POST) does
+    const route = read("src/app/api/approvals/[id]/route.ts");
+    const get = route.slice(route.indexOf("export async function GET"), route.indexOf("export async function POST"));
+    assert.doesNotMatch(get, /decideApproval\(/);
+    assert.match(route.slice(route.indexOf("export async function POST")), /decideApproval\(\{ id, decision, via: "link" \}\)/);
+    assert.ok(route.indexOf("verifyApprovalLink(") < route.indexOf("prisma.approvalRequest"));
+
+    // The run waits with an Inngest wait-for-event, takes the answer from
+    // the database, and a cancelled execution withdraws its requests
+    const waitSource = read("src/features/approvals/server/wait.ts");
+    assert.match(waitSource, /step\.waitForEvent\(`\$\{stepId\}-wait`/);
+    assert.match(waitSource, /if: `async\.data\.approvalId == "\$\{request\.id\}"`/);
+    assert.match(waitSource, /waitingFor: WAITING_FOR_APPROVAL/);
+    assert.match(read("src/features/executions/server/cancel.ts"), /approvalRequest\.updateMany\(/);
+    assert.match(read("src/inngest/execution-cleanup.ts"), /approvalRequest\.deleteMany\(/);
+    assert.match(read("src/features/executions/lib/executor-registry.ts"), /\[NodeType\.APPROVAL\]: approvalExecutor/);
+  });
+
   console.log(`\n${passed} checks passed`);
 };
 

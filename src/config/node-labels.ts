@@ -17,6 +17,7 @@ const NODE_LABELS: Record<string, string> = {
     EXECUTE_WORKFLOW_TRIGGER: "When Executed by Another Workflow",
     RESPOND_TO_WEBHOOK: "Respond to Webhook",
     STOP_AND_ERROR: "Stop and Error",
+    APPROVAL: "Send and Wait for Approval",
     WEBHOOK_RESPONSE: "Webhook Callback",
     MCP_CLIENT_TOOL: "MCP Client",
     HUBSPOT: "HubSpot",

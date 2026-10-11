@@ -6,6 +6,7 @@ import {
     EXECUTION_CANCELLED_MESSAGE,
     EXECUTION_CANCEL_EVENT,
 } from "@/lib/execution-wait";
+import { APPROVAL_STATUS } from "@/lib/approvals";
 
 export class CancelError extends Error {
     constructor(
@@ -84,6 +85,12 @@ export const cancelExecution = async (executionId: string, userId: string) => {
             error: EXECUTION_CANCELLED_MESSAGE,
             completedAt,
         },
+    });
+
+    // A request it was waiting on can no longer be answered
+    await prisma.approvalRequest.updateMany({
+        where: { executionId: execution.id, status: APPROVAL_STATUS.PENDING },
+        data: { status: APPROVAL_STATUS.CANCELLED },
     });
 
     // executeWorkflow's cancelOn listens for this. Should it not arrive, the

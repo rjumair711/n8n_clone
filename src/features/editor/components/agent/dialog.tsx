@@ -32,6 +32,14 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { useCredentialsByType } from "@/features/credentials/hooks/use-credentials";
+import {
+  APPROVAL_CHANNELS,
+  APPROVAL_DEFAULT_TIMEOUT_AMOUNT,
+  APPROVAL_DEFAULT_TIMEOUT_UNIT,
+  TOOL_APPROVAL_DEFAULT_BY_RISK,
+  toolRequiresApproval,
+} from "@/lib/approvals";
 import {
   TOOL_RISK_LABELS,
   getDefaultToolDescription,
@@ -76,8 +84,18 @@ const formSchema = z
       z.object({
         name: z.string().optional(),
         description: z.string().optional(),
+        requireApproval: z.boolean().optional(),
       })
     ),
+    approvalChannel: z.string(),
+    approvalCredentialId: z.string().optional(),
+    approvalRecipient: z.string().optional(),
+    approvalWebhookUrl: z.string().optional(),
+    approvalPhoneNumberId: z.string().optional(),
+    approvalTimeoutAmount: z
+      .string()
+      .regex(/^\s*\d+(\.\d+)?\s*$/, "Must be a number"),
+    approvalTimeoutUnit: z.string(),
   })
   .refine((values) => values.promptType !== "define" || !!values.text?.trim(), {
     path: ["text"],
@@ -97,9 +115,26 @@ interface Props {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   onSubmit?: (values: AIAgentFormValues) => void;
-  defaultValues?: Partial<AIAgentFormValues> & { systemPrompt?: string };
+  defaultValues?: Partial<AIAgentFormValues> & {
+    systemPrompt?: string;
+    // "risk" on agents added since approvals exist
+    toolApprovalDefault?: string;
+  };
   tools: ConnectedTool[];
 }
+
+// The credential each approval channel sends with
+const APPROVAL_CREDENTIAL_TYPES = {
+  email: "SMTP",
+  telegram: "TELEGRAM",
+  whatsapp: "WHATSAPP",
+} as const;
+
+const APPROVAL_UNITS = [
+  { value: "minutes", label: "Minutes" },
+  { value: "hours", label: "Hours" },
+  { value: "days", label: "Days" },
+];
 
 const getValues = (
   defaultValues: Props["defaultValues"] = {}
@@ -117,6 +152,16 @@ const getValues = (
   returnIntermediateSteps: defaultValues.returnIntermediateSteps ?? false,
   variableName: defaultValues.variableName || "aiAgentOutput",
   toolSettings: defaultValues.toolSettings || {},
+  approvalChannel: defaultValues.approvalChannel || "in_app",
+  approvalCredentialId: defaultValues.approvalCredentialId || "",
+  approvalRecipient: defaultValues.approvalRecipient || "",
+  approvalWebhookUrl: defaultValues.approvalWebhookUrl || "",
+  approvalPhoneNumberId: defaultValues.approvalPhoneNumberId || "",
+  approvalTimeoutAmount: String(
+    defaultValues.approvalTimeoutAmount || APPROVAL_DEFAULT_TIMEOUT_AMOUNT
+  ),
+  approvalTimeoutUnit:
+    defaultValues.approvalTimeoutUnit || APPROVAL_DEFAULT_TIMEOUT_UNIT,
 });
 
 export const AIAgentDialog = ({
@@ -145,11 +190,78 @@ export const AIAgentDialog = ({
     (tool) => getToolRisk(tool.type, tool.data) === "dangerous"
   );
 
+  // Tools without a saved choice: on for the ones that write or are
+  // dangerous, on agents added since approvals exist. An older agent keeps
+  // running without approvals until they are switched on here.
+  const approvalDefaultByRisk =
+    defaultValues?.toolApprovalDefault === TOOL_APPROVAL_DEFAULT_BY_RISK;
+
+  const requiresApproval = (tool: ConnectedTool, saved: boolean | undefined) =>
+    toolRequiresApproval({
+      saved,
+      risk: getToolRisk(tool.type, tool.data),
+      defaultByRisk: approvalDefaultByRisk,
+    });
+
+  const watchToolSettings = form.watch("toolSettings");
+  const approvalChannel = form.watch("approvalChannel");
+  const anyApproval = tools.some((tool) =>
+    requiresApproval(tool, watchToolSettings?.[tool.id]?.requireApproval)
+  );
+
+  const approvalCredentialType =
+    APPROVAL_CREDENTIAL_TYPES[
+      approvalChannel as keyof typeof APPROVAL_CREDENTIAL_TYPES
+    ];
+  const { data: approvalCredentials } = useCredentialsByType(
+    // The hook needs a type even for channels without a credential
+    approvalCredentialType ?? "SMTP"
+  );
+
   const handleSubmit = (values: AIAgentFormValues) => {
-    // Forget settings of tools that are no longer connected
+    // Forget settings of tools that are no longer connected, and save what
+    // the Require approval switch showed
     const toolSettings = Object.fromEntries(
-      tools.map((tool) => [tool.id, values.toolSettings[tool.id] || {}])
+      tools.map((tool) => {
+        const settings = values.toolSettings[tool.id] || {};
+
+        return [
+          tool.id,
+          {
+            ...settings,
+            requireApproval: requiresApproval(tool, settings.requireApproval),
+          },
+        ];
+      })
     );
+
+    const needsApproval = Object.values(toolSettings).some(
+      (settings) => settings.requireApproval
+    );
+
+    if (needsApproval) {
+      const missing = (name: keyof AIAgentFormValues, message: string) => {
+        if (String(values[name] ?? "").trim()) return false;
+        form.setError(name, { message });
+        return true;
+      };
+
+      const channel = values.approvalChannel;
+      let invalid = false;
+
+      if (channel in APPROVAL_CREDENTIAL_TYPES) {
+        invalid = missing("approvalCredentialId", "Select a credential") || invalid;
+        invalid = missing("approvalRecipient", "Who should be asked?") || invalid;
+      }
+      if (channel === "whatsapp") {
+        invalid = missing("approvalPhoneNumberId", "Phone Number ID is required") || invalid;
+      }
+      if (channel === "slack") {
+        invalid = missing("approvalWebhookUrl", "Webhook URL is required") || invalid;
+      }
+
+      if (invalid) return;
+    }
 
     onSubmit?.({ ...values, toolSettings });
     onOpenChange(false);
@@ -321,11 +433,234 @@ export const AIAgentDialog = ({
                           </FormItem>
                         )}
                       />
+
+                      <FormField
+                        control={form.control}
+                        name={`toolSettings.${tool.id}.requireApproval`}
+                        render={({ field }) => (
+                          <FormItem className="flex flex-row items-center justify-between rounded-lg border bg-background p-3">
+                            <div className="space-y-0.5">
+                              <FormLabel>Require approval</FormLabel>
+                              <FormDescription>
+                                Every call of this tool waits until a person
+                                approves it. A rejected call is not run and
+                                the agent is told so.
+                              </FormDescription>
+                            </div>
+                            <FormControl>
+                              <Switch
+                                checked={requiresApproval(tool, field.value)}
+                                onCheckedChange={field.onChange}
+                              />
+                            </FormControl>
+                          </FormItem>
+                        )}
+                      />
                     </div>
                   ))}
                 </>
               )}
             </div>
+
+            {anyApproval && (
+              <div className="space-y-4 rounded-lg border p-4">
+                <div className="space-y-1">
+                  <FormLabel className="text-base font-semibold">
+                    Approvals
+                  </FormLabel>
+                  <p className="text-sm text-muted-foreground">
+                    When the agent calls a tool that requires approval, the
+                    run pauses and a request with the tool&apos;s name and
+                    arguments is sent. It can always be answered on the
+                    Approvals page too.
+                  </p>
+                </div>
+
+                <FormField
+                  control={form.control}
+                  name="approvalChannel"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Send approval requests through</FormLabel>
+                      <Select onValueChange={field.onChange} value={field.value}>
+                        <FormControl>
+                          <SelectTrigger className="w-full">
+                            <SelectValue />
+                          </SelectTrigger>
+                        </FormControl>
+                        <SelectContent>
+                          {APPROVAL_CHANNELS.map((channel) => (
+                            <SelectItem key={channel.value} value={channel.value}>
+                              {channel.label}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+
+                {approvalCredentialType && (
+                  <FormField
+                    control={form.control}
+                    name="approvalCredentialId"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>
+                          {approvalChannel === "email"
+                            ? "SMTP Credential"
+                            : approvalChannel === "telegram"
+                              ? "Telegram Bot Credential"
+                              : "WhatsApp Credential"}
+                        </FormLabel>
+                        <Select
+                          onValueChange={field.onChange}
+                          value={field.value}
+                          disabled={!approvalCredentials?.length}
+                        >
+                          <FormControl>
+                            <SelectTrigger className="w-full">
+                              <SelectValue
+                                placeholder={
+                                  approvalCredentials?.length
+                                    ? "Select a credential"
+                                    : "No credentials of this kind yet"
+                                }
+                              />
+                            </SelectTrigger>
+                          </FormControl>
+                          <SelectContent>
+                            {approvalCredentials?.map((credential) => (
+                              <SelectItem key={credential.id} value={credential.id}>
+                                {credential.name}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                )}
+
+                {approvalCredentialType && (
+                  <FormField
+                    control={form.control}
+                    name="approvalRecipient"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>
+                          {approvalChannel === "email"
+                            ? "Email Address"
+                            : approvalChannel === "telegram"
+                              ? "Chat ID"
+                              : "WhatsApp Number"}
+                        </FormLabel>
+                        <FormControl>
+                          <Input
+                            placeholder={
+                              approvalChannel === "email"
+                                ? "manager@example.com"
+                                : approvalChannel === "telegram"
+                                  ? "123456789"
+                                  : "923001234567"
+                            }
+                            {...field}
+                          />
+                        </FormControl>
+                        <FormDescription>
+                          Who is asked. Supports {"{{variables}}"}.
+                        </FormDescription>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                )}
+
+                {approvalChannel === "whatsapp" && (
+                  <FormField
+                    control={form.control}
+                    name="approvalPhoneNumberId"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Phone Number ID</FormLabel>
+                        <FormControl>
+                          <Input placeholder="123456789012345" {...field} />
+                        </FormControl>
+                        <FormDescription>
+                          WhatsApp only delivers free text to someone who
+                          wrote to this number in the last 24 hours.
+                        </FormDescription>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                )}
+
+                {approvalChannel === "slack" && (
+                  <FormField
+                    control={form.control}
+                    name="approvalWebhookUrl"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Slack Webhook URL</FormLabel>
+                        <FormControl>
+                          <Input
+                            placeholder="https://hooks.slack.com/services/..."
+                            {...field}
+                          />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                )}
+
+                <div className="grid grid-cols-2 gap-3">
+                  <FormField
+                    control={form.control}
+                    name="approvalTimeoutAmount"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Request Expires After</FormLabel>
+                        <FormControl>
+                          <Input placeholder="24" {...field} />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                  <FormField
+                    control={form.control}
+                    name="approvalTimeoutUnit"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Unit</FormLabel>
+                        <Select onValueChange={field.onChange} value={field.value}>
+                          <FormControl>
+                            <SelectTrigger className="w-full">
+                              <SelectValue />
+                            </SelectTrigger>
+                          </FormControl>
+                          <SelectContent>
+                            {APPROVAL_UNITS.map((unit) => (
+                              <SelectItem key={unit.value} value={unit.value}>
+                                {unit.label}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </FormItem>
+                    )}
+                  />
+                </div>
+                <p className="text-sm text-muted-foreground">
+                  A request nobody answered in time counts as not approved:
+                  the tool is not run and the agent goes on.
+                </p>
+              </div>
+            )}
 
             <FormField
               control={form.control}

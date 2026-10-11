@@ -46,6 +46,7 @@ import {
   respondToWebhookExecutor,
   stopAndErrorExecutor,
   waitExecutor,
+  approvalExecutor,
 } from '../components/core/executors';
 import {
   aggregateExecutor,
@@ -128,6 +129,7 @@ const baseExecutors: Record<NodeType, NodeExecutor<any>> = {
   [NodeType.ERROR_TRIGGER]: contextTriggerExecutor,
   [NodeType.STOP_AND_ERROR]: stopAndErrorExecutor,
   [NodeType.WAIT]: waitExecutor,
+  [NodeType.APPROVAL]: approvalExecutor,
   [NodeType.TELEGRAM_TRIGGER]: contextTriggerExecutor,
   [NodeType.WHATSAPP_TRIGGER]: contextTriggerExecutor,
   [NodeType.GMAIL]: gmailExecutor,

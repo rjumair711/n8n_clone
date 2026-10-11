@@ -8,6 +8,12 @@ import { sendWorkflowExecution } from "@/inngest/utils";
 import { renderTemplate } from "../../lib/templates";
 import { parseJsonField } from "../../lib/integration";
 import { parseKeyValues } from "../../lib/key-values";
+import { markExecutionResumed, markExecutionWaiting } from "../../server/pause";
+import { requestApproval } from "@/features/approvals/server/wait";
+import {
+  APPROVAL_DEFAULT_TIMEOUT_AMOUNT,
+  APPROVAL_DEFAULT_TIMEOUT_UNIT,
+} from "@/lib/approvals";
 import {
   WAITING_FOR_TIME,
   WAITING_FOR_WEBHOOK,
@@ -430,18 +436,11 @@ export const waitExecutor: NodeExecutor<WaitData> = async ({
 
     // Outside an execution (unit tests) there is nothing to mark
     if (!skip && executionId) {
-      await prisma.execution.updateMany({
-        where: { id: executionId, status: ExecutionStatus.RUNNING },
-        data: {
-          status: ExecutionStatus.WAITING,
-          waitingFor: mode === "webhook" ? WAITING_FOR_WEBHOOK : WAITING_FOR_TIME,
-          waitingUntil: new Date(until),
-        },
-      });
-
-      await prisma.executionNode.updateMany({
-        where: { executionId, nodeId, status: ExecutionStatus.RUNNING },
-        data: { status: ExecutionStatus.WAITING },
+      await markExecutionWaiting({
+        executionId,
+        nodeId,
+        waitingFor: mode === "webhook" ? WAITING_FOR_WEBHOOK : WAITING_FOR_TIME,
+        until: new Date(until),
       });
     }
 
@@ -467,36 +466,9 @@ export const waitExecutor: NodeExecutor<WaitData> = async ({
     }
 
     if (executionId) {
-      await step.run(`wait-${nodeId}-resume`, async () => {
-        const resumed = await prisma.execution.updateMany({
-          where: { id: executionId, status: ExecutionStatus.WAITING },
-          data: {
-            status: ExecutionStatus.RUNNING,
-            waitingFor: null,
-            waitingUntil: null,
-          },
-        });
-
-        if (resumed.count === 0) {
-          const current = await prisma.execution.findUnique({
-            where: { id: executionId },
-            select: { status: true },
-          });
-
-          // Cancelled just as the wait ended: the run must not go on.
-          // (Still RUNNING means this step is being retried.)
-          if (current?.status !== ExecutionStatus.RUNNING) {
-            throw new NonRetriableError(
-              "Wait node: the execution was cancelled while it was waiting"
-            );
-          }
-        }
-
-        await prisma.executionNode.updateMany({
-          where: { executionId, nodeId, status: ExecutionStatus.WAITING },
-          data: { status: ExecutionStatus.RUNNING },
-        });
-      });
+      await step.run(`wait-${nodeId}-resume`, () =>
+        markExecutionResumed({ executionId, nodeId, label: "Wait node" })
+      );
     }
   }
 
@@ -519,6 +491,110 @@ export const waitExecutor: NodeExecutor<WaitData> = async ({
             body: webhook?.body ?? null,
           }
         : {}),
+    },
+  };
+};
+
+// =========================================================================
+// SEND AND WAIT FOR APPROVAL
+// =========================================================================
+type ApprovalData = {
+  variableName?: string;
+  // The channel: "in_app" (default), "email", "slack", "telegram", "whatsapp"
+  operation?: string;
+  credentialId?: string;
+  recipient?: string;
+  webhookUrl?: string;
+  phoneNumberId?: string;
+  title?: string;
+  message?: string;
+  timeoutAmount?: string;
+  timeoutUnit?: string;
+  // "reject" (default): leave through the Rejected output. "fail": fail.
+  onTimeout?: string;
+};
+
+export const APPROVED_OUTPUT = "approved";
+export const REJECTED_OUTPUT = "rejected";
+
+/**
+ * Asks a person to approve or reject, and pauses the run until they do. The
+ * request goes out with signed Approve / Reject links and can always be
+ * answered on the Approvals page. The run continues through the Approved or
+ * the Rejected output.
+ */
+export const approvalExecutor: NodeExecutor<ApprovalData> = async ({
+  data,
+  nodeId,
+  userId,
+  context,
+  step,
+  executionId,
+  inline,
+}) => {
+  // An agent asks for approval of its tools itself ("Require approval")
+  if (inline) {
+    throw new NonRetriableError(
+      "Send and Wait for Approval node: it cannot be used as an AI Agent tool. Switch on Require approval for the agent's tools instead."
+    );
+  }
+
+  const label = "Send and Wait for Approval node";
+  const variableName = data.variableName?.trim() || "approval";
+
+  let timeoutMs: number;
+  try {
+    timeoutMs = parseWaitDuration(
+      renderTemplate(data.timeoutAmount, context).trim() ||
+        APPROVAL_DEFAULT_TIMEOUT_AMOUNT,
+      data.timeoutUnit || APPROVAL_DEFAULT_TIMEOUT_UNIT,
+      "Timeout"
+    );
+  } catch (error) {
+    throw new NonRetriableError(
+      (error instanceof Error ? error.message : "Timeout is not valid").replace(
+        /^Wait node:/,
+        `${label}:`
+      )
+    );
+  }
+
+  const result = await requestApproval({
+    step,
+    stepId: `approval-${nodeId}`,
+    label,
+    executionId,
+    nodeId,
+    userId,
+    kind: "node",
+    title: renderTemplate(data.title, context).trim() || "Approval needed",
+    details: renderTemplate(data.message, context).trim() || null,
+    delivery: {
+      channel: data.operation,
+      credentialId: data.credentialId,
+      recipient: data.recipient,
+      webhookUrl: data.webhookUrl,
+      phoneNumberId: data.phoneNumberId,
+    },
+    timeoutMs,
+    context,
+  });
+
+  if (result.outcome === "expired" && data.onTimeout === "fail") {
+    throw new NonRetriableError(
+      `${label}: nobody answered before the request expired`
+    );
+  }
+
+  return {
+    ...context,
+    [variableName]: {
+      approved: result.outcome === "approved",
+      // "approved", "rejected" or "expired"
+      decision: result.outcome,
+      timedOut: result.outcome === "expired",
+      decidedVia: result.decidedVia,
+      approvalId: result.approvalId,
     },
   };
 };

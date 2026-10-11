@@ -12,6 +12,7 @@ import {
     LogOutIcon,
     SettingsIcon,
     SparklesIcon,
+    UserCheckIcon,
 } from "lucide-react"
 
 import {
@@ -42,6 +43,7 @@ const menuItems = [
             { id: "templates", title: "Templates", icon: LayoutTemplateIcon, url: "/templates" },
             { id: "credentials", title: "Credentials", icon: KeyIcon, url: "/credentials" },
             { id: "executions", title: "Executions", icon: HistoryIcon, url: "/executions" },
+            { id: "approvals", title: "Approvals", icon: UserCheckIcon, url: "/approvals" },
             { id: "api-keys", title: "API Keys", icon: Code2Icon, url: "/api-keys" },
             { id: "settings", title: "Settings", icon: SettingsIcon, url: "/settings" },
         ],

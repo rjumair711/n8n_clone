@@ -345,6 +345,7 @@ enum NodeType {
   QWEN
   MODEL_ROUTER
   WAIT
+  APPROVAL
 }
 
 model Node {
@@ -439,7 +440,43 @@ model Execution {
   waitingFor   String?
   waitingUntil DateTime?
 
-  nodes ExecutionNode[]
+  nodes     ExecutionNode[]
+  approvals ApprovalRequest[]
+}
+
+// A question put to a person while an execution waits: may this AI Agent
+// tool call run, or (Send and Wait for Approval node) may the workflow go on
+model ApprovalRequest {
+  id String @id @default(cuid())
+
+  executionId String
+  execution   Execution @relation(fields: [executionId], references: [id], onDelete: Cascade)
+
+  // The workflow's owner, who can answer it in the app
+  userId String
+  // The AI Agent or approval node that asked
+  nodeId String
+
+  // "tool" or "node"
+  kind    String
+  // The tool's name, or the node's title
+  title   String
+  // The tool's arguments, or the node's message
+  details Json?
+  // "in_app", "email", "slack", "telegram" or "whatsapp"
+  channel String
+
+  // PENDING, then once: APPROVED, REJECTED, EXPIRED or CANCELLED
+  status     String    @default("PENDING")
+  expiresAt  DateTime
+  decidedAt  DateTime?
+  // "link" or "app"
+  decidedVia String?
+
+  createdAt DateTime @default(now())
+
+  @@index([userId, status])
+  @@index([executionId])
 }
 
 model ExecutionNode {

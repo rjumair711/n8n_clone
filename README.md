@@ -38,6 +38,7 @@ The platform is designed as a scalable SaaS product with:
 * Sub-workflows: one workflow can call another and use its result
 * Error handling: Retry On Fail, Continue on error, Error Trigger, Stop and Error
 * Wait node: pause a run for a time, until a date, or until its resume URL is called (see "Waiting executions")
+* Human approval: AI Agent tools that wait for a person's Approve or Reject, and a Send and Wait for Approval node
 * Inngest background execution system
 * Dynamic time-based execution engine via an automated Background Ticker (`* * * * *` clock matching system)
 * Shared execution context
@@ -66,6 +67,14 @@ The **Wait** node pauses a run and continues it later. While it is paused nothin
 * The token is replaced by `[REDACTED]` in stored node input and output, and "All Workflow Data" webhook responses leave the URL out.
 * A link opened by a mail scanner or a link preview counts as a call. For approvals that matter, link to a page or form that sends a POST instead.
 * Waiting executions are not removed by the retention cleanup, cannot be run again until they finish or are cancelled, and a Wait node cannot be an AI Agent tool. After a list node the Wait node pauses once for the whole list.
+
+### Send and Wait for Approval
+
+The **Send and Wait for Approval** node asks a person a yes/no question in a normal workflow and pauses until they answer. It sends a title and optional details with the same signed, single-use, expiring Approve / Reject links as the AI Agent's tool approvals (see "Human approval for tools"), through the same channels: the app's **Approvals** page, email, Slack, Telegram or WhatsApp.
+
+* The run continues through the **Approved** or the **Rejected** output. Later nodes can also read `{{approval.approved}}`, `{{approval.decision}}` (`approved`, `rejected` or `expired`), `{{approval.timedOut}}` and `{{approval.decidedVia}}` (`link` or `app`).
+* **Timeout** (default 24 hours, at most the longest wait) and **When Nobody Answers**: continue through Rejected, or fail the workflow.
+* While it waits the execution is **Waiting** and can be cancelled. After a list node it asks once for the whole list.
 
 ## Per-item execution
 
@@ -179,7 +188,7 @@ Works like the n8n AI Agent: a chat model that decides which tools to call and l
 * **Tools (optional):** any node connected to the Tools port becomes a tool. Give each one a name and description in the agent's settings. An MCP Client node adds all the tools of an MCP server; an Execute Workflow node makes another workflow a tool; a Vector Store node lets the agent search your documents.
 * **`{{$fromAI "name" "description"}}`:** write this in any field of a tool node to let the agent fill in that value.
 * **Prompt source:** taken from the trigger (`{{chatInput}}`, set by the Chat, Telegram and WhatsApp triggers) or defined in the node with `{{variables}}`.
-* **Options:** System Message, Max Iterations (default 10), Max Tool Calls (default 25), Allow dangerous tools (off), Return Intermediate Steps.
+* **Options:** System Message, Max Iterations (default 10), Max Tool Calls (default 25), Allow dangerous tools (off), Require approval per tool (see "Human approval for tools"), Return Intermediate Steps.
 
 ### Tool safety (prompt injection)
 
@@ -199,6 +208,29 @@ The model decides which tools to call, and it acts on text it has read: a chat m
 * **Tool results are data:** the system message tells the model that tool results are untrusted data and never instructions, and each result is handed to the model inside a marked `<tool_result>` block.
 
 These limits reduce the risk; they do not remove it. Give an agent only the tools and credentials it needs.
+
+### Human approval for tools
+
+Each tool in the agent's settings has a **Require approval** switch. When the model calls such a tool, the tool is not run: the run pauses (the execution shows as **Waiting**, using the same Inngest wait-for-event as the Wait node), a request with the tool's name and its arguments is sent to a person, and the run continues with their answer.
+
+* **Default.** On for Write and Dangerous tools, off for Read tools, on AI Agent nodes added to the canvas since this exists. An agent that was already in a workflow keeps running without approvals until a tool's switch is turned on, so nothing that works today starts waiting for a person.
+* **Send approval requests through** (one setting per agent):
+
+  | Channel | Needs |
+  | ------- | ----- |
+  | In the app | nothing: the request appears on the **Approvals** page and on the execution's page |
+  | Email | an SMTP credential and the address to ask |
+  | Slack | an incoming webhook URL |
+  | Telegram | a Telegram bot credential and the chat ID |
+  | WhatsApp | a WhatsApp credential, the Phone Number ID and the number to ask. WhatsApp only delivers free text to someone who wrote to that number in the last 24 hours |
+
+  Whatever the channel, the workflow's owner can also answer on the Approvals page.
+* **Approve / Reject links.** `<app>/api/approvals/<id>?decision=...&expires=...&signature=...`. The signature (HMAC with `ENCRYPTION_KEY`) covers the request, the decision and the expiry, so a Reject link cannot be changed into an Approve link. A link opens a page that shows the tool and its arguments and asks for a confirmation; only that button answers, so a mail scanner or link preview that opens the link approves nothing. A request is answered **once**, by whoever is first, and the links stop working when it **expires** (default 24 hours, set per agent).
+* **Approved:** the tool runs with exactly the arguments that were shown, and the agent goes on with its result.
+* **Rejected:** the tool is not run, the agent is told `The user rejected this action` and goes on (it usually says so in its answer). A request that expires is treated the same way, with a message saying nobody answered in time.
+* Several calls that need approval in one turn are asked one after the other. Calls waiting for approval count toward Max Tool Calls. The tools of an MCP Client node share that node's switch.
+* The tool's arguments are shown as plain text everywhere: they are never rendered as HTML or evaluated as a `{{template}}`.
+* Cancelling a waiting execution withdraws its requests. If the request cannot be sent (a wrong credential, say), the run fails with that error instead of waiting.
 * **Output:** `{{output}}` and `{{<variableName>.output}}`, plus `intermediateSteps` when enabled.
 * **Chat panel:** workflows with a Chat Trigger get an "Open chat" button in the editor to talk to the agent.
 
@@ -353,6 +385,7 @@ Every execution also keeps the trigger and the data it started with, so it can b
 | Stop and Error   | Fail the workflow with your own message                                   |
 | Delay            | Pause workflow                                                            |
 | Wait             | Pause for a time, until a date, or until the execution's resume URL is called; timeout that continues or fails; cancellable |
+| Send and Wait for Approval | Ask a person to approve or reject (in the app, by email, Slack, Telegram or WhatsApp) and continue through the Approved or Rejected output |
 | Date & Time      | Get current time, format, manipulate, or compare dates                    |
 | Text Formatter   | Transform, clean, or extract text strings (Uppercase, Replace, Regex)     |
 | Calculator       | Perform mathematical operations on numbers or variables                   |
