@@ -13,7 +13,7 @@ import {
 } from "./ui/sheet"
 import { Input } from "@/components/ui/input"
 import { NodeType } from "@prisma/client"
-import { Braces, BrainCircuit, DatabaseZap, FolderSync, ServerCog, FileInput, FileOutput, FileText, PencilRuler, Plug, Rss, ScanText, Tags } from "lucide-react"
+import { Braces, BrainCircuit, ShieldCheck, DatabaseZap, FolderSync, ServerCog, FileInput, FileOutput, FileText, PencilRuler, Plug, Rss, ScanText, Tags } from "lucide-react"
 import { AlertTriangle, ArrowDownUp, CopyMinus, Group, ListEnd, OctagonX, Reply, Sigma, Split, Workflow } from "lucide-react"
 import { Clock, FilterIcon, GlobeIcon, MousePointerIcon, Send, VariableIcon, ChevronDown, ChevronRight, Code2, Bot, MemoryStickIcon, Search, Type, Calculator, GitBranch, GitFork, Merge, Repeat, Webhook, MessageSquare } from "lucide-react"
 import { toast } from "sonner"
@@ -380,6 +380,12 @@ const aiNodes: NodeTypeOption[] = [
         label: "Model Router",
         description: "For an AI Agent's Chat Model port: a cheap model first, a stronger one when it fails",
         icon: Route
+    },
+    {
+        type: NodeType.GUARDRAILS,
+        label: "Guardrails",
+        description: "Check text before or after an agent: personal data, length, prompt injection and allowed topics, with Pass and Fail outputs",
+        icon: ShieldCheck
     },
     {
         type: NodeType.TEXT_CLASSIFIER,

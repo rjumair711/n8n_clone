@@ -213,6 +213,8 @@ const READ_TOOL_TYPES = new Set([
   "INFORMATION_EXTRACTOR",
   "ANALYZE_DOCUMENT",
   "TEXT_CLASSIFIER",
+  // It only judges a text
+  "GUARDRAILS",
   "OPENAI",
   "ANTHROPIC",
   "GEMINI",

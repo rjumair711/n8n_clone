@@ -90,6 +90,7 @@ import {
 import {
   analyzeDocumentExecutor,
   informationExtractorExecutor,
+  guardrailsExecutor,
   textClassifierExecutor,
   vectorStoreExecutor,
 } from '../components/ai/executors';
@@ -179,6 +180,7 @@ const baseExecutors: Record<NodeType, NodeExecutor<any>> = {
   // Only read by the AI Agent it is plugged into, like a model node
   [NodeType.MODEL_ROUTER]: contextTriggerExecutor,
   [NodeType.TEXT_CLASSIFIER]: textClassifierExecutor,
+  [NodeType.GUARDRAILS]: guardrailsExecutor,
   [NodeType.INFORMATION_EXTRACTOR]: informationExtractorExecutor,
   [NodeType.ANALYZE_DOCUMENT]: analyzeDocumentExecutor,
   [NodeType.VECTOR_STORE]: vectorStoreExecutor,

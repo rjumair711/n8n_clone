@@ -45,7 +45,24 @@ import { loadConnectedModel } from "../../lib/connected-model";
 
 type ConnectedModel = Awaited<ReturnType<typeof loadConnectedModel>>;
 import { embeddingUsage } from "@/lib/ai-cost";
-import { getAiUsageScope, recordAiUsage, recordModelCalls, type AiUsageScope } from "@/lib/ai-usage";
+import {
+  assertAiBudget,
+  getAiUsageScope,
+  recordAiUsage,
+  recordModelCalls,
+  type AiUsageScope,
+} from "@/lib/ai-usage";
+import {
+  GUARD_FAIL,
+  GUARD_PASS,
+  buildJudgePrompt,
+  buildJudgeSystem,
+  hasGuardChecks,
+  needsGuardModel,
+  readGuardSettings,
+  readJudgeAnswer,
+  runLocalChecks,
+} from "../../lib/guardrails";
 import { describeModelAnswer } from "../../lib/model-fallback";
 import { loadFiles, resolveFileId } from "../files/executors";
 import { FileLimitError } from "../../lib/file-limits";
@@ -220,6 +237,114 @@ export const textClassifierExecutor: NodeExecutor<TextClassifierData> = async ({
   } catch (error) {
     throw toAiError("Text Classifier", error);
   }
+};
+
+// =========================================================================
+// GUARDRAILS
+// =========================================================================
+type GuardrailsData = {
+  variableName?: string;
+  inputText?: string;
+  [key: string]: string | undefined;
+};
+
+/**
+ * Checks a text before it reaches an agent, or an agent's answer before it
+ * goes out: personal data (masked or blocked), a maximum length, and with a
+ * model on its port prompt injection and allowed topics. The run goes on
+ * through the Pass or the Fail output; the checked text, with personal data
+ * masked, is at {{<name>.text}}.
+ */
+export const guardrailsExecutor: NodeExecutor<GuardrailsData> = async ({
+  data,
+  nodeId,
+  userId,
+  context,
+  step,
+  allNodes,
+  connections,
+  executionId,
+  workflowId,
+}) => {
+  const label = "Guardrails";
+  const variableName = data.variableName?.trim() || "guardrails";
+  const settings = readGuardSettings({
+    ...data,
+    maxLength: renderTemplate(data.maxLength, context),
+    allowedTopics: renderTemplate(data.allowedTopics, context),
+  });
+
+  if (!hasGuardChecks(settings)) {
+    throw new NonRetriableError(
+      "Guardrails node: switch on at least one check (personal data, maximum length, prompt injection or allowed topics)"
+    );
+  }
+
+  const text = renderTemplate(data.inputText, context);
+  const local = runLocalChecks(text, settings);
+  const violations = [...local.violations];
+
+  // Asked for even when the text already failed: a missing model is a
+  // mistake in the workflow, and should not show up only now and then
+  const model = needsGuardModel(settings)
+    ? await loadConnectedModel({ label, nodeId, userId, allNodes, connections, step })
+    : null;
+
+  let modelUsed: string | undefined;
+  let fallbackUsed: boolean | undefined;
+
+  try {
+    // The model is not paid for a text that has already failed, or is empty.
+    // It reads the masked text: what was found is not sent on to it.
+    if (model && violations.length === 0 && local.text.trim()) {
+      if (executionId) {
+        await step.run(`ai-budget-${nodeId}`, async () => {
+          await assertAiBudget({ userId, workflowId, executionId });
+
+          return null;
+        });
+      }
+
+      const reply = await step.run(`guardrails-${nodeId}`, () =>
+        askConnectedModel({
+          model,
+          system: buildJudgeSystem(settings),
+          prompt: buildJudgePrompt(local.text),
+          scope: getAiUsageScope({ userId, workflowId, executionId, nodeId, allNodes }),
+        })
+      );
+
+      const answered = readModelReply(reply, model);
+      modelUsed = answered.modelUsed;
+      fallbackUsed = answered.fallbackUsed;
+
+      violations.push(...readJudgeAnswer(extractJson(answered.answer), settings));
+    }
+  } catch (error) {
+    throw toAiError(label, error);
+  }
+
+  const passed = violations.length === 0;
+
+  return {
+    ...context,
+    // The engine follows only the connections leaving this output
+    matchedBranch: passed ? GUARD_PASS : GUARD_FAIL,
+    [variableName]: {
+      passed,
+      // The checked text, with personal data replaced by placeholders
+      text: local.text,
+      violations,
+      // Why it failed, in one line, for a reply to the user or a log
+      reason: violations.map((violation) => violation.message).join(" "),
+      pii: {
+        found: local.piiFound,
+        // How many of each kind: never the values
+        ...local.piiCounts,
+      },
+      ...(modelUsed ? { modelUsed, fallbackUsed } : {}),
+    },
+  };
 };
 
 // =========================================================================
