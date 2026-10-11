@@ -53,6 +53,8 @@ export type IntegrationField = {
   // (see fallback-models-field.tsx), saved as a JSON string
   // "formFields" is the list of fields of a hosted form (see
   // form-fields-field.tsx), saved as a JSON string
+  // "credential" is a second stored credential, for a node that needs two
+  // (the field's value is the credential's id)
   type?:
     | "text"
     | "textarea"
@@ -61,7 +63,15 @@ export type IntegrationField = {
     | "switch"
     | "model"
     | "fallbacks"
-    | "formFields";
+    | "formFields"
+    | "credential";
+  // For "credential": which kind of credential the list shows
+  credentialTypeFor?: (
+    values: Partial<IntegrationFormValues>
+  ) => CredentialType | undefined;
+  // Show the field only while this returns true, for a field that depends
+  // on another one (a provider select, for example)
+  showWhen?: (values: Partial<IntegrationFormValues>) => boolean;
   // For "model": the node the field belongs to
   modelNodeType?: ChatModelNodeType;
   // Other fields to set when this one changes, e.g. a provider preset
@@ -209,6 +219,48 @@ const WorkflowSelect = ({
   );
 };
 
+// A stored credential of one type, for a field of type "credential"
+const CredentialSelect = ({
+  type,
+  value,
+  onChange,
+}: {
+  type: CredentialType;
+  value: string;
+  onChange: (value: string) => void;
+}) => {
+  const { data: credentials, isLoading } = useCredentialsByType(type);
+
+  return (
+    <Select
+      onValueChange={onChange}
+      value={value}
+      disabled={isLoading || !credentials?.length}
+    >
+      <FormControl>
+        <SelectTrigger className="w-full">
+          <SelectValue
+            placeholder={
+              isLoading
+                ? "Loading credentials..."
+                : credentials?.length
+                  ? "Select a credential"
+                  : "No credentials of this kind yet"
+            }
+          />
+        </SelectTrigger>
+      </FormControl>
+      <SelectContent>
+        {credentials?.map((credential) => (
+          <SelectItem key={credential.id} value={credential.id}>
+            {credential.name}
+          </SelectItem>
+        ))}
+      </SelectContent>
+    </Select>
+  );
+};
+
 export const IntegrationDialog = ({
   config,
   open,
@@ -249,8 +301,12 @@ export const IntegrationDialog = ({
       ? `${process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000"}/forms/${nodeId}`
       : null;
 
+  const watchedValues = form.watch();
+
   const visibleFields = config.fields.filter(
-    (field) => !field.operations || field.operations.includes(operation)
+    (field) =>
+      (!field.operations || field.operations.includes(operation)) &&
+      (!field.showWhen || field.showWhen(watchedValues))
   );
 
   const handleSubmit = (values: IntegrationFormValues) => {
@@ -535,6 +591,15 @@ export const IntegrationDialog = ({
                           (config.formVariable ?? watchVariableName) +
                           (definition.variableSuffix ?? "")
                         }
+                      />
+                    ) : definition.type === "credential" ? (
+                      <CredentialSelect
+                        type={
+                          definition.credentialTypeFor?.(watchedValues) ??
+                          "OPENAI"
+                        }
+                        value={field.value ?? ""}
+                        onChange={field.onChange}
                       />
                     ) : definition.type === "select" ? (
                       <Select

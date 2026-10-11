@@ -357,8 +357,49 @@ They are on the Chat Model, DeepSeek, Kimi and Qwen nodes (`{{chatModel.modelUse
 | Information Extractor | Pulls named values (`name (type): description`) out of free text |
 | Analyze Image / Document | Reads an image or a PDF, scans included, with a vision model: all its text (OCR), named fields, or a description. See "Analyze Image / Document" |
 | Structured Output Parser | Plugs into the AI Agent's Parser port to force a JSON structure |
-| Vector Store | Insert, search and delete documents by meaning (RAG), with OpenAI, Gemini or OpenAI-compatible embeddings. Stored in Postgres and compared in the app; not pgvector |
+| Vector Store | Insert, search and delete documents by meaning (RAG), with OpenAI, Gemini or OpenAI-compatible embeddings. Text splitting, metadata filters, reranking, and pgvector when the database has it (see "Vector Store and Document Loader") |
+| Document Loader | Loads a Google Drive folder or a Notion database into a Vector Store collection, skipping documents that have not changed |
 | MCP Client | Gives an AI Agent the tools of an MCP server (Streamable HTTP transport) |
+
+### Vector Store and Document Loader (RAG)
+
+The Vector Store keeps text in chunks with an embedding each, per user and collection, and finds the chunks closest in meaning to a query. The Document Loader fills a collection from a Google Drive folder or a Notion database.
+
+**Inserting**
+
+* **Split By** cuts long text into chunks: by **characters** (the default, as before), by **tokens**, or by **Markdown headings**. Chunk Size and Chunk Overlap apply to all three; an overlap of 0 means none.
+  * Tokens are estimated at four characters each. No tokenizer is bundled, and Urdu, Arabic or Chinese text makes more tokens than that.
+  * With Markdown headings every section is a chunk of its own and starts with the headings it sits under ("Guide > Returns"), which are also saved as the chunk's `heading` metadata. A section longer than Chunk Size is cut further; a `#` inside a code block is not a heading.
+* **Document ID** (optional) names the document. Inserting the same text again then does nothing (`unchanged: true`), and a changed text replaces the old chunks instead of adding to them. Without it every insert adds chunks, as before.
+* One document can make at most 200 chunks.
+
+**Searching**
+
+* **Metadata Filter** is a JSON object, for example `{"source": "faq"}`. Only chunks whose metadata contains every field of it with the same value are searched (nested objects too; a list in the filter needs each of its entries in the stored list). Values are not converted: `3` does not match `"3"`.
+* **Rerank With** fetches more candidates than Limit (five times as many, between 20 and 50), has a second model read the query together with each one, and returns the best Limit:
+  * **Cohere Rerank** or **Jina Reranker**, with a Rerank Credential (a Cohere key, or the Jina key also used by Read Web Page). Their calls are not in the AI usage figures, because they are not billed by token.
+  * **Connected chat model**: connect a model node to the Vector Store's **Rerank Model** port. Its call is recorded like any other. If its answer is not a list of passage numbers, the results keep their order and `rerankNote` says so.
+  * Each match keeps its embedding `score` and gets a `rerankScore`; `reranked` says whether the order came from the reranker.
+* `engine` in the result says who compared the embeddings: `pgvector`, `pgvector-index` or `app`.
+
+**pgvector**
+
+* When the database has the `vector` extension, the migration creates it and adds an `embeddingVector` column next to the existing `embedding` array, with HNSW indexes for embeddings of 768, 1024, 1536 and 3072 dimensions (cosine distance). Searches are then answered by the database, with no limit on the size of a collection.
+* A collection of up to 10,000 chunks is compared exactly, in the database. Above that the index is used when there is one for the model's size and pgvector is 0.8 or newer; if the index finds fewer chunks than asked for, the exact comparison runs after it.
+* **The old way stays as the fallback.** Without the extension, with `VECTOR_STORE_ENGINE=app`, or when a pgvector query fails, the collection's most recent 5000 chunks are read and compared in the app, as before. Every chunk keeps its plain array for that.
+* **Existing stores keep working unchanged.** Chunks saved before the upgrade get their pgvector value the first time their collection is searched or inserted into.
+* If the extension cannot be set up, the migration still succeeds and writes a warning. The drift check then shows the `embeddingVector` column as missing.
+
+**Document Loader**
+
+* **Google Drive Folder**: every Google Doc (exported as Markdown), Sheet (first sheet, as CSV) and Slides file, PDF with a text layer, Word `.docx` and text file directly in the folder. Sub-folders are not opened; pictures, scanned PDFs and old Office formats are skipped with the reason.
+* **Notion Database**: every row is one document made of its title, its properties as `Name: value` lines, and the page's blocks as Markdown. Share the database with your Notion integration first.
+* **Unchanged documents are skipped.** Every chunk stores a hash of its document (text, embedding model, split settings and metadata) and the source's own version of it (Drive's modified time and checksum, Notion's last edited time). A document whose version is the same is not even downloaded; one whose text turns out to be the same is not embedded again; a changed one replaces its old chunks in one transaction.
+* It needs two credentials: the **Source Credential** (a Google account, or a Notion integration) and the **Embeddings Credential**.
+* **Max Documents** (default 25, up to 100) are read per run, most recently changed first. Each document is its own step, and one that fails is reported in `documents` without stopping the others.
+* **Remove Deleted Documents** (off by default) also removes the chunks of documents that are no longer in the folder or database. It only acts when the run saw the whole source.
+* Chunks get `source`, `title`, `url` and `documentId` metadata, plus your own, so a search can filter on them.
+* Put it after a Schedule Trigger to keep a collection up to date.
 
 ### Analyze Image / Document
 
@@ -675,7 +716,8 @@ Supported credential types:
 | SENDGRID      | SendGrid node (API key) |
 | TAVILY        | Web Search node with Tavily (API key) |
 | BRAVE_SEARCH  | Web Search node with Brave Search (subscription token) |
-| JINA_READER   | Read Web Page node with Jina Reader (API key) |
+| JINA_READER   | Read Web Page node with Jina Reader, and the Vector Store's Jina reranker (API key) |
+| COHERE        | The Vector Store's Cohere reranker (API key) |
 | FIRECRAWL     | Read Web Page node with Firecrawl (API key) |
 | GITHUB        | GitHub node (personal access token) |
 | AIRTABLE      | Airtable node (personal access token) |
@@ -864,7 +906,7 @@ Users can view:
 
 ## AI token usage and cost
 
-Every call to a language or embedding model is written down with the tokens the provider reported: input, output and cached input. This covers the AI Agent, the model nodes (OpenAI, Anthropic, Gemini, Chat Model, DeepSeek, Kimi, Qwen), the Text Classifier, the Information Extractor and the Vector Store's embeddings, also when one of them runs as an AI Agent tool. Only counts are stored, never prompts or answers, and they are kept after an execution's data is deleted so the month stays complete.
+Every call to a language or embedding model is written down with the tokens the provider reported: input, output and cached input. This covers the AI Agent, the model nodes (OpenAI, Anthropic, Gemini, Chat Model, DeepSeek, Kimi, Qwen), the Text Classifier, the Information Extractor, the Vector Store's embeddings and chat-model reranking, and the Document Loader's embeddings, also when one of them runs as an AI Agent tool. Only counts are stored, never prompts or answers, and they are kept after an execution's data is deleted so the month stays complete.
 
 * **Price table.** An admin with two-factor on sets what each model costs under **Settings → AI model prices**: provider, model, and US dollars per million input, output and cached input tokens. Provider and model are matched exactly, ignoring case. The provider is `openai`, `anthropic`, `gemini`, the Chat Model preset (`openrouter`, `deepseek`, `kimi`...) or `custom`. The table starts empty; the card lists the models that ran without a price so they can be added with one click. Price changes are in the audit log.
 * **Cost** is worked out when the call is made, from the price at that moment. Changing a price later does not change calls already recorded. A model without a price shows as "No price": it is not counted as free and not counted as money.
@@ -1040,6 +1082,7 @@ The live app on Vercel and local development use the **same** database, so the s
 | `WEBHOOK_RESPONSE_TIMEOUT_MS` | How long a webhook waits for the workflow's response, default 25000 |
 | `SANDBOX_MAX_OUTPUT_KB` | The most a Code node or one expression may return, in KB, default 1024 |
 | `MAX_ITEMS_PER_NODE` | Items one node may process in a list, default 100 |
+| `VECTOR_STORE_ENGINE` | Set to `app` to make the Vector Store compare embeddings in the app even when pgvector is installed |
 | `WAIT_MAX_DAYS` | The longest a Wait node may wait, in days, default 7 (the limit of Inngest's free plan) |
 | `FORM_RATE_LIMIT_PER_MINUTE` | Submissions per minute for one hosted form, default 30 |
 | `CHAT_WIDGET_RATE_LIMIT_PER_MINUTE`, `CHAT_VISITOR_RATE_LIMIT_PER_MINUTE` | Messages per minute for one public chat widget, and for one visitor of it. Defaults 60 and 10 |
@@ -1067,7 +1110,7 @@ Nodes that are not built yet. Each new integration is a config passed to `create
 | MongoDB, Redis, Supabase (REST) | More data stores next to Postgres and MySQL |
 | Slack / Discord bots | Bot-token nodes and triggers; today both send through webhook URLs |
 
-Also not built: a true n8n items model for every node from the trigger onward (items start at a list node), pgvector for the Vector Store, and the stdio / SSE transports for MCP.
+Also not built: a true n8n items model for every node from the trigger onward (items start at a list node), a real tokenizer for the Vector Store's token splitting, and the stdio / SSE transports for MCP.
 
 ---
 

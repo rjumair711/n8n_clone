@@ -18,6 +18,7 @@ export const AI_NODE_TYPES: ReadonlySet<string> = new Set([
   "INFORMATION_EXTRACTOR",
   "ANALYZE_DOCUMENT",
   "VECTOR_STORE",
+  "DOCUMENT_LOADER",
 ]);
 
 export type TokenUsage = {

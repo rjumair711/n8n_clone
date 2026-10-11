@@ -1,9 +1,17 @@
 "use client";
 
 import { CredentialType } from "@prisma/client";
-import { Braces, DatabaseZap, Plug, ScanEye, ScanText, Tags } from "lucide-react";
+import { Braces, DatabaseZap, FolderSync, Plug, ScanEye, ScanText, Tags } from "lucide-react";
 import { createIntegrationNode } from "../integration-node";
-import type { IntegrationConfig } from "../integration-dialog";
+import type { IntegrationConfig, IntegrationField } from "../integration-dialog";
+import {
+  DEFAULT_RERANK_MODELS,
+  EMBEDDING_PROVIDERS,
+  LOADER_DEFAULT_DOCUMENTS,
+  LOADER_MAX_DOCUMENTS,
+  RERANKERS,
+} from "../../lib/rag-options";
+import { SPLIT_MODES } from "../../lib/text-splitter";
 import { OTHER_CATEGORY_ID, parseAttributes, parseCategories } from "../../lib/ai-fields";
 import { ANALYZE_MODES } from "../../lib/vision";
 
@@ -201,11 +209,75 @@ const EMBEDDING_CREDENTIALS: Record<string, CredentialType> = {
   compatible: CredentialType.OPENAI_COMPATIBLE,
 };
 
+const splitFields = (operations?: string[]): IntegrationField[] => [
+  {
+    name: "splitBy",
+    label: "Split By",
+    type: "select",
+    defaultValue: "characters",
+    required: true,
+    options: SPLIT_MODES,
+    description:
+      "How long text is cut into chunks. Markdown headings keeps each section together and starts every chunk with the headings it sits under.",
+    operations,
+  },
+  {
+    name: "chunkSize",
+    label: "Chunk Size",
+    placeholder: "1000 characters, or 250 tokens",
+    description:
+      "Characters per chunk (the most for a section, with Markdown headings), or tokens with Split By Tokens. Tokens are estimated at four characters each.",
+    operations,
+  },
+  {
+    name: "chunkOverlap",
+    label: "Chunk Overlap",
+    placeholder: "100 characters, or 25 tokens",
+    description: "How much neighbouring chunks share, so a sentence cut in two is whole in one of them. 0 for none.",
+    operations,
+  },
+];
+
+const embeddingFields = (operations?: string[]): IntegrationField[] => [
+  {
+    name: "embeddingProvider",
+    label: "Embeddings Provider",
+    type: "select",
+    defaultValue: "openai",
+    required: true,
+    options: EMBEDDING_PROVIDERS,
+    operations,
+  },
+  {
+    name: "embeddingModel",
+    label: "Embedding Model",
+    placeholder: "text-embedding-3-small / gemini-embedding-001",
+    description:
+      "Leave empty for the provider's default. Required for OpenAI-compatible.",
+    operations,
+  },
+  {
+    name: "baseUrl",
+    label: "Base URL",
+    placeholder: "https://api.example.com/v1",
+    description: "Only for OpenAI-compatible.",
+    operations,
+    showWhen: (values) => values.embeddingProvider === "compatible",
+  },
+];
+
+const RERANK_CREDENTIALS: Record<string, CredentialType> = {
+  cohere: CredentialType.COHERE,
+  jina: CredentialType.JINA_READER,
+};
+
 export const vectorStoreConfig: IntegrationConfig = {
   label: "Vector Store",
   description:
     "Saves text so it can be found by meaning later (RAG). Insert your documents once, then search them, or connect the node to an AI Agent's Tools port so the agent can look things up.",
   logo: DatabaseZap,
+  // Only used by a search with Rerank With set to the connected chat model
+  subInputs: [{ id: "sub-model", label: "Rerank Model" }],
   credentialType: CredentialType.OPENAI,
   credentialTypeFor: (values) =>
     values.operation === "delete_collection"
@@ -218,7 +290,7 @@ export const vectorStoreConfig: IntegrationConfig = {
     { value: "insert", label: "Insert Documents" },
     { value: "delete_collection", label: "Delete Collection" },
   ],
-  hint: 'Search results are at {{json <name>.matches}}, and as one block of text at {{<name>.text}}. As an AI Agent tool, set Query to {{$fromAI "query" "what to look up"}}. Insert and Search must use the same embedding model.',
+  hint: 'Search results are at {{json <name>.matches}}, and as one block of text at {{<name>.text}}; {{<name>.engine}} says whether the database (pgvector) or the app compared the embeddings. As an AI Agent tool, set Query to {{$fromAI "query" "what to look up"}}. Insert and Search must use the same embedding model.',
   fields: [
     {
       name: "collection",
@@ -228,34 +300,7 @@ export const vectorStoreConfig: IntegrationConfig = {
       description: "A name for this set of documents, for example faq or products.",
       required: true,
     },
-    {
-      name: "embeddingProvider",
-      label: "Embeddings Provider",
-      type: "select",
-      defaultValue: "openai",
-      required: true,
-      options: [
-        { value: "openai", label: "OpenAI" },
-        { value: "gemini", label: "Google Gemini" },
-        { value: "compatible", label: "OpenAI-compatible (Ollama, Together...)" },
-      ],
-      operations: ["search", "insert"],
-    },
-    {
-      name: "embeddingModel",
-      label: "Embedding Model",
-      placeholder: "text-embedding-3-small / gemini-embedding-001",
-      description:
-        "Leave empty for the provider's default. Required for OpenAI-compatible.",
-      operations: ["search", "insert"],
-    },
-    {
-      name: "baseUrl",
-      label: "Base URL",
-      placeholder: "https://api.example.com/v1",
-      description: "Only for OpenAI-compatible.",
-      operations: ["search", "insert"],
-    },
+    ...embeddingFields(["search", "insert"]),
     {
       name: "text",
       label: "Text",
@@ -270,22 +315,19 @@ export const vectorStoreConfig: IntegrationConfig = {
       label: "Metadata",
       type: "textarea",
       placeholder: '{\n  "source": "pricing-page"\n}',
-      description: "A JSON object saved with every chunk and returned by searches.",
+      description:
+        "A JSON object saved with every chunk and returned by searches. A search can filter on it.",
       operations: ["insert"],
     },
     {
-      name: "chunkSize",
-      label: "Chunk Size",
-      placeholder: "1000",
-      description: "Characters per chunk.",
+      name: "documentId",
+      label: "Document ID",
+      placeholder: "{{item.id}} or pricing-page",
+      description:
+        "A name of your own for this document. With it, inserting the same text again does nothing, and a changed text replaces the old chunks instead of adding to them.",
       operations: ["insert"],
     },
-    {
-      name: "chunkOverlap",
-      label: "Chunk Overlap",
-      placeholder: "100",
-      operations: ["insert"],
-    },
+    ...splitFields(["insert"]),
     {
       name: "query",
       label: "Query",
@@ -300,8 +342,141 @@ export const vectorStoreConfig: IntegrationConfig = {
       description: "How many chunks to return (up to 20).",
       operations: ["search"],
     },
+    {
+      name: "metadataFilter",
+      label: "Metadata Filter",
+      type: "textarea",
+      placeholder: '{\n  "source": "pricing-page"\n}',
+      description:
+        "A JSON object. Only chunks whose metadata contains every field of it, with the same value, are searched.",
+      operations: ["search"],
+    },
+    {
+      name: "rerank",
+      label: "Rerank With",
+      type: "select",
+      defaultValue: "none",
+      required: true,
+      options: RERANKERS,
+      description:
+        "A reranker reads the query together with each candidate and puts the best first. More candidates are fetched than Limit, and the best Limit are returned.",
+      operations: ["search"],
+    },
+    {
+      name: "rerankCredentialId",
+      label: "Rerank Credential",
+      type: "credential",
+      credentialTypeFor: (values) => RERANK_CREDENTIALS[values.rerank || ""],
+      description:
+        "A Cohere credential, or a Jina credential (the same key as for Read Web Page). Add one under Credentials if the list is empty.",
+      required: true,
+      operations: ["search"],
+      showWhen: (values) => (values.rerank || "") in RERANK_CREDENTIALS,
+    },
+    {
+      name: "rerankModel",
+      label: "Rerank Model",
+      placeholder: `${DEFAULT_RERANK_MODELS.cohere} / ${DEFAULT_RERANK_MODELS.jina}`,
+      description: "Leave empty for the provider's default.",
+      operations: ["search"],
+      showWhen: (values) => (values.rerank || "") in RERANK_CREDENTIALS,
+    },
   ],
 };
+
+// =========================================================================
+// DOCUMENT LOADER
+// =========================================================================
+const LOADER_CREDENTIALS: Record<string, CredentialType> = {
+  google_drive_folder: CredentialType.GOOGLE_OAUTH2,
+  notion_database: CredentialType.NOTION,
+};
+
+export const documentLoaderConfig: IntegrationConfig = {
+  label: "Document Loader",
+  description:
+    "Loads every document of a Google Drive folder or a Notion database into a Vector Store collection. Run it again whenever you like, for example on a schedule: documents that have not changed are skipped, and changed ones replace their old chunks.",
+  logo: FolderSync,
+  credentialTypeFor: (values) =>
+    LOADER_CREDENTIALS[values.operation || "google_drive_folder"],
+  credentialLabel: "Source Credential",
+  credentialHelp:
+    "The Google account that can open the folder, or the Notion integration the database is shared with.",
+  defaultVariableName: "loader",
+  hint: "The result has {{<name>.added}}, {{<name>.updated}}, {{<name>.unchanged}}, {{<name>.skipped}} and {{<name>.failed}}, and one line per document at {{json <name>.documents}}. Search the collection with a Vector Store node that uses the same collection and embedding model.",
+  operations: [
+    { value: "google_drive_folder", label: "Google Drive Folder" },
+    { value: "notion_database", label: "Notion Database" },
+  ],
+  fields: [
+    {
+      name: "folderId",
+      label: "Folder",
+      placeholder: "https://drive.google.com/drive/folders/...",
+      description:
+        "The folder's ID or its link. Google Docs, Sheets and Slides, PDFs, Word (.docx) and text files directly in the folder are read; sub-folders are not opened.",
+      required: true,
+      operations: ["google_drive_folder"],
+    },
+    {
+      name: "databaseId",
+      label: "Database",
+      placeholder: "https://www.notion.so/workspace/...",
+      description:
+        "The database's ID or its link. Share the database with your Notion integration first. Each row is one document: its properties and its page content.",
+      required: true,
+      operations: ["notion_database"],
+    },
+    {
+      name: "collection",
+      label: "Collection",
+      placeholder: "default",
+      defaultValue: "default",
+      description: "The Vector Store collection the documents go into.",
+      required: true,
+    },
+    ...embeddingFields(),
+    {
+      name: "embeddingCredentialId",
+      label: "Embeddings Credential",
+      type: "credential",
+      credentialTypeFor: (values) =>
+        EMBEDDING_CREDENTIALS[values.embeddingProvider || "openai"],
+      description:
+        "The key of the embedding model. Add one under Credentials if the list is empty.",
+      required: true,
+    },
+    ...splitFields(),
+    {
+      name: "maxDocuments",
+      label: "Max Documents",
+      placeholder: String(LOADER_DEFAULT_DOCUMENTS),
+      description: `How many documents one run reads, the most recently changed first (up to ${LOADER_MAX_DOCUMENTS}).`,
+    },
+    {
+      name: "metadataJson",
+      label: "Metadata",
+      type: "textarea",
+      placeholder: '{\n  "team": "support"\n}',
+      description:
+        "A JSON object saved with every chunk, next to the document's source, title and url.",
+    },
+    {
+      name: "removeMissing",
+      label: "Remove Deleted Documents",
+      type: "switch",
+      defaultValue: "false",
+      description:
+        "Also remove from the collection the documents that are no longer in the folder or database. Only done when the run saw all of them (not more than Max Documents).",
+    },
+  ],
+};
+
+export const DocumentLoaderNode = createIntegrationNode(documentLoaderConfig, (data) =>
+  data.folderId || data.databaseId
+    ? `${documentLoaderConfig.operations?.find((option) => option.value === data.operation)?.label ?? "Google Drive Folder"} → ${data.collection || "default"}`
+    : "Not Configured"
+);
 
 export const VectorStoreNode = createIntegrationNode(vectorStoreConfig, (data) =>
   data.collection

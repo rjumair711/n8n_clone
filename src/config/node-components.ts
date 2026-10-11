@@ -63,6 +63,7 @@ import {
 } from '@/features/executions/components/core/nodes';
 import {
     AnalyzeDocumentNode,
+    DocumentLoaderNode,
     GmailTriggerNode,
     InformationExtractorNode,
     McpClientNode,
@@ -192,6 +193,7 @@ export const nodeComponents: NodeTypes = {
     [NodeType.INSTAGRAM]: InstagramNode,
     [NodeType.INSTAGRAM_TRIGGER]: InstagramTriggerNode,
     [NodeType.SOCIAL_POST]: SocialPostNode,
+    [NodeType.DOCUMENT_LOADER]: DocumentLoaderNode,
     [NodeType.RSS_READ]: RssReadNode,
     [NodeType.RSS_FEED_TRIGGER]: RssFeedTriggerNode,
     [NodeType.GOOGLE_DRIVE]: GoogleDriveNode,

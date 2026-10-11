@@ -147,6 +147,7 @@ const credentialLogos: Record<CredentialType, string> = {
     [CredentialType.TAVILY]: "/logos/web-search.svg",
     [CredentialType.BRAVE_SEARCH]: "/logos/web-search.svg",
     [CredentialType.JINA_READER]: "/logos/web-page.svg",
+    [CredentialType.COHERE]: "/logos/chat-model.svg",
     [CredentialType.FIRECRAWL]: "/logos/web-page.svg",
     [CredentialType.SALESFORCE]: "/logos/salesforce.svg",
     [CredentialType.SSH]: "/logos/ssh.svg",

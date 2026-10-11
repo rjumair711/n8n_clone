@@ -20,6 +20,10 @@ export type TemplateConnection = {
 const PRIVATE_KEYS = new Set([
   // Which stored credential a node uses
   "credentialId",
+  // A node's second credential: the Vector Store's reranker, the Document
+  // Loader's embeddings
+  "rerankCredentialId",
+  "embeddingCredentialId",
   // Webhook, Typeform, WooCommerce and Google Form secrets; the Stripe and
   // Shopify signing secrets
   "secret",

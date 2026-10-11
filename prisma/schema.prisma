@@ -254,6 +254,7 @@ enum CredentialType {
   WOOCOMMERCE
   FACEBOOK_PAGE
   INSTAGRAM
+  COHERE
 }
 
 model Workflow {
@@ -370,6 +371,7 @@ enum NodeType {
   INSTAGRAM
   INSTAGRAM_TRIGGER
   SOCIAL_POST
+  DOCUMENT_LOADER
 }
 
 model Node {
@@ -579,9 +581,19 @@ model VectorDocument {
   content    String   @db.Text
   metadata   Json?
   embedding  Float[]
+  // The same embedding as a pgvector value, when the database has the
+  // extension. The ORM cannot read or write it: see src/lib/vector-search.ts
+  embeddingVector Unsupported("vector")?
+  // Where the chunk came from ("gdrive:<folder>:<file>", "doc:<id>"), a hash
+  // of the document it was cut from, and what the source said about the
+  // document's state. Null for chunks inserted without a Document ID.
+  sourceId      String?
+  contentHash   String?
+  sourceVersion String?
   createdAt  DateTime @default(now())
 
   @@index([userId, collection])
+  @@index([userId, collection, sourceId])
   @@map("vector_document")
 }
 
