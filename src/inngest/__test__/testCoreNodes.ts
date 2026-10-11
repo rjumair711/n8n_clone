@@ -7241,6 +7241,458 @@ const main = async () => {
     assert.equal(/\b(DROP|DELETE|TRUNCATE|UPDATE|RENAME)\b/i.test(statements), false);
   });
 
+  // ------------------------------------------ WEB SEARCH / READ WEB PAGE
+  console.log("Web Search and Read Web Page");
+
+  const readability = await import("@/features/executions/lib/readability");
+  const web = await import("@/features/executions/components/apps/web");
+
+  const ARTICLE_PAGE = `<!doctype html>
+<html><head>
+  <title>How to brew tea | The Daily Cup</title>
+  <meta name="description" content="A short guide to a good cup.">
+  <meta property="og:title" content="How to brew tea">
+  <style>.x { color: red }</style>
+  <script>window.secret = "do not show <p>me</p>";</script>
+</head>
+<body>
+  <header class="site-header"><a href="/">The Daily Cup</a> <a href="/login">Log in</a></header>
+  <nav><ul><li><a href="/a">Home</a></li><li><a href="/b">Recipes</a></li></ul></nav>
+  <div id="cookie-banner">We use cookies. <button>Accept</button></div>
+  <main>
+    <article>
+      <header><h1>How to brew tea</h1></header>
+      <p>Good tea needs <strong>fresh water</strong> &amp; a little patience. Read the
+         <a href="/guides/water">water guide</a> first, or see <a href="javascript:alert(1)">this</a>.</p>
+      <h2>Steps</h2>
+      <ol><li>Boil the water<li>Warm the pot</li><li>Steep for <em>three</em> minutes</li></ol>
+      <ul><li>Black tea: 95&deg;C</li><li>Green tea: 80&deg;C</li></ul>
+      <blockquote><p>Tea is quiet company.</p></blockquote>
+      <pre><code>steep(minutes = 3)
+pour()</code></pre>
+      <table><tr><th>Tea</th><th>Minutes</th></tr><tr><td>Black</td><td>3</td></tr></table>
+      <p hidden>Hidden paragraph.</p>
+      <div class="share-buttons"><a href="https://x.example/share">Share this</a></div>
+      <p>Line one<br>line two.</p>
+      <footer>Written by A. Writer</footer>
+    </article>
+    <aside><h3>Related</h3><a href="/other">Coffee instead?</a></aside>
+  </main>
+  <footer>&copy; The Daily Cup <a href="/privacy">Privacy</a></footer>
+</body></html>`;
+
+  await test("the built-in reader returns the article as clean Markdown, without the rest of the page", () => {
+    const page = readability.extractReadableContent(ARTICLE_PAGE, {
+      baseUrl: "https://tea.example.com/blog/brew",
+    });
+
+    assert.equal(page.title, "How to brew tea");
+    assert.equal(page.description, "A short guide to a good cup.");
+
+    assert.equal(
+      page.content,
+      [
+        "# How to brew tea",
+        "Good tea needs **fresh water** & a little patience. Read the [water guide](https://tea.example.com/guides/water) first, or see this.",
+        "## Steps",
+        "1. Boil the water\n2. Warm the pot\n3. Steep for *three* minutes",
+        "- Black tea: 95°C\n- Green tea: 80°C",
+        "> Tea is quiet company.",
+        "```\nsteep(minutes = 3)\npour()\n```",
+        "Tea | Minutes\nBlack | 3",
+        "Line one\nline two.",
+      ].join("\n\n")
+    );
+
+    // None of the page around the article, and nothing from scripts
+    for (const gone of ["Log in", "Recipes", "cookies", "Accept", "Coffee instead", "Privacy", "secret", "color: red", "Hidden paragraph", "Share this", "Written by", "javascript:"]) {
+      assert.equal(page.content.includes(gone), false, gone);
+    }
+
+    // Plain text: the same content without the markup
+    const plain = readability.extractReadableContent(ARTICLE_PAGE, { format: "text" });
+    assert.match(plain.content, /^How to brew tea\n\nGood tea needs fresh water & a little patience\. Read the water guide first/);
+    assert.equal(/[#*`>\]]|\(https?:/.test(plain.content.replace("steep(minutes = 3)", "")), false);
+    assert.match(plain.content, /- Black tea: 95°C/);
+  });
+
+  await test("pages without an <article>, and broken HTML, are still read", () => {
+    const long = (label: string) => `${label} ${"words, and more words, ".repeat(12)}`;
+
+    // The block whose paragraphs hold the most text wins; a list of links loses
+    const divs = readability.extractReadableContent(`
+      <html><body>
+        <div class="top"><p><a href="/1">${long("Teaser one")}</a></p><p><a href="/2">${long("Teaser two")}</a></p></div>
+        <div class="content">
+          <h2>The real story</h2>
+          <p>${long("First paragraph")}</p>
+          <p>${long("Second paragraph")}</p>
+        </div>
+        <div class="sidebar"><p>${long("Sidebar text")}</p></div>
+      </body></html>`);
+    assert.match(divs.content, /^## The real story\n\nFirst paragraph/);
+    assert.match(divs.content, /Second paragraph/);
+    assert.equal(/Teaser|Sidebar/.test(divs.content), false);
+
+    // Unclosed tags, a stray end tag, uppercase tags, attributes with ">" in them
+    const broken = readability.extractReadableContent(
+      `<BODY><DIV><P>One<P>Two <B>bold</DIV></SPAN><p title="a > b">Three</p><img src=x alt="pic"><br/>Four`
+    );
+    assert.equal(broken.content, "One\n\nTwo **bold**\n\nThree\n\nFour");
+
+    // Nothing to read
+    assert.equal(readability.extractReadableContent("").content, "");
+    assert.equal(readability.extractReadableContent("<html><body><script>var a = 1</script></body></html>").content, "");
+    // Plain text is passed through
+    assert.equal(readability.extractReadableContent("just words").content, "just words");
+
+    // Very deep nesting, and a very large page, do not hang or overflow
+    const started = Date.now();
+    const deep = readability.extractReadableContent(`${"<div>".repeat(5000)}deep${"</div>".repeat(5000)}`);
+    assert.equal(deep.content, "deep");
+    readability.extractReadableContent(`<p>${"x ".repeat(2_000_000)}</p>`);
+    assert.ok(Date.now() - started < 5000);
+
+    // <base href> and relative links
+    const based = readability.extractReadableContent(
+      `<html><head><base href="https://cdn.example.com/docs/"></head><body><p><a href="page2">Next ${"page ".repeat(10)}</a> <a href="#top">Top</a> <a href="mailto:a@b.c">Mail</a></p></body></html>`,
+      { baseUrl: "https://example.com/x" }
+    );
+    assert.match(based.content, /\]\(https:\/\/cdn\.example\.com\/docs\/page2\)/);
+    assert.equal(/#top|mailto:/.test(based.content), false);
+  });
+
+  await test("the returned text is cut to Max Characters, and says so", () => {
+    const { limitText, resolveMaxCharacters, TRUNCATION_NOTE } = readability;
+
+    assert.deepEqual(limitText("short", 100), { text: "short", truncated: false });
+
+    const long = "word ".repeat(1000).trim();
+    const cut = limitText(long, 502);
+    assert.equal(cut.truncated, true);
+    assert.ok(cut.text.endsWith(TRUNCATION_NOTE));
+    // At the end of a word
+    assert.equal(cut.text.slice(0, -TRUNCATION_NOTE.length), "word ".repeat(100).trim());
+    // A text without spaces is cut where the limit is
+    assert.equal(limitText("x".repeat(50), 10).text, "x".repeat(10) + TRUNCATION_NOTE);
+
+    const page = { fallback: web.PAGE_DEFAULT_CHARACTERS, max: web.PAGE_MAX_CHARACTERS };
+    assert.equal(web.PAGE_DEFAULT_CHARACTERS, 8000);
+    assert.equal(resolveMaxCharacters("2500", page), 2500);
+    assert.equal(resolveMaxCharacters(" 40 ", page), 100);
+    assert.equal(resolveMaxCharacters("99999999", page), 100_000);
+    for (const unset of ["", undefined, null, "0", "-5", "lots"]) {
+      assert.equal(resolveMaxCharacters(unset, page), 8000, String(unset));
+    }
+
+    assert.equal(web.resolveMaxResults("3"), 3);
+    assert.equal(web.resolveMaxResults("100"), 20);
+    for (const unset of ["", undefined, "0", "many"]) assert.equal(web.resolveMaxResults(unset), 5);
+  });
+
+  await test("Tavily, Brave Search and SearXNG results come back in one shape", () => {
+    const limits = { maxResults: 2, maxSnippet: 60 };
+
+    assert.deepEqual(
+      web.normalizeSearchResults(
+        "tavily",
+        {
+          answer: "ignored",
+          results: [
+            { title: " Tea  guide ", url: "https://a.example/tea", content: "How to\nbrew   tea. ".repeat(10), score: 0.9 },
+            { title: "No address", content: "x" },
+            { title: "Second", url: "https://b.example/", content: "Short." },
+            { title: "Third", url: "https://c.example/", content: "Over the limit." },
+          ],
+        },
+        limits
+      ),
+      [
+        { title: "Tea guide", url: "https://a.example/tea", snippet: `${"How to brew tea. ".repeat(10).slice(0, 60).trimEnd()}...` },
+        { title: "Second", url: "https://b.example/", snippet: "Short." },
+      ]
+    );
+
+    // Brave nests its results and marks matches with <strong>
+    assert.deepEqual(
+      web.normalizeSearchResults(
+        "brave",
+        { web: { results: [{ title: "Tea", url: "https://a.example/", description: "Brew <strong>tea</strong> well" }] } },
+        limits
+      ),
+      [{ title: "Tea", url: "https://a.example/", snippet: "Brew tea well" }]
+    );
+
+    assert.deepEqual(
+      web.normalizeSearchResults(
+        "searxng",
+        { results: [{ title: "Tea", url: "http://a.example/", content: "From SearXNG" }, { url: "javascript:alert(1)", title: "bad" }, "junk"] },
+        limits
+      ),
+      [{ title: "Tea", url: "http://a.example/", snippet: "From SearXNG" }]
+    );
+
+    // An answer in another shape is no results, not a crash
+    for (const body of [null, "text", [], {}, { results: "none" }, { web: null }]) {
+      assert.deepEqual(web.normalizeSearchResults("tavily", body, limits), []);
+      assert.deepEqual(web.normalizeSearchResults("brave", body, limits), []);
+    }
+
+    assert.deepEqual(web.SEARCH_PROVIDERS.map((provider) => provider.value), ["tavily", "brave", "searxng"]);
+    assert.deepEqual(web.PAGE_READERS.map((reader) => reader.value), ["builtin", "jina", "firecrawl"]);
+  });
+
+  await test("Read Web Page fetches through the SSRF guard and cuts the text", async () => {
+    const hits: string[] = [];
+    const pages = createServer((req, res) => {
+      hits.push(req.url ?? "");
+
+      if (req.url === "/article") {
+        res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
+        res.end(ARTICLE_PAGE);
+      } else if (req.url === "/moved") {
+        res.writeHead(302, { Location: "/article" });
+        res.end();
+      } else if (req.url === "/to-metadata") {
+        // A public-looking page that redirects to the cloud metadata address
+        res.writeHead(302, { Location: "http://169.254.169.254/latest/meta-data/" });
+        res.end();
+      } else if (req.url === "/image") {
+        res.writeHead(200, { "Content-Type": "image/png" });
+        res.end(Buffer.from([0x89, 0x50, 0x4e, 0x47]));
+      } else if (req.url === "/latin1") {
+        res.writeHead(200, { "Content-Type": "text/html; charset=iso-8859-1" });
+        res.end(Buffer.from(`<p>Caf\xe9 au lait, ${"and more words, ".repeat(5)}</p>`, "latin1"));
+      } else if (req.url === "/empty") {
+        res.writeHead(200, { "Content-Type": "text/html" });
+        res.end("<html><body><div id='app'></div><script>render()</script></body></html>");
+      } else if (req.url?.startsWith("/search")) {
+        const query = new URL(req.url, "http://x").searchParams;
+        if (query.get("format") !== "json") {
+          res.writeHead(403);
+          res.end("forbidden");
+          return;
+        }
+        res.writeHead(200, { "Content-Type": "application/json" });
+        res.end(
+          JSON.stringify({
+            results: [1, 2, 3, 4].map((n) => ({
+              title: `Result ${n} for ${query.get("q")}`,
+              url: `https://site${n}.example/`,
+              content: "snippet text ".repeat(100),
+            })),
+          })
+        );
+      } else {
+        res.writeHead(404, { "Content-Type": "text/html" });
+        res.end("<h1>Not found</h1>");
+      }
+    });
+
+    await new Promise<void>((resolve) => pages.listen(0, "127.0.0.1", resolve));
+    const site = `http://127.0.0.1:${(pages.address() as AddressInfo).port}`;
+    const before = process.env.ALLOW_PRIVATE_NETWORK_REQUESTS;
+
+    try {
+      // The local test server is a private address: refused, like every
+      // private address, before any request is made
+      process.env.ALLOW_PRIVATE_NETWORK_REQUESTS = "false";
+      await assert.rejects(
+        web.readWebPageExecutor({ ...baseParams, data: { url: `${site}/article` }, context: {} }),
+        /Read Web Page node: /
+      );
+      await assert.rejects(
+        web.webSearchExecutor({ ...baseParams, data: { operation: "searxng", searxngUrl: site, query: "tea" }, context: {} }),
+        /Web Search node: /
+      );
+      for (const blocked of ["http://localhost/", "http://10.0.0.5/", "http://169.254.169.254/latest/meta-data/", "http://[::1]/"]) {
+        await assert.rejects(
+          web.readWebPageExecutor({ ...baseParams, data: { url: blocked }, context: {} }),
+          /Read Web Page node: /,
+          blocked
+        );
+      }
+      assert.deepEqual(hits, []);
+
+      process.env.ALLOW_PRIVATE_NETWORK_REQUESTS = "true";
+
+      const read: any = await web.readWebPageExecutor({
+        ...baseParams,
+        data: { url: "{{link}}", maxCharacters: "120" },
+        context: { link: `${site}/moved`, kept: true },
+      });
+
+      assert.equal(read.kept, true);
+      assert.equal(read.page.reader, "builtin");
+      assert.equal(read.page.title, "How to brew tea");
+      // Redirects are followed, and the links are made from where it ended up
+      assert.equal(read.page.url, `${site}/article`);
+      assert.equal(read.page.truncated, true);
+      assert.ok(read.page.content.startsWith("# How to brew tea\n\nGood tea needs **fresh water**"));
+      assert.ok(read.page.content.endsWith(readability.TRUNCATION_NOTE));
+      assert.ok(read.page.content.length <= 120 + readability.TRUNCATION_NOTE.length);
+      // How long the whole page was
+      assert.ok(read.page.length > 300);
+
+      const whole: any = await web.readWebPageExecutor({
+        ...baseParams,
+        data: { url: `${site}/article`, format: "text", variableName: "doc" },
+        context: {},
+      });
+      assert.equal(whole.doc.truncated, false);
+      assert.match(whole.doc.content, /^How to brew tea\n\nGood tea needs fresh water/);
+
+      // The page's own charset
+      const latin: any = await web.readWebPageExecutor({ ...baseParams, data: { url: `${site}/latin1` }, context: {} });
+      assert.match(latin.page.content, /^Café au lait/);
+
+      // A redirect to a private address is refused at that hop
+      process.env.ALLOW_PRIVATE_NETWORK_REQUESTS = "false";
+      process.env.PRIVATE_NETWORK_ALLOWLIST = `127.0.0.1:${(pages.address() as AddressInfo).port}`;
+      await assert.rejects(
+        web.readWebPageExecutor({ ...baseParams, data: { url: `${site}/to-metadata` }, context: {} }),
+        /Read Web Page node: /
+      );
+      delete process.env.PRIVATE_NETWORK_ALLOWLIST;
+      process.env.ALLOW_PRIVATE_NETWORK_REQUESTS = "true";
+
+      await assert.rejects(
+        web.readWebPageExecutor({ ...baseParams, data: { url: `${site}/missing` }, context: {} }),
+        /the page answered 404/
+      );
+      await assert.rejects(
+        web.readWebPageExecutor({ ...baseParams, data: { url: `${site}/image` }, context: {} }),
+        /the address is not a web page \(image\/png\)/
+      );
+      await assert.rejects(
+        web.readWebPageExecutor({ ...baseParams, data: { url: `${site}/empty` }, context: {} }),
+        /no text was found on the page\. It may build its content with JavaScript: choose Jina Reader or Firecrawl/
+      );
+      for (const bad of ["", "ftp://example.com/x", "file:///etc/passwd", "example.com"]) {
+        await assert.rejects(
+          web.readWebPageExecutor({ ...baseParams, data: { url: bad }, context: {} }),
+          /URL must start with http:\/\/ or https:\/\//,
+          bad
+        );
+      }
+      await assert.rejects(
+        web.readWebPageExecutor({ ...baseParams, data: { url: `${site}/article`, operation: "browser" }, context: {} }),
+        /Unsupported reader "browser"/
+      );
+
+      // SearXNG, on the same server
+      const found: any = await web.webSearchExecutor({
+        ...baseParams,
+        data: { operation: "searxng", searxngUrl: `${site}/`, query: "  green   tea ", maxResults: "2", maxCharacters: "80" },
+        context: {},
+      });
+      assert.equal(found.search.provider, "searxng");
+      assert.equal(found.search.query, "green tea");
+      assert.equal(found.search.count, 2);
+      assert.deepEqual(found.search.results[0], {
+        title: "Result 1 for green tea",
+        url: "https://site1.example/",
+        snippet: `${"snippet text ".repeat(100).slice(0, 80).trimEnd()}...`,
+      });
+
+      await assert.rejects(
+        web.webSearchExecutor({ ...baseParams, data: { operation: "searxng", searxngUrl: `${site}/nothing-here`, query: "tea" }, context: {} }),
+        /the SearXNG server answered 404/
+      );
+      await assert.rejects(
+        web.webSearchExecutor({ ...baseParams, data: { operation: "searxng", searxngUrl: "search.example.com", query: "tea" }, context: {} }),
+        /SearXNG URL must be your server's http\(s\) address/
+      );
+      await assert.rejects(
+        web.webSearchExecutor({ ...baseParams, data: { operation: "searxng", searxngUrl: site, query: "  " }, context: {} }),
+        /Query is required/
+      );
+      await assert.rejects(
+        web.webSearchExecutor({ ...baseParams, data: { operation: "bing", query: "tea" }, context: {} }),
+        /Unsupported provider "bing"/
+      );
+      // Tavily and Brave need their credential
+      await assert.rejects(
+        web.webSearchExecutor({ ...baseParams, data: { operation: "tavily", query: "tea" }, context: {} }),
+        /Web Search node: Credential is required/
+      );
+      await assert.rejects(
+        web.readWebPageExecutor({ ...baseParams, data: { operation: "jina", url: "https://example.com/" }, context: {} }),
+        /Read Web Page node: Credential is required/
+      );
+    } finally {
+      if (before === undefined) delete process.env.ALLOW_PRIVATE_NETWORK_REQUESTS;
+      else process.env.ALLOW_PRIVATE_NETWORK_REQUESTS = before;
+      delete process.env.PRIVATE_NETWORK_ALLOWLIST;
+      await new Promise((resolve) => pages.close(resolve));
+    }
+  });
+
+  await test("both nodes are read-only agent tools with credential types of their own", async () => {
+    const { readFileSync, readdirSync } = await import("node:fs");
+    const read = (path: string) => readFileSync(path, "utf8");
+
+    // Read tools: usable by an agent without "Allow dangerous tools", and
+    // not asked for approval by default
+    for (const type of ["WEB_SEARCH", "READ_WEB_PAGE"]) {
+      assert.equal(agentTools.getToolRisk(type, {}), "read", type);
+      assert.equal(agentTools.getBlockedToolsMessage([{ type }], false), null);
+      assert.equal(
+        approvals.toolRequiresApproval({ saved: undefined, risk: agentTools.getToolRisk(type, {}), defaultByRisk: true }),
+        false
+      );
+    }
+    assert.equal(agentTools.getDefaultToolName("WEB_SEARCH"), "web_search");
+    assert.equal(agentTools.getDefaultToolName("READ_WEB_PAGE"), "read_web_page");
+    assert.match(agentTools.getDefaultToolDescription("WEB_SEARCH", { operation: "tavily" }), /^Searches the web\./);
+    assert.match(agentTools.getDefaultToolDescription("READ_WEB_PAGE", {}), /^Fetches a web page by its URL/);
+    // The agent fills in the query and the address
+    assert.deepEqual(
+      agentTools.extractAIParameters({ query: '{{$fromAI "query" "What to search for"}}' }).map((parameter) => parameter.key),
+      ["query"]
+    );
+
+    const source = read("src/features/executions/components/apps/web.ts");
+    // The built-in reader and SearXNG go through the guard; the reader
+    // services are only given addresses the guard accepts
+    assert.equal(source.match(/await safeFetch\(/g)?.length, 2);
+    assert.equal(/\bfetch\(/.test(source.replace(/safeFetch\(/g, "")), false);
+    const readers = source.slice(source.indexOf("export const readWebPageExecutor"));
+    assert.ok(readers.indexOf("await assertPublicUrl(url)") < readers.indexOf("https://r.jina.ai/"));
+    assert.ok(readers.indexOf("await assertPublicUrl(url)") < readers.indexOf("https://api.firecrawl.dev/"));
+    // The page is cut inside the step: the whole of it is never stored
+    assert.ok(readers.indexOf("limitText(result.content, maxCharacters)") < readers.indexOf("if (!page.content)"));
+    // A page cannot be downloaded without end
+    assert.match(source, /const MAX_PAGE_BYTES = 3 \* 1024 \* 1024;/);
+    assert.match(source, /AbortSignal\.timeout\(PAGE_TIMEOUT_MS\)/);
+
+    const schema = read("prisma/schema.prisma");
+    for (const type of ["TAVILY", "BRAVE_SEARCH", "JINA_READER", "FIRECRAWL"]) {
+      assert.match(/enum CredentialType \{([^}]*)\}/.exec(schema)?.[1] ?? "", new RegExp(`\\b${type}\\b`));
+      assert.match(read("src/features/credentials/components/credential.tsx"), new RegExp(`\\[CredentialType\\.${type}\\]: \\{`));
+    }
+
+    const nodes = read("src/features/executions/components/apps/nodes.tsx");
+    assert.match(nodes, /tavily: CredentialType\.TAVILY,\s*brave: CredentialType\.BRAVE_SEARCH,/);
+    assert.match(nodes, /jina: CredentialType\.JINA_READER,\s*firecrawl: CredentialType\.FIRECRAWL,/);
+    assert.match(read("src/features/executions/lib/executor-registry.ts"), /\[NodeType\.WEB_SEARCH\]: webSearchExecutor,\s*\[NodeType\.READ_WEB_PAGE\]: readWebPageExecutor,/);
+
+    // The migration only adds enum values
+    const folder = readdirSync("prisma/migrations").find((name) => name.endsWith("_web_search_and_reader"));
+    assert.ok(folder, "migration");
+    const sql = read(`prisma/migrations/${folder}/migration.sql`)
+      .split(/\r?\n/)
+      .filter((line) => line.trim() && !line.startsWith("--"));
+    assert.deepEqual(sql, [
+      `ALTER TYPE "CredentialType" ADD VALUE 'TAVILY';`,
+      `ALTER TYPE "CredentialType" ADD VALUE 'BRAVE_SEARCH';`,
+      `ALTER TYPE "CredentialType" ADD VALUE 'JINA_READER';`,
+      `ALTER TYPE "CredentialType" ADD VALUE 'FIRECRAWL';`,
+      `ALTER TYPE "NodeType" ADD VALUE 'WEB_SEARCH';`,
+      `ALTER TYPE "NodeType" ADD VALUE 'READ_WEB_PAGE';`,
+    ]);
+  });
+
   console.log(`\n${passed} checks passed`);
 };
 

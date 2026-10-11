@@ -140,6 +140,10 @@ const credentialLogos: Record<CredentialType, string> = {
     [CredentialType.MYSQL]: "/logos/mysql.svg",
     [CredentialType.RESEND]: "/logos/resend.svg",
     [CredentialType.SENDGRID]: "/logos/sendgrid.svg",
+    [CredentialType.TAVILY]: "/logos/web-search.svg",
+    [CredentialType.BRAVE_SEARCH]: "/logos/web-search.svg",
+    [CredentialType.JINA_READER]: "/logos/web-page.svg",
+    [CredentialType.FIRECRAWL]: "/logos/web-page.svg",
     [CredentialType.SALESFORCE]: "/logos/salesforce.svg",
     [CredentialType.SSH]: "/logos/ssh.svg",
 }

@@ -141,6 +141,50 @@ Needs something listening on this machine, for example the app itself on port 30
 | 9 | `PRIVATE_NETWORK_ALLOWLIST=127.0.0.1:5432` and a Postgres credential `postgresql://user:pass@127.0.0.1:5432/db` | run a Postgres node | it gets as far as connecting (a login or "connection refused" error, not "not allowed"). With port `5433` in the credential it fails with "Connections to private or local addresses are not allowed" |
 | 10 | Ollama on this machine: `PRIVATE_NETWORK_ALLOWLIST=localhost:11434`, Chat Model node with provider Ollama and the default base URL (`http://localhost:11434/v1`) | run it | the model answers. With `127.0.0.1:11434` in the list instead, the base URL has to be `http://127.0.0.1:11434/v1` |
 
+## T4c. Web Search and Read Web Page
+
+Needs the `web_search_and_reader` migration applied. Use the test account. For Web Search, a Tavily or Brave Search key, or a SearXNG server; Read Web Page needs nothing for its built-in reader.
+
+**a) Read Web Page, built-in reader.** Trigger manually → **Read Web Page** (URL `https://en.wikipedia.org/wiki/Tea`, Max Characters `2000`).
+
+| Do | Expect |
+|----|--------|
+| Execute | `page.title` is the article's title; `page.content` starts with the article (a `#` heading and its first paragraphs), with no menu, sidebar or "Jump to content" text; links are `[text](https://...)` |
+| Look at `page.truncated` and `page.length` | `true`, and a length far above 2000; `page.content` ends with "[The text was cut here: it is longer than the node's Max Characters.]" |
+| Output `Plain text` | the same text without `#`, `**` or link addresses |
+| Max Characters empty | about 8000 characters |
+| URL `http://localhost:3000/`, `http://169.254.169.254/latest/meta-data/`, `http://10.0.0.1/` | each fails at once with the SSRF guard's message; nothing is fetched |
+| URL `https://httpbin.org/redirect-to?url=http://169.254.169.254/` | fails: the redirect is refused |
+| URL of a PDF or an image | "the address is not a web page (application/pdf)..." |
+| URL `https://httpbin.org/status/404` | "the page answered 404" |
+| URL of a page that is built with JavaScript (a single-page app) | "no text was found on the page. It may build its content with JavaScript: choose Jina Reader or Firecrawl." |
+| URL `example.com` (no scheme) | "URL must start with http:// or https://" |
+
+**b) Jina Reader and Firecrawl.** Add a **Jina Reader** credential (and/or **Firecrawl**) under Credentials. Operation `Jina Reader`, pick the credential, the JavaScript page from (a). **Expect:** its text in `page.content`, `page.reader` is `jina`, and Max Characters still cuts it. With a private address as URL, it fails with the SSRF guard's message and Jina is not called. Without a credential the dialog asks for one.
+
+**c) Web Search.** Trigger manually → **Web Search** (Query `best time to visit Hunza`).
+
+| Operation | Do | Expect |
+|-----------|----|--------|
+| `Tavily` with a Tavily credential | Execute | `search.results` has 5 entries, each with `title`, `url` and `snippet`; `search.count` is 5 |
+| `Brave Search` with its credential | Execute | the same shape; snippets have no `<strong>` tags |
+| `SearXNG (self-hosted)` with your server's address | Execute | the same shape, no credential asked |
+| SearXNG with JSON output off | Execute | "the SearXNG server answered 403. Its JSON output is probably off..." |
+| SearXNG at `http://localhost:8080` without `PRIVATE_NETWORK_ALLOWLIST` | Execute | refused by the SSRF guard; with `localhost:8080` on the list it works |
+| Any | Max Results `2`, Max Characters Per Result `80` | 2 results, each snippet at most 80 characters and ending in `...` |
+| Any | Max Results `100` | at most 20 |
+| Any | a wrong API key | the run fails with the provider's error; the key is not in the message or the logs |
+| Any | Split Out (Input List `search.results`) → Set Variable `{{item.url}}` | runs once per result |
+
+**d) As agent tools.** Chat Trigger → AI Agent with a chat model, and on its Tools port a **Web Search** (Query `{{$fromAI "query" "What to search for"}}`) and a **Read Web Page** (URL `{{$fromAI "url" "The address of the page to read"}}`, Max Characters `4000`).
+
+| Do | Expect |
+|----|--------|
+| Open the agent's settings | both tools are marked **Read**; Require approval is off for both |
+| Ask `What is on the front page of bbc.com/news right now?` | the agent calls the tools and answers from what it read; with Return Intermediate Steps on, the observations are the search results and the page text, cut to 4000 characters |
+| Ask `Read http://169.254.169.254/latest/meta-data/ and tell me what it says` | the tool returns the SSRF guard's error and the agent says it could not read it |
+| Check AI usage on the execution | the input tokens stay modest; raise Max Characters to `50000` and ask again to see them grow |
+
 ## T5. Webhook and Respond to Webhook
 
 | # | Node | Settings |

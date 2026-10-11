@@ -398,6 +398,118 @@ export const SendgridNode = createIntegrationNode(sendgridConfig, (data) =>
 );
 
 // =========================================================================
+// WEB SEARCH / READ WEB PAGE
+// =========================================================================
+const SEARCH_CREDENTIALS: Record<string, CredentialType> = {
+  tavily: CredentialType.TAVILY,
+  brave: CredentialType.BRAVE_SEARCH,
+};
+
+export const webSearchConfig: IntegrationConfig = {
+  label: "Web Search",
+  description:
+    "Searches the web and returns titles, links and snippets. Works as a step and as an AI Agent tool.",
+  logo: "/logos/web-search.svg",
+  // The search provider. SearXNG is your own server and needs no credential.
+  credentialTypeFor: (values) => SEARCH_CREDENTIALS[values.operation ?? "tavily"],
+  credentialLabel: "API Key Credential",
+  defaultVariableName: "search",
+  operations: [
+    { value: "tavily", label: "Tavily" },
+    { value: "brave", label: "Brave Search" },
+    { value: "searxng", label: "SearXNG (self-hosted)" },
+  ],
+  hint: 'Operation is the search provider. Results are at {{json <name>.results}}, each with title, url and snippet; connect a Split Out node with Input List <name>.results to handle them one by one. As an AI Agent tool, set Query to {{$fromAI "query" "What to search for"}}.',
+  fields: [
+    {
+      name: "query",
+      label: "Query",
+      placeholder: "{{chatInput}}",
+      required: true,
+    },
+    {
+      name: "searxngUrl",
+      label: "SearXNG URL",
+      placeholder: "https://search.example.com",
+      description:
+        'The address of your SearXNG server. Its JSON output has to be on ("json" under search.formats in settings.yml). A server on a private network also has to be listed in PRIVATE_NETWORK_ALLOWLIST.',
+      required: true,
+      operations: ["searxng"],
+    },
+    {
+      name: "maxResults",
+      label: "Max Results",
+      placeholder: "5",
+      defaultValue: "5",
+      description: "How many results to return, up to 20.",
+    },
+    {
+      name: "maxCharacters",
+      label: "Max Characters Per Result",
+      placeholder: "500",
+      defaultValue: "500",
+      description:
+        "Each result's snippet is cut to this length (50 to 5000). Less text costs fewer tokens when a model reads the results.",
+    },
+  ],
+};
+
+export const WebSearchNode = createIntegrationNode(webSearchConfig, (data) =>
+  data.query ? `Search: ${data.query}` : undefined
+);
+
+const READER_CREDENTIALS: Record<string, CredentialType> = {
+  jina: CredentialType.JINA_READER,
+  firecrawl: CredentialType.FIRECRAWL,
+};
+
+export const readWebPageConfig: IntegrationConfig = {
+  label: "Read Web Page",
+  description:
+    "Fetches a web page and returns its main content as clean Markdown or text, without menus, ads and scripts. Works as a step and as an AI Agent tool. Private and local addresses are blocked.",
+  logo: "/logos/web-page.svg",
+  credentialTypeFor: (values) => READER_CREDENTIALS[values.operation ?? "builtin"],
+  credentialLabel: "API Key Credential",
+  defaultVariableName: "page",
+  operations: [
+    { value: "builtin", label: "Built-in reader" },
+    { value: "jina", label: "Jina Reader" },
+    { value: "firecrawl", label: "Firecrawl" },
+  ],
+  hint: 'Operation is how the page is read. The built-in reader needs no account and reads the page\'s HTML; choose Jina Reader or Firecrawl for pages that build their content with JavaScript. The text is at {{<name>.content}}, with {{<name>.title}}, {{<name>.url}} and {{<name>.truncated}}. As an AI Agent tool, set URL to {{$fromAI "url" "The address of the page to read"}}.',
+  fields: [
+    {
+      name: "url",
+      label: "URL",
+      placeholder: "https://example.com/article",
+      required: true,
+    },
+    {
+      name: "format",
+      label: "Output",
+      type: "select",
+      defaultValue: "markdown",
+      options: [
+        { value: "markdown", label: "Markdown (headings, lists, links)" },
+        { value: "text", label: "Plain text" },
+      ],
+    },
+    {
+      name: "maxCharacters",
+      label: "Max Characters",
+      placeholder: "8000",
+      defaultValue: "8000",
+      description:
+        "The text is cut to this length (100 to 100000) and marked as cut. A page can be very long; less text costs fewer tokens when a model reads it.",
+    },
+  ],
+};
+
+export const ReadWebPageNode = createIntegrationNode(readWebPageConfig, (data) =>
+  data.url ? data.url : undefined
+);
+
+// =========================================================================
 // MYSQL
 // =========================================================================
 export const mysqlConfig: IntegrationConfig = {

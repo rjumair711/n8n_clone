@@ -125,6 +125,8 @@ const TOOL_LABELS: Record<string, string> = {
   MYSQL: "MySQL",
   RESEND: "Resend",
   SENDGRID: "SendGrid",
+  WEB_SEARCH: "Web Search",
+  READ_WEB_PAGE: "Read Web Page",
   EDIT_FIELDS: "Edit Fields",
   GOOGLE_DRIVE: "Google Drive",
   PDF_GENERATOR: "PDF Generator",
@@ -191,6 +193,9 @@ const READ_TOOL_TYPES = new Set([
   "REMOVE_DUPLICATES",
   "SUMMARIZE",
   "RSS_READ",
+  // They fetch public pages and search results; nothing is changed anywhere
+  "WEB_SEARCH",
+  "READ_WEB_PAGE",
   "EXTRACT_FROM_FILE",
   "CONVERT_TO_FILE",
   "PDF_GENERATOR",
@@ -322,6 +327,14 @@ export const getDefaultToolDescription = (
 
   if (nodeType === "HTTP_REQUEST" && nodeData.endpoint) {
     return `Makes an HTTP ${nodeData.method || "GET"} request to ${nodeData.endpoint}`;
+  }
+
+  if (nodeType === "WEB_SEARCH") {
+    return "Searches the web. Returns a list of results, each with a title, a url and a short snippet.";
+  }
+
+  if (nodeType === "READ_WEB_PAGE") {
+    return "Fetches a web page by its URL and returns its main text. Use it to read a page found with a search.";
   }
 
   if (nodeData.operation) {
