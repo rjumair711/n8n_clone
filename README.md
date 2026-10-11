@@ -41,6 +41,7 @@ The platform is designed as a scalable SaaS product with:
 * Human approval: AI Agent tools that wait for a person's Approve or Reject, and a Send and Wait for Approval node
 * Hosted forms: a Form Trigger with its own public page, multi-step forms with the Form node, and a Wait node that resumes on a form
 * Website chat widget: a public Chat Trigger with an embed snippet, a hosted chat page, per-visitor memory and a handoff to a person
+* OCR and vision: an Analyze Image / Document node that reads images and PDFs, scanned ones too, with a vision model
 * Inngest background execution system
 * Dynamic time-based execution engine via an automated Background Ticker (`* * * * *` clock matching system)
 * Shared execution context
@@ -352,9 +353,31 @@ They are on the Chat Model, DeepSeek, Kimi and Qwen nodes (`{{chatModel.modelUse
 | Model Router | Plugs into the AI Agent's Chat Model port: a cheap model first, a stronger one when it fails or its answer does not fit the parser |
 | Text Classifier | Sorts text into your categories with a connected model and continues on that category's output |
 | Information Extractor | Pulls named values (`name (type): description`) out of free text |
+| Analyze Image / Document | Reads an image or a PDF, scans included, with a vision model: all its text (OCR), named fields, or a description. See "Analyze Image / Document" |
 | Structured Output Parser | Plugs into the AI Agent's Parser port to force a JSON structure |
 | Vector Store | Insert, search and delete documents by meaning (RAG), with OpenAI, Gemini or OpenAI-compatible embeddings. Stored in Postgres and compared in the app; not pgvector |
 | MCP Client | Gives an AI Agent the tools of an MCP server (Streamable HTTP transport) |
+
+### Analyze Image / Document
+
+OCR and vision for a file a workflow has: a Form Trigger upload, an HTTP Request download, a Google Drive or Gmail file.
+
+* **Input:** a file variable (`form.invoice`, `download.file`) that holds an image (JPEG, PNG, WebP, GIF, TIFF) or a PDF.
+* **Modes:**
+
+  | Mode | Result |
+  | ---- | ------ |
+  | Extract All Text | `{{analysis.text}}`: the document's text in reading order, tables as rows |
+  | Extract Fields | `{{analysis.output.<field>}}`, from lines of `name (type): description`, the same format and types as the Information Extractor. A field the document does not have is null |
+  | Describe | `{{analysis.description}}`; "What To Describe" can ask something specific |
+
+* **Model:** connect a model that can read images to the node's Model port: OpenAI, Gemini or Anthropic, or a Chat Model node with a vision model of its provider (for example GLM-4.6V on Zhipu, or a Qwen-VL model). A model that cannot read images fails with the provider's error and a hint to use a vision model. A Chat Model's fallback models are used as usual, and the call is counted in AI usage and cost.
+* **PDFs:** each page that has text is given to the model as that text. A page without text is a scan: the picture on it is taken out of the PDF and given to the model as an image. So a typed PDF costs text tokens, a scanned one image tokens, and a mixed one each page as it is.
+* **Max Pages (PDF):** how many pages are read, from the first; default 5. The server's limit is 20 (`VISION_MAX_PDF_PAGES`). The result says how much was read: `pages`, `pagesRead`, `truncated` and `scannedPages`.
+* **Images** are turned upright and scaled down to 1600 pixels on their longest side before they are sent.
+* Text inside the document is treated as content, never as instructions to the model. As an AI Agent tool the node counts as Read.
+* Limits: scanned pages are not redrawn, the scanner's picture is used as it is. A page that is only vector drawings without text gives nothing; a scan stored as many small strips is read from its first four pieces. Reading a PDF has the same time limit as Extract from File. HEIC photos are not supported: convert them to JPEG first.
+* **Templates:** two templates in the gallery use it: **Invoice to Google Sheets** (upload form, extract fields, append a row) and **CV screening: score and email** (upload form, extract text, score against your job description, email the result).
 
 ---
 
@@ -893,6 +916,7 @@ The live app on Vercel and local development use the **same** database, so the s
 | `WAIT_MAX_DAYS` | The longest a Wait node may wait, in days, default 7 (the limit of Inngest's free plan) |
 | `FORM_RATE_LIMIT_PER_MINUTE` | Submissions per minute for one hosted form, default 30 |
 | `CHAT_WIDGET_RATE_LIMIT_PER_MINUTE`, `CHAT_VISITOR_RATE_LIMIT_PER_MINUTE` | Messages per minute for one public chat widget, and for one visitor of it. Defaults 60 and 10 |
+| `VISION_MAX_PDF_PAGES` | The most pages of a PDF one Analyze Image / Document node may read, default 20 |
 | `MAX_FILE_SIZE_MB`, `MAX_USER_STORAGE_MB`, `FILE_RETENTION_DAYS` | Workflow file limits, defaults 10, 200 and 7 |
 | `MAX_UNCOMPRESSED_FILE_MB`, `MAX_ZIP_ENTRIES` | What an XLSX or DOCX file may unpack to, defaults 50 and 2000 |
 | `PDF_MAX_PAGES`, `PDF_EXTRACT_TIMEOUT_SECONDS` | Pages read from a PDF and the time allowed, defaults 200 and 20 |
@@ -910,7 +934,8 @@ Nodes that are not built yet. Each new integration is a config passed to `create
 | ---- | ------------- |
 | Google Docs | Creating and editing documents (Drive can already download them as PDF) |
 | More PDF scripts | Chinese, Japanese, Korean, Devanagari and emoji have no bundled font and are rejected; Urdu is drawn in Naskh style, not Nastaliq |
-| Scanned PDFs and old Office files | Extract from File cannot read scanned PDFs (that needs OCR) or the old .xls and .doc formats |
+| Old Office files | Extract from File cannot read the old .xls and .doc formats. (It also cannot read scanned PDFs, but the Analyze Image / Document node now can, with a vision model.) |
+| Rendering PDF pages | Analyze Image / Document takes a scanned page's picture out of the PDF instead of drawing the page, so a page made only of vector drawings without text cannot be read. Drawing pages needs a canvas library on the server |
 | Browser Automation | Deliberately not built: it needs a headless browser service that cannot run on standard serverless functions, and it is easy to abuse. If added, the plan is a node that uses the user's own hosted-browser API key |
 | MongoDB, Redis, Supabase (REST) | More data stores next to Postgres and MySQL |
 | Slack / Discord bots | Bot-token nodes and triggers; today both send through webhook URLs |

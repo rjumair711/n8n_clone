@@ -348,6 +348,7 @@ enum NodeType {
   APPROVAL
   FORM_TRIGGER
   FORM
+  ANALYZE_DOCUMENT
 }
 
 model Node {

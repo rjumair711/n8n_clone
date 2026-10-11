@@ -17,7 +17,7 @@ import { Braces, DatabaseZap, FileInput, FileOutput, FileText, PencilRuler, Plug
 import { AlertTriangle, ArrowDownUp, CopyMinus, Group, ListEnd, OctagonX, Reply, Sigma, Split, Workflow } from "lucide-react"
 import { Clock, FilterIcon, GlobeIcon, MousePointerIcon, Send, VariableIcon, ChevronDown, ChevronRight, Code2, Bot, MemoryStickIcon, Search, Type, Calculator, GitBranch, GitFork, Merge, Repeat, Webhook, MessageSquare } from "lucide-react"
 import { toast } from "sonner"
-import { ClipboardList, Hourglass, Lock, Route, UserCheck } from "lucide-react"
+import { ClipboardList, Hourglass, Lock, Route, ScanEye, UserCheck } from "lucide-react"
 import { getRequiredPlanForNode } from "@/config/plans"
 import { TOOL_APPROVAL_DEFAULT_BY_RISK } from "@/lib/approvals"
 import { useCurrentPlan } from "@/features/subscription/hook/use-current-plan"
@@ -356,6 +356,12 @@ const aiNodes: NodeTypeOption[] = [
         label: "Information Extractor",
         description: "Pull names, numbers, dates and other values out of free text",
         icon: ScanText
+    },
+    {
+        type: NodeType.ANALYZE_DOCUMENT,
+        label: "Analyze Image / Document",
+        description: "Read an image or a PDF (scans too) with a vision model: text, fields or a description",
+        icon: ScanEye
     },
     {
         type: NodeType.STRUCTURED_OUTPUT_PARSER,

@@ -16,6 +16,7 @@ export const AI_NODE_TYPES: ReadonlySet<string> = new Set([
   "QWEN",
   "TEXT_CLASSIFIER",
   "INFORMATION_EXTRACTOR",
+  "ANALYZE_DOCUMENT",
   "VECTOR_STORE",
 ]);
 

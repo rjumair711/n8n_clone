@@ -62,6 +62,7 @@ import {
     WhatsappTriggerNode,
 } from '@/features/executions/components/core/nodes';
 import {
+    AnalyzeDocumentNode,
     GmailTriggerNode,
     InformationExtractorNode,
     McpClientNode,
@@ -154,6 +155,7 @@ export const nodeComponents: NodeTypes = {
     [NodeType.STRUCTURED_OUTPUT_PARSER]: StructuredOutputParserNode,
     [NodeType.TEXT_CLASSIFIER]: TextClassifierNode,
     [NodeType.INFORMATION_EXTRACTOR]: InformationExtractorNode,
+    [NodeType.ANALYZE_DOCUMENT]: AnalyzeDocumentNode,
     [NodeType.VECTOR_STORE]: VectorStoreNode,
     [NodeType.MCP_CLIENT_TOOL]: McpClientNode,
     [NodeType.EDIT_FIELDS]: EditFieldsNode,

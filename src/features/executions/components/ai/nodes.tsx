@@ -1,10 +1,11 @@
 "use client";
 
 import { CredentialType } from "@prisma/client";
-import { Braces, DatabaseZap, Plug, ScanText, Tags } from "lucide-react";
+import { Braces, DatabaseZap, Plug, ScanEye, ScanText, Tags } from "lucide-react";
 import { createIntegrationNode } from "../integration-node";
 import type { IntegrationConfig } from "../integration-dialog";
 import { OTHER_CATEGORY_ID, parseAttributes, parseCategories } from "../../lib/ai-fields";
+import { ANALYZE_MODES } from "../../lib/vision";
 
 const MODEL_PORT = [{ id: "sub-model", label: "Model" }];
 
@@ -105,6 +106,62 @@ export const InformationExtractorNode = createIntegrationNode(
     const count = parseAttributes(data.attributes).length;
     return count ? `${count} attribute${count === 1 ? "" : "s"}` : "Not Configured";
   }
+);
+
+// =========================================================================
+// ANALYZE IMAGE / DOCUMENT (OCR and vision)
+// =========================================================================
+export const analyzeDocumentConfig: IntegrationConfig = {
+  label: "Analyze Image / Document",
+  description:
+    "Reads an image or a PDF with a vision model: all of its text (OCR), named fields, or a description. Connect a model that can read images to the Model port underneath: OpenAI, Gemini, Anthropic, or a Chat Model with a vision model such as GLM-4.6V or Qwen-VL.",
+  logo: ScanEye,
+  defaultVariableName: "analysis",
+  subInputs: MODEL_PORT,
+  operations: ANALYZE_MODES.map(({ value, label }) => ({ value, label })),
+  hint: "Extract All Text gives {{<name>.text}}; Extract Fields gives {{<name>.output.<field>}} (null for a field the document does not have); Describe gives {{<name>.description}}. For a PDF, {{<name>.pagesRead}} and {{<name>.truncated}} say how much of it was read. Pages of a PDF that have text are read as text; scanned pages are sent to the model as images.",
+  fields: [
+    {
+      name: "file",
+      label: "File",
+      placeholder: "form.invoice",
+      description:
+        "A file variable holding an image (JPEG, PNG, WebP, GIF, TIFF) or a PDF: from a Form Trigger upload, an HTTP Request download, Google Drive or Gmail. Leave empty inside a list of files.",
+    },
+    {
+      name: "attributes",
+      label: "Fields To Extract",
+      type: "textarea",
+      placeholder:
+        "vendor: the company that issued the invoice\ninvoiceNumber\ninvoiceDate (date)\ntotal (number): the amount to pay\nlineItems (list)",
+      description:
+        "One per line, as name (type): description. Types: string, number, boolean, date, list. Type and description are optional. The same format as the Information Extractor.",
+      required: true,
+      operations: ["extract_fields"],
+    },
+    {
+      name: "instructions",
+      label: "What To Describe",
+      type: "textarea",
+      placeholder: "What is in this picture? Is anything damaged?",
+      description: "Leave empty for a general description.",
+      operations: ["describe"],
+    },
+    {
+      name: "maxPages",
+      label: "Max Pages (PDF)",
+      placeholder: "5",
+      defaultValue: "5",
+      description:
+        "How many pages of a PDF are read, from the first. Every scanned page is an image the model is paid to read. The server's limit is 20 (VISION_MAX_PDF_PAGES).",
+    },
+  ],
+};
+
+export const AnalyzeDocumentNode = createIntegrationNode(
+  analyzeDocumentConfig,
+  (data) =>
+    ANALYZE_MODES.find((mode) => mode.value === data.operation)?.label
 );
 
 // =========================================================================
