@@ -56,7 +56,7 @@ export const createIntegrationNode = (
       : config.credentialType;
 
     const description =
-      credentialType && !nodeData.credentialId
+      credentialType && !config.credentialOptional && !nodeData.credentialId
         ? "Not Configured"
         : describe?.(nodeData) ||
           operationLabel ||

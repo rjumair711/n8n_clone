@@ -7693,6 +7693,341 @@ pour()</code></pre>
     ]);
   });
 
+  // ----------------------------------------------------------- AUDIO
+  console.log("Audio nodes");
+
+  const audioOptions = await import("@/features/executions/lib/audio-options");
+  const audio = await import("@/features/executions/components/apps/audio");
+  const voice = await import("@/features/executions/components/apps/voice");
+
+  await test("OpenAI, Groq and any OpenAI-compatible server are the providers", () => {
+    const { AUDIO_PROVIDERS, getAudioProvider, resolveAudioBaseUrl } = audioOptions;
+
+    assert.deepEqual(AUDIO_PROVIDERS.map((provider) => provider.value), ["openai", "groq", "custom"]);
+
+    const openai = getAudioProvider(undefined)!;
+    assert.equal(openai.value, "openai");
+    assert.equal(openai.transcriptionModel, "whisper-1");
+    assert.equal(openai.speechModel, "tts-1");
+    assert.equal(resolveAudioBaseUrl(openai, "https://ignored.example"), "https://api.openai.com/v1");
+
+    const groq = getAudioProvider("groq")!;
+    assert.equal(groq.transcriptionModel, "whisper-large-v3-turbo");
+    assert.equal(resolveAudioBaseUrl(groq, ""), "https://api.groq.com/openai/v1");
+
+    const custom = getAudioProvider("custom")!;
+    assert.equal(resolveAudioBaseUrl(custom, " https://speech.example.com/v1/ "), "https://speech.example.com/v1");
+    assert.equal(resolveAudioBaseUrl(custom, "http://localhost:8000/v1"), "http://localhost:8000/v1");
+    for (const bad of ["", "speech.example.com", "ftp://x/v1", "javascript:alert(1)"]) {
+      assert.equal(resolveAudioBaseUrl(custom, bad), null, bad);
+    }
+    assert.equal(getAudioProvider("elevenlabs"), undefined);
+
+    // The APIs go by the file's extension: a Telegram voice note is .oga
+    const name = audioOptions.toTranscriptionFileName;
+    assert.equal(name("voice.oga", "audio/ogg"), "voice.ogg");
+    assert.equal(name("voice", "audio/ogg; codecs=opus"), "voice.ogg");
+    assert.equal(name("file_12.oga", ""), "file_12.ogg");
+    assert.equal(name("note.opus", "application/octet-stream"), "note.ogg");
+    assert.equal(name("meeting.mp3", "audio/mpeg"), "meeting.mp3");
+    assert.equal(name("Call recording (1).M4A", "audio/x-m4a"), "Call_recording_1_.M4A");
+    assert.equal(name("clip", "audio/mp4"), "clip.m4a");
+    assert.equal(name("", "audio/wav"), "audio.wav");
+    // No folders in the name that is sent
+    assert.equal(/[\\/]/.test(name("../../etc/passwd", "audio/mpeg")), false);
+    assert.match(name("../../etc/passwd", "audio/mpeg"), /\.mp3$/);
+    // An unknown type is sent under its own name
+    assert.equal(name("data.bin", "application/octet-stream"), "data.bin");
+
+    assert.deepEqual(audioOptions.SPEECH_FORMATS.map((format) => format.value), ["mp3", "opus", "wav"]);
+    assert.deepEqual(audioOptions.getSpeechFormat("opus"), {
+      value: "opus",
+      label: "Opus (voice messages)",
+      mimeType: "audio/ogg",
+      extension: "ogg",
+    });
+    assert.equal(audioOptions.getSpeechFormat("flac").value, "mp3");
+    assert.equal(audioOptions.MAX_SPEECH_CHARACTERS, 4096);
+  });
+
+  await test("the audio API is called the OpenAI way, through the SSRF guard", async () => {
+    const calls: { url: string; auth: string; type: string; body: Buffer }[] = [];
+
+    const api = createServer((req, res) => {
+      const chunks: Buffer[] = [];
+      req.on("data", (chunk) => chunks.push(chunk));
+      req.on("end", () => {
+        const body = Buffer.concat(chunks);
+        calls.push({
+          url: req.url ?? "",
+          auth: String(req.headers.authorization),
+          type: String(req.headers["content-type"]),
+          body,
+        });
+
+        if (req.url === "/v1/audio/transcriptions") {
+          res.writeHead(200, { "Content-Type": "application/json" });
+          res.end(JSON.stringify({ text: "  Assalam o alaikum, this is a test.  ", language: "urdu", duration: 3.2 }));
+        } else if (req.url === "/v1/audio/speech") {
+          res.writeHead(200, { "Content-Type": "audio/mpeg" });
+          res.end(Buffer.from("ID3-fake-mp3-bytes"));
+        } else if (req.url === "/bad/audio/transcriptions") {
+          res.writeHead(401, { "Content-Type": "application/json" });
+          res.end(JSON.stringify({ error: { message: "Incorrect API key provided" } }));
+        } else if (req.url === "/empty/audio/speech") {
+          res.writeHead(200, { "Content-Type": "audio/mpeg" });
+          res.end();
+        } else if (req.url === "/odd/audio/transcriptions") {
+          res.writeHead(200, { "Content-Type": "application/json" });
+          res.end(JSON.stringify({ result: "no text field" }));
+        } else {
+          res.writeHead(500);
+          res.end("boom");
+        }
+      });
+    });
+
+    await new Promise<void>((resolve) => api.listen(0, "127.0.0.1", resolve));
+    const base = `http://127.0.0.1:${(api.address() as AddressInfo).port}`;
+    const before = process.env.ALLOW_PRIVATE_NETWORK_REQUESTS;
+
+    const file = { fileName: "voice.oga", mimeType: "audio/ogg", data: Buffer.from("OggS-fake-voice-bytes") };
+
+    try {
+      // A private address is refused before anything is sent
+      process.env.ALLOW_PRIVATE_NETWORK_REQUESTS = "false";
+      await assert.rejects(
+        audio.requestTranscription({ baseUrl: `${base}/v1`, apiKey: "k", model: "whisper-1", file })
+      );
+      await assert.rejects(
+        audio.requestSpeech({ baseUrl: `${base}/v1`, apiKey: "k", model: "tts-1", input: "hi", voice: "alloy", format: "mp3" })
+      );
+      assert.equal(calls.length, 0);
+
+      process.env.ALLOW_PRIVATE_NETWORK_REQUESTS = "true";
+
+      const transcript = await audio.requestTranscription({
+        baseUrl: `${base}/v1`,
+        apiKey: "sk-test",
+        model: "whisper-large-v3-turbo",
+        file,
+        language: "ur",
+        prompt: "Names: Hunza",
+      });
+      assert.deepEqual(transcript, { text: "Assalam o alaikum, this is a test.", language: "urdu", duration: 3.2 });
+
+      const sent = calls[0];
+      assert.equal(sent.url, "/v1/audio/transcriptions");
+      assert.equal(sent.auth, "Bearer sk-test");
+      assert.match(sent.type, /^multipart\/form-data; boundary=/);
+      const multipart = sent.body.toString("latin1");
+      // The file under a name the API accepts, with its bytes
+      assert.match(multipart, /name="file"; filename="voice\.ogg"/);
+      assert.match(multipart, /Content-Type: audio\/ogg/);
+      assert.ok(multipart.includes("OggS-fake-voice-bytes"));
+      assert.match(multipart, /name="model"\r\n\r\nwhisper-large-v3-turbo/);
+      assert.match(multipart, /name="response_format"\r\n\r\njson/);
+      assert.match(multipart, /name="language"\r\n\r\nur/);
+      assert.match(multipart, /name="prompt"\r\n\r\nNames: Hunza/);
+
+      // Text to speech: JSON in, audio bytes out
+      const speech = await audio.requestSpeech({
+        baseUrl: `${base}/v1`,
+        apiKey: "sk-test",
+        model: "tts-1",
+        input: "Hello there",
+        voice: "nova",
+        format: "opus",
+      });
+      assert.equal(speech.toString(), "ID3-fake-mp3-bytes");
+      assert.equal(calls[1].url, "/v1/audio/speech");
+      assert.equal(calls[1].auth, "Bearer sk-test");
+      assert.deepEqual(JSON.parse(calls[1].body.toString()), {
+        model: "tts-1",
+        input: "Hello there",
+        voice: "nova",
+        response_format: "opus",
+      });
+
+      // The API's own error message, and nothing of the key
+      await assert.rejects(
+        audio.requestTranscription({ baseUrl: `${base}/bad`, apiKey: "sk-secret-key", model: "whisper-1", file }),
+        (error: Error) =>
+          /Transcribe Audio node failed: Incorrect API key provided/.test(error.message) &&
+          !error.message.includes("sk-secret-key")
+      );
+      await assert.rejects(
+        audio.requestTranscription({ baseUrl: `${base}/odd`, apiKey: "k", model: "whisper-1", file }),
+        /the API did not answer with a transcription/
+      );
+      await assert.rejects(
+        audio.requestTranscription({ baseUrl: `${base}/nothing`, apiKey: "k", model: "whisper-1", file }),
+        /Transcribe Audio node failed: HTTP 500/
+      );
+      await assert.rejects(
+        audio.requestSpeech({ baseUrl: `${base}/empty`, apiKey: "k", model: "tts-1", input: "hi", voice: "alloy", format: "mp3" }),
+        /the API returned no audio/
+      );
+    } finally {
+      if (before === undefined) delete process.env.ALLOW_PRIVATE_NETWORK_REQUESTS;
+      else process.env.ALLOW_PRIVATE_NETWORK_REQUESTS = before;
+      await new Promise((resolve) => api.close(resolve));
+    }
+  });
+
+  await test("both nodes check their settings before they use a credential", async () => {
+    const upload = { id: "file1", fileName: "voice.ogg", mimeType: "audio/ogg", size: 10, url: "x" };
+    const transcribe = (data: Record<string, string>) =>
+      audio.transcribeAudioExecutor({ ...baseParams, data, context: { upload } });
+    const speak = (data: Record<string, string>) =>
+      audio.textToSpeechExecutor({ ...baseParams, data, context: { answer: "Hello" } });
+
+    // Not a file variable
+    await assert.rejects(
+      audio.transcribeAudioExecutor({ ...baseParams, data: { file: "nothing" }, context: {} }),
+      /Transcribe Audio/
+    );
+    await assert.rejects(transcribe({ file: "upload", language: "urdu language" }), /Language must be a language code such as en, ur or ar/);
+    await assert.rejects(transcribe({ file: "upload", operation: "elevenlabs" }), /Unsupported provider "elevenlabs"/);
+    await assert.rejects(transcribe({ file: "upload", operation: "custom" }), /Base URL must be the API's http\(s\) address/);
+    await assert.rejects(
+      transcribe({ file: "upload", operation: "custom", baseUrl: "https://speech.example.com/v1" }),
+      /Model is required for OpenAI-compatible/
+    );
+    // Everything is in order: the credential is next
+    await assert.rejects(transcribe({ file: "upload" }), /Transcribe Audio node: Credential is required/);
+    await assert.rejects(transcribe({ file: "upload", operation: "groq" }), /Credential is required/);
+
+    await assert.rejects(speak({ text: "  " }), /Text to Speech node: Text is required/);
+    await assert.rejects(
+      audio.textToSpeechExecutor({ ...baseParams, data: { text: "{{long}}" }, context: { long: "x".repeat(4097) } }),
+      /the text has 4097 characters; one call can speak at most 4096/
+    );
+    // Groq and custom servers have no default voice model
+    await assert.rejects(speak({ text: "{{answer}}", operation: "groq" }), /Model is required for Groq/);
+    await assert.rejects(speak({ text: "{{answer}}" }), /Text to Speech node: Credential is required/);
+
+    const { readFileSync, readdirSync } = await import("node:fs");
+    const read = (path: string) => readFileSync(path, "utf8");
+    const source = read("src/features/executions/components/apps/audio.ts");
+
+    // The speech is stored as a workflow file, and cannot be larger than one
+    assert.match(source, /return saveWorkflowFile\(\{/);
+    assert.match(source, /if \(size > MAX_FILE_BYTES\) \{/);
+    assert.match(source, /\[variableName\]: \{\s*file,/);
+    // Both calls go through the guard, and nothing else leaves this file
+    assert.equal(source.match(/await safeFetch\(/g)?.length, 2);
+    assert.equal(/\bfetch\(/.test(source.replace(/safeFetch\(/g, "")), false);
+
+    // OpenAI's own credential, or the Chat Model key for the others
+    const nodes = read("src/features/executions/components/apps/nodes.tsx");
+    assert.match(nodes, /\(values\.operation \?\? "openai"\) === "openai"\s*\? CredentialType\.OPENAI\s*: CredentialType\.OPENAI_COMPATIBLE/);
+
+    const registry = read("src/features/executions/lib/executor-registry.ts");
+    assert.match(registry, /\[NodeType\.TRANSCRIBE_AUDIO\]: transcribeAudioExecutor,\s*\[NodeType\.TEXT_TO_SPEECH\]: textToSpeechExecutor,/);
+    for (const type of ["TRANSCRIBE_AUDIO", "TEXT_TO_SPEECH"]) {
+      assert.equal(agentTools.getToolRisk(type, {}), "read", type);
+    }
+
+    const folder = readdirSync("prisma/migrations").find((name) => name.endsWith("_audio_nodes"));
+    assert.ok(folder, "migration");
+    assert.deepEqual(
+      read(`prisma/migrations/${folder}/migration.sql`)
+        .split(/\r?\n/)
+        .filter((line) => line.trim() && !line.startsWith("--")),
+      [
+        `ALTER TYPE "NodeType" ADD VALUE 'TRANSCRIBE_AUDIO';`,
+        `ALTER TYPE "NodeType" ADD VALUE 'TEXT_TO_SPEECH';`,
+      ]
+    );
+  });
+
+  await test("a voice message in a Telegram or WhatsApp update is found and fetched as a file", async () => {
+    // Telegram: a voice note, an audio file, or neither
+    assert.deepEqual(
+      voice.findTelegramVoice({
+        update_id: 1,
+        message: { chat: { id: 5 }, voice: { file_id: "AwACAg", duration: 4, mime_type: "audio/ogg", file_size: 9000 } },
+      }),
+      { fileId: "AwACAg", mimeType: "audio/ogg", fileName: "voice.ogg", duration: 4 }
+    );
+    assert.deepEqual(
+      voice.findTelegramVoice({
+        message: { audio: { file_id: "CQACAg", duration: 180, mime_type: "audio/mpeg", file_name: "song.mp3" } },
+      }),
+      { fileId: "CQACAg", mimeType: "audio/mpeg", fileName: "song.mp3", duration: 180 }
+    );
+    // No type given: a voice note is Ogg
+    assert.equal(voice.findTelegramVoice({ message: { voice: { file_id: "x" } } })?.fileName, "voice.ogg");
+    for (const update of [null, {}, { message: { text: "hi" } }, { message: { voice: {} } }, { message: { voice: { file_id: 5 } } }, "text"]) {
+      assert.equal(voice.findTelegramVoice(update), null);
+    }
+
+    // WhatsApp: an audio message
+    assert.deepEqual(
+      voice.findWhatsappVoice({ type: "audio", audio: { id: "1234567890", mime_type: "audio/ogg; codecs=opus", voice: true } }),
+      { fileId: "1234567890", mimeType: "audio/ogg; codecs=opus", fileName: "voice.ogg" }
+    );
+    for (const message of [null, { type: "text", text: { body: "hi" } }, { audio: {} }, { audio: { id: "../../me" } }, { audio: { id: 7 } }]) {
+      assert.equal(voice.findWhatsappVoice(message), null);
+    }
+
+    // A text message passes through the triggers untouched
+    const text = { telegram: { message: { text: "hi", chat: { id: 5 } } }, chatInput: "hi" };
+    assert.equal(await voice.telegramTriggerExecutor({ ...baseParams, data: {}, context: text }), text);
+    const whatsappText = { whatsapp: { text: "hi", message: { type: "text" } } };
+    assert.equal(await voice.whatsappTriggerExecutor({ ...baseParams, data: {}, context: whatsappText }), whatsappText);
+    // A test run from the editor has no update at all
+    assert.deepEqual(await voice.telegramTriggerExecutor({ ...baseParams, data: {}, context: {} }), {});
+
+    // A voice message without a credential on the trigger: the run goes
+    // on, and the data says why there is no file
+    const noCredential: any = await voice.whatsappTriggerExecutor({
+      ...baseParams,
+      data: {},
+      context: { whatsapp: { from: "923001234567", message: { type: "audio", audio: { id: "1234567890" } } }, sessionId: "whatsapp-923001234567" },
+    });
+    assert.equal(noCredential.whatsapp.voice, undefined);
+    assert.match(noCredential.whatsapp.voiceError, /no credential is selected on the WhatsApp Trigger/);
+    assert.equal(noCredential.whatsapp.from, "923001234567");
+    assert.equal(noCredential.sessionId, "whatsapp-923001234567");
+
+    const telegramNoCredential: any = await voice.telegramTriggerExecutor({
+      ...baseParams,
+      data: {},
+      context: { telegram: { message: { voice: { file_id: "AwACAg" } } } },
+    });
+    assert.match(telegramNoCredential.telegram.voiceError, /no credential is selected on the Telegram Trigger/);
+
+    const { readFileSync } = await import("node:fs");
+    const read = (path: string) => readFileSync(path, "utf8");
+    const source = read("src/features/executions/components/apps/voice.ts");
+
+    // Stored like every other workflow file, for the workflow's owner
+    assert.match(source, /file: await saveWorkflowFile\(\{/);
+    assert.match(source, /if \(bytes\.length > MAX_FILE_BYTES\) throw new Error\(TOO_LARGE\);/);
+    // The bot token is in Telegram's download address: no failure of that
+    // request is ever passed on
+    const telegram = source.slice(source.indexOf("const downloadTelegramFile"), source.indexOf("const GRAPH_API_VERSION"));
+    assert.equal(/error\.message|String\(error\)|\$\{error/.test(telegram), false);
+    assert.equal((telegram.match(/\} catch \{/g) ?? []).length, 2);
+    // The address Meta gives is only fetched when it is a public one
+    assert.match(source, /await safeFetch\(media\.url,/);
+
+    const registry = read("src/features/executions/lib/executor-registry.ts");
+    assert.match(registry, /\[NodeType\.TELEGRAM_TRIGGER\]: telegramTriggerExecutor,\s*\[NodeType\.WHATSAPP_TRIGGER\]: whatsappTriggerExecutor,/);
+
+    // The WhatsApp Trigger's credential is optional: text messages need none
+    const nodes = read("src/features/executions/components/core/nodes.tsx");
+    assert.match(nodes, /credentialType: CredentialType\.WHATSAPP,\s*credentialLabel: "WhatsApp Credential",\s*credentialOptional: true,/);
+    const dialog = read("src/features/executions/components/integration-dialog.tsx");
+    assert.match(dialog, /credentialType && !config\.credentialOptional && !values\.credentialId/);
+    assert.match(
+      read("src/features/executions/components/integration-node.tsx"),
+      /credentialType && !config\.credentialOptional && !nodeData\.credentialId/
+    );
+  });
+
   console.log(`\n${passed} checks passed`);
 };
 

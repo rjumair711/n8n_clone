@@ -43,6 +43,7 @@ The platform is designed as a scalable SaaS product with:
 * Website chat widget: a public Chat Trigger with an embed snippet, a hosted chat page, per-visitor memory and a handoff to a person
 * OCR and vision: an Analyze Image / Document node that reads images and PDFs, scanned ones too, with a vision model
 * Web Search and Read Web Page nodes, usable as AI Agent tools
+* Audio: Transcribe Audio and Text to Speech nodes, and voice messages from the Telegram and WhatsApp triggers
 * Inngest background execution system
 * Dynamic time-based execution engine via an automated Background Ticker (`* * * * *` clock matching system)
 * Shared execution context
@@ -390,8 +391,8 @@ OCR and vision for a file a workflow has: a Form Trigger upload, an HTTP Request
 | Schedule Trigger    | Time-based automatic triggers evaluated each minute using custom Cron intervals (e.g., `*/5 * * * *`)       |
 | Webhook Trigger     | Runs on any HTTP request to `/api/webhooks/trigger/<workflowId>`, protected by a per-node secret. Respond immediately, when the last node finishes, or with a Respond to Webhook node |
 | Chat Trigger        | Runs when a message is sent from the editor's chat panel, or (with "Make chat public") from the hosted chat page or the website widget; provides `chatInput` and `sessionId` |
-| Telegram Trigger    | Runs when your bot receives a message. The bot's webhook is registered when the workflow is activated      |
-| WhatsApp Trigger    | Runs when your WhatsApp Business number receives a message (verify token + signature check)                |
+| Telegram Trigger    | Runs when your bot receives a message. The bot's webhook is registered when the workflow is activated. A voice message is given as a file at `{{telegram.voice}}` |
+| WhatsApp Trigger    | Runs when your WhatsApp Business number receives a message (verify token + signature check). With a WhatsApp credential selected, a voice message is given as a file at `{{whatsapp.voice}}` |
 | Gmail Trigger       | Runs when a new email arrives; polls every 1, 5, 15 or 60 minutes with an optional Gmail search filter      |
 | Typeform Trigger    | Runs when a typeform is submitted; answers are available by question title                                 |
 | Form Trigger        | Runs when someone submits the workflow's own hosted form at `/forms/<id>` (see "Forms")                    |
@@ -432,6 +433,8 @@ Every execution also keeps the trigger and the data it started with, so it can b
 | RSS Read         | Read the items of an RSS or Atom feed; the following nodes run once per item |
 | Web Search       | Search the web with Tavily, Brave Search or your own SearXNG server; titles, links and snippets. Also an AI Agent tool. See "Web Search and Read Web Page" |
 | Read Web Page    | Fetch a page and return its main content as clean Markdown or text, cut to a length you set. Also an AI Agent tool. Private and local addresses are blocked |
+| Transcribe Audio | Turn a voice message or audio file into text with OpenAI Whisper, Groq Whisper or any OpenAI-compatible server. See "Audio" |
+| Text to Speech   | Turn text into spoken audio with OpenAI TTS or an OpenAI-compatible server; the result is a file |
 | Respond to Webhook | Answer the HTTP request that started the workflow (JSON, text, redirect, status code, headers) |
 | Webhook Callback | POST the workflow's data to another URL                                   |
 | Execute Workflow | Run another workflow and use its result; also works as an AI Agent tool   |
@@ -495,6 +498,32 @@ Limits: 10 MB per file (`MAX_FILE_SIZE_MB`), 200 MB stored per user (`MAX_USER_S
 | PDF | The first 200 pages are read (`<name>.truncated` is true when there were more; `<name>.pages` is the real count), within 20 seconds | `PDF_MAX_PAGES`, `PDF_EXTRACT_TIMEOUT_SECONDS` |
 | CSV | At most 10,000 rows; the node's **Max Rows** field can lower it. `<name>.truncated` is true when the file had more | `CSV_MAX_ROWS` |
 | Excel (XLSX) | The first 5,000 rows of the sheet | |
+
+## Audio
+
+Two nodes that speak the OpenAI audio API, and voice messages on the two chat triggers.
+
+* **Providers** (each node's Operation): **OpenAI**, **Groq**, or **OpenAI-compatible (custom base URL)** for any service or self-hosted server that offers the same endpoints. OpenAI uses an OpenAI credential; Groq and custom servers use a "Chat Model API Key" credential. A custom base URL goes through the SSRF guard: a server on a private network has to be on `PRIVATE_NETWORK_ALLOWLIST`.
+
+**Transcribe Audio** (`/audio/transcriptions`)
+
+* **File:** a file variable holding audio: `telegram.voice`, `whatsapp.voice`, a Form Trigger upload, an HTTP Request download. MP3, M4A, WAV, OGG, WebM, FLAC or MP4, up to the workflow file size limit.
+* **Model:** `whisper-1` on OpenAI and `whisper-large-v3-turbo` on Groq when left empty; required for a custom server.
+* **Language** (optional, a code such as `en`, `ur`, `ar`) makes the result more accurate; **Hint** (optional) helps with names and unusual words.
+* **Result:** `{{transcript.text}}`, and `language` and `duration` when the server reports them.
+
+**Text to Speech** (`/audio/speech`)
+
+* **Text** up to 4096 characters, a **Model** (`tts-1` on OpenAI when left empty; required for Groq and custom servers), a **Voice** (`alloy` when left empty) and a **Format**: MP3, Opus (an Ogg file, the format of voice messages) or WAV.
+* **Result:** a file reference at `{{speech.file}}`, stored like every other workflow file (same size limit and storage quota, removed after the retention period). Use `speech.file` in a Telegram or WhatsApp node's File field or in an email's Attachments.
+
+**Voice messages on the Telegram and WhatsApp triggers**
+
+* **Telegram Trigger:** a voice message (or audio file) is downloaded with the trigger's bot credential and added to the data as a file: `{{telegram.voice}}`, with its `duration`.
+* **WhatsApp Trigger:** has a new, optional **WhatsApp Credential**. With it selected, a voice message is downloaded and added as `{{whatsapp.voice}}`. Without it everything works as before and text messages need nothing.
+* A voice message that cannot be fetched (no credential, larger than the file size limit, a download error) does not fail the run: the message still arrived, and `{{telegram.voiceError}}` / `{{whatsapp.voiceError}}` says why there is no file.
+* **A voice bot:** Telegram Trigger → Transcribe Audio (File `telegram.voice`) → AI Agent (Source for Prompt "Define below", Prompt `{{transcript.text}}`) → Text to Speech (Text `{{aiAgentOutput.output}}`, Format Opus) → Telegram (File `speech.file`). The Telegram node sends the audio as a file, not as a voice note. A voice message has no text, so `{{chatInput}}` is empty for it: the agent's prompt has to come from the transcript. For a bot that takes both, put an IF on `{{telegram.voice.id}}` first.
+* Transcription and speech are billed by the provider per minute or per character, not per token, so they are not in the AI usage and cost figures. As AI Agent tools both nodes count as Read.
 
 ## Web Search and Read Web Page
 

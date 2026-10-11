@@ -1,7 +1,12 @@
 "use client";
 
 import { CredentialType } from "@prisma/client";
-import { PencilRuler, Rss } from "lucide-react";
+import { AudioLines, PencilRuler, Rss, Volume2 } from "lucide-react";
+import {
+  AUDIO_PROVIDERS,
+  DEFAULT_VOICE,
+  SPEECH_FORMATS,
+} from "../../lib/audio-options";
 import { createIntegrationNode } from "../integration-node";
 import type { IntegrationConfig, IntegrationField } from "../integration-dialog";
 import {
@@ -507,6 +512,127 @@ export const readWebPageConfig: IntegrationConfig = {
 
 export const ReadWebPageNode = createIntegrationNode(readWebPageConfig, (data) =>
   data.url ? data.url : undefined
+);
+
+// =========================================================================
+// TRANSCRIBE AUDIO / TEXT TO SPEECH
+// =========================================================================
+// OpenAI uses its own credential; Groq and other OpenAI-compatible servers
+// use the Chat Model API key credential
+const audioCredential = (values: { operation?: string }) =>
+  (values.operation ?? "openai") === "openai"
+    ? CredentialType.OPENAI
+    : CredentialType.OPENAI_COMPATIBLE;
+
+const audioProviderOperations = AUDIO_PROVIDERS.map(({ value, label }) => ({ value, label }));
+
+const audioBaseUrlField: IntegrationField = {
+  name: "baseUrl",
+  label: "Base URL",
+  placeholder: "https://api.example.com/v1",
+  description:
+    "The address of an OpenAI-compatible API, without /audio/... at the end. A server on a private network also has to be listed in PRIVATE_NETWORK_ALLOWLIST.",
+  required: true,
+  operations: ["custom"],
+};
+
+export const transcribeAudioConfig: IntegrationConfig = {
+  label: "Transcribe Audio",
+  description:
+    "Turns speech in an audio file into text with OpenAI Whisper, Groq Whisper, or any OpenAI-compatible /audio/transcriptions endpoint.",
+  logo: AudioLines,
+  credentialTypeFor: audioCredential,
+  credentialLabel: "API Key Credential",
+  defaultVariableName: "transcript",
+  operations: audioProviderOperations,
+  hint: "Operation is the provider. The text is at {{<name>.text}}. For a voice bot: Telegram Trigger or WhatsApp Trigger, then this node with File telegram.voice or whatsapp.voice, then an AI Agent whose prompt is {{<name>.text}}. OpenAI uses an OpenAI credential; Groq and other servers use a Chat Model API Key credential.",
+  fields: [
+    {
+      name: "file",
+      label: "File",
+      placeholder: "telegram.voice",
+      description:
+        "A file variable holding audio: a voice message from the Telegram or WhatsApp trigger, a form upload, an HTTP Request download. MP3, M4A, WAV, OGG, WebM, FLAC or MP4. Leave empty inside a list of files.",
+    },
+    audioBaseUrlField,
+    {
+      name: "model",
+      label: "Model",
+      placeholder: "whisper-1",
+      description:
+        "Empty: whisper-1 on OpenAI, whisper-large-v3-turbo on Groq. Required for a custom base URL.",
+    },
+    {
+      name: "language",
+      label: "Language",
+      placeholder: "ur",
+      description:
+        "The language that is spoken, as a code (en, ur, ar...). Optional: it is detected when left empty, and naming it makes the result more accurate.",
+    },
+    {
+      name: "prompt",
+      label: "Hint",
+      placeholder: "Names: Hunza, RXJ, Umair",
+      description: "Optional: names or unusual words to help with their spelling.",
+    },
+  ],
+};
+
+export const TranscribeAudioNode = createIntegrationNode(transcribeAudioConfig, (data) =>
+  data.file ? `Transcribe ${data.file}` : undefined
+);
+
+export const textToSpeechConfig: IntegrationConfig = {
+  label: "Text to Speech",
+  description:
+    "Turns text into spoken audio with OpenAI TTS or an OpenAI-compatible /audio/speech endpoint. The result is a file you can send with the Telegram, WhatsApp or email nodes.",
+  logo: Volume2,
+  credentialTypeFor: audioCredential,
+  credentialLabel: "API Key Credential",
+  defaultVariableName: "speech",
+  operations: audioProviderOperations,
+  hint: "Operation is the provider. The audio is a file at {{<name>.file}}: use <name>.file in a Telegram or WhatsApp node's File field, or in an email's Attachments. It is stored like other workflow files (same size limit, removed after the retention period).",
+  fields: [
+    {
+      name: "text",
+      label: "Text",
+      type: "textarea",
+      placeholder: "{{aiAgentOutput.output}}",
+      description: "Up to 4096 characters.",
+      required: true,
+    },
+    audioBaseUrlField,
+    {
+      name: "model",
+      label: "Model",
+      placeholder: "tts-1",
+      description: "Empty: tts-1 on OpenAI. Required for Groq and a custom base URL.",
+    },
+    {
+      name: "voice",
+      label: "Voice",
+      placeholder: DEFAULT_VOICE,
+      description:
+        "A voice of the model. OpenAI has alloy, echo, fable, onyx, nova and shimmer, among others. Empty: alloy.",
+    },
+    {
+      name: "format",
+      label: "Format",
+      type: "select",
+      defaultValue: "mp3",
+      options: SPEECH_FORMATS.map(({ value, label }) => ({ value, label })),
+    },
+    {
+      name: "fileName",
+      label: "File Name",
+      placeholder: "speech",
+      description: "Without the extension. Empty: speech.",
+    },
+  ],
+};
+
+export const TextToSpeechNode = createIntegrationNode(textToSpeechConfig, (data) =>
+  data.text ? "Speak text" : undefined
 );
 
 // =========================================================================
