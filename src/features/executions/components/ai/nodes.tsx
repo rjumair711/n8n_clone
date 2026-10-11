@@ -1,7 +1,7 @@
 "use client";
 
 import { CredentialType } from "@prisma/client";
-import { Braces, DatabaseZap, FolderSync, Plug, ScanEye, ScanText, ServerCog, Tags } from "lucide-react";
+import { Braces, BrainCircuit, DatabaseZap, FolderSync, Plug, ScanEye, ScanText, ServerCog, Tags } from "lucide-react";
 import { createIntegrationNode } from "../integration-node";
 import type { IntegrationConfig, IntegrationField } from "../integration-dialog";
 import {
@@ -12,6 +12,13 @@ import {
   RERANKERS,
 } from "../../lib/rag-options";
 import { SPLIT_MODES } from "../../lib/text-splitter";
+import {
+  FACT_MAX_PER_CONTACT,
+  MEMORY_DEFAULT_MESSAGES,
+  MEMORY_MAX_MESSAGES,
+  RECALL_TOOL,
+  REMEMBER_TOOL,
+} from "../../lib/memory-options";
 
 // Kept in step with MCP_MIN_TOKEN_LENGTH in src/lib/mcp-server.ts (a test
 // compares them); that file is not imported here to keep it off the page
@@ -555,6 +562,63 @@ export const McpClientNode = createIntegrationNode(mcpClientConfig, (data) => {
     return data.endpoint;
   }
 });
+
+// =========================================================================
+// POSTGRES MEMORY
+// =========================================================================
+export const postgresMemoryConfig: IntegrationConfig = {
+  label: "Postgres Memory",
+  description:
+    "Lasting memory for an AI Agent, kept in the app's database. Connect it to the agent's Memory port. It keeps each session's chat history, can summarise the older part, and lets the agent keep facts about the person it talks to.",
+  logo: BrainCircuit,
+  summary: "Chat history and facts",
+  hint: `With Long-Term Facts on, the agent gets two tools, ${RECALL_TOOL} and ${REMEMBER_TOOL}, and is shown what is saved about the contact at the start of every turn. Facts belong to your account: every agent of yours that uses the same Contact ID sees them.`,
+  fields: [
+    {
+      name: "sessionId",
+      label: "Session ID",
+      placeholder: "{{sessionId}}",
+      defaultValue: "{{sessionId}}",
+      description:
+        "One conversation. The chat, Telegram, WhatsApp, Messenger and Instagram triggers set {{sessionId}} for you.",
+      required: true,
+    },
+    {
+      name: "messageLimit",
+      label: "Message Limit",
+      placeholder: String(MEMORY_DEFAULT_MESSAGES),
+      defaultValue: String(MEMORY_DEFAULT_MESSAGES),
+      description: `How many of the latest messages the model is given (up to ${MEMORY_MAX_MESSAGES}). Older ones stay stored.`,
+    },
+    {
+      name: "summarize",
+      label: "Summarise Older Messages",
+      type: "switch",
+      defaultValue: "false",
+      description:
+        "Keeps a running summary of the messages that no longer fit in the limit and gives it to the model, so a long conversation is not forgotten. The summary is written by the agent's own model after a turn, a few messages at a time, and its cost is counted with the agent's.",
+    },
+    {
+      name: "facts",
+      label: "Long-Term Facts",
+      type: "switch",
+      defaultValue: "true",
+      description: `Lets the agent save and read lasting facts about the contact (name, preferences, order numbers), up to ${FACT_MAX_PER_CONTACT} per contact. They outlive the conversation.`,
+    },
+    {
+      name: "contactId",
+      label: "Contact ID",
+      placeholder: "{{whatsapp.from}} or {{sessionId}}",
+      description:
+        "Who the facts are about. Leave empty to use the Session ID. Use something that stays the same for a person, such as a phone number or a customer ID.",
+      showWhen: (values) => values.facts !== "false",
+    },
+  ],
+};
+
+export const PostgresMemoryNode = createIntegrationNode(postgresMemoryConfig, (data) =>
+  `Last ${data.messageLimit || MEMORY_DEFAULT_MESSAGES} messages${data.summarize === "true" ? " + summary" : ""}${data.facts === "false" ? "" : " + facts"}`
+);
 
 // =========================================================================
 // MCP SERVER TRIGGER

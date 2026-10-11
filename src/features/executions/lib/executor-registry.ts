@@ -206,6 +206,9 @@ const baseExecutors: Record<NodeType, NodeExecutor<any>> = {
   [NodeType.INSTAGRAM_TRIGGER]: contextTriggerExecutor,
   [NodeType.DOCUMENT_LOADER]: documentLoaderExecutor,
   [NodeType.MCP_SERVER_TRIGGER]: mcpServerTriggerExecutor,
+  // Configuration of the AI Agent it is plugged into: run on its own it
+  // passes the data on unchanged
+  [NodeType.POSTGRES_MEMORY]: contextTriggerExecutor,
   [NodeType.RSS_READ]: rssReadExecutor,
   [NodeType.RSS_FEED_TRIGGER]: contextTriggerExecutor,
   [NodeType.GOOGLE_DRIVE]: googleDriveExecutor,

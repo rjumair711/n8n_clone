@@ -54,6 +54,8 @@ model User {
   // Optional monthly AI budget in US cents, over all workflows. Null: none
   aiBudgetCents          Int?
   aiUsage                AiUsage[]
+  memorySummaries        AgentMemorySummary[]
+  contactFacts           ContactFact[]
 
   @@unique([email])
   @@map("user")
@@ -373,6 +375,7 @@ enum NodeType {
   SOCIAL_POST
   DOCUMENT_LOADER
   MCP_SERVER_TRIGGER
+  POSTGRES_MEMORY
 }
 
 model Node {
@@ -558,7 +561,43 @@ model AgentMemory {
   @@index([nodeId])
   @@index([userId])
   @@index([sessionId])
+  // One session's messages in order, for the Postgres Memory node
+  @@index([nodeId, userId, sessionId, createdAt])
   @@map("agent_memory")
+}
+
+// Postgres Memory: the running summary of a session's older messages
+model AgentMemorySummary {
+  id              String   @id @default(cuid())
+  nodeId          String
+  userId          String
+  sessionId       String
+  summary         String   @db.Text
+  // Messages up to and including this time are in the summary
+  summarizedUntil DateTime
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  user            User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([nodeId, userId, sessionId])
+  @@map("agent_memory_summary")
+}
+
+// Postgres Memory: long-term facts an agent keeps about a contact. They
+// belong to the account, so every agent of the account that names the same
+// contact sees them.
+model ContactFact {
+  id        String   @id @default(cuid())
+  userId    String
+  contactId String
+  key       String
+  value     String   @db.Text
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, contactId, key])
+  @@map("contact_fact")
 }
 
 // What a polling trigger (Gmail Trigger) has already seen. Kept outside the

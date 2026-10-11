@@ -65,6 +65,22 @@ import {
 import { extractJson } from "@/features/executions/lib/ai-fields";
 import { getAiUsageScope, recordModelCalls } from "@/lib/ai-usage";
 import {
+  buildFactTools,
+  findMessagesToSummarize,
+  listContactFacts,
+  loadSessionMemory,
+  saveSessionSummary,
+  saveSessionTurn,
+} from "@/lib/agent-memory";
+import {
+  SUMMARY_SYSTEM,
+  buildMemoryNote,
+  buildSummaryPrompt,
+  normalizeContactId,
+  resolveMessageLimit,
+  type ContactFactEntry,
+} from "@/features/executions/lib/memory-options";
+import {
   buildMcpTools,
   loadMcpSecret,
   type McpClientData,
@@ -190,7 +206,8 @@ export const aiAgentExecutor: NodeExecutor<AIAgentData> = async ({
       modelNode ??= sourceNode;
     } else if (
       handle.includes("memory") ||
-      sourceNode.type === NodeType.BUFFER_MEMORY
+      sourceNode.type === NodeType.BUFFER_MEMORY ||
+      sourceNode.type === NodeType.POSTGRES_MEMORY
     ) {
       memoryNode ??= sourceNode;
     }
@@ -317,7 +334,7 @@ export const aiAgentExecutor: NodeExecutor<AIAgentData> = async ({
     );
   }
 
-  const system = parserNode
+  const instructions = parserNode
     ? `${baseSystem}\n\nIMPORTANT: Your final answer must be a single JSON value and nothing else: no explanation, no markdown fences. It must have exactly this structure:\n${outputFormat}`
     : baseSystem;
 
@@ -334,7 +351,49 @@ export const aiAgentExecutor: NodeExecutor<AIAgentData> = async ({
 
   let history: ModelMessage[] = [];
 
-  if (memoryNode) {
+  // Postgres Memory: a message limit, an optional summary of what is older,
+  // and long-term facts about the contact
+  const postgresMemory =
+    memoryNode?.type === NodeType.POSTGRES_MEMORY
+      ? {
+          nodeId: memoryNode.id,
+          limit: resolveMessageLimit(renderTemplate(String(memoryData.messageLimit ?? ""), context)),
+          summarize: memoryData.summarize === "true",
+          // Facts belong to a contact; by default that is the session
+          contactId:
+            memoryData.facts === "false"
+              ? null
+              : normalizeContactId(
+                  renderTemplate(memoryData.contactId || "", context).trim() || sessionId
+                ),
+        }
+      : null;
+
+  let memorySummary: string | null = null;
+  let knownFacts: ContactFactEntry[] = [];
+
+  if (postgresMemory) {
+    const loaded = await step.run("retrieve-postgres-memory", async () => {
+      const session = await loadSessionMemory({
+        nodeId: postgresMemory.nodeId,
+        userId,
+        sessionId,
+        limit: postgresMemory.limit,
+        summarize: postgresMemory.summarize,
+      });
+
+      return {
+        ...session,
+        facts: postgresMemory.contactId
+          ? await listContactFacts(userId, postgresMemory.contactId)
+          : [],
+      };
+    });
+
+    history = loaded.messages;
+    memorySummary = loaded.summary;
+    knownFacts = loaded.facts;
+  } else if (memoryNode) {
     const memoryNodeId = memoryNode.id;
     const windowSize = Number(memoryData.windowSize) || 10;
 
@@ -510,6 +569,22 @@ export const aiAgentExecutor: NodeExecutor<AIAgentData> = async ({
       tools[name] = tool({ ...definition, execute: runTool });
     }
   }
+
+  // Postgres Memory: the two tools that read and change the contact's facts.
+  // They only touch the agent's own notes, so they never ask for approval.
+  const factTools = postgresMemory?.contactId
+    ? buildFactTools({ userId, contactId: postgresMemory.contactId, takenNames })
+    : null;
+
+  if (factTools) Object.assign(tools, factTools.tools);
+
+  const memoryNote = buildMemoryNote({
+    summary: memorySummary,
+    facts: knownFacts,
+    factTools: factTools?.names ?? null,
+  });
+
+  const system = memoryNote ? `${instructions}\n\n${memoryNote}` : instructions;
 
   const nodeToolNames = [...takenNames];
 
@@ -849,7 +924,51 @@ export const aiAgentExecutor: NodeExecutor<AIAgentData> = async ({
   // =========================================================================
   // 7. SAVE THIS TURN TO MEMORY
   // =========================================================================
-  if (memoryNode) {
+  if (postgresMemory) {
+    await step.run("persist-postgres-memory", async () => {
+      await saveSessionTurn({
+        nodeId: postgresMemory.nodeId,
+        userId,
+        sessionId,
+        userMessage: prompt,
+        assistantMessage: agentResult.output,
+      });
+    });
+
+    if (postgresMemory.summarize) {
+      // The answer is already made: a summary that cannot be written is
+      // tried again after a later turn, and never fails the run
+      await step.run("summarize-postgres-memory", async () => {
+        const session = { nodeId: postgresMemory.nodeId, userId, sessionId };
+        const tracker = createModelTracker();
+
+        try {
+          const batch = await findMessagesToSummarize({ ...session, limit: postgresMemory.limit });
+          if (!batch) return { summarized: 0 };
+
+          const summary = await runAgentLoop({
+            model: createFallbackModel(candidates, tracker).model,
+            system: SUMMARY_SYSTEM,
+            messages: [{ role: "user", content: buildSummaryPrompt(batch.previous, batch.messages) }],
+            tools: {},
+          });
+
+          if (!summary.output.trim()) return { summarized: 0 };
+
+          await saveSessionSummary({ ...session, summary: summary.output, until: batch.until });
+
+          return { summarized: batch.messages.length };
+        } catch {
+          return { summarized: 0 };
+        } finally {
+          await recordModelCalls(
+            getAiUsageScope({ userId, workflowId, executionId, nodeId, allNodes }),
+            tracker
+          );
+        }
+      });
+    }
+  } else if (memoryNode) {
     const memoryNodeId = memoryNode.id;
 
     await step.run("persist-agent-memory", async () => {
