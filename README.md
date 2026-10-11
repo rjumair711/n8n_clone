@@ -42,6 +42,7 @@ The platform is designed as a scalable SaaS product with:
 * Hosted forms: a Form Trigger with its own public page, multi-step forms with the Form node, and a Wait node that resumes on a form
 * Website chat widget: a public Chat Trigger with an embed snippet, a hosted chat page, per-visitor memory and a handoff to a person
 * OCR and vision: an Analyze Image / Document node that reads images and PDFs, scanned ones too, with a vision model
+* Web Search and Read Web Page nodes, usable as AI Agent tools
 * Inngest background execution system
 * Dynamic time-based execution engine via an automated Background Ticker (`* * * * *` clock matching system)
 * Shared execution context
@@ -218,7 +219,7 @@ The model decides which tools to call, and it acts on text it has read: a chat m
 
   | Level | What it covers |
   | ----- | -------------- |
-  | Read | Searching, getting and listing; Vector Store search; HTTP `GET`; calculations and text nodes |
+  | Read | Searching, getting and listing; Vector Store search; HTTP `GET`; Web Search and Read Web Page; calculations and text nodes |
   | Write | Sending a message; creating or updating a record; HTTP `POST`/`PUT`/`PATCH`; MCP Client; anything not known to be harmless |
   | Dangerous | SSH; raw SQL (Postgres and MySQL "Execute Query"); every delete operation and HTTP `DELETE`; Execute Workflow |
 
@@ -429,6 +430,8 @@ Every execution also keeps the trigger and the data it started with, so it can b
 | AI Agent         | n8n-style Tools Agent with Chat Model, Parser, Memory and Tools sub-nodes |
 | HTTP Request     | Call any API: headers, query parameters, Basic / Bearer / Header auth from credentials, JSON / form / raw bodies, timeout, Never Error. Response Format "File" stores a download. Private and local addresses are blocked |
 | RSS Read         | Read the items of an RSS or Atom feed; the following nodes run once per item |
+| Web Search       | Search the web with Tavily, Brave Search or your own SearXNG server; titles, links and snippets. Also an AI Agent tool. See "Web Search and Read Web Page" |
+| Read Web Page    | Fetch a page and return its main content as clean Markdown or text, cut to a length you set. Also an AI Agent tool. Private and local addresses are blocked |
 | Respond to Webhook | Answer the HTTP request that started the workflow (JSON, text, redirect, status code, headers) |
 | Webhook Callback | POST the workflow's data to another URL                                   |
 | Execute Workflow | Run another workflow and use its result; also works as an AI Agent tool   |
@@ -493,6 +496,26 @@ Limits: 10 MB per file (`MAX_FILE_SIZE_MB`), 200 MB stored per user (`MAX_USER_S
 | CSV | At most 10,000 rows; the node's **Max Rows** field can lower it. `<name>.truncated` is true when the file had more | `CSV_MAX_ROWS` |
 | Excel (XLSX) | The first 5,000 rows of the sheet | |
 
+## Web Search and Read Web Page
+
+Two nodes that bring the web into a workflow. Both work as ordinary steps and as **AI Agent tools**: connect them to an agent's Tools port and let the agent fill in the query or the address with `{{$fromAI "query"}}` / `{{$fromAI "url"}}`. They count as Read tools, so they need neither "Allow dangerous tools" nor approval.
+
+**Web Search**
+
+* **Providers** (the node's Operation): **Tavily** and **Brave Search**, each with an API key credential of its own, and **SearXNG**, your own server, with its address typed into the node and no credential. SearXNG needs its JSON output switched on (`json` under `search.formats` in its `settings.yml`); a server on a private network also has to be on `PRIVATE_NETWORK_ALLOWLIST`.
+* **Result:** `{{search.results}}`, a list of `{ title, url, snippet }`, plus `{{search.count}}`. The three providers come back in the same shape. Connect a Split Out node to handle the results one by one.
+* **Max Results** (default 5, up to 20) and **Max Characters Per Result** (default 500): each snippet is cut to that length.
+
+**Read Web Page**
+
+* **Built-in reader** (default, no account): downloads the page and keeps its main content: the `<article>` or `<main>` if there is one, otherwise the block with the most real text. Menus, headers and footers, sidebars, cookie banners, share buttons, comments, scripts and hidden elements are left out. Output is Markdown (headings, lists, links with full addresses, bold, code, quotes, tables as rows) or plain text.
+* **Jina Reader** and **Firecrawl** (optional, each with its own credential): for pages that build their content with JavaScript, which the built-in reader sees as empty. The built-in reader says so when it finds no text.
+* **Result:** `{{page.content}}`, `{{page.title}}`, `{{page.description}}`, `{{page.url}}` (after redirects), `{{page.truncated}}` and `{{page.length}}` (the length of the whole page).
+* **Max Characters** (default 8000, up to 100000): the text is cut to that length, at the end of a word, and ends with a note that it was cut, so a model reading it knows there was more. Web pages can be very long, and every character is paid for again as model input; this is the setting that controls that cost.
+* **SSRF guard:** the page, and every redirect on the way, goes through the same guard as the HTTP Request node, so private, local and cloud-metadata addresses are refused. The address is also checked before it is handed to Jina Reader or Firecrawl. A download stops at 3 MB and after 20 seconds, and only web pages and text are read (a PDF or image address is refused with a pointer to the HTTP Request node).
+* The built-in reader is deliberately small: no JavaScript, no login, no paywalls, and it reads a page as the server sent it. It announces itself as `RXJ-PageReader`; some sites refuse automated readers.
+* What a page says is data. As an agent tool the text is handed to the model inside the same `<tool_result>` block as every other tool result, marked as untrusted.
+
 ## Apps and databases
 
 | Node             | Description                                                               |
@@ -553,6 +576,10 @@ Supported credential types:
 | TWILIO        | Twilio node (`AccountSID:AuthToken`) |
 | RESEND        | Resend node (API key) |
 | SENDGRID      | SendGrid node (API key) |
+| TAVILY        | Web Search node with Tavily (API key) |
+| BRAVE_SEARCH  | Web Search node with Brave Search (subscription token) |
+| JINA_READER   | Read Web Page node with Jina Reader (API key) |
+| FIRECRAWL     | Read Web Page node with Firecrawl (API key) |
 | GITHUB        | GitHub node (personal access token) |
 | AIRTABLE      | Airtable node (personal access token) |
 | JIRA          | Jira node (`email:api-token`) |

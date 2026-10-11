@@ -30,6 +30,7 @@ const NODE_LABELS: Record<string, string> = {
     RSS_FEED_TRIGGER: "RSS Feed Trigger",
     MYSQL: "MySQL",
     SENDGRID: "SendGrid",
+    READ_WEB_PAGE: "Read Web Page",
 };
 
 // "MANUAL_TRIGGER" -> "Manual Trigger", "AI_AGENT" -> "AI Agent"

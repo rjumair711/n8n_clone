@@ -246,6 +246,10 @@ enum CredentialType {
   DEEPSEEK
   KIMI
   QWEN
+  TAVILY
+  BRAVE_SEARCH
+  JINA_READER
+  FIRECRAWL
 }
 
 model Workflow {
@@ -349,6 +353,8 @@ enum NodeType {
   FORM_TRIGGER
   FORM
   ANALYZE_DOCUMENT
+  WEB_SEARCH
+  READ_WEB_PAGE
 }
 
 model Node {

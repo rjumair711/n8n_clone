@@ -41,6 +41,10 @@ import { airtableExecutor } from '../components/airtable/executor';
 import { postgresExecutor } from '../components/postgres/executor';
 import { whatsappExecutor } from '../components/whatsapp/executor';
 import {
+  readWebPageExecutor,
+  webSearchExecutor,
+} from '../components/apps/web';
+import {
   contextTriggerExecutor,
   executeWorkflowExecutor,
   respondToWebhookExecutor,
@@ -166,6 +170,8 @@ const baseExecutors: Record<NodeType, NodeExecutor<any>> = {
   [NodeType.MYSQL]: mysqlExecutor,
   [NodeType.RESEND]: resendExecutor,
   [NodeType.SENDGRID]: sendgridExecutor,
+  [NodeType.WEB_SEARCH]: webSearchExecutor,
+  [NodeType.READ_WEB_PAGE]: readWebPageExecutor,
   [NodeType.TYPEFORM_TRIGGER]: contextTriggerExecutor,
   [NodeType.RSS_READ]: rssReadExecutor,
   [NodeType.RSS_FEED_TRIGGER]: contextTriggerExecutor,

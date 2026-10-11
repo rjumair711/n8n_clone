@@ -403,6 +403,18 @@ const communicationNodes: NodeTypeOption[] = [
         icon: "/logos/email.jfif"
     },
     {
+        type: NodeType.WEB_SEARCH,
+        label: "Web Search",
+        description: "Search the web with Tavily, Brave Search or your own SearXNG; also an AI Agent tool",
+        icon: "/logos/web-search.svg"
+    },
+    {
+        type: NodeType.READ_WEB_PAGE,
+        label: "Read Web Page",
+        description: "Fetch a page and get its main content as clean text; also an AI Agent tool",
+        icon: "/logos/web-page.svg"
+    },
+    {
         type: NodeType.RESEND,
         label: "Resend",
         description: "Send an email with the Resend API",
