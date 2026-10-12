@@ -1033,6 +1033,7 @@ RXJ includes onboarding UX to improve activation and retention.
 * Create workflow CTA
 * Workflow templates (see below)
 * Build with AI: a workflow from a description (see below)
+* One-click chatbot: documents or website pages in, a website widget, share link and WhatsApp out (see below)
 * Guided product introduction
 * Trial onboarding flow with proactive expiration countdowns
 
@@ -1062,6 +1063,19 @@ Describe a workflow in words and get it on the canvas. The **Build with AI** but
 * **Follow-up edits.** With nodes on the canvas the request is a change ("send it on WhatsApp instead"). The model gets the current workflow without credentials and secrets and answers with the whole workflow. Nodes it keeps stay the same nodes: same place, same credential, same secrets. A node replaced by one of another type is a new node without a credential. **Undo this change** in the dialog puts the canvas back as it was before the last request.
 * **Limits.** 10 requests per minute per user (`AI_BUILDER_RATE_LIMIT_PER_MINUTE`), descriptions up to 2,000 characters, workflows up to 60 nodes, and about 55 seconds for both attempts together. Making a workflow counts toward the plan's workflow limit, which is checked before the model is called.
 * **What it sends.** The description, the node catalogue and (for a change) the current workflow's node settings other than credentials and secrets go to the provider of the chosen credential. Text typed into ordinary fields, a prompt for example, is part of that.
+
+## One-click chatbot
+
+**Chatbots** in the sidebar opens the **Create a chatbot** page: a chatbot that answers from your own documents, without building the workflow yourself.
+
+* **What you give it.** A name; documents (PDF, Word .docx, .txt, .md, .csv, up to 3 MB each) and/or website addresses (one per line; each address is one page, links on it are not followed); the model that answers; and an OpenAI or Gemini credential for the embedding model that reads the documents. Optional: a welcome message, extra instructions, and WhatsApp.
+* **The model.** Any of your model credentials (OpenAI, Anthropic, Gemini, DeepSeek, Kimi, Qwen, or an OpenAI-compatible provider), or **RXJ AI (included)** paid with AI credits. The embedding model is separate, because RXJ AI (included) and most chat providers have none: it needs an OpenAI or a Gemini credential. When the model's own credential is one of those, it is used for both.
+* **What you get.** The chatbot's page, with the **website widget** snippet, the **share link** (the hosted chat page), a **WhatsApp** connection (Webhook URL and Verify Token for Meta, with the steps), an On/Off switch, and the list of what the bot knows, where documents and pages can be added and removed later. Adding a document or page that is already there replaces it; the same text again is not embedded twice.
+* **Behind the scenes** it is a normal workflow you can open and change in the editor: **Chat Trigger** (with "Make chat public" on) into an **AI Agent**, with a model node on its Chat Model port, **Memory** (one history per visitor or WhatsApp number) and a **Vector Store** (Search Documents) on its Tools port. With WhatsApp there is also a **WhatsApp Trigger** into the same agent, and after the agent an **IF** (did the message come from WhatsApp?) and a **WhatsApp** node that sends the answer back from the number that received the message. The agent is told to answer only from the documents, to say so when it does not know, and never to follow instructions written in a document.
+* **It is switched on when it is created**, unlike a workflow made by Build with AI: the widget and the link only work for an active workflow. Nobody can reach it until you share them. The page reads everything from the workflow's nodes, so a chatbot changed in the editor still works on its page (and any workflow with a Chat Trigger into an AI Agent can be opened as `/chatbots/<workflow id>`).
+* **Where the documents go.** Into a Vector Store collection of its own (`chatbot-...`), cut into chunks (by heading for web pages and Markdown) and embedded with the Vector Store node's own settings and credential. The first 400,000 characters of a document are read; a chatbot can have 50 documents and pages. The embedding calls are written down on the Billing page under "Chatbot knowledge" and count towards the account's AI budget, which is checked first. Deleting the workflow does not delete the collection: remove the documents on the chatbot's page first, or use a Vector Store node with Delete Collection.
+* **Safety.** Web pages are fetched through the same guard as the Read Web Page node (no addresses inside the server's network). Only the user's own credentials can be picked. The WhatsApp App Secret is stored on the WhatsApp Trigger node like one typed in the editor and is never sent back to the page. Adding documents is limited to 30 a minute per user (`CHATBOT_SOURCE_RATE_LIMIT_PER_MINUTE`).
+* **Plans.** A chatbot needs the AI Agent, and WhatsApp needs a plan with WhatsApp; the page says so before anything is created. A chatbot counts as one workflow towards the plan's workflow limit.
 
 ## Account security
 
@@ -1208,6 +1222,7 @@ The live app on Vercel and local development use the **same** database, so the s
 | `WAIT_MAX_DAYS` | The longest a Wait node may wait, in days, default 7 (the limit of Inngest's free plan) |
 | `FORM_RATE_LIMIT_PER_MINUTE` | Submissions per minute for one hosted form, default 30 |
 | `AI_BUILDER_RATE_LIMIT_PER_MINUTE` | "Build with AI" requests per minute for one user, default 10 |
+| `CHATBOT_SOURCE_RATE_LIMIT_PER_MINUTE` | Documents and web pages added to chatbots per minute by one user, default 30 |
 | `CHAT_WIDGET_RATE_LIMIT_PER_MINUTE`, `CHAT_VISITOR_RATE_LIMIT_PER_MINUTE` | Messages per minute for one public chat widget, and for one visitor of it. Defaults 60 and 10 |
 | `VISION_MAX_PDF_PAGES` | The most pages of a PDF one Analyze Image / Document node may read, default 20 |
 | `MAX_FILE_SIZE_MB`, `MAX_USER_STORAGE_MB`, `FILE_RETENTION_DAYS` | Workflow file limits, defaults 10, 200 and 7 |

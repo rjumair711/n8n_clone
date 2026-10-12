@@ -8,6 +8,7 @@ import {
     FolderOpenIcon,
     HistoryIcon,
     KeyIcon,
+    BotIcon,
     LayoutTemplateIcon,
     LogOutIcon,
     SettingsIcon,
@@ -41,6 +42,7 @@ const menuItems = [
         items: [
             { id: "workflows", title: "Workflows", icon: FolderOpenIcon, url: "/workflows" },
             { id: "templates", title: "Templates", icon: LayoutTemplateIcon, url: "/templates" },
+            { id: "chatbots", title: "Chatbots", icon: BotIcon, url: "/chatbots" },
             { id: "credentials", title: "Credentials", icon: KeyIcon, url: "/credentials" },
             { id: "executions", title: "Executions", icon: HistoryIcon, url: "/executions" },
             { id: "approvals", title: "Approvals", icon: UserCheckIcon, url: "/approvals" },

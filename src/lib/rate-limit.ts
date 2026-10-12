@@ -22,6 +22,10 @@ export const FORM_RATE_LIMIT =
 // with the user's own credential, up to twice
 export const AI_BUILDER_RATE_LIMIT =
     Number(process.env.AI_BUILDER_RATE_LIMIT_PER_MINUTE) || 10;
+// Documents and web pages added to a chatbot per minute by one user. Each
+// one is read and embedded with the user's own credential
+export const CHATBOT_SOURCE_RATE_LIMIT =
+    Number(process.env.CHATBOT_SOURCE_RATE_LIMIT_PER_MINUTE) || 30;
 
 /**
  * Counts a request against a fixed one-minute window and says whether it is

@@ -3,7 +3,8 @@ import { createTRPCContext } from '@/trpc/init';
 import { appRouter } from '@/trpc/routers/_app';
 
 // "Build with AI" waits for a model, twice when the first answer has to be
-// corrected (see TIME_BUDGET_MS in features/ai-builder/server/routers.ts)
+// corrected (see TIME_BUDGET_MS in features/ai-builder/server/routers.ts).
+// A chatbot's page reads and embeds one document or web page per request.
 export const maxDuration = 60;
 
 const handler = (req: Request) =>
