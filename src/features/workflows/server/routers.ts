@@ -4,7 +4,7 @@ import { createTRPCRouter, protectedProcedure } from "@/trpc/init";
 import { generateSlug } from "random-word-slugs"
 import z from "zod";
 import type { Node, Edge } from "@xyflow/react"
-import { NodeType } from "@prisma/client"
+import { NodeType, type Prisma } from "@prisma/client"
 import { sendWorkflowExecution } from "@/inngest/utils";
 import { TRPCError } from "@trpc/server";
 import { PLAN_LIMITS, getRequiredPlanForNode } from "@/config/plans";
@@ -15,6 +15,8 @@ import { assertOwnership } from "@/lib/ownership";
 import { describeAuditTarget } from "@/lib/audit-actions";
 import { recordAudit } from "@/lib/audit-log";
 import { PARTIAL_RUN_MODES } from "@/inngest/engine";
+import { readVersionSnapshot, readVersionSummary } from "../lib/versions";
+import { hashSnapshot, saveWorkflowVersion } from "./versions";
 import {
     PinError,
     pinNodeData,
@@ -533,6 +535,36 @@ export const workflowsRouter = createTRPCRouter({
             // A node that was removed takes its pinned data with it
             await removeStalePins(id, [...nodeIds]);
 
+            // Version history: what was just saved, unless it is what the
+            // newest version already holds. The save itself has succeeded:
+            // a version that could not be written does not undo it.
+            try {
+                await saveWorkflowVersion({
+                    workflowId: id,
+                    nodes: nodes.map((node) => ({
+                        id: node.id,
+                        type: node.type || "unknown",
+                        position: node.position,
+                        data: node.data || {},
+                        credentialId:
+                            node.credentialId && ownCredentialIds.has(node.credentialId)
+                                ? node.credentialId
+                                : null,
+                    })),
+                    connections: edges.map((edge) => ({
+                        fromNodeId: edge.source,
+                        toNodeId: edge.target,
+                        fromOutput: edge.sourceHandle || "main",
+                        toInput: edge.targetHandle || "main",
+                    })),
+                });
+            } catch (error) {
+                console.error(
+                    "[RXJ] Could not save a workflow version:",
+                    error instanceof Error ? error.name : "error"
+                );
+            }
+
             // A Telegram Trigger added or changed while the workflow is
             // active needs its webhook registered right away
             if (workflow.active) {
@@ -551,6 +583,175 @@ export const workflowsRouter = createTRPCRouter({
             }
 
             return saved;
+        }),
+
+    // VERSION HISTORY
+    // The versions of a workflow, newest first: when, and what changed.
+    // The nodes themselves are only read when a version is restored.
+    getVersions: protectedProcedure
+        .input(z.object({ id: z.string() }))
+        .query(async ({ ctx, input }) => {
+            await getOwnedWorkflow(input.id, ctx.auth.user.id);
+
+            const versions = await prisma.workflowVersion.findMany({
+                where: { workflowId: input.id },
+                orderBy: { number: "desc" },
+                take: 200,
+                select: {
+                    id: true,
+                    number: true,
+                    createdAt: true,
+                    summary: true,
+                    restoredFromNumber: true,
+                },
+            });
+
+            return versions.map((version, index) => ({
+                id: version.id,
+                number: version.number,
+                createdAt: version.createdAt,
+                restoredFromNumber: version.restoredFromNumber,
+                summary: readVersionSummary(version.summary),
+                // The newest is what the workflow is now
+                current: index === 0,
+            }));
+        }),
+
+    // Puts the workflow back to one of its versions. That makes a new
+    // version, so restoring can itself be undone.
+    restoreVersion: protectedProcedure
+        .input(z.object({ id: z.string(), versionId: z.string().min(1).max(100) }))
+        .mutation(async ({ ctx, input }) => {
+            const userId = ctx.auth.user.id;
+            const workflow = await getOwnedWorkflow(input.id, userId);
+
+            // A version of this workflow: another workflow's id finds nothing
+            const version = await prisma.workflowVersion.findFirst({
+                where: { id: input.versionId, workflowId: workflow.id },
+            });
+
+            if (!version) {
+                throw new TRPCError({ code: "NOT_FOUND", message: "Version not found." });
+            }
+
+            const snapshot = readVersionSnapshot(version.nodes, version.connections);
+
+            const latest = await prisma.workflowVersion.findFirst({
+                where: { workflowId: workflow.id },
+                orderBy: { number: "desc" },
+                select: { contentHash: true },
+            });
+
+            if (latest?.contentHash === hashSnapshot(snapshot)) {
+                throw new TRPCError({
+                    code: "BAD_REQUEST",
+                    message: "The workflow is already the same as this version.",
+                });
+            }
+
+            // The same rules as a save: only the user's own credentials
+            // that still exist are linked, only node types that still
+            // exist come back, and no node id of another workflow is used
+            const nodeTypes = new Set<string>(Object.values(NodeType));
+            const nodes = snapshot.nodes.filter((node) => nodeTypes.has(node.type));
+            const nodeIds = new Set(nodes.map((node) => node.id));
+            const connections = snapshot.connections.filter(
+                (connection) =>
+                    nodeIds.has(connection.fromNodeId) && nodeIds.has(connection.toNodeId)
+            );
+
+            const linkedIds = nodes.flatMap((node) => node.credentialId ?? []);
+            const ownCredentialIds = new Set(
+                linkedIds.length === 0
+                    ? []
+                    : (
+                        await prisma.credential.findMany({
+                            where: { id: { in: linkedIds }, userId },
+                            select: { id: true },
+                        })
+                    ).map((credential) => credential.id)
+            );
+
+            const taken = await prisma.node.findFirst({
+                where: { id: { in: [...nodeIds] }, workflowId: { not: workflow.id } },
+                select: { id: true },
+            });
+
+            if (taken) {
+                throw new TRPCError({
+                    code: "BAD_REQUEST",
+                    message: "This version cannot be restored: one of its node ids is now used by another workflow.",
+                });
+            }
+
+            const restored = nodes.map((node) => ({
+                ...node,
+                credentialId:
+                    node.credentialId && ownCredentialIds.has(node.credentialId)
+                        ? node.credentialId
+                        : null,
+            }));
+
+            await prisma.$transaction(async (tx) => {
+                await tx.node.deleteMany({ where: { workflowId: workflow.id } });
+
+                await tx.node.createMany({
+                    data: restored.map((node) => ({
+                        id: node.id,
+                        workflowId: workflow.id,
+                        name: node.type,
+                        type: node.type as NodeType,
+                        position: node.position,
+                        data: node.data as Prisma.InputJsonValue,
+                        credentialId: node.credentialId,
+                    })),
+                });
+
+                await tx.connection.createMany({
+                    data: connections.map((connection) => ({
+                        workflowId: workflow.id,
+                        ...connection,
+                    })),
+                });
+
+                await tx.workflow.update({
+                    where: { id: workflow.id },
+                    data: { updatedAt: new Date() },
+                });
+            });
+
+            await removeStalePins(workflow.id, [...nodeIds]);
+
+            const created = await saveWorkflowVersion({
+                workflowId: workflow.id,
+                nodes: restored,
+                connections,
+                restoredFromNumber: version.number,
+            });
+
+            await recordAudit({
+                userId,
+                action: "workflow.version_restored",
+                target: `${describeAuditTarget("Workflow", workflow)}, version ${version.number}`,
+            });
+
+            // A Telegram Trigger that came back needs its webhook
+            if (workflow.active) {
+                const telegramError = await syncTelegramWebhooks({
+                    workflowId: workflow.id,
+                    userId,
+                    active: true,
+                });
+
+                if (telegramError) {
+                    throw new TRPCError({
+                        code: "BAD_REQUEST",
+                        message: `The version was restored. ${telegramError}`,
+                    });
+                }
+            }
+
+            return { restoredNumber: version.number, number: created.number };
         }),
 
     // UPDATE ONE

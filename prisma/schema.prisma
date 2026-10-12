@@ -317,6 +317,33 @@ model Workflow {
   connections Connection[]
   triggerStates TriggerState[]
   pinnedData  PinnedData[]
+  versions    WorkflowVersion[]
+}
+
+// The workflow as it was after a save. One is added whenever the saved
+// nodes or connections change; old ones are removed (see
+// src/features/workflows/lib/versions.ts).
+model WorkflowVersion {
+  id         String   @id @default(cuid())
+  workflowId String
+  workflow   Workflow @relation(fields: [workflowId], references: [id], onDelete: Cascade)
+  // 1, 2, 3... within the workflow
+  number     Int
+  // [{ id, type, position, data, credentialId }] and
+  // [{ fromNodeId, toNodeId, fromOutput, toInput }]
+  nodes       Json
+  connections Json
+  // Of the two, to tell whether a save changed anything
+  contentHash String
+  // What changed since the version before: nodes added, removed, changed
+  summary     Json
+  // Set when the version was made by restoring an older one
+  restoredFromNumber Int?
+  createdAt  DateTime @default(now())
+
+  @@unique([workflowId, number])
+  @@index([workflowId, createdAt])
+  @@map("workflow_version")
 }
 
 // A node's output kept from an earlier run. In test runs from the editor
@@ -520,6 +547,11 @@ model Execution {
 
   // Set by the Respond to Webhook node; the webhook route waits for it
   webhookResponse Json?
+
+  // The version of the workflow that ran. The number is kept too, because
+  // the version itself is removed after a while. Null: before versions.
+  workflowVersionId     String?
+  workflowVersionNumber Int?
 
   // What the run started with, so it can be retried: the trigger node type
   // and the data that trigger received

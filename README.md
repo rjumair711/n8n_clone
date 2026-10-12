@@ -148,6 +148,17 @@ Two ways to test one part of a workflow in the editor without running the rest a
 * **What is pinned** is what the node added to the workflow's data in that run (its own variables, and for a router its decision), up to 512 KB per node (`MAX_PINNED_DATA_KB`). For a trigger it is everything the run started with.
 * **Limits.** Inside a Loop, the nodes of the loop body that come before the chosen node give the data of the loop's last round. A Merge set to wait for all inputs does not run in a partial run that covers only one of its branches.
 
+## Workflow version history
+
+Every workflow keeps its earlier versions, so a change can be looked at and undone.
+
+* **When a version is kept.** Every time **Save** changes the workflow's nodes or connections (a setting, a credential, a node's place, a connection). A save that changes nothing adds no version. A workflow that was changed without the editor's Save (made from a template, by Build with AI or by Create a chatbot, or given a WhatsApp connection on the chatbot's page) gets its version the first time it runs.
+* **The History button** in the editor's header lists the versions, newest first, each with when it was saved and what changed since the one before: nodes **added**, **removed** and **changed** (by node type and variable name, for example "Changed: HTTP Request (myApiCall)"), connections added and removed, or "Layout only" when nodes were just moved. The summary names nodes; it never shows their settings.
+* **Restore.** "Restore" on any version puts the workflow's nodes and connections back to that version, after a confirmation. The restore is itself kept as a new version ("restored from version 4"), so it can be undone the same way. Unsaved changes on the canvas are lost, and the editor reloads. The workflow's name, its Active switch and its settings do not change. A restored node is only linked to a credential that still exists and is yours; a node type that no longer exists is left out; pinned data of nodes that are gone is removed. Restoring is in the audit log.
+* **How long versions are kept.** The newest 50 per workflow, and of those the ones saved in the last 30 days (`WORKFLOW_VERSION_LIMIT`, `WORKFLOW_VERSION_DAYS`). The newest version always stays, however old. Versions are deleted with their workflow.
+* **Executions record their version.** Each execution's page shows "Workflow version: Version 12": the saved workflow that run used. The number stays on the execution after the version itself was removed. Executions from before this feature say "Not recorded".
+* **What a version holds.** A copy of the nodes and connections as they are stored, including anything typed into a node's fields. It is only readable by the workflow's owner, like the workflow itself, and the list of versions does not carry the nodes.
+
 ## Execution Tracking
 
 Every workflow execution stores:
@@ -1243,6 +1254,8 @@ The live app on Vercel and local development use the **same** database, so the s
 | `SANDBOX_MAX_OUTPUT_KB` | The most a Code node or one expression may return, in KB, default 1024 |
 | `MAX_ITEMS_PER_NODE` | Items one node may process in a list, default 100 |
 | `MAX_PINNED_DATA_KB` | The most data that can be pinned on one node, default 512 |
+| `WORKFLOW_VERSION_LIMIT` | Versions kept per workflow, default 50 |
+| `WORKFLOW_VERSION_DAYS` | Days a version is kept (the newest always stays), default 30 |
 | `MCP_TOOL_TIMEOUT_MS` | How long an MCP Server Trigger's tool call waits for the run's result, default 50000 |
 | `VECTOR_STORE_ENGINE` | Set to `app` to make the Vector Store compare embeddings in the app even when pgvector is installed |
 | `WAIT_MAX_DAYS` | The longest a Wait node may wait, in days, default 7 (the limit of Inngest's free plan) |

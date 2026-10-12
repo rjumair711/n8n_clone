@@ -164,6 +164,10 @@ export const useUpdateWorkflow = () => {
             queryClient.invalidateQueries(
                 trpc.workflows.getOne.queryOptions({ id: data.id })
             )
+            // A save that changed the workflow added a version
+            queryClient.invalidateQueries(
+                trpc.workflows.getVersions.queryOptions({ id: data.id })
+            )
         },
         onError: (error) => {
             toast.error(`Failed to save workflow: ${error.message}`)

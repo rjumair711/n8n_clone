@@ -13257,6 +13257,249 @@ pour()</code></pre>
     assert.equal(/\b(DROP|DELETE|TRUNCATE|UPDATE "|RENAME|NOT NULL;)/.test(sql.replace(/ON (DELETE|UPDATE) CASCADE/g, "")), false);
   });
 
+  // ------------------------------------------- WORKFLOW VERSION HISTORY
+  console.log("Workflow version history");
+
+  const wfVersions = await import("@/features/workflows/lib/versions");
+
+  const versionNode = (id: string, type: string, data: Record<string, unknown> = {}, x = 0) => ({
+    id,
+    type,
+    position: { x, y: 0 },
+    data,
+    credentialId: null as string | null,
+  });
+  const versionEdge = (fromNodeId: string, toNodeId: string) => ({
+    fromNodeId,
+    toNodeId,
+    fromOutput: "source-1",
+    toInput: "target-1",
+  });
+
+  await test("a version is the saved nodes and connections, the same however they were ordered", async () => {
+    const { hashSnapshot } = await import("@/features/workflows/server/versions");
+
+    const a = wfVersions.toVersionSnapshot(
+      [
+        versionNode("n2", "HTTP_REQUEST", { variableName: "call", method: "GET", endpoint: "https://x" }),
+        { id: "n1", type: "MANUAL_TRIGGER", position: { x: 0, y: 0, extra: 1 }, data: null },
+      ],
+      [versionEdge("n1", "n2")]
+    );
+
+    // In a fixed order, with nothing but what a version keeps
+    assert.deepEqual(a.nodes.map((node) => node.id), ["n1", "n2"]);
+    assert.deepEqual(a.nodes[0], { id: "n1", type: "MANUAL_TRIGGER", position: { x: 0, y: 0 }, data: {}, credentialId: null });
+
+    const b = wfVersions.toVersionSnapshot(
+      [
+        { id: "n1", type: "MANUAL_TRIGGER", position: { y: 0, x: 0 }, data: {} },
+        versionNode("n2", "HTTP_REQUEST", { endpoint: "https://x", method: "GET", variableName: "call" }),
+      ],
+      [{ toInput: "target-1", fromOutput: "source-1", toNodeId: "n2", fromNodeId: "n1" }]
+    );
+    assert.equal(hashSnapshot(a), hashSnapshot(b));
+
+    // Any change makes another version: a setting, a credential, a place, a connection
+    const changed = (mutate: (snapshot: typeof a) => void) => {
+      const copy = JSON.parse(JSON.stringify(a)) as typeof a;
+      mutate(copy);
+      return hashSnapshot(copy) !== hashSnapshot(a);
+    };
+    assert.equal(changed((copy) => { copy.nodes[1].data.method = "POST"; }), true);
+    assert.equal(changed((copy) => { copy.nodes[1].credentialId = "cred_1"; }), true);
+    assert.equal(changed((copy) => { copy.nodes[1].position.x = 10; }), true);
+    assert.equal(changed((copy) => { copy.connections.pop(); }), true);
+
+    assert.equal(wfVersions.stableStringify({ b: 1, a: [{ d: 1, c: undefined }] }), '{"a":[{"d":1}],"b":1}');
+
+    // A damaged row cannot break the editor
+    assert.deepEqual(wfVersions.readVersionSnapshot("nope", null), { nodes: [], connections: [] });
+    assert.deepEqual(
+      wfVersions.readVersionSnapshot([{ id: "n1", type: "CODE" }, { type: "NO_ID" }, 7], [{ fromNodeId: "n1" }]),
+      { nodes: [{ id: "n1", type: "CODE", position: { x: 0, y: 0 }, data: {}, credentialId: null }], connections: [] }
+    );
+  });
+
+  await test("the summary of a version: nodes added, removed and changed", () => {
+    const before = wfVersions.toVersionSnapshot(
+      [
+        versionNode("t", "MANUAL_TRIGGER"),
+        versionNode("a", "HTTP_REQUEST", { variableName: "myApiCall", endpoint: "https://old" }),
+        versionNode("b", "SLACK", { variableName: "notify" }),
+        versionNode("c", "IF"),
+      ],
+      [versionEdge("t", "a"), versionEdge("a", "b"), versionEdge("a", "c")]
+    );
+    const after = wfVersions.toVersionSnapshot(
+      [
+        versionNode("t", "MANUAL_TRIGGER"),
+        versionNode("a", "HTTP_REQUEST", { variableName: "myApiCall", endpoint: "https://new" }),
+        versionNode("c", "IF", {}, 300),
+        versionNode("d", "AI_AGENT", { variableName: "agent" }),
+      ],
+      [versionEdge("t", "a"), versionEdge("a", "c"), versionEdge("c", "d")]
+    );
+
+    const summary = wfVersions.diffSnapshots(before, after);
+    assert.deepEqual(summary, {
+      first: false,
+      added: [{ type: "AI_AGENT", name: "agent" }],
+      removed: [{ type: "SLACK", name: "notify" }],
+      changed: [{ type: "HTTP_REQUEST", name: "myApiCall" }],
+      moved: 1,
+      connectionsAdded: 1,
+      connectionsRemoved: 1,
+    });
+    assert.deepEqual(wfVersions.formatVersionSummary(summary), [
+      "Added: AI Agent (agent)",
+      "Removed: Slack (notify)",
+      "Changed: HTTP Request (myApiCall)",
+      "Connections: 1 added, 1 removed",
+    ]);
+
+    // It names nodes; it never repeats what is in their settings
+    assert.equal(JSON.stringify(summary).includes("https://"), false);
+
+    // A changed credential is a change
+    const relinked = JSON.parse(JSON.stringify(before)) as typeof before;
+    relinked.nodes.find((node) => node.id === "a")!.credentialId = "cred_2";
+    assert.deepEqual(wfVersions.diffSnapshots(before, relinked).changed, [{ type: "HTTP_REQUEST", name: "myApiCall" }]);
+
+    // Only dragged
+    const moved = JSON.parse(JSON.stringify(before)) as typeof before;
+    moved.nodes[0].position.x = 500;
+    moved.nodes[1].position.y = 40;
+    assert.deepEqual(wfVersions.formatVersionSummary(wfVersions.diffSnapshots(before, moved)), ["Layout only: 2 nodes moved"]);
+
+    // The first version, and an empty one
+    assert.deepEqual(wfVersions.formatVersionSummary(wfVersions.diffSnapshots(null, before)), ["First version: 4 nodes"]);
+    assert.deepEqual(
+      wfVersions.formatVersionSummary(wfVersions.diffSnapshots(null, wfVersions.toVersionSnapshot([], []))),
+      ["First version: an empty workflow"]
+    );
+    assert.deepEqual(wfVersions.formatVersionSummary(wfVersions.diffSnapshots(before, before)), [
+      "No changes to nodes or connections",
+    ]);
+
+    // Many nodes: the first few are named
+    const many = wfVersions.toVersionSnapshot(
+      Array.from({ length: 7 }, (_, index) => versionNode(`n${index}`, "CODE")),
+      []
+    );
+    assert.deepEqual(wfVersions.formatVersionSummary(wfVersions.diffSnapshots(before, many)).slice(0, 1), [
+      "Added: JavaScript Code, JavaScript Code, JavaScript Code, JavaScript Code and 3 more",
+    ]);
+
+    // A stored summary that is damaged still reads
+    assert.deepEqual(wfVersions.readVersionSummary(null), {
+      first: false, added: [], removed: [], changed: [], moved: 0, connectionsAdded: 0, connectionsRemoved: 0,
+    });
+    assert.deepEqual(wfVersions.readVersionSummary({ added: [{ type: "IF", name: 7 }, "x"], moved: -2, first: true }).added, [{ type: "IF" }]);
+  });
+
+  await test("the newest 50 versions are kept, for 30 days, and the newest one always", () => {
+    const now = new Date("2026-10-12T12:00:00Z");
+    const daysAgo = (days: number) => new Date(now.getTime() - days * 24 * 60 * 60 * 1000);
+    const make = (count: number, age: (number: number) => number) =>
+      Array.from({ length: count }, (_, index) => ({
+        id: `v${index + 1}`,
+        number: index + 1,
+        createdAt: daysAgo(age(index + 1)),
+      }));
+
+    assert.equal(wfVersions.WORKFLOW_VERSION_LIMIT, 50);
+    assert.equal(wfVersions.WORKFLOW_VERSION_DAYS, 30);
+
+    // 60 versions of today: the 10 oldest go
+    assert.deepEqual(
+      wfVersions.selectVersionsToPrune(make(60, () => 0), now).sort(),
+      Array.from({ length: 10 }, (_, index) => `v${index + 1}`).sort()
+    );
+    assert.deepEqual(wfVersions.selectVersionsToPrune(make(50, () => 0), now), []);
+
+    // Older than 30 days goes, however few there are
+    const aged = [
+      { id: "old", number: 1, createdAt: daysAgo(45) },
+      { id: "edge", number: 2, createdAt: daysAgo(29) },
+      { id: "new", number: 3, createdAt: daysAgo(1) },
+    ];
+    assert.deepEqual(wfVersions.selectVersionsToPrune(aged, now), ["old"]);
+
+    // A workflow nobody touched for a year keeps its newest version
+    assert.deepEqual(
+      wfVersions.selectVersionsToPrune(
+        [
+          { id: "a", number: 1, createdAt: daysAgo(400) },
+          { id: "b", number: 2, createdAt: daysAgo(380) },
+        ],
+        now
+      ),
+      ["a"]
+    );
+    assert.deepEqual(wfVersions.selectVersionsToPrune([], now), []);
+    assert.deepEqual(wfVersions.selectVersionsToPrune(make(5, () => 0), now, { limit: 2, days: 30 }).sort(), ["v1", "v2", "v3"]);
+  });
+
+  await test("saving, restoring and running keep the version history; only the owner reads it", async () => {
+    const { readFileSync, readdirSync } = await import("node:fs");
+    const { join } = await import("node:path");
+    const read = (path: string) => readFileSync(join(process.cwd(), path), "utf8");
+
+    const router = read("src/features/workflows/server/routers.ts");
+    const server = read("src/features/workflows/server/versions.ts");
+    const run = read("src/inngest/functions.ts");
+
+    // A save keeps a version, after the save itself, and cannot undo it
+    const update = router.slice(router.indexOf("update: protectedProcedure"), router.indexOf("// VERSION HISTORY"));
+    assert.ok(update.indexOf("await prisma.$transaction(") < update.indexOf("await saveWorkflowVersion({"));
+    assert.match(update, /try \{\s+await saveWorkflowVersion\(\{[\s\S]*?\} catch \(error\) \{\s+console\.error\(/);
+    // What is logged about a failure is its kind, never the workflow's data
+    assert.match(update, /error instanceof Error \? error\.name : "error"/);
+
+    // No new version when the save changed nothing; a restore always makes one
+    assert.match(server, /if \(latest\?\.contentHash === contentHash && restoredFromNumber === undefined\) \{\s+return \{ id: latest\.id, number: latest\.number, created: false \};/);
+    assert.match(server, /await pruneWorkflowVersions\(workflowId\);/);
+    assert.match(server, /deleteMany\(\{\s+where: \{ workflowId, id: \{ in: ids \} \},/);
+
+    // The list and the restore check the workflow's owner, and a version
+    // is only ever looked up inside that workflow
+    for (const name of ["getVersions", "restoreVersion"]) {
+      const body = router.slice(router.indexOf(`${name}: protectedProcedure`));
+      assert.match(body.slice(0, 600), /getOwnedWorkflow\(input\.id, /, name);
+    }
+    assert.match(router, /where: \{ id: input\.versionId, workflowId: workflow\.id \},/);
+    // The list does not carry the nodes (they can hold secrets typed into them)
+    const list = router.slice(router.indexOf("getVersions: protectedProcedure"), router.indexOf("restoreVersion: protectedProcedure"));
+    assert.equal(/nodes: true|connections: true/.test(list), false);
+
+    // A restore follows the rules of a save, makes a version and is audited
+    const restore = router.slice(router.indexOf("restoreVersion: protectedProcedure"), router.indexOf("// UPDATE ONE"));
+    assert.match(restore, /where: \{ id: \{ in: linkedIds \}, userId \},/);
+    assert.match(restore, /workflowId: \{ not: workflow\.id \}/);
+    assert.match(restore, /nodeTypes\.has\(node\.type\)/);
+    assert.match(restore, /restoredFromNumber: version\.number,/);
+    assert.match(restore, /action: "workflow\.version_restored",/);
+    assert.match(restore, /await removeStalePins\(workflow\.id, \[\.\.\.nodeIds\]\);/);
+    // It changes nodes and connections only: not the name, not Active
+    assert.equal(/active:|name: version/.test(restore.replace(/active: true,\s+\}\);/, "")), false);
+
+    // A run writes down the version of the nodes it has just read, and
+    // never fails over it
+    assert.match(run, /await recordExecutionVersion\(\{\s+executionId: execution\.id,\s+workflowId,\s+nodes: workflow\.nodes,\s+connections: workflow\.connections,/);
+    const record = server.slice(server.indexOf("export const recordExecutionVersion"));
+    assert.match(record, /try \{[\s\S]*data: \{ workflowVersionId: version\.id, workflowVersionNumber: version\.number \},[\s\S]*\} catch \(error\) \{/);
+
+    // The migration only adds: a table and two nullable columns
+    const folder = readdirSync("prisma/migrations").find((name) => name.endsWith("_workflow_versions"));
+    assert.ok(folder, "migration");
+    const sql = read(`prisma/migrations/${folder}/migration.sql`).replace(/\r\n/g, "\n");
+    assert.match(sql, /ALTER TABLE "Execution" ADD COLUMN\s+"workflowVersionId" TEXT,\s+ADD COLUMN\s+"workflowVersionNumber" INTEGER;/);
+    assert.match(sql, /CREATE TABLE "workflow_version" \(/);
+    assert.match(sql, /CREATE UNIQUE INDEX "workflow_version_workflowId_number_key" ON "workflow_version"\("workflowId", "number"\);/);
+    assert.equal(/\b(DROP|DELETE FROM|TRUNCATE|UPDATE "|RENAME)\b/.test(sql), false);
+  });
+
   console.log(`\n${passed} checks passed`);
 };
 

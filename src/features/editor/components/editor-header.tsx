@@ -13,6 +13,7 @@ import { SaveIcon, SettingsIcon, Workflow } from 'lucide-react'
 import Link from 'next/link'
 import { useEffect, useRef, useState } from 'react'
 import { editorAtom } from '../store/atoms'
+import { VersionHistory } from '@/features/workflows/components/version-history'
 
 
 
@@ -227,6 +228,7 @@ export const EditorHeader = ({ workflowId }: { workflowId: string }) => {
                 <EditorBreadcrumbs workflowId={workflowId} />
                 <EditorSettingsMenu workflowId={workflowId} />
                 <EditorActiveToggle workflowId={workflowId} />
+                <VersionHistory workflowId={workflowId} />
                 <EditorSaveButton workflowId={workflowId} />
             </div>
         </header>

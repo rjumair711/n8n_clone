@@ -21,6 +21,7 @@ import {
   type NodeDataSource,
 } from "@/features/executions/server/test-data";
 import { getNodeLabel } from "@/config/node-labels";
+import { recordExecutionVersion } from "@/features/workflows/server/versions";
 import {
   ALL_OUTPUTS,
   applyNodeData,
@@ -299,6 +300,15 @@ export const executeWorkflow =
                 },
               },
             },
+          });
+
+          // Which version of the workflow this run uses: the nodes that
+          // were just read
+          await recordExecutionVersion({
+            executionId: execution.id,
+            workflowId,
+            nodes: workflow.nodes,
+            connections: workflow.connections,
           });
 
           return {
