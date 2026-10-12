@@ -2,6 +2,7 @@ import { auth } from "@/lib/auth";
 import { headers } from "next/headers";
 import { NextResponse } from "next/server";
 import { Polar } from "@polar-sh/sdk";
+import { getCreditPacks } from "@/config/ai-credits";
 
 // Initialize the Polar SDK client
 const polar = new Polar({
@@ -34,9 +35,18 @@ export async function POST(req: Request) {
 
     // 2. Parse the plan payload from frontend
     const body = await req.json();
-    const { planSlug } = body;
+    const { planSlug, creditPack } = body;
 
-    const productId = PLAN_PRODUCT_IDS[planSlug?.toLowerCase()];
+    // An AI credit pack (a one-time product) instead of a plan. Only a
+    // product that is on sale as a pack can be asked for.
+    const pack =
+      typeof creditPack === "string"
+        ? getCreditPacks().find((entry) => entry.productId === creditPack)
+        : undefined;
+
+    const productId = pack
+      ? pack.productId
+      : PLAN_PRODUCT_IDS[typeof planSlug === "string" ? planSlug.toLowerCase() : ""];
 
     if (!productId) {
       return NextResponse.json(

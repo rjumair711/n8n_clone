@@ -5,6 +5,7 @@ import { useQueryClient } from "@tanstack/react-query"; // 1. Import QueryClient
 import { authClient } from "@/lib/auth-client";
 import { UsageCard } from "@/components/subscription/usage-card";
 import { AiSpendCard } from "@/features/ai-usage/components/ai-spend-card";
+import { AiCreditsCard } from "@/features/ai-credits/components/ai-credits-card";
 import { useCurrentPlan } from "@/features/subscription/hook/use-current-plan";
 import { getTrialDaysLeft } from "@/lib/subscription/get-trial-days-left";
 
@@ -104,6 +105,8 @@ export default function BillingPage() {
               Open Billing Portal
             </button>
           </div>
+
+          <AiCreditsCard />
 
           <AiSpendCard />
         </div>

@@ -9,6 +9,7 @@ import {
     startOfUtcMonth,
     type TokenUsage,
 } from "./ai-cost";
+import { chargeIncludedCost } from "./ai-credits";
 import prisma from "./db";
 import {
     sumCallsByModel,
@@ -45,6 +46,9 @@ type AiUsageRecord = {
     model: string;
     kind?: "chat" | "embedding";
     usage: TokenUsage;
+    // Made with the platform's key ("RXJ AI (included)"): the cost is
+    // taken from the user's AI credits
+    included?: boolean;
 };
 
 // One row of the usage table, priced with the price set right now
@@ -54,6 +58,7 @@ const storeAiUsage = async ({
     model,
     kind = "chat",
     usage,
+    included = false,
 }: AiUsageRecord) => {
     const providerKey = normalizePriceKey(provider) || "unknown";
     const modelName = model.trim();
@@ -77,21 +82,33 @@ const storeAiUsage = async ({
         }
     );
 
-    await prisma.aiUsage.create({
-        data: {
-            userId: scope.userId,
-            workflowId: scope.workflowId,
-            executionId: scope.executionId,
-            nodeId: scope.nodeId,
-            nodeName: scope.nodeName,
-            kind,
-            provider: providerKey,
-            model: modelName,
-            inputTokens: usage.inputTokens,
-            outputTokens: usage.outputTokens,
-            cachedInputTokens: usage.cachedInputTokens,
-            costUsd,
-        },
+    const data = {
+        userId: scope.userId,
+        workflowId: scope.workflowId,
+        executionId: scope.executionId,
+        nodeId: scope.nodeId,
+        nodeName: scope.nodeName,
+        kind,
+        provider: providerKey,
+        model: modelName,
+        inputTokens: usage.inputTokens,
+        outputTokens: usage.outputTokens,
+        cachedInputTokens: usage.cachedInputTokens,
+        costUsd,
+        included,
+    };
+
+    if (!included) {
+        await prisma.aiUsage.create({ data });
+        return;
+    }
+
+    // The credits are taken and the call is written down together, or not
+    // at all. Charged first: the month's allowance is what earlier rows
+    // left of it.
+    await prisma.$transaction(async (tx) => {
+        await chargeIncludedCost(tx, scope.userId, costUsd);
+        await tx.aiUsage.create({ data });
     });
 };
 
@@ -146,8 +163,8 @@ export const recordAccountAiUsage = async ({
  * each has its own price. Like recordAiUsage, it never throws.
  */
 export const recordModelCalls = async (scope: AiUsageScope, tracker: ModelTracker) => {
-    for (const { provider, model, usage } of sumCallsByModel(tracker)) {
-        await recordAiUsage({ scope, provider, model, usage });
+    for (const { provider, model, usage, included } of sumCallsByModel(tracker)) {
+        await recordAiUsage({ scope, provider, model, usage, included });
     }
 };
 

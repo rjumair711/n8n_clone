@@ -11894,6 +11894,218 @@ pour()</code></pre>
     assert.match(read("src/features/executions/components/integration-node.tsx"), /!nodeData\.credentialId\s*\? "Not Configured"/);
   });
 
+  // ---------------------------------------------- BUILT-IN AI CREDITS
+  console.log("Built-in AI credits");
+
+  const credits = await import("@/config/ai-credits");
+
+  await test("plans get monthly credits; bought credits are used after them", () => {
+    assert.equal(credits.CREDITS_PER_USD, 1000);
+    assert.deepEqual(credits.PLAN_AI_CREDITS, { FREE: 100, BEGINNER: 1_000, INTERMEDIATE: 5_000, PRO: 20_000 });
+    assert.equal(credits.getPlanAllowanceUsd("FREE"), 0.1);
+    assert.equal(credits.getPlanAllowanceUsd("PRO"), 20);
+    assert.equal(credits.getPlanAllowanceUsd("NO_SUCH_PLAN"), 0);
+    assert.equal(credits.usdToCredits(0.0375), 37.5);
+    assert.equal(credits.formatCredits(1.25), "1,250");
+    assert.equal(credits.formatCredits(0.0004), "0.4");
+    assert.equal(credits.formatCredits(null), "0");
+
+    // Nothing used yet
+    assert.deepEqual(credits.buildCreditStatus({ plan: "BEGINNER", usedUsd: 0, purchasedUsd: 0 }), {
+      plan: "BEGINNER", allowanceUsd: 1, usedUsd: 0, allowanceLeftUsd: 1, purchasedUsd: 0, availableUsd: 1,
+    });
+    // Part of the month's allowance used, and a pack bought
+    const partly = credits.buildCreditStatus({ plan: "BEGINNER", usedUsd: 0.75, purchasedUsd: 5 });
+    assert.deepEqual([partly.allowanceLeftUsd, partly.purchasedUsd, partly.availableUsd], [0.25, 5, 5.25]);
+    // Past the allowance: only bought credits are left; the allowance never goes negative
+    const past = credits.buildCreditStatus({ plan: "FREE", usedUsd: 0.4, purchasedUsd: 2 });
+    assert.deepEqual([past.allowanceLeftUsd, past.availableUsd], [0, 2]);
+    // The hard stop: nothing left at all
+    assert.equal(credits.buildCreditStatus({ plan: "FREE", usedUsd: 0.1, purchasedUsd: 0 }).availableUsd, 0);
+    assert.equal(credits.buildCreditStatus({ plan: "FREE", usedUsd: 3, purchasedUsd: -1 }).availableUsd, 0);
+
+    // What a call takes from bought credits: only what the allowance does not cover
+    assert.equal(credits.getPurchasedCharge(0.02, 1), 0);
+    assert.equal(credits.getPurchasedCharge(0.02, 0.02), 0);
+    assert.equal(Number(credits.getPurchasedCharge(0.05, 0.02).toFixed(10)), 0.03);
+    assert.equal(credits.getPurchasedCharge(0.05, 0), 0.05);
+    assert.equal(credits.getPurchasedCharge(0.05, -3), 0.05);
+
+    const message = credits.creditsUsedUpMessage({ plan: "FREE", appUrl: "https://rxj.example.com" });
+    assert.equal(
+      message,
+      "RXJ AI (included) credits are used up: the Free plan includes 100 credits a month and you have no bought credits left. Upgrade your plan or buy credits at https://rxj.example.com/billing, or pick your own API key credential on the node. The monthly credits start again on the 1st (UTC)."
+    );
+    assert.match(credits.creditsUsedUpMessage({ plan: "PRO", appUrl: "x" }), /the Pro plan includes 20,000 credits a month/);
+
+    assert.equal(credits.isIncludedCredential("rxj-ai"), true);
+    assert.equal(credits.isIncludedCredential("ckabc123"), false);
+    assert.equal(credits.isIncludedCredential(undefined), false);
+    assert.equal(credits.INCLUDED_CREDENTIAL_NAME, "RXJ AI (included)");
+
+    // Providers an admin can add: presets with an address of their own
+    const options = credits.INCLUDED_PROVIDER_OPTIONS.map((option) => option.value);
+    for (const provider of ["zai", "bigmodel", "deepseek", "openrouter"]) assert.ok(options.includes(provider), provider);
+    assert.equal(options.includes("custom"), false);
+    assert.equal(options.includes("ollama"), false);
+    assert.equal(credits.isIncludedProviderOption("custom"), false);
+    assert.deepEqual(credits.parseIncludedModels(" glm-4.7-flash \n\nglm-4.5-flash, glm-4.7-flash"), ["glm-4.7-flash", "glm-4.5-flash"]);
+    assert.equal(credits.parseIncludedModels(Array.from({ length: 40 }, (_, index) => `m${index}`)).length, credits.MAX_INCLUDED_MODELS);
+  });
+
+  await test("credit packs: from the environment, and added once per paid Polar order", () => {
+    const packs = credits.parseCreditPacks(" prod_big:25000, prod_small:5000 ,broken,prod_zero:0,prod_half:1.5,:100,prod_small:5000");
+    assert.deepEqual(packs, [
+      { productId: "prod_small", credits: 5000 },
+      { productId: "prod_big", credits: 25000 },
+    ]);
+    assert.deepEqual(credits.parseCreditPacks(undefined), []);
+    assert.deepEqual(credits.parseCreditPacks(""), []);
+
+    // The webhook's JSON, as /api/webhooks/polar gets it
+    assert.deepEqual(
+      credits.readCreditOrder("order.paid", { id: "ord_1", paid: true, product_id: "prod_small", metadata: { userId: "user_1" }, customer: { external_id: "user_other" } }, packs),
+      { orderId: "ord_1", userId: "user_1", pack: { productId: "prod_small", credits: 5000 } }
+    );
+    // The SDK's object, as the Better Auth plugin gets it; the customer's external id is the user
+    assert.deepEqual(
+      credits.readCreditOrder("order.paid", { id: "ord_2", productId: "prod_big", metadata: {}, customer: { externalId: "user_2" } }, packs),
+      { orderId: "ord_2", userId: "user_2", pack: { productId: "prod_big", credits: 25000 } }
+    );
+    // A subscription's order, an unpaid order, another event, an unknown user: nothing
+    assert.equal(credits.readCreditOrder("order.paid", { id: "ord_3", product_id: "prod_plan", metadata: { userId: "user_1" } }, packs), null);
+    assert.equal(credits.readCreditOrder("order.paid", { id: "ord_4", paid: false, product_id: "prod_small", metadata: { userId: "user_1" } }, packs), null);
+    assert.equal(credits.readCreditOrder("order.created", { id: "ord_5", product_id: "prod_small", metadata: { userId: "user_1" } }, packs), null);
+    assert.equal(credits.readCreditOrder("subscription.created", { id: "sub_1", product_id: "prod_small", metadata: { userId: "user_1" } }, packs), null);
+    assert.equal(credits.readCreditOrder("order.paid", { id: "ord_6", product_id: "prod_small" }, packs), null);
+    assert.equal(credits.readCreditOrder("order.paid", { product_id: "prod_small", metadata: { userId: "user_1" } }, packs), null);
+    assert.equal(credits.readCreditOrder("order.paid", null, packs), null);
+    assert.equal(credits.readCreditOrder("order.paid", { id: "ord_7", product_id: "prod_small", metadata: { userId: "user_1" } }, []), null);
+  });
+
+  await test("a call made with the platform's key is tracked apart from one with the user's key", async () => {
+    const { createFallbackModel, sumCallsByModel } = fallback;
+
+    const { model, tracker } = createFallbackModel([
+      { ...candidate("glm-4.7-flash", async () => "from the platform", { provider: "zai" }), included: true },
+    ]);
+    await (model as unknown as { doGenerate: (options: object) => Promise<unknown> }).doGenerate({});
+    assert.equal(tracker.calls[0].included, true);
+
+    // The same model, once with the platform's key and once with the user's own
+    tracker.calls.push(
+      { provider: "zai", model: "glm-4.7-flash", tier: 0, index: 0, usage: { inputTokens: 1, outputTokens: 1, cachedInputTokens: 0 }, included: true },
+      { provider: "zai", model: "glm-4.7-flash", tier: 0, index: 0, usage: { inputTokens: 5, outputTokens: 5, cachedInputTokens: 0 } }
+    );
+    const totals = sumCallsByModel(tracker);
+    assert.equal(totals.length, 2);
+    assert.deepEqual(totals.map((total) => total.included === true), [true, false]);
+    assert.deepEqual(totals[1].usage, { inputTokens: 5, outputTokens: 5, cachedInputTokens: 0 });
+    assert.equal(totals[0].usage.outputTokens, 3 + 1);
+
+    // A model with the user's own key has no flag at all
+    const own = createFallbackModel([candidate("own", async () => "x")]);
+    await (own.model as unknown as { doGenerate: (options: object) => Promise<unknown> }).doGenerate({});
+    assert.equal("included" in own.tracker.calls[0], false);
+  });
+
+  await test("RXJ AI (included): the platform's key, a hard stop, and credits taken when a call is recorded", async () => {
+    const { readFileSync, readdirSync } = await import("node:fs");
+    const read = (path: string) => readFileSync(path, "utf8").replace(/\r\n/g, "\n");
+
+    // -- The migration only adds
+    const folder = readdirSync("prisma/migrations").find((name) => name.endsWith("_ai_credits"));
+    assert.ok(folder, "migration");
+    const sql = read(`prisma/migrations/${folder}/migration.sql`);
+    assert.match(sql, /ALTER TABLE "ai_usage" ADD COLUMN\s+"included" BOOLEAN NOT NULL DEFAULT false;/);
+    assert.match(sql, /ALTER TABLE "user" ADD COLUMN\s+"aiCreditBalanceUsd" DECIMAL\(18,10\) NOT NULL DEFAULT 0;/);
+    assert.match(sql, /CREATE TABLE "platform_ai_provider" \(/);
+    assert.match(sql, /CREATE TABLE "ai_credit_purchase" \(/);
+    assert.match(sql, /CREATE UNIQUE INDEX "ai_credit_purchase_polarOrderId_key" ON "ai_credit_purchase"\("polarOrderId"\);/);
+    assert.equal(/\b(DROP|DELETE|TRUNCATE|RENAME|UPDATE|INSERT)\b/.test(sql.replace(/ON DELETE CASCADE ON UPDATE CASCADE/g, "")), false);
+    assert.equal(/ALTER COLUMN/.test(sql), false);
+
+    // -- Where the model is built
+    const loader = read("src/features/executions/lib/connected-model.ts");
+    // Only a Chat Model node can use it
+    assert.match(loader, /if \(isIncluded\(spec\) && spec\.provider !== "COMPATIBLE"\) \{/);
+    // The check (offered, priced, credits left) is a step of its own, before any call
+    assert.match(loader, /await step\.run\(`\$\{stepId\}-included`, \(\) =>\s+loadIncludedKeys\(\{/);
+    // A workflow without it runs the same steps as before
+    assert.match(loader, /if \(!isIncluded\(primary\)\) \{\s+const credential = await step\.run\(stepId, async \(\) => \{/);
+    assert.match(loader, /includedSpecs\.length === 0\s+\? \{\}/);
+    // The platform's key never goes to a base URL typed into the node
+    assert.match(loader, /decrypt\(includedKeys\[spec\.usageProvider\]\)\.trim\(\),\s+spec\.modelName,[\s\S]{0,200}\{ provider: spec\.usageProvider, model: spec\.modelName, baseUrl: "" \}/);
+    assert.match(loader, /\.\.\.\(isIncluded\(spec\) \? \{ included: true \} : \{\}\),/);
+
+    // -- The rules on the server
+    const server = read("src/lib/ai-credits.ts");
+    assert.match(server, /^import "server-only";/);
+    // Offered, priced, and then the hard stop
+    assert.match(server, /if \(!row \|\| !getChatModelProvider\(provider\) \|\| !row\.models\.includes\(model\)\) \{\s+throw new NonRetriableError\(/);
+    assert.match(server, /if \(!price\) \{\s+throw new NonRetriableError\(/);
+    assert.match(server, /const problem = await getCreditProblem\(userId\);\s+if \(problem\) throw new NonRetriableError\(`\$\{label\}: \$\{problem\}`\);/);
+    assert.match(server, /return status\.availableUsd > 0\s+\? null\s+: creditsUsedUpMessage\(\{ plan: status\.plan, appUrl: getAppUrl\(\) \}\);/);
+    assert.match(server, /where: \{ userId, included: true, createdAt: \{ gte: startOfUtcMonth\(\) \} \},/);
+    // Only switched-on providers, and the pickers never get a key
+    assert.match(server, /where: \{ enabled: true \},\s+orderBy: \{ provider: "asc" \},\s+select: \{ provider: true, models: true \},/);
+    // Bought credits: one statement, never below zero
+    assert.match(server, /SET "aiCreditBalanceUsd" = GREATEST\("aiCreditBalanceUsd" - \$\{fromPurchased\}::decimal, 0\)\s+WHERE "id" = \$\{userId\}/);
+    // A purchase is counted once: the order id is unique
+    assert.match(server, /prisma\.aiCreditPurchase\.create\(\{\s+data: \{ userId, polarOrderId: orderId, productId: pack\.productId, amountUsd \},/);
+    assert.match(server, /error\.code === "P2002"\s+\) \{\s+return false;/);
+
+    // -- Recording: the credits and the usage row together
+    const usage = read("src/lib/ai-usage.ts");
+    assert.match(usage, /await prisma\.\$transaction\(async \(tx\) => \{\s+await chargeIncludedCost\(tx, scope\.userId, costUsd\);\s+await tx\.aiUsage\.create\(\{ data \}\);\s+\}\);/);
+    assert.match(usage, /for \(const \{ provider, model, usage, included \} of sumCallsByModel\(tracker\)\) \{\s+await recordAiUsage\(\{ scope, provider, model, usage, included \}\);/);
+
+    // -- Admins with two-factor set it up; the key is stored encrypted and never returned
+    const router = read("src/features/ai-credits/server/routers.ts");
+    for (const procedure of ["saveProvider", "deleteProvider"]) {
+      assert.match(router, new RegExp(`${procedure}: adminProcedure`), procedure);
+    }
+    assert.match(router, /if \(!isAdmin\(ctx\.auth\.user\)\) \{\s+throw new TRPCError/);
+    assert.match(router, /if \(!canUseAdminActions\(ctx\.auth\.user\)\)/);
+    assert.match(router, /if \(!isAdmin\(ctx\.auth\.user\)\) \{\s+return \{ isAdmin: false, needsTwoFactor: false, options: \[\], providers: \[\] \};/);
+    assert.equal((router.match(/apiKey: encrypt\(/g) ?? []).length, 2);
+    assert.equal(/apiKey: true/.test(router), false);
+    assert.equal(/decrypt/.test(router), false);
+    assert.match(router, /action: "included_ai\.saved"/);
+    assert.match(router, /action: "included_ai\.deleted"/);
+    const { getAuditActionLabel } = await import("@/lib/audit-actions");
+    assert.equal(getAuditActionLabel("included_ai.saved"), "Included AI provider saved");
+    assert.match(read("src/trpc/routers/_app.ts"), /aiCredits: aiCreditsRouter,/);
+    // Changing the encryption key covers the platform's keys too
+    assert.match(read("scripts/rotate-encryption-key.ts"), /UPDATE "platform_ai_provider" SET "apiKey" = \$\{newValue\}\s+WHERE "id" = \$\{id\} AND "apiKey" = \$\{oldValue\}/);
+
+    // -- Polar: a pack can be bought, and both webhook addresses add it
+    const checkout = read("src/app/api/subscription/checkout/route.ts");
+    assert.match(checkout, /getCreditPacks\(\)\.find\(\(entry\) => entry\.productId === creditPack\)/);
+    const webhook = read("src/app/api/webhooks/polar/route.ts");
+    assert.ok(webhook.indexOf("if (!check.ok)") < webhook.indexOf("readCreditOrder(eventType, eventData, getCreditPacks())"));
+    assert.match(webhook, /if \(creditOrder\) \{\s+const added = await grantCreditPurchase\(creditOrder\);/);
+    assert.match(read("src/lib/auth.ts"), /const creditOrder = readCreditOrder\(type, data as never, getCreditPacks\(\)\);\s+if \(creditOrder\) \{\s+await grantCreditPurchase\(creditOrder\);/);
+
+    // -- Where a user meets it
+    const dialog = read("src/features/executions/components/integration-dialog.tsx");
+    assert.match(dialog, /<SelectItem value=\{INCLUDED_CREDENTIAL_ID\}>\s+\{INCLUDED_CREDENTIAL_NAME\}/);
+    assert.match(dialog, /enabled: open && config\.includedAi === true,/);
+    assert.match(read("src/features/executions/components/core/nodes.tsx"), /credentialLabel: "API Key Credential",\s+includedAi: true,/);
+    assert.match(read("src/features/executions/server/chat-models.ts"), /if \(isIncludedCredential\(input\.credentialId\)\) \{/);
+    assert.match(read("src/app/billing/page.tsx"), /<AiCreditsCard \/>/);
+    assert.match(read("src/features/settings/components/settings.tsx"), /<IncludedAiCard \/>/);
+    const card = read("src/features/ai-credits/components/ai-credits-card.tsx");
+    assert.match(card, /<Link href="\/pricing" className="underline">\s+Upgrade your plan/);
+    assert.match(card, /body: JSON\.stringify\(\{ creditPack: productId \}\),/);
+
+    // -- Build with AI can be paid with credits too
+    const builder = read("src/features/ai-builder/server/routers.ts");
+    assert.match(builder, /if \(input\.credentialId\.startsWith\(`\$\{INCLUDED_CREDENTIAL_ID\}:`\)\) \{/);
+    assert.match(builder, /usage: normalizeUsage\(result\.totalUsage\),\s+included,/);
+    assert.match(builder, /buildLanguageModel\("COMPATIBLE", apiKey, modelName, \{\s+provider,\s+model: modelName,\s+baseUrl: "",/);
+  });
+
   console.log(`\n${passed} checks passed`);
 };
 

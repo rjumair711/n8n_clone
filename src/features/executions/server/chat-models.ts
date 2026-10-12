@@ -6,6 +6,8 @@ import { assertOwnership } from "@/lib/ownership";
 import { redactString } from "@/lib/redaction";
 import { safeFetch } from "@/lib/ssrf";
 import { createTRPCRouter, protectedProcedure } from "@/trpc/init";
+import { isIncludedCredential } from "@/config/ai-credits";
+import { listIncludedProviders } from "@/lib/ai-credits";
 import {
     DEDICATED_CHAT_MODEL_NODES,
     parseModelList,
@@ -52,6 +54,23 @@ export const chatModelsRouter = createTRPCRouter({
             })
         )
         .mutation(async ({ ctx, input }): Promise<ModelListResult> => {
+            // "RXJ AI (included)" is not a stored credential: its list is
+            // what the platform offers for the provider, and the
+            // platform's key is not used to ask
+            if (isIncludedCredential(input.credentialId)) {
+                const offered = (await listIncludedProviders()).find(
+                    (entry) => entry.provider === (input.provider || "openrouter")
+                );
+
+                return offered
+                    ? { models: offered.models, source: "provider" }
+                    : {
+                          models: [],
+                          source: "preset",
+                          error: "RXJ AI (included) has no models of this provider.",
+                      };
+            }
+
             const credential = assertOwnership(
                 await prisma.credential.findUnique({
                     where: { id: input.credentialId },

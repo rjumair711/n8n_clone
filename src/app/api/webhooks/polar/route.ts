@@ -2,6 +2,8 @@ import prisma from "@/lib/db";
 import { verifyPolarWebhook } from "@/lib/polar-webhook";
 import { SubscriptionPlan } from "@prisma/client";
 import { NextResponse } from "next/server";
+import { getCreditPacks, readCreditOrder } from "@/config/ai-credits";
+import { grantCreditPurchase } from "@/lib/ai-credits";
 
 // 💡 Dynamically map the incoming Polar product IDs to your database plan strings
 const WEBHOOK_PLAN_MAP: Record<string, string> = {
@@ -37,6 +39,17 @@ export async function POST(req: Request) {
         const eventData = body.data;
 
         console.log(`Received Polar webhook event: ${eventType}`);
+
+        // A paid order of an AI credit pack adds its credits, once per order
+        const creditOrder = readCreditOrder(eventType, eventData, getCreditPacks());
+        if (creditOrder) {
+            const added = await grantCreditPurchase(creditOrder);
+            console.log(
+                added
+                    ? `Added ${creditOrder.pack.credits} AI credits to user ${creditOrder.userId}.`
+                    : `Polar order ${creditOrder.orderId} was already counted.`
+            );
+        }
 
         if (eventType === "subscription.created" || eventType === "subscription.updated") {
             // Extract the userId you passed into the checkout metadata/custom fields

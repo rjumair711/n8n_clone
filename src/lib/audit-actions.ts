@@ -15,6 +15,8 @@ export const AUDIT_ACTIONS = {
   "template.deleted": "Template deleted",
   "model_price.saved": "Model price saved",
   "model_price.deleted": "Model price deleted",
+  "included_ai.saved": "Included AI provider saved",
+  "included_ai.deleted": "Included AI provider deleted",
   "auth.sign_in": "Signed in",
   "two_factor.enabled": "Two-factor authentication turned on",
   "two_factor.disabled": "Two-factor authentication turned off",

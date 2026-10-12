@@ -9,6 +9,7 @@ import { chatModelsRouter } from '@/features/executions/server/chat-models';
 import { aiUsageRouter } from '@/features/ai-usage/server/routers';
 import { approvalsRouter } from '@/features/approvals/server/routers';
 import { aiBuilderRouter } from '@/features/ai-builder/server/routers';
+import { aiCreditsRouter } from '@/features/ai-credits/server/routers';
 
 
 
@@ -23,6 +24,7 @@ export const appRouter = createTRPCRouter({
   aiUsage: aiUsageRouter,
   approvals: approvalsRouter,
   aiBuilder: aiBuilderRouter,
+  aiCredits: aiCreditsRouter,
 });
 // export type definition of API
 export type AppRouter = typeof appRouter;

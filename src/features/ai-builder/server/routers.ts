@@ -18,6 +18,8 @@ import {
     getAccountAiBudgetProblem,
     recordAccountAiUsage,
 } from "@/lib/ai-usage";
+import { INCLUDED_CREDENTIAL_ID } from "@/config/ai-credits";
+import { listIncludedProviders, loadIncludedKeys } from "@/lib/ai-credits";
 import prisma from "@/lib/db";
 import { decrypt } from "@/lib/encryption";
 import { assertOwnership } from "@/lib/ownership";
@@ -110,6 +112,46 @@ const loadBuilderModel = async (
     userId: string,
     input: z.infer<typeof modelInput>
 ) => {
+    // "RXJ AI (included)": the platform's key, paid with the user's AI
+    // credits. The dialog sends "rxj-ai:<provider>".
+    if (input.credentialId.startsWith(`${INCLUDED_CREDENTIAL_ID}:`)) {
+        const provider = input.credentialId.slice(INCLUDED_CREDENTIAL_ID.length + 1);
+        const offered = (await listIncludedProviders()).find(
+            (entry) => entry.provider === provider
+        );
+        const modelName = input.model || offered?.models[0] || "";
+
+        let keys: Record<string, string>;
+        try {
+            // Refuses a model that is not offered, and a user without credits
+            keys = await loadIncludedKeys({
+                label: "Build with AI",
+                userId,
+                models: [{ provider, model: modelName }],
+            });
+        } catch (error) {
+            throw new TRPCError({
+                code: "PRECONDITION_FAILED",
+                message: (error as Error).message,
+            });
+        }
+
+        const apiKey = decrypt(keys[provider]).trim();
+
+        return {
+            apiKey,
+            modelName,
+            usageProvider: provider,
+            included: true,
+            // The preset's own address, whatever the request says
+            model: buildLanguageModel("COMPATIBLE", apiKey, modelName, {
+                provider,
+                model: modelName,
+                baseUrl: "",
+            }),
+        };
+    }
+
     const credential = assertOwnership(
         await prisma.credential.findUnique({
             where: { id: input.credentialId },
@@ -150,6 +192,7 @@ const loadBuilderModel = async (
         return {
             apiKey,
             modelName,
+            included: false,
             // What the calls are written down and priced under
             usageProvider: getUsageProvider(provider, modelData),
             model: buildLanguageModel(provider, apiKey, modelName, {
@@ -233,7 +276,7 @@ const runBuilder = async ({
         throw new TRPCError({ code: "PRECONDITION_FAILED", message: budgetProblem });
     }
 
-    const { model, modelName, usageProvider, apiKey } = await loadBuilderModel(
+    const { model, modelName, usageProvider, apiKey, included } = await loadBuilderModel(
         userId,
         input.model
     );
@@ -267,6 +310,7 @@ const runBuilder = async ({
             provider: usageProvider,
             model: modelName,
             usage: normalizeUsage(result.totalUsage),
+            included,
         });
 
         return result.text;
@@ -325,16 +369,35 @@ const runBuilder = async ({
 export const aiBuilderRouter = createTRPCRouter({
     // The user's credentials that can call a chat model, for the dialog's
     // "Model" list. Never the secrets.
-    getModelCredentials: protectedProcedure.query(({ ctx }) =>
-        prisma.credential.findMany({
-            where: {
-                userId: ctx.auth.user.id,
-                type: { in: [...BUILDER_CREDENTIAL_TYPES] },
-            },
-            orderBy: { updatedAt: "desc" },
-            select: { id: true, name: true, type: true },
-        })
-    ),
+    getModelCredentials: protectedProcedure.query(async ({ ctx }) => {
+        const [own, included] = await Promise.all([
+            prisma.credential.findMany({
+                where: {
+                    userId: ctx.auth.user.id,
+                    type: { in: [...BUILDER_CREDENTIAL_TYPES] },
+                },
+                orderBy: { updatedAt: "desc" },
+                select: { id: true, name: true, type: true },
+            }),
+            listIncludedProviders(),
+        ]);
+
+        return [
+            ...own.map((credential) => ({
+                ...credential,
+                type: credential.type as string,
+                models: [] as string[],
+            })),
+            // "RXJ AI (included)", once per provider it offers: paid with
+            // the user's AI credits instead of a key of their own
+            ...included.map((entry) => ({
+                id: `${INCLUDED_CREDENTIAL_ID}:${entry.provider}`,
+                name: `RXJ AI (included): ${entry.label}`,
+                type: INCLUDED_CREDENTIAL_ID,
+                models: entry.models,
+            })),
+        ];
+    }),
 
     /**
      * For the editor: builds a workflow from a description, or changes the

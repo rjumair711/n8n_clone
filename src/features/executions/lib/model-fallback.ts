@@ -157,6 +157,9 @@ export type ModelCandidate = {
   tier: number;
   // Only used while there is another model to try after this one
   timeoutMs?: number;
+  // The model is called with the platform's key ("RXJ AI (included)") and
+  // paid with the user's AI credits
+  included?: boolean;
   // Called once, when the model is first needed
   create: () => LanguageModelV3;
 };
@@ -172,7 +175,7 @@ export type ModelAttempt = {
 export type ModelTracker = {
   attempts: ModelAttempt[];
   // `index` is the model's place in the list it was tried from: 0 is the first choice
-  calls: { provider: string; model: string; tier: number; index: number; usage: TokenUsage }[];
+  calls: { provider: string; model: string; tier: number; index: number; usage: TokenUsage; included?: boolean }[];
 };
 
 export const createModelTracker = (): ModelTracker => ({ attempts: [], calls: [] });
@@ -270,7 +273,14 @@ export const createFallbackModel = (
         const result = await get(index).doGenerate({ ...options, abortSignal });
 
         tracker.attempts.push({ provider, model, outcome: "answered" });
-        tracker.calls.push({ provider, model, tier, index, usage: toTokenUsage(result.usage) });
+        tracker.calls.push({
+          provider,
+          model,
+          tier,
+          index,
+          usage: toTokenUsage(result.usage),
+          ...(candidate.included ? { included: true } : {}),
+        });
 
         return result;
       } catch (error) {
@@ -333,10 +343,15 @@ export const describeModelAnswer = (tracker: ModelTracker | null | undefined) =>
  * each model has its own price.
  */
 export const sumCallsByModel = (tracker: ModelTracker) => {
-  const totals = new Map<string, { provider: string; model: string; usage: TokenUsage }>();
+  const totals = new Map<
+    string,
+    { provider: string; model: string; usage: TokenUsage; included?: boolean }
+  >();
 
   for (const call of tracker.calls) {
-    const key = JSON.stringify([call.provider, call.model]);
+    // The same model with the user's own key and with the platform's key
+    // are two lines: only one of them costs credits
+    const key = JSON.stringify([call.provider, call.model, call.included === true]);
     const total = totals.get(key);
 
     if (total) {
@@ -344,7 +359,12 @@ export const sumCallsByModel = (tracker: ModelTracker) => {
       total.usage.outputTokens += call.usage.outputTokens;
       total.usage.cachedInputTokens += call.usage.cachedInputTokens;
     } else {
-      totals.set(key, { provider: call.provider, model: call.model, usage: { ...call.usage } });
+      totals.set(key, {
+        provider: call.provider,
+        model: call.model,
+        usage: { ...call.usage },
+        ...(call.included ? { included: true } : {}),
+      });
     }
   }
 

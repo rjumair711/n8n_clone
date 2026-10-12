@@ -1,6 +1,7 @@
 "use client";
 
 import { ModelPricesCard } from "@/features/ai-usage/components/model-prices-card";
+import { IncludedAiCard } from "@/features/ai-credits/components/included-ai-card";
 import { AuditLogCard } from "./audit-log-card";
 import { SessionsCard } from "./sessions-card";
 import { TwoFactorCard } from "./two-factor-card";
@@ -18,7 +19,8 @@ export const Settings = () => (
         <TwoFactorCard />
         <SessionsCard />
         <AuditLogCard />
-        {/* Admins only: renders nothing for everyone else */}
+        {/* Admins only: render nothing for everyone else */}
+        <IncludedAiCard />
         <ModelPricesCard />
     </div>
 );
