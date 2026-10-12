@@ -27,6 +27,7 @@ The platform is designed as a scalable SaaS product with:
 * Shared execution context between nodes
 * Modular execution engine
 * Per-node error handling from the node toolbar: On Error (Stop / Continue), Retry On Fail, Execute Once
+* Build with AI: describe a workflow, or a change to the one on the canvas, and a model builds it (see "Build with AI")
 
 ---
 
@@ -1011,6 +1012,7 @@ RXJ includes onboarding UX to improve activation and retention.
 * First-time onboarding page
 * Create workflow CTA
 * Workflow templates (see below)
+* Build with AI: a workflow from a description (see below)
 * Guided product introduction
 * Trial onboarding flow with proactive expiration countdowns
 
@@ -1026,6 +1028,20 @@ The **Templates** page is a gallery of ready-made workflows. "Use template" copi
 * **Secret scan:** before a template is published or updated, every field of every node is scanned for the secret shapes the log redaction knows (`sk-` keys, Bearer tokens, JWTs, AWS, Slack and GitHub tokens, passwords in URLs) and for hand-typed values in `Authorization`, `Cookie` and `X-API-Key` headers. Values made only of `{{ }}` expressions pass. If anything is found the template is not saved and the dialog lists the node and field (never the value). An admin can tick **I checked this, publish anyway** to save it regardless. Editing only a template's details scans its stored content again. The scan knows those shapes only, so a secret of another shape still has to be caught by reading the workflow.
 * **Plans:** each template has a minimum plan. Locked templates are shown with a lock and offer the upgrade. An active free trial opens every template, the same way it opens plan-locked nodes.
 * Using a template counts toward the plan's workflow limit, and workflows already made from a template do not change when the template is edited or deleted.
+
+## Build with AI
+
+Describe a workflow in words and get it on the canvas. The **Build with AI** button is on the Workflows page (makes a new workflow) and at the top right of the editor (builds on an empty canvas, or changes the workflow that is there).
+
+* **Whose model.** It calls a chat model with one of the user's own stored credentials, picked in the dialog: OpenAI, Anthropic, Gemini, DeepSeek, Kimi, Qwen, or any provider of the Chat Model node (OpenAI-compatible, with its provider preset and base URL). The Model field is optional where the provider has a default. The choice is remembered in the browser. There is no platform key for it. Its calls are on the AI usage page as their own line, "Build with AI", they count towards the account's monthly AI spend, and a used-up account AI budget stops the builder too.
+* **The catalogue.** The model gets a machine-readable list of every node type: type, description, fields (name, kind, options, required, default), input and output ports, the credential it needs and what its result looks like. The list is made in the browser from the node registry (`src/config/node-components.ts`), the node selector's descriptions and each node's settings, so a new node made with `createIntegrationNode` is in it without further work. Nodes with a hand-written dialog are described in `src/features/ai-builder/lib/manual-specs.ts`; a test fails when a registered node is described nowhere.
+* **The check.** The model has to answer with JSON (`name`, `summary`, `nodes`, `connections`). The server checks it: known node types, the fields' kinds and options, required fields, that every connection uses ports the nodes really have (including Switch rules and Text Classifier categories), that a model, memory or parser node is on the port made for it, a trigger, one variable name per node, nothing unconnected, and no cycles. When something is wrong the answer goes back to the model **once**, with the list of problems; if the second answer fails too, the dialog shows the problems and nothing is changed.
+* **Loops.** The engine only runs forward: a Loop node repeats what is on its "Each item" output by itself. A connection from the end of the loop back to the Loop node (how n8n draws it) is dropped; any other cycle is refused.
+* **Credentials are never filled in.** Stored credentials, webhook secrets, Slack and Discord webhook URLs and the like are not sent to the model and cannot be set by it. New nodes open as **Not Configured** and the dialog lists what is still to set up. Which node types exist and which the user's plan includes is decided on the server; plan-locked nodes are left out of the catalogue.
+* **Never active.** A workflow made from the Workflows page is saved inactive. In the editor nothing is saved at all: the result is put on the canvas, and the user reviews it and clicks **Save**. Activating is always the user's step.
+* **Follow-up edits.** With nodes on the canvas the request is a change ("send it on WhatsApp instead"). The model gets the current workflow without credentials and secrets and answers with the whole workflow. Nodes it keeps stay the same nodes: same place, same credential, same secrets. A node replaced by one of another type is a new node without a credential. **Undo this change** in the dialog puts the canvas back as it was before the last request.
+* **Limits.** 10 requests per minute per user (`AI_BUILDER_RATE_LIMIT_PER_MINUTE`), descriptions up to 2,000 characters, workflows up to 60 nodes, and about 55 seconds for both attempts together. Making a workflow counts toward the plan's workflow limit, which is checked before the model is called.
+* **What it sends.** The description, the node catalogue and (for a change) the current workflow's node settings other than credentials and secrets go to the provider of the chosen credential. Text typed into ordinary fields, a prompt for example, is part of that.
 
 ## Account security
 
@@ -1170,6 +1186,7 @@ The live app on Vercel and local development use the **same** database, so the s
 | `VECTOR_STORE_ENGINE` | Set to `app` to make the Vector Store compare embeddings in the app even when pgvector is installed |
 | `WAIT_MAX_DAYS` | The longest a Wait node may wait, in days, default 7 (the limit of Inngest's free plan) |
 | `FORM_RATE_LIMIT_PER_MINUTE` | Submissions per minute for one hosted form, default 30 |
+| `AI_BUILDER_RATE_LIMIT_PER_MINUTE` | "Build with AI" requests per minute for one user, default 10 |
 | `CHAT_WIDGET_RATE_LIMIT_PER_MINUTE`, `CHAT_VISITOR_RATE_LIMIT_PER_MINUTE` | Messages per minute for one public chat widget, and for one visitor of it. Defaults 60 and 10 |
 | `VISION_MAX_PDF_PAGES` | The most pages of a PDF one Analyze Image / Document node may read, default 20 |
 | `MAX_FILE_SIZE_MB`, `MAX_USER_STORAGE_MB`, `FILE_RETENTION_DAYS` | Workflow file limits, defaults 10, 200 and 7 |

@@ -39,7 +39,8 @@ export const SlackNode = memo((props: NodeProps<SlackNodeType>) => {
     }
 
     const nodeData = props.data;
-    const description = nodeData?.content
+    // The webhook URL is the node's secret: without it nothing is sent
+    const description = nodeData?.content && nodeData?.webhookUrl
         ? `Send: ${nodeData.content.slice(0, 50)}...`
         : "Not Configured";
 

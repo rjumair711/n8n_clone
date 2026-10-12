@@ -656,6 +656,19 @@ const networkNodes: NodeTypeOption[] = [
     },
 ]
 
+// The sections of the menu. Also read by "Build with AI", which describes
+// every node type to a model with the label and description shown here.
+export const NODE_SECTIONS = [
+    { id: "triggers", title: "TRIGGERS", data: triggerNodes },
+    { id: "logic", title: "CORE LOGIC", data: logicNodes },
+    { id: "data", title: "DATA TRANSFORMATION", data: dataNodes },
+    { id: "files", title: "FILES", data: fileNodes },
+    { id: "aiModels", title: "AI & LANGUAGE MODELS", data: aiNodes },
+    { id: "communications", title: "COMMUNICATIONS", data: communicationNodes },
+    { id: "productivity", title: "PRODUCTIVITY APPS", data: productivityNodes },
+    { id: "network", title: "NETWORK & API", data: networkNodes },
+]
+
 interface NodeSelectorProps {
     open: boolean,
     onOpenChange: (open: boolean) => void,
@@ -803,20 +816,8 @@ export function NodeSelector({
         </div>
     )
 
-    // Formatted array layout to dynamically iterate accordion rows
-    const allMenuSections = [
-        { id: "triggers", title: "TRIGGERS", data: triggerNodes },
-        { id: "logic", title: "CORE LOGIC", data: logicNodes },
-        { id: "data", title: "DATA TRANSFORMATION", data: dataNodes },
-        { id: "files", title: "FILES", data: fileNodes },
-        { id: "aiModels", title: "AI & LANGUAGE MODELS", data: aiNodes },
-        { id: "communications", title: "COMMUNICATIONS", data: communicationNodes },
-        { id: "productivity", title: "PRODUCTIVITY APPS", data: productivityNodes },
-        { id: "network", title: "NETWORK & API", data: networkNodes },
-    ]
-
     // Filter sections based on search query
-    const filteredSections = allMenuSections
+    const filteredSections = NODE_SECTIONS
         .map((section) => ({
             ...section,
             data: section.data.filter(

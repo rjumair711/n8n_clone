@@ -37,7 +37,14 @@ export const HttpRequestNode = memo((props: NodeProps<HttpRequestNodeType>) => {
     }
 
     const nodeData = props.data;
-    const description = nodeData?.endpoint ? `${nodeData.method || "GET"}: ${nodeData.endpoint}` : "Not configured";
+    // An authentication without its credential cannot sign the request
+    const needsCredential =
+        !!nodeData?.authentication &&
+        nodeData.authentication !== "none" &&
+        !nodeData.credentialId;
+    const description = nodeData?.endpoint && !needsCredential
+        ? `${nodeData.method || "GET"}: ${nodeData.endpoint}`
+        : "Not Configured";
 
 
 

@@ -42,7 +42,8 @@ export const OpenAINode = memo((props: NodeProps<OpenAINodeType>) => {
     }
 
     const nodeData = props.data;
-    const description = nodeData?.userPrompt ? `gpt-4o-mini: ${nodeData.userPrompt.slice(0, 50)}...` : "Not Configured";
+    // Without a credential it cannot run, whatever else is filled in
+    const description = nodeData?.userPrompt && nodeData?.credentialId ? `gpt-4o-mini: ${nodeData.userPrompt.slice(0, 50)}...` : "Not Configured";
 
 
 

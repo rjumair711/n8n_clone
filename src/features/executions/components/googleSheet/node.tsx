@@ -40,7 +40,10 @@ export const GoogleSheetsNode = memo((props: NodeProps<GoogleSheetsNodeType>) =>
     );
   };
 
-  const description = `Google Sheet ID: ${props.data?.sheetId || "Not configured"}`;
+  // Without a credential it cannot run, whatever else is filled in
+  const description = props.data?.credentialId
+    ? `Google Sheet ID: ${props.data?.sheetId || "Not configured"}`
+    : "Not Configured";
 
   return (
     <>

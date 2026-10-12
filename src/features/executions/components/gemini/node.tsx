@@ -41,7 +41,8 @@ export const GeminiNode = memo((props: NodeProps<GeminiNodeType>) => {
     }
 
     const nodeData = props.data;
-    const description = nodeData?.userPrompt ? `gemini-2.5-flash: ${nodeData.userPrompt.slice(0, 50)}...` : "Not Configured";
+    // Without a credential it cannot run, whatever else is filled in
+    const description = nodeData?.userPrompt && nodeData?.credentialId ? `gemini-2.5-flash: ${nodeData.userPrompt.slice(0, 50)}...` : "Not Configured";
 
 
 

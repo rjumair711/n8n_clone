@@ -27,7 +27,8 @@ export const EmailSendNode = memo((props: NodeProps<Node>) => {
     );
   };
 
-  const description = props.data?.recipient
+  // Without a credential it cannot send, whatever else is filled in
+  const description = props.data?.recipient && props.data?.credentialId
     ? `To: ${props.data.recipient}`
     : "Not Configured";
 

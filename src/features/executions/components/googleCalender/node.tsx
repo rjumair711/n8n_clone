@@ -46,7 +46,10 @@ export const GoogleCalendarNode = memo((props: NodeProps<GoogleCalendarNodeType>
   const operationLabel = props.data?.operation 
     ? props.data.operation.charAt(0).toUpperCase() + props.data.operation.slice(1) 
     : "Create";
-  const description = `${operationLabel} Event: ${props.data?.calendarId || "Not configured"}`;
+  // Without a credential it cannot run, whatever else is filled in
+  const description = props.data?.credentialId
+    ? `${operationLabel} Event: ${props.data?.calendarId || "Not configured"}`
+    : "Not Configured";
 
   return (
     <>

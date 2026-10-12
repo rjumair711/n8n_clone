@@ -44,7 +44,7 @@ export const NotionNode = memo((props: NodeProps<NotionNodeType>) => {
     
     // Dynamic description based on the chosen operation
     let description = "Not Configured";
-    if (nodeData?.operation && nodeData?.databaseId) {
+    if (nodeData?.operation && nodeData?.databaseId && nodeData?.credentialId) {
         const opLabel = nodeData.operation === "create_page" ? "Write to" : "Read from";
         description = `${opLabel} DB: ${nodeData.databaseId.slice(0, 8)}...`;
     }

@@ -20,7 +20,7 @@ the instruction "build this workflow in the editor".
 ```bash
 npx prisma migrate deploy
 npm run dev:all
-npx tsx --conditions=react-server src/inngest/__test__/testCoreNodes.ts   # expect "151 checks passed"
+npx tsx --conditions=react-server src/inngest/__test__/testCoreNodes.ts   # expect "235 checks passed"
 ```
 
 Make a second account with a different email. Several checks need it.
@@ -1085,6 +1085,39 @@ Needs a Google Account credential (reconnect it if it predates Drive access), a 
 Trigger manually → **MCP Client**: Endpoint = the URL of any MCP server that uses Streamable HTTP. **Expect:** `mcp.tools` lists the server's tools. Then connect it to an agent's Tools port and ask for something one of those tools does.
 
 **SSE transport.** Set **Transport** to `SSE (older servers)` and Endpoint to the `/sse` URL of a server that uses the older HTTP+SSE transport. **Expect:** `mcp.tools` lists its tools; as an agent tool it works the same. With a Streamable HTTP address and Transport SSE the node fails with "MCP server did not open an event stream at this URL. If it uses Streamable HTTP, change Transport." An existing MCP Client node (saved before this task) still works without being opened.
+
+## T16c. Build with AI
+
+Needs one model credential (OpenAI, Anthropic, Gemini, DeepSeek, Kimi, Qwen or an OpenAI-compatible one). No migration. Use the test account. A small or free model may need a second try for the longer requests.
+
+**From the Workflows page.**
+
+| # | Do | Expect |
+|---|----|--------|
+| 1 | **Workflows** → **Build with AI** on an account without a model credential | a note that it uses your own model credential, with a link to add one; **Build workflow** stays disabled |
+| 2 | With a credential: pick it, leave Model empty, type `When a webhook receives an order, check if body.amount is greater than 100. If yes, post "Large order" to Slack; otherwise wait 5 seconds and post "Small order" to Discord.` and click **Build workflow** | "Building (up to a minute)..."; then the editor opens on a new workflow with a Webhook trigger, an IF, a Slack node on **True** and a Delay then a Discord node on **False**, laid out left to right |
+| 3 | Look at the editor header and the Workflows list | the workflow is **Inactive** |
+| 4 | Look at the Slack and Discord nodes | both say **Not Configured** (their webhook URL is not filled in); the toast listed them under "Still to set up" |
+| 5 | Open the IF node | the condition reads `webhook.body.amount` greater than `100` |
+| 6 | Build `Every day at 9, ask OpenAI for a motivational quote and email it to me@example.com` | a Schedule Trigger with a cron for 09:00, an OpenAI node and an Email node; both say **Not Configured**; no API key appears in any field |
+| 7 | On a Free account whose trial is over, ask for `Send a WhatsApp message when a Google Form is submitted` | no WhatsApp node is used: the summary says what is missing, or the dialog lists "this node needs the Pro plan" |
+| 8 | With as many workflows as the plan allows, click **Build workflow** | the upgrade dialog, at once, without waiting for a model |
+| 9 | Type a Model name that does not exist | a toast "The model could not be used: ..." with the provider's message and no API key in it |
+
+**In the editor.**
+
+| # | Do | Expect |
+|---|----|--------|
+| 10 | **New workflow**, then **Build with AI** (top right): `A chat bot: chat trigger, an AI agent with an OpenAI model and memory` | Chat Trigger → AI Agent, with an OpenAI node and a Memory node under the agent on its **Chat Model** and **Memory** ports. A toast "Workflow built. Review it, then Save." Reload the page without saving: the canvas is empty again |
+| 11 | Build it again, pick a credential on the OpenAI node, **Save**. Then **Build with AI**: `Also send the agent's answer to Telegram` | the dialog says "Describe the change"; afterwards a Telegram node follows the agent with `{{aiAgentOutput.output}}` in its text and says **Not Configured**; the OpenAI node still has its credential and every old node is where it was |
+| 12 | **Build with AI**: `Send it on WhatsApp instead` (on a plan with WhatsApp; otherwise `Send it to Slack instead`) | the Telegram node is replaced by the other node (Not Configured); the dialog shows "Last request" with what changed |
+| 13 | Open the dialog again and click **Undo this change** | the Telegram node is back, as it was |
+| 14 | Ask for something circular: `After the Telegram message, go back to the AI agent and run it again forever` | either a workflow without a cycle (the summary says why) or, after the second try, a red box listing "The connections form a cycle ..."; the canvas is unchanged |
+| 15 | Ask: `For every item in webhook.body.items send a Slack message, then send one email when all are done` | a Loop node with Slack on **Each item** and Email on **Done**, and no connection back into the Loop |
+| 16 | Click **Build workflow** eleven times within a minute (short requests) | the eleventh answers "Too many requests. Try again in N seconds." |
+| 17 | While the workflow is **Active**, make a change with Build with AI and do not save | the saved, running version is unchanged until **Save**; the Active switch is never touched by the builder |
+| 18 | Open the AI usage card (Billing) after a few builds | a line **Build with AI** under "By workflow" with its cost (or no price), and the month's total includes it |
+| 19 | Set the account's monthly AI budget below what was spent, then **Build workflow** | "Monthly AI budget reached: your account has spent ..." and no model call. Remove the budget afterwards |
 
 ## T16b. MCP Server Trigger (public URL)
 

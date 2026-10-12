@@ -103,5 +103,7 @@ export const createIntegrationNode = (
 
   IntegrationNode.displayName = `${config.label.replace(/\s+/g, "")}Node`;
 
-  return IntegrationNode;
+  // "Build with AI" reads the config from the node registry to describe
+  // the node to a model (see features/ai-builder/components/node-catalogue.ts)
+  return Object.assign(IntegrationNode, { integrationConfig: config });
 };

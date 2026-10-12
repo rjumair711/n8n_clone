@@ -39,6 +39,62 @@ export const getAiUsageScope = (params: {
     nodeName: params.allNodes?.find((node) => node.id === params.nodeId)?.name,
 });
 
+type AiUsageRecord = {
+    scope: AiUsageScope;
+    provider: string;
+    model: string;
+    kind?: "chat" | "embedding";
+    usage: TokenUsage;
+};
+
+// One row of the usage table, priced with the price set right now
+const storeAiUsage = async ({
+    scope,
+    provider,
+    model,
+    kind = "chat",
+    usage,
+}: AiUsageRecord) => {
+    const providerKey = normalizePriceKey(provider) || "unknown";
+    const modelName = model.trim();
+
+    const price = await prisma.modelPrice.findUnique({
+        where: {
+            provider_model: {
+                provider: providerKey,
+                model: normalizePriceKey(modelName),
+            },
+        },
+    });
+
+    const costUsd = computeCostUsd(
+        usage,
+        price && {
+            inputPerM: Number(price.inputPerM),
+            outputPerM: Number(price.outputPerM),
+            cachedInputPerM:
+                price.cachedInputPerM === null ? null : Number(price.cachedInputPerM),
+        }
+    );
+
+    await prisma.aiUsage.create({
+        data: {
+            userId: scope.userId,
+            workflowId: scope.workflowId,
+            executionId: scope.executionId,
+            nodeId: scope.nodeId,
+            nodeName: scope.nodeName,
+            kind,
+            provider: providerKey,
+            model: modelName,
+            inputTokens: usage.inputTokens,
+            outputTokens: usage.outputTokens,
+            cachedInputTokens: usage.cachedInputTokens,
+            costUsd,
+        },
+    });
+};
+
 /**
  * Writes down one model call: its tokens and what they cost at the price
  * set right now. Call it inside the step that made the call, so a replayed
@@ -47,60 +103,35 @@ export const getAiUsageScope = (params: {
  * Never throws: a call that could not be written down must not fail the
  * node, which would make it call the model (and pay) again.
  */
-export const recordAiUsage = async ({
-    scope,
-    provider,
-    model,
-    kind = "chat",
-    usage,
-}: {
-    scope: AiUsageScope;
-    provider: string;
-    model: string;
-    kind?: "chat" | "embedding";
-    usage: TokenUsage;
-}) => {
+export const recordAiUsage = async ({ scope, ...record }: AiUsageRecord) => {
     if (!scope.executionId) return;
 
     try {
-        const providerKey = normalizePriceKey(provider) || "unknown";
-        const modelName = model.trim();
-
-        const price = await prisma.modelPrice.findUnique({
-            where: {
-                provider_model: {
-                    provider: providerKey,
-                    model: normalizePriceKey(modelName),
-                },
-            },
-        });
-
-        const costUsd = computeCostUsd(
-            usage,
-            price && {
-                inputPerM: Number(price.inputPerM),
-                outputPerM: Number(price.outputPerM),
-                cachedInputPerM:
-                    price.cachedInputPerM === null ? null : Number(price.cachedInputPerM),
-            }
+        await storeAiUsage({ scope, ...record });
+    } catch (error) {
+        console.error(
+            "[RXJ] Could not record AI usage:",
+            error instanceof Error ? error.message : error
         );
+    }
+};
 
-        await prisma.aiUsage.create({
-            data: {
-                userId: scope.userId,
-                workflowId: scope.workflowId,
-                executionId: scope.executionId,
-                nodeId: scope.nodeId,
-                nodeName: scope.nodeName,
-                kind,
-                provider: providerKey,
-                model: modelName,
-                inputTokens: usage.inputTokens,
-                outputTokens: usage.outputTokens,
-                cachedInputTokens: usage.cachedInputTokens,
-                costUsd,
-            },
-        });
+// The name "Build with AI" calls are written down under. They belong to no
+// workflow and no run.
+export const BUILDER_USAGE_NAME = "Build with AI";
+
+/**
+ * Writes down a model call that was made outside a workflow run, under a
+ * name of its own. It counts towards the account's month like any other
+ * call. Never throws, for the same reason as recordAiUsage.
+ */
+export const recordAccountAiUsage = async ({
+    userId,
+    name,
+    ...record
+}: Omit<AiUsageRecord, "scope"> & { userId: string; name: string }) => {
+    try {
+        await storeAiUsage({ scope: { userId, nodeName: name }, ...record });
     } catch (error) {
         console.error(
             "[RXJ] Could not record AI usage:",
@@ -186,4 +217,29 @@ export const assertAiBudget = async ({
             );
         }
     }
+};
+
+/**
+ * For a model call outside a workflow run: what to tell the user when the
+ * account's monthly AI budget is used up, or null when the call may go on.
+ */
+export const getAccountAiBudgetProblem = async (
+    userId: string
+): Promise<string | null> => {
+    const user = await prisma.user.findUnique({
+        where: { id: userId },
+        select: { aiBudgetCents: true },
+    });
+
+    if (!user || user.aiBudgetCents === null) return null;
+
+    const spentUsd = await getMonthSpendUsd({ userId });
+
+    return isBudgetUsedUp(spentUsd, user.aiBudgetCents)
+        ? aiBudgetError({
+              scope: "account",
+              spentUsd,
+              budgetCents: user.aiBudgetCents,
+          })
+        : null;
 };
