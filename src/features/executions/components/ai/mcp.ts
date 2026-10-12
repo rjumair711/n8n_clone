@@ -5,14 +5,17 @@ import type { NodeExecutor } from "@/features/executions/types";
 import { renderTemplate } from "../../lib/templates";
 import { loadCredentialSecret } from "../../lib/integration";
 import { sanitizeToolName, uniqueToolName } from "../../lib/agent-tools";
-import { applyAuthentication } from "../http-request/executor";
+import {
+  applyAuthentication,
+  applyQueryAuthentication,
+} from "../http-request/executor";
 
 export type McpClientData = {
   variableName?: string;
   endpoint?: string;
   // "http" (Streamable HTTP, the default) | "sse" (the older HTTP+SSE)
   transport?: string;
-  // "none" | "bearer" | "header"
+  // "none" | "bearer" | "header" | "query"
   authentication?: string;
   credentialId?: string;
   // Comma-separated tool names; empty means every tool the server offers
@@ -220,7 +223,9 @@ export class McpSseClient implements McpSession {
 
   constructor(
     private readonly url: string,
-    private readonly headers: Headers
+    private readonly headers: Headers,
+    // Adds a Query Auth credential to the address messages are posted to
+    private readonly authorize: (url: URL) => void = () => {}
   ) {}
 
   async open() {
@@ -328,6 +333,7 @@ export class McpSseClient implements McpSession {
         return this.fail(new Error("MCP server asked for messages to be sent to another site"));
       }
 
+      this.authorize(target);
       this.onEndpoint?.(target.toString());
       return;
     }
@@ -459,11 +465,32 @@ const openSession = async (
   secret: string,
   endpoint: string
 ): Promise<McpSession> => {
+  const authentication = data.authentication || "none";
   const headers = new Headers();
-  applyAuthentication(headers, data.authentication || "none", secret);
+  applyAuthentication(headers, authentication, secret);
+
+  // Query Auth: the key is added to the address here, when the server is
+  // called. The node's endpoint, and what is stored about the run, never
+  // hold it.
+  const authorize = (url: URL) =>
+    applyQueryAuthentication(url, authentication, secret);
+  // Any other authentication leaves the address exactly as it was typed
+  let url = endpoint;
+
+  if (authentication === "query") {
+    let address: URL;
+    try {
+      address = new URL(endpoint);
+    } catch {
+      throw new NonRetriableError(`MCP Client node: "${endpoint}" is not a valid URL`);
+    }
+
+    authorize(address);
+    url = address.toString();
+  }
 
   if (resolveMcpTransport(data.transport) === "sse") {
-    const client = new McpSseClient(endpoint, headers);
+    const client = new McpSseClient(url, headers, authorize);
 
     try {
       await client.open();
@@ -476,7 +503,7 @@ const openSession = async (
     return client;
   }
 
-  const client = new McpHttpClient(endpoint, headers);
+  const client = new McpHttpClient(url, headers);
   await client.initialize();
 
   return client;

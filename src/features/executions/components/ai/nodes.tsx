@@ -693,6 +693,7 @@ export const VectorStoreNode = createIntegrationNode(vectorStoreConfig, (data) =
 const MCP_CREDENTIALS: Record<string, CredentialType> = {
   bearer: CredentialType.HTTP_BEARER_AUTH,
   header: CredentialType.HTTP_HEADER_AUTH,
+  query: CredentialType.HTTP_QUERY_AUTH,
 };
 
 export const mcpClientConfig: IntegrationConfig = {
@@ -734,6 +735,7 @@ export const mcpClientConfig: IntegrationConfig = {
         { value: "none", label: "None" },
         { value: "bearer", label: "Bearer Auth" },
         { value: "header", label: "Header Auth" },
+        { value: "query", label: "Query Auth (key in the URL)" },
       ],
     },
     {

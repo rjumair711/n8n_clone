@@ -15,7 +15,7 @@ import { CredentialType } from "@prisma/client";
 import { useCredentialsByType } from "@/features/credentials/hooks/use-credentials";
 
 const METHODS = ["GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS"] as const;
-const AUTHENTICATIONS = ["none", "basic", "bearer", "header"] as const;
+const AUTHENTICATIONS = ["none", "basic", "bearer", "header", "query"] as const;
 const BODY_TYPES = ["json", "form", "raw", "none"] as const;
 const RESPONSE_FORMATS = ["auto", "file"] as const;
 
@@ -27,6 +27,7 @@ const AUTH_OPTIONS: Record<(typeof AUTHENTICATIONS)[number], {
     basic: { label: "Basic Auth", credentialType: CredentialType.HTTP_BASIC_AUTH },
     bearer: { label: "Bearer Auth", credentialType: CredentialType.HTTP_BEARER_AUTH },
     header: { label: "Header Auth", credentialType: CredentialType.HTTP_HEADER_AUTH },
+    query: { label: "Query Auth (key in the URL)", credentialType: CredentialType.HTTP_QUERY_AUTH },
 };
 
 const formSchema = z.object({

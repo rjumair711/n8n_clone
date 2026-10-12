@@ -134,6 +134,7 @@ const credentialLogos: Record<CredentialType, string> = {
     [CredentialType.HTTP_BASIC_AUTH]: "/logos/http.svg",
     [CredentialType.HTTP_HEADER_AUTH]: "/logos/http.svg",
     [CredentialType.HTTP_BEARER_AUTH]: "/logos/http.svg",
+    [CredentialType.HTTP_QUERY_AUTH]: "/logos/http.svg",
     [CredentialType.GOOGLE_OAUTH2]: "/logos/google.svg",
     [CredentialType.OPENAI_COMPATIBLE]: "/logos/chat-model.svg",
     [CredentialType.TWILIO]: "/logos/twilio.svg",

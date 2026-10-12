@@ -373,7 +373,7 @@ export const MANUAL_SPECS: Record<string, ManualSpec> = {
 
   // --------------------------------------------------------------- network
   HTTP_REQUEST: {
-    credential: "HTTP_BASIC_AUTH, HTTP_BEARER_AUTH or HTTP_HEADER_AUTH (only when authentication is not none)",
+    credential: "HTTP_BASIC_AUTH, HTTP_BEARER_AUTH, HTTP_HEADER_AUTH or HTTP_QUERY_AUTH (only when authentication is not none)",
     credentialOptional: true,
     variableName: "myApiCall",
     fields: [
@@ -395,9 +395,9 @@ export const MANUAL_SPECS: Record<string, ManualSpec> = {
       {
         name: "authentication",
         type: "select",
-        options: ["none", "basic", "bearer", "header"],
+        options: ["none", "basic", "bearer", "header", "query"],
         default: "none",
-        description: "The secret itself is a credential the user picks. Never put keys in headers or the URL.",
+        description: "The secret itself is a credential the user picks. Never put keys in headers or the URL: an API that takes its key as a URL parameter uses \"query\".",
       },
       { name: "queryParams", type: "textarea", description: "One name=value per line, or a JSON object." },
       { name: "headers", type: "textarea", description: "One Name: value per line, or a JSON object." },

@@ -14328,6 +14328,340 @@ pour()</code></pre>
     assert.equal(/\b(DROP|DELETE FROM|TRUNCATE|UPDATE "|RENAME)\b/.test(sql), false);
   });
 
+  await test("gmail: a reply goes to the sender, or to the recipients of a message we sent", async () => {
+    const { getReplyRecipients } = await import(
+      "@/features/executions/components/gmail/executor"
+    );
+
+    const message = (labelIds: string[], headers: Record<string, string>) => ({
+      id: "m1",
+      threadId: "t1",
+      labelIds,
+      payload: {
+        headers: Object.entries(headers).map(([name, value]) => ({ name, value })),
+      },
+    });
+
+    // A message we received: its sender, as before. Its To and Cc are ours.
+    const received = message(["INBOX", "UNREAD"], {
+      From: "Editor <editor@site.com>",
+      To: "me@outreach.com",
+      Cc: "boss@outreach.com",
+    });
+    assert.deepEqual(getReplyRecipients(received), { to: "Editor <editor@site.com>" });
+    assert.deepEqual(getReplyRecipients(received, true), { to: "Editor <editor@site.com>" });
+    assert.deepEqual(
+      getReplyRecipients(message(["INBOX"], { From: "a@site.com", "Reply-To": "replies@site.com" })),
+      { to: "replies@site.com" }
+    );
+    // No labels at all (an old or partial answer) is not "sent by us"
+    assert.deepEqual(getReplyRecipients({ payload: received.payload }), { to: "Editor <editor@site.com>" });
+
+    // A message we sent (a follow-up): the people it was sent to, not us
+    const sent = message(["SENT"], {
+      From: "me@outreach.com",
+      To: "editor@site.com, second@site.com",
+      Cc: "assistant@site.com",
+    });
+    assert.deepEqual(getReplyRecipients(sent), { to: "editor@site.com, second@site.com" });
+    assert.deepEqual(getReplyRecipients(sent, true), {
+      to: "editor@site.com, second@site.com",
+      cc: "assistant@site.com",
+    });
+    // Keep with no Cc on the original adds none
+    assert.deepEqual(getReplyRecipients(message(["SENT"], { From: "me@outreach.com", To: "a@site.com" }), true), {
+      to: "a@site.com",
+    });
+    // A sent message without a To header falls back to the old rule
+    assert.deepEqual(getReplyRecipients(message(["SENT"], { From: "me@outreach.com" })), { to: "me@outreach.com" });
+
+    // The reply stays in the thread, and Cc is only kept when the node says so
+    const { readFileSync } = await import("node:fs");
+    const { join } = await import("node:path");
+    const read = (path: string) => readFileSync(join(process.cwd(), path), "utf8");
+    const executor = read("src/features/executions/components/gmail/executor.ts");
+    assert.match(executor, /threadId: original\.data\.threadId,/);
+    assert.match(executor, /inReplyTo: originalId,/);
+    assert.match(executor, /references: `\$\{getHeader\(original\.data, "References"\)\} \$\{originalId\}`\.trim\(\),/);
+    assert.match(executor, /\.\.\.getReplyRecipients\(original\.data, data\.replyCc === "keep"\),/);
+    assert.match(executor, /metadataHeaders: \["From", "Reply-To", "To", "Cc", "Subject", "Message-ID", "References"\],/);
+  });
+
+  await test("gmail trigger: messages beyond one poll's limit wait for the next poll", async () => {
+    const { GMAIL_MESSAGES_PER_POLL, pickGmailBatch, nextGmailTriggerState } = await import(
+      "@/inngest/gmail-trigger"
+    );
+
+    assert.equal(GMAIL_MESSAGES_PER_POLL, 10);
+
+    // Gmail lists the newest first: m25 ... m1
+    const listed = Array.from({ length: 25 }, (_, index) => `m${25 - index}`);
+
+    const first = pickGmailBatch(listed, []);
+    assert.deepEqual(first.batch, ["m1", "m2", "m3", "m4", "m5", "m6", "m7", "m8", "m9", "m10"]);
+    assert.equal(first.waiting, 15);
+
+    // Fewer than the limit, already seen ones, a repeated id, an empty list
+    assert.deepEqual(pickGmailBatch(["c", "b", "a"], ["b"]), { batch: ["a", "c"], waiting: 0 });
+    assert.deepEqual(pickGmailBatch(["b", "b", "a"], []), { batch: ["a", "b"], waiting: 0 });
+    assert.deepEqual(pickGmailBatch([], ["a"]), { batch: [], waiting: 0 });
+    assert.deepEqual(pickGmailBatch(["c", "b", "a"], [], 2), { batch: ["a", "b"], waiting: 1 });
+
+    // Four polls of the same 25 messages: every one is handled once, oldest
+    // first, and the "new since" moment only moves when none are waiting
+    let state: { lastCheckedAt?: number; seenIds?: string[] } = { lastCheckedAt: 1000, seenIds: ["old"] };
+    const handled: string[] = [];
+    const moments: (number | undefined)[] = [];
+
+    for (const now of [2000, 3000, 4000, 5000]) {
+      const { batch, waiting } = pickGmailBatch(listed, state.seenIds ?? []);
+      handled.push(...batch);
+      state = nextGmailTriggerState({ state, handledIds: batch, waiting: waiting > 0, now });
+      moments.push(state.lastCheckedAt);
+
+      // Nothing that was not handled is marked as seen
+      assert.deepEqual([...(state.seenIds ?? [])].sort(), [...handled, "old"].sort());
+    }
+
+    assert.deepEqual(handled, Array.from({ length: 25 }, (_, index) => `m${index + 1}`));
+    assert.deepEqual(moments, [1000, 1000, 4000, 5000]);
+
+    // The trigger uses both, lists every page, and no longer marks what it listed
+    const { readFileSync } = await import("node:fs");
+    const { join } = await import("node:path");
+    const read = (path: string) => readFileSync(join(process.cwd(), path), "utf8");
+
+    const trigger = read("src/inngest/gmail-trigger.ts");
+    assert.ok(trigger.includes("const { batch, waiting } = pickGmailBatch(listedIds, state.seenIds ?? []);"));
+    assert.ok(trigger.includes("handledIds: batch,"));
+    assert.ok(trigger.includes("waiting: waiting > 0 || !!pageToken,"));
+    assert.ok(trigger.includes("} while (pageToken && listedIds.length < MAX_LISTED_IDS);"));
+    assert.equal(trigger.includes("...listedIds, ...seen"), false);
+
+    // The RSS Feed Trigger, the other polling trigger: only its batch is marked
+    const rss = read("src/inngest/rss-trigger.ts");
+    assert.ok(rss.includes("const batch = fresh.reverse().slice(0, MAX_ITEMS_PER_POLL);"));
+    assert.ok(rss.includes("? batch.map((item) => item.id)"));
+    assert.ok(rss.includes("seenIds: [...new Set([...handled, ...seen])].slice(0, MAX_SEEN_IDS),"));
+  });
+
+  await test("http query auth: the key is added to the address at run time and redacted from what is stored", async () => {
+    const { parseQueryAuth, applyQueryAuthentication, applyAuthentication } = await import(
+      "@/features/executions/components/http-request/executor"
+    );
+    const { encrypt } = await import("@/lib/encryption");
+    const { createRunRedactor } = await import("@/lib/execution-redaction");
+
+    assert.deepEqual(parseQueryAuth("api_key: zb-secret-key-123"), { name: "api_key", value: "zb-secret-key-123" });
+    // Only the first colon separates: a value may contain more
+    assert.deepEqual(parseQueryAuth(" key :a:b:c "), { name: "key", value: "a:b:c" });
+    for (const bad of ["zb-secret-key-123", ": value", "api_key:", "api key: value", "a=b: value", "a&b: value"]) {
+      assert.throws(() => parseQueryAuth(bad), /Query Auth credential must look like "api_key: your-key"/, bad);
+    }
+
+    // Added to the address, in place of a parameter of the same name
+    const url = new URL("https://api.example.com/v2/validate?email=a%40b.com&api_key=typed-in");
+    applyQueryAuthentication(url, "query", "api_key: zb-secret-key-123");
+    assert.equal(url.toString(), "https://api.example.com/v2/validate?email=a%40b.com&api_key=zb-secret-key-123");
+
+    // The other kinds of authentication leave the address alone, and Query
+    // Auth sets no header
+    for (const other of ["none", "basic", "bearer", "header"]) {
+      const untouched = new URL("https://api.example.com/v2/validate?email=a%40b.com");
+      applyQueryAuthentication(untouched, other, "api_key: zb-secret-key-123");
+      assert.equal(untouched.search, "?email=a%40b.com", other);
+    }
+    const headers = new Headers();
+    applyAuthentication(headers, "query", "api_key: zb-secret-key-123");
+    assert.deepEqual([...headers.keys()], []);
+
+    // What is stored about the run: the value is gone from node input and
+    // output, from error messages and from an address that repeats it, also
+    // in the percent-encoded form an address carries it in
+    const secret = "k/ey+with=odd&chars 1";
+    const redactor = createRunRedactor([
+      encrypt("api_key: zb-secret-key-123"),
+      encrypt(`token: ${secret}`),
+    ]);
+
+    const address = new URL("https://api.example.com/check");
+    applyQueryAuthentication(address, "query", `token: ${secret}`);
+    assert.equal(address.search.includes(secret), false);
+
+    const stored = JSON.stringify(
+      redactor.data({
+        verify: {
+          httpResponse: {
+            data: {
+              requested: "https://api.example.com/v2/validate?api_key=zb-secret-key-123&email=a@b.com",
+              other: address.toString(),
+              encoded: encodeURIComponent(secret),
+              status: "valid",
+            },
+          },
+        },
+      })
+    );
+    const error = redactor.text(
+      `Request failed with status 401: key zb-secret-key-123 is not valid for ${address.toString()}`
+    );
+    const result = JSON.stringify(redactor.result({ url: address.toString(), key: "zb-secret-key-123" }));
+
+    for (const text of [stored, error, result]) {
+      assert.equal(text.includes("zb-secret-key-123"), false, text);
+      assert.equal(text.includes(secret), false, text);
+      assert.equal(text.includes(encodeURIComponent(secret)), false, text);
+      assert.equal(text.includes(address.searchParams.toString().slice("token=".length)), false, text);
+      assert.match(text, /\[REDACTED\]/);
+    }
+    // The rest of the data is still readable
+    assert.match(stored, /"status":"valid"/);
+    assert.match(stored, /api\.example\.com\/v2\/validate\?api_key=\[REDACTED\]&email=a@b\.com/);
+
+    // The executor adds it last, and the node's dialogs offer the new type
+    const { readFileSync } = await import("node:fs");
+    const { join } = await import("node:path");
+    const read = (path: string) => readFileSync(join(process.cwd(), path), "utf8");
+
+    const executor = read("src/features/executions/components/http-request/executor.ts");
+    assert.ok(
+      executor.indexOf("url.searchParams.set(key, value);") <
+        executor.indexOf("applyQueryAuthentication(url, authentication, secret);")
+    );
+    assert.ok(read("src/features/executions/components/http-request/dialog.tsx").includes("CredentialType.HTTP_QUERY_AUTH"));
+    assert.ok(read("src/features/executions/components/ai/nodes.tsx").includes("query: CredentialType.HTTP_QUERY_AUTH,"));
+
+    // The MCP Client adds it to the address it calls, never to the stored endpoint
+    const mcp = read("src/features/executions/components/ai/mcp.ts");
+    assert.ok(mcp.includes("applyQueryAuthentication(url, authentication, secret);"));
+    assert.ok(mcp.includes("new McpSseClient(url, headers, authorize)"));
+    assert.ok(mcp.includes("new McpHttpClient(url, headers)"));
+
+    // The migration only adds the enum value
+    const { readdirSync } = await import("node:fs");
+    const folder = readdirSync("prisma/migrations").find((name) => name.endsWith("_http_query_auth"));
+    assert.ok(folder, "migration");
+    const sql = read(`prisma/migrations/${folder}/migration.sql`);
+    assert.match(sql, /ALTER TYPE "CredentialType" ADD VALUE 'HTTP_QUERY_AUTH';/);
+    assert.equal(/\b(DROP|DELETE FROM|TRUNCATE|UPDATE "|RENAME)\b/.test(sql), false);
+  });
+
+  await test("airtable: Return All follows the pages up to Max Records and says when it was cut", async () => {
+    const {
+      listAllAirtableRecords,
+      resolveReturnAllLimit,
+      describeAirtableList,
+      AIRTABLE_RETURN_ALL_DEFAULT,
+      AIRTABLE_RETURN_ALL_MAX,
+    } = await import("@/features/executions/components/airtable/executor");
+
+    // A table of `total` records, served 100 at a time like Airtable does
+    const pagedTable = (total: number) => {
+      const offsets: (string | undefined)[] = [];
+
+      const fetchPage = async (offset: string | undefined) => {
+        offsets.push(offset);
+        const start = offset ? Number(offset.replace("itr", "")) : 0;
+        const end = Math.min(start + 100, total);
+
+        return {
+          records: Array.from({ length: end - start }, (_, index) => ({
+            id: `rec${start + index}`,
+            fields: { n: start + index },
+          })),
+          ...(end < total ? { offset: `itr${end}` } : {}),
+        };
+      };
+
+      return { fetchPage, offsets };
+    };
+
+    // Every page is followed, in order, each with the offset of the one before
+    const all = pagedTable(250);
+    const complete = await listAllAirtableRecords<{ id: string }>(all.fetchPage, { limit: 1000 });
+    assert.equal(complete.records.length, 250);
+    assert.equal(complete.truncated, false);
+    assert.deepEqual(all.offsets, [undefined, "itr100", "itr200"]);
+    assert.deepEqual(
+      complete.records.map((record) => record.id),
+      Array.from({ length: 250 }, (_, index) => `rec${index}`)
+    );
+
+    // Max Records in the middle of a page: cut there, and it says so
+    const cut = pagedTable(250);
+    const partial = await listAllAirtableRecords(cut.fetchPage, { limit: 230 });
+    assert.equal(partial.records.length, 230);
+    assert.deepEqual([partial.truncated, partial.reason], [true, "maxRecords"]);
+    assert.equal(cut.offsets.length, 3);
+
+    // Max Records at the end of a page, with more behind it: no extra request
+    const edge = pagedTable(250);
+    const atEdge = await listAllAirtableRecords(edge.fetchPage, { limit: 200 });
+    assert.equal(atEdge.records.length, 200);
+    assert.equal(atEdge.truncated, true);
+    assert.equal(edge.offsets.length, 2);
+
+    // Exactly as many as the table has is the whole table
+    const exact = await listAllAirtableRecords(pagedTable(200).fetchPage, { limit: 200 });
+    assert.deepEqual([exact.records.length, exact.truncated], [200, false]);
+    const empty = await listAllAirtableRecords(pagedTable(0).fetchPage, { limit: 1000 });
+    assert.deepEqual([empty.records.length, empty.truncated], [0, false]);
+
+    // A server that always says there is more cannot keep the run going
+    let calls = 0;
+    const endless = await listAllAirtableRecords(
+      async () => {
+        calls++;
+        return { records: [], offset: "again" };
+      },
+      { limit: 300 }
+    );
+    assert.equal(endless.truncated, true);
+    assert.equal(calls, 4);
+
+    // A list too large to store stops early, for that reason
+    const big = await listAllAirtableRecords(pagedTable(250).fetchPage, { limit: 1000, maxBytes: 2000 });
+    assert.ok(big.records.length > 0 && big.records.length < 250);
+    assert.deepEqual([big.truncated, big.reason], [true, "size"]);
+
+    assert.equal(AIRTABLE_RETURN_ALL_DEFAULT, 1000);
+    assert.equal(resolveReturnAllLimit(""), 1000);
+    assert.equal(resolveReturnAllLimit(undefined), 1000);
+    assert.equal(resolveReturnAllLimit("abc"), 1000);
+    assert.equal(resolveReturnAllLimit("0"), 1000);
+    assert.equal(resolveReturnAllLimit("250"), 250);
+    assert.equal(resolveReturnAllLimit("999999"), AIRTABLE_RETURN_ALL_MAX);
+
+    // What the output says about the list
+    assert.deepEqual(describeAirtableList({ count: 40, limit: 1000, truncated: false, itemLimit: 100 }), {
+      returnAll: true,
+      maxRecords: 1000,
+      truncated: false,
+    });
+    const cutNote = describeAirtableList({ count: 230, limit: 230, truncated: true, reason: "maxRecords", itemLimit: 100 });
+    assert.equal(cutNote.truncated, true);
+    assert.match(cutNote.warning ?? "", /Only the first 230 records were returned: the table has more than Max Records \(230\)/);
+    assert.match(cutNote.warning ?? "", /230 records are more than the 100 items a node after Split Out handles/);
+    assert.match(
+      describeAirtableList({ count: 90, limit: 1000, truncated: true, reason: "size", itemLimit: 100 }).warning ?? "",
+      /too large to store/
+    );
+    // Complete, but longer than the per-node item limit: a warning, not a cut
+    const long = describeAirtableList({ count: 250, limit: 1000, truncated: false, itemLimit: 100 });
+    assert.equal(long.truncated, false);
+    assert.match(long.warning ?? "", /^250 records are more than the 100 items/);
+
+    // Without Return All the request is the one it always was
+    const { readFileSync } = await import("node:fs");
+    const { join } = await import("node:path");
+    const executor = readFileSync(
+      join(process.cwd(), "src/features/executions/components/airtable/executor.ts"),
+      "utf8"
+    );
+    assert.ok(executor.includes("Number(renderTemplate(data.maxRecords, context)) || 50,"));
+    assert.ok(executor.includes('data.returnAll === true || data.returnAll === "yes" || data.returnAll === "true"'));
+  });
+
   console.log(`\n${passed} checks passed`);
 };
 

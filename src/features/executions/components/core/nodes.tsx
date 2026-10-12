@@ -751,6 +751,19 @@ export const gmailConfig: IntegrationConfig = {
       operations: ["send_email", "reply"],
     },
     {
+      name: "replyCc",
+      label: "CC of a Message You Sent",
+      type: "select",
+      defaultValue: "none",
+      options: [
+        { value: "none", label: "Leave out" },
+        { value: "keep", label: "Keep" },
+      ],
+      description:
+        "A reply to a message you sent yourself (a follow-up) goes to the people it was sent to. Keep also copies its CC. A reply to a message you received goes to its sender, as always.",
+      operations: ["reply"],
+    },
+    {
       name: "cc",
       label: "CC",
       placeholder: "team@example.com",

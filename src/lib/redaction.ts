@@ -101,6 +101,13 @@ export const collectCredentialSecrets = (values: readonly string[]): string[] =>
     }
   }
 
+  // A key that travels in an address (HTTP Query Auth) is percent-encoded
+  // there, which is how an error message or an API's answer may repeat it
+  for (const secret of [...secrets]) {
+    addSecret(secrets, encodeURIComponent(secret));
+    addSecret(secrets, new URLSearchParams({ k: secret }).toString().slice(2));
+  }
+
   // Longest first, so a secret that contains another is replaced whole
   return [...secrets].sort((a, b) => b.length - a.length);
 };

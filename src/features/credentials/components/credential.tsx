@@ -80,6 +80,7 @@ const credentialTypeOptions = [
   { value: CredentialType.SSH, label: "SSH (Server Login)", logo: "/logos/ssh.svg" },
   { value: CredentialType.HTTP_HEADER_AUTH, label: "HTTP Header Auth", logo: "/logos/http.svg" },
   { value: CredentialType.HTTP_BEARER_AUTH, label: "HTTP Bearer Auth", logo: "/logos/http.svg" },
+  { value: CredentialType.HTTP_QUERY_AUTH, label: "HTTP Query Auth (key in the URL)", logo: "/logos/http.svg" },
   { value: CredentialType.HTTP_BASIC_AUTH, label: "HTTP Basic Auth", logo: "/logos/http.svg" },
 ];
 
@@ -331,6 +332,13 @@ const credentialFieldConfig: Record<CredentialType, {
     secretLabel: "Header (Name: value)",
     secretPlaceholder: "X-API-Key: your-key",
     help: "Written as Name: value. The HTTP Request node sends it as a request header.",
+  },
+  [CredentialType.HTTP_QUERY_AUTH]: {
+    namePlaceholder: "My API Key Parameter",
+    defaultName: "Query Auth credential",
+    secretLabel: "Parameter (name: value)",
+    secretPlaceholder: "api_key: your-key",
+    help: "Written as name: value, for APIs that only take their key in the address (?api_key=...). The HTTP Request node adds it to the URL when the request is sent; it is not stored in the node.",
   },
   [CredentialType.HTTP_BEARER_AUTH]: {
     namePlaceholder: "My API Token",

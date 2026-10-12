@@ -617,7 +617,7 @@ OCR and vision for a file a workflow has: a Form Trigger upload, an HTTP Request
 | Chat Trigger        | Runs when a message is sent from the editor's chat panel, or (with "Make chat public") from the hosted chat page or the website widget; provides `chatInput` and `sessionId` |
 | Telegram Trigger    | Runs when your bot receives a message. The bot's webhook is registered when the workflow is activated. A voice message is given as a file at `{{telegram.voice}}` |
 | WhatsApp Trigger    | Runs when your WhatsApp Business number receives a message (verify token + signature check). With a WhatsApp credential selected, a voice message is given as a file at `{{whatsapp.voice}}` |
-| Gmail Trigger       | Runs when a new email arrives; polls every 1, 5, 15 or 60 minutes with an optional Gmail search filter      |
+| Gmail Trigger       | Runs when a new email arrives; polls every 1, 5, 15 or 60 minutes with an optional Gmail search filter. One poll starts at most 10 runs, oldest email first; when more arrived, the rest follow at 10 a minute until none are waiting (a burst of up to 500 emails is kept) |
 | Messenger Trigger   | Runs when someone messages your Facebook Page (verify token + signature check; see "Messenger and Instagram") |
 | Instagram Trigger   | Runs when your Instagram professional account receives a direct message (verify token + signature check)    |
 | Typeform Trigger    | Runs when a typeform is submitted; answers are available by question title                                 |
@@ -625,7 +625,7 @@ OCR and vision for a file a workflow has: a Form Trigger upload, an HTTP Request
 | WooCommerce Trigger | Runs when an order is created, updated or paid, or a product or customer changes (signature check; optional order status filter) |
 | Form Trigger        | Runs when someone submits the workflow's own hosted form at `/forms/<id>` (see "Forms")                    |
 | MCP Server Trigger  | Makes the workflow a tool of an MCP server at `/api/mcp/<workflow id>`, protected by a bearer token (see "MCP: client and server") |
-| RSS Feed Trigger    | Runs when a new item appears in an RSS or Atom feed; polls every 1, 5, 15, 60 minutes or daily             |
+| RSS Feed Trigger    | Runs when a new item appears in an RSS or Atom feed; polls every 1, 5, 15, 60 minutes or daily. One poll starts at most 10 runs, oldest item first; the rest are picked up by the next polls |
 | Google Form Trigger | Form submission automation                                                                                 |
 | Stripe Trigger      | Payment event automation                                                                                   |
 | Error Trigger       | Runs when a workflow fails (this workflow, or all of your workflows), for alerts                           |
@@ -661,7 +661,7 @@ Every execution also keeps the trigger and the data it started with, so it can b
 | Node             | Description                                                               |
 | ---------------- | ------------------------------------------------------------------------- |
 | AI Agent         | n8n-style Tools Agent with Chat Model, Parser, Memory and Tools sub-nodes |
-| HTTP Request     | Call any API: headers, query parameters, Basic / Bearer / Header auth from credentials, JSON / form / raw bodies, timeout, Never Error. Response Format "File" stores a download. Private and local addresses are blocked |
+| HTTP Request     | Call any API: headers, query parameters, Basic / Bearer / Header / Query auth from credentials (Query Auth adds an API key to the URL when the request is sent, for APIs such as ZeroBounce that only take it there; the key is not kept in the node), JSON / form / raw bodies, timeout, Never Error. Response Format "File" stores a download. Private and local addresses are blocked |
 | RSS Read         | Read the items of an RSS or Atom feed; the following nodes run once per item |
 | Web Search       | Search the web with Tavily, Brave Search or your own SearXNG server; titles, links and snippets. Also an AI Agent tool. See "Web Search and Read Web Page" |
 | Read Web Page    | Fetch a page and return its main content as clean Markdown or text, cut to a length you set. Also an AI Agent tool. Private and local addresses are blocked |
@@ -784,10 +784,10 @@ Two nodes that bring the web into a workflow. Both work as ordinary steps and as
 | Google Sheets    | Append rows (Google account or service account)                           |
 | Google Calendar  | Create, update and delete events (Google account or service account)      |
 | Google Drive     | Search, upload, download, create folder, delete. Google Docs and Slides download as PDF, Sheets as CSV |
-| Gmail            | Send (with file attachments), reply, search, get and mark messages as read |
+| Gmail            | Send (with file attachments), reply, search, get and mark messages as read. A reply stays in the thread: to a message you received it goes to its sender, to a message you sent yourself (a follow-up) it goes to the people that message was sent to, with its CC only when **CC of a Message You Sent** is set to Keep |
 | Notion           | Create pages, query databases                                             |
 | GitHub           | Create issues, comment on issues, list issues, read a repository          |
-| Airtable         | List, create, update and delete records                                   |
+| Airtable         | List, create, update and delete records. List Records returns one page (50 by default, 100 at most); with **Return All** it follows Airtable's pages up to **Max Records** (1000 by default, 10,000 at most, and 3 MB). Its output then has `truncated` (true when the table had more) and a `warning` text when the list was cut or is longer than `MAX_ITEMS_PER_NODE`, the most items a node after Split Out handles |
 | Jira             | Create issue, get issue, search with JQL, add comment (Jira Cloud)        |
 | HubSpot          | Create, get, update and search contacts; create deals                     |
 | Salesforce       | Query with SOQL, and create, get, update and delete records of any object |
@@ -914,6 +914,7 @@ Supported credential types:
 | MYSQL         | MySQL node (`mysql://user:password@host:3306/database`) |
 | SSH           | SSH node (host, port, username, and a private key or password; optional host key fingerprint) |
 | HTTP_HEADER_AUTH / HTTP_BEARER_AUTH / HTTP_BASIC_AUTH | HTTP Request and MCP Client nodes |
+| HTTP_QUERY_AUTH | HTTP Request and MCP Client nodes: an API key sent as a URL parameter, written `name: value` (for example `api_key: your-key`). Added to the address only when the request is sent, and redacted from stored node data and errors like every credential value |
 
 ## Security
 
@@ -1364,6 +1365,26 @@ Nodes that are not built yet. Each new integration is a config passed to `create
 | Slack / Discord bots | Bot-token nodes and triggers; today both send through webhook URLs |
 
 Also not built: a true n8n items model for every node from the trigger onward (items start at a list node), a real tokenizer for the Vector Store's token splitting, and the stdio transport for MCP (it needs a process on the user's own machine).
+
+## For the AI Backlink Outreach agent
+
+Planned, not built. These are the pieces an agent needs to find link prospects, email them from real mailboxes, follow up in the same thread and keep track of who was contacted.
+
+| Planned item | What it needs |
+| ------------ | ------------- |
+| Google Sheets: row operations | Get Rows (with filter), Lookup Row, Update Row, Append or Update (upsert by a key column) and Delete Row; rows come out as a list so Split Out can take them |
+| IMAP Trigger and IMAP node | A trigger for new email in a folder (polling every 1, 5, 15 or 60 minutes, a search filter, duplicate check by Message-ID) and a node with Search, Get Message, Mark as Read and Move to Folder. Needs a new IMAP credential: host, port, TLS, username, app password |
+| Email (SMTP): headers and replies | Custom Headers (for `List-Unsubscribe` and `List-Unsubscribe-Post`), a "Reply To Message" option that sets `In-Reply-To` and `References` and adds "Re:", and the sent Message-ID in the output. The Gmail node returns `messageId` and `threadId` |
+| Per-item approval and "Approve with edits" | Send and Wait for Approval asks once per item, and each item continues through Approved or Rejected. "Approve with edits" makes the subject and body editable on the approval page and returns them as `{{approval.edited.subject}}` / `{{approval.edited.body}}`. Needs default values on Form fields |
+| Delay: random delay and sending window | Random Delay (min–max) per item, and a Sending Window (days, start and end hour, time zone) |
+| Data Table node | A built-in key/value table per workspace with Add, Check Exists, Remove and List, for suppression lists and "already contacted" checks |
+| Mailbox rotation on Gmail / SMTP | Several credentials on one node, picked by Round Robin or Least Used Today, with a daily limit per mailbox that is separate from the plan cap |
+| Text Formatter: more operations | Extract Domain, Extract Root URL, Find Emails in Text, Normalize Email |
+| Integration nodes | Hunter.io (Domain Search, Email Finder, Email Verifier), DataForSEO (SERP, Backlinks, Domain metrics), ZeroBounce / NeverBounce (Verify Email) |
+| Link Checker option | Search the raw HTML (including nav, footer and sidebar) for a domain; return `found`, `anchorText`, `rel` and `href` |
+| Gallery template | "AI Backlink Outreach" in the template gallery, built from the items above |
+
+Note on cold email: Resend and SendGrid are transactional services, and their policies generally forbid unsolicited cold email. Cold outreach should go through Gmail or SMTP mailboxes on a separate outreach domain, include an opt-out line, and follow CAN-SPAM / GDPR.
 
 ---
 
