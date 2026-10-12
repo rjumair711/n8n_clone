@@ -20,7 +20,7 @@ the instruction "build this workflow in the editor".
 ```bash
 npx prisma migrate deploy
 npm run dev:all
-npx tsx --conditions=react-server src/inngest/__test__/testCoreNodes.ts   # expect "250 checks passed"
+npx tsx --conditions=react-server src/inngest/__test__/testCoreNodes.ts   # expect "255 checks passed"
 ```
 
 Make a second account with a different email. Several checks need it.
@@ -338,6 +338,43 @@ Needs the Inngest dev server (`npm run inngest:dev`) next to the app, and the `w
 | Open a finished execution | no Cancel button |
 
 **f) Lists and agents.** Put the Wait node (30 seconds) after a Split Out with three items. **Expect:** one pause, then the following node runs for all three items. Plug a Wait node into an AI Agent's Tools port and ask the agent to use it. **Expect:** the tool call fails with "it cannot be used as an AI Agent tool".
+
+## T6c. Pinned data and partial execution
+
+Needs the `pinned_data` migration applied. Build and save: Manual Trigger → HTTP Request (`https://httpbin.org/uuid`, variable `first`) → IF (`first.httpResponse.status` equals `200`) → true: HTTP Request (`https://httpbin.org/anything?id={{first.httpResponse.data.uuid}}`, variable `second`) → Edit Fields (variable `last`, one field `seen` = `{{second.httpResponse.data.args.id}}`); false: a Slack or Email node (it must never run here). Run it once with **Execute workflow** and note the uuid in the logs.
+
+**Pinning.**
+
+| # | Do | Expect |
+|---|----|--------|
+| 1 | Select the first HTTP Request; in its toolbar open the flask button | "Pin this node's output" with **Pin latest output**, and "Run a part of the workflow" with two buttons |
+| 2 | **Pin latest output** | "Output pinned..."; the button is now a violet pin and the node has a small violet pin on the canvas |
+| 3 | **Execute workflow** twice | the first HTTP Request line in the logs says "Not run: pinned data" both times; the uuid in `second` and `last` is the pinned one both times |
+| 4 | In the logs press **Pin this output** on the second HTTP Request | it gets a pin; on the next run it is "Not run: pinned data" too |
+| 5 | Open the flask on the first node → **Unpin**, then Execute workflow | it runs again: a new uuid |
+| 6 | Pin the Manual Trigger (flask → Pin latest output) | allowed; its popover has no "Run a part" section |
+| 7 | Reload the editor | the pins are still there |
+| 8 | Delete a pinned node, save, add a new node in its place | the new node is not pinned |
+| 9 | Give the workflow a Webhook trigger connected to the first HTTP Request, pin that HTTP Request, save, activate, and call the webhook URL | the live run ran every node: a new uuid, no "Not run" line (see it under Executions) |
+| 10 | Open Workflows → ⋯ → **Don't save node input/output** on, run, then try **Pin latest output** on a node that has never been pinned | "This node has no saved output yet..." (switch the setting off again) |
+
+**Partial execution.** Unpin everything first and run the workflow once.
+
+| # | Do | Expect |
+|---|----|--------|
+| 11 | Flask on the second HTTP Request → **Run this node only** | the logs show: Manual Trigger and first HTTP Request "Not run: data of its last run", IF ran, second HTTP Request ran with the uuid of the last full run. Edit Fields did not run |
+| 12 | **Run from here** on the same node | as 11, and Edit Fields ran too |
+| 13 | Pin the first HTTP Request, then change nothing and **Run this node only** on the second | the first is "Not run: pinned data" |
+| 14 | Pin the second HTTP Request, then **Run this node only** on it | it runs all the same: the node you ask for always runs |
+| 15 | **Run from here** on the IF with the second HTTP Request still pinned | IF runs, the second HTTP Request is "Not run: pinned data", Edit Fields runs |
+| 16 | **Run this node only** on the Slack / Email node of the false branch | the run fails: "The saved data does not lead to this node..." and nothing was sent |
+| 17 | Add a new node after Edit Fields, do not save, **Run this node only** on it | "That node is not in the saved workflow. Save the workflow and try again." |
+| 18 | In a new workflow that has never run: Manual Trigger → Edit Fields, save, **Run this node only** on Edit Fields | the run fails: "The nodes before this one have no saved or pinned data..." |
+| 19 | AI Agent with a Chat Model node: **Run this node only** on the Chat Model node | the run fails: "This node is part of the node it is plugged into..." |
+| 20 | Chat Trigger → AI Agent → Edit Fields, chat once, pin the AI Agent, then chat again | the agent is "Not run: pinned data", no model call (Billing shows no new AI usage), Edit Fields ran |
+| 21 | **Executions** → open a partial run → **Retry** | refused with a message (a partial run has no starting data of its own) |
+
+**Lists.** Manual Trigger → Code (returns `[{n:1},{n:2},{n:3}]`, variable `list`) → Split Out (`list`, variable `rows`) → IF (`item.n` greater than `1`) → true: Edit Fields (variable `kept`, `value` = `{{item.n}}`). Run once, then **Run this node only** on Edit Fields: Code and Split Out are "Not run", IF ran, and Edit Fields ran for the two items that pass (`kept.count` is 2).
 
 ## T7. Sub-workflows
 

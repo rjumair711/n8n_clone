@@ -67,7 +67,8 @@ export const retryExecution = async (executionId: string, userId: string) => {
 
     if (!execution.trigger) {
         throw new RetryError(
-            "This execution cannot be retried: it ran before its starting data was being kept.",
+            // A partial run from the editor started at no trigger
+            "This execution cannot be retried: it was a partial run from the editor (run the node again there), or it ran before its starting data was being kept.",
             "not_retryable"
         );
     }

@@ -8,6 +8,7 @@ import { BaseHandle } from "../../../components/react-flow/base-handle";
 import { WorkflowNode } from "../../../components/workflow-node";
 import { LucideIcon } from "lucide-react";
 import { NodeStatus, NodeStatusIndicator } from "@/components/react-flow/node-status-indicator";
+import { NodeTestActions, PinnedBadge } from "@/features/executions/components/node-test-actions";
 
 
 interface BaseTriggerNodeProps extends NodeProps {
@@ -55,6 +56,7 @@ export const BaseTriggerNode = memo(
                 description={description}
                 onDelete={handleDelete}
                 onSettings={onSettings}
+                extraActions={<NodeTestActions nodeId={id} trigger />}
             >
                 <NodeStatusIndicator
                     status={status}
@@ -63,6 +65,7 @@ export const BaseTriggerNode = memo(
                 >
                     <BaseNode status={status} onDoubleClick={onDoubleClick}
                         className="rounded-l-2xl relative group">
+                        <PinnedBadge nodeId={id} />
                         <BaseNodeContent>
                             {typeof Icon === "string" ? (
                                 <Image

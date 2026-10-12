@@ -316,6 +316,27 @@ model Workflow {
   nodes       Node[]
   connections Connection[]
   triggerStates TriggerState[]
+  pinnedData  PinnedData[]
+}
+
+// A node's output kept from an earlier run. In test runs from the editor
+// the node is not run: this data is used in its place.
+model PinnedData {
+  id         String   @id @default(cuid())
+  workflowId String
+  workflow   Workflow @relation(fields: [workflowId], references: [id], onDelete: Cascade)
+  // Not a relation: saving a workflow in the editor recreates its nodes
+  // under the same ids
+  nodeId     String
+  // What the node added to the workflow's data in that run (as it was
+  // stored: with secrets redacted)
+  data       Json
+  // The execution it was taken from. It may have been deleted since.
+  executionId String?
+  createdAt  DateTime @default(now())
+
+  @@unique([workflowId, nodeId])
+  @@map("pinned_data")
 }
 
 enum NodeType {
@@ -569,6 +590,11 @@ model ExecutionNode {
 
   input  Json?
   output Json?
+
+  // Set when the node was not run in this execution and its data came from
+  // somewhere else: "pinned" (pinned data) or "saved" (an earlier run, in a
+  // partial run). Null: the node ran.
+  dataSource String?
 
   error      String? @db.Text
   errorStack String? @db.Text

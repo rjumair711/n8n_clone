@@ -454,6 +454,99 @@ const walk = async <N extends EngineNode, C extends EngineConnection>({
   return context;
 };
 
+// =========================================================================
+// PARTIAL RUNS
+// =========================================================================
+// "Run this node only" and "Run from here" in the editor. The run still
+// starts at a trigger and follows the connections, so branches and lists
+// behave as in a full run, but the nodes before the chosen one are not run:
+// each is given the data it produced before (see applyNodeData in
+// ./items.ts).
+
+export type PartialRunMode = "node" | "from";
+
+export const PARTIAL_RUN_MODES: PartialRunMode[] = ["node", "from"];
+
+// Decide from the data alone and cost nothing: they are run again in a
+// partial run, so every item takes the branch it belongs on
+export const RERUN_UPSTREAM_TYPES = new Set(["IF", "FILTER", "SWITCH"]);
+
+export type PartialRunPlan = {
+  targetId: string;
+  mode: PartialRunMode;
+  // The nodes before the target, in running order
+  upstreamIds: string[];
+  // Of those, the ones a run can start at
+  rootIds: string[];
+  // Everything the run may reach: the nodes before the target, the target,
+  // and for "from" the nodes after it
+  scope: Set<string>;
+};
+
+const collect = (
+  startId: string,
+  next: (id: string) => string[]
+): Set<string> => {
+  const seen = new Set<string>();
+  const queue = [...next(startId)];
+
+  while (queue.length > 0) {
+    const id = queue.pop()!;
+    if (seen.has(id)) continue;
+    seen.add(id);
+    queue.push(...next(id));
+  }
+
+  return seen;
+};
+
+/**
+ * What a partial run covers, or why the node cannot be run that way.
+ */
+export const planPartialRun = <N extends EngineNode, C extends EngineConnection>(
+  graph: WorkflowGraph<N, C>,
+  targetId: string,
+  mode: PartialRunMode
+): PartialRunPlan | { problem: string } => {
+  const target = graph.nodeById.get(targetId);
+
+  if (!target) {
+    return { problem: "That node is not in the saved workflow. Save the workflow and try again." };
+  }
+
+  // A model, memory or tool plugged into another node never runs by itself
+  if (!graph.order.includes(targetId)) {
+    return {
+      problem:
+        "This node is part of the node it is plugged into (a model, memory or tool), so it cannot be run by itself. Run that node instead.",
+    };
+  }
+
+  if (TRIGGER_TYPES.has(target.type)) {
+    return { problem: "A trigger starts the whole workflow: use Execute workflow." };
+  }
+
+  const upstream = collect(targetId, (id) =>
+    (graph.incoming.get(id) ?? []).map((conn) => conn.fromNodeId)
+  );
+  const downstream =
+    mode === "from"
+      ? collect(targetId, (id) =>
+          (graph.outgoing.get(id) ?? []).map((conn) => conn.toNodeId)
+        )
+      : new Set<string>();
+
+  const upstreamIds = graph.order.filter((id) => upstream.has(id));
+
+  return {
+    targetId,
+    mode,
+    upstreamIds,
+    rootIds: upstreamIds.filter((id) => (graph.incoming.get(id) ?? []).length === 0),
+    scope: new Set([...upstream, targetId, ...downstream]),
+  };
+};
+
 /**
  * Runs a workflow by following only the connections that were actually
  * activated, so IF / Switch / Filter decide which branches execute.
@@ -466,11 +559,17 @@ export const runWorkflowGraph = async <
   trigger?: string;
   context: WorkflowContext;
   runNode: RunNode<N>;
+  // A partial run (see planPartialRun): where it starts instead of at the
+  // triggers, and the only nodes it may reach
+  startNodeIds?: string[];
+  scope?: Set<string>;
 }): Promise<WorkflowContext> => {
   return walk({
     graph: params.graph,
-    scope: null,
-    startNodeIds: new Set(getStartNodeIds(params.graph, params.trigger)),
+    scope: params.scope ?? null,
+    startNodeIds: new Set(
+      params.startNodeIds ?? getStartNodeIds(params.graph, params.trigger)
+    ),
     activeEdges: new Set<C>(),
     edgeItems: new Map<C, StreamItem[]>(),
     context: params.context,

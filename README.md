@@ -135,6 +135,19 @@ Differences from n8n: `$json` is the whole set of workflow variables (not the pr
 
 RXJ includes a comprehensive execution monitoring system.
 
+## Pinned data and partial execution
+
+Two ways to test one part of a workflow in the editor without running the rest again. Both are on a node's toolbar, under the flask button (a pin once the node is pinned).
+
+* **Pin a node's output.** "Pin latest output" keeps what the node produced in its newest run; "Pin this output" on a line of the Execution Logs keeps the output of the run that is shown. A pinned node has a violet pin on the canvas. In runs started from the editor (Execute workflow, the chat panel, a partial run) a pinned node is **not run**: its pinned output is put into the workflow's data and the run goes on from there, down the branch that data leads to. Use it for a node that is slow, costs money (an AI Agent) or sends something, and for a trigger whose real event you do not want to wait for. **Unpin** makes it run again.
+* **Live runs ignore pins.** A webhook, a schedule, the public chat, the API, a retry from the Executions page and a sub-workflow call always run every node. Pins are not copied into templates.
+* **Run this node only** runs just that node. **Run from here** runs it and everything after it. In both, the nodes before it are not run: each gets its pinned data, or else the data it saved the last time it ran. IF, Filter and Switch nodes before it are the exception: they only decide and cost nothing, so they are evaluated again and every item takes the branch it belongs on. The node you asked for always runs, also when it is pinned; a pinned node after it is still not run. Other branches are not touched.
+* **What a partial run needs.** The workflow has to be saved (the saved version runs), and the nodes before the chosen one need data: run the workflow once with Execute workflow, or pin them. If a node before it has neither, or the saved data took another branch and never reaches the node, the run fails and says which. A trigger, and a model, memory or tool plugged into another node, cannot be run by themselves.
+* **In the logs** a node that was not run is marked "Not run: pinned data" or "Not run: data of its last run", with the data it was given.
+* **Where the data comes from.** From what earlier executions stored, so it has been through the same redaction: a secret that was masked in the execution log is masked in pinned and saved data too. A workflow set to "Don't save node input/output" stores nothing, so it has nothing to pin and cannot be run partially. Saved data disappears with the execution it belongs to (retention); pinned data stays until it is unpinned or its node is deleted. A file in pinned data is a reference to a stored file, which expires as usual.
+* **What is pinned** is what the node added to the workflow's data in that run (its own variables, and for a router its decision), up to 512 KB per node (`MAX_PINNED_DATA_KB`). For a trigger it is everything the run started with.
+* **Limits.** Inside a Loop, the nodes of the loop body that come before the chosen node give the data of the loop's last round. A Merge set to wait for all inputs does not run in a partial run that covers only one of its branches.
+
 ## Execution Tracking
 
 Every workflow execution stores:
@@ -1229,6 +1242,7 @@ The live app on Vercel and local development use the **same** database, so the s
 | `WEBHOOK_RESPONSE_TIMEOUT_MS` | How long a webhook waits for the workflow's response, default 25000 |
 | `SANDBOX_MAX_OUTPUT_KB` | The most a Code node or one expression may return, in KB, default 1024 |
 | `MAX_ITEMS_PER_NODE` | Items one node may process in a list, default 100 |
+| `MAX_PINNED_DATA_KB` | The most data that can be pinned on one node, default 512 |
 | `MCP_TOOL_TIMEOUT_MS` | How long an MCP Server Trigger's tool call waits for the run's result, default 50000 |
 | `VECTOR_STORE_ENGINE` | Set to `app` to make the Vector Store compare embeddings in the app even when pgvector is installed |
 | `WAIT_MAX_DAYS` | The longest a Wait node may wait, in days, default 7 (the limit of Inngest's free plan) |

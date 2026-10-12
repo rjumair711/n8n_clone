@@ -6,6 +6,7 @@ import { Bot, Settings, Trash2 } from "lucide-react";
 import { useNodeStatus } from "@/features/executions/hooks/use-node-status";
 import { AIAgentDialog, type AIAgentFormValues, type ConnectedTool } from "./dialog";
 import { NodeErrorSettings } from "@/components/node-error-settings";
+import { NodeTestActions, PinnedBadge } from "@/features/executions/components/node-test-actions";
 
 const PORT_COLOR = "#7B81BC";
 
@@ -86,6 +87,19 @@ export const AIAgentNode = memo(({ id, selected, data }: NodeProps<Node<AIAgentN
         className={`absolute -top-3 right-[60px] z-10 bg-slate-50 text-slate-600 border border-slate-200 rounded-full shadow-sm hover:bg-slate-100 transition-all duration-200 [&_button]:h-[30px] [&_button]:w-[30px] [&_button]:rounded-full [&_button]:p-0 ${buttonVisibility}`}
       >
         <NodeErrorSettings nodeId={id} />
+      </div>
+
+      {/* Test data: pin the output, run this node only, run from here */}
+      <div
+        onClick={(e) => e.stopPropagation()}
+        onDoubleClick={(e) => e.stopPropagation()}
+        className={`absolute -top-3 right-[96px] z-10 bg-slate-50 text-slate-600 border border-slate-200 rounded-full shadow-sm hover:bg-slate-100 transition-all duration-200 [&_button]:h-[30px] [&_button]:w-[30px] [&_button]:rounded-full [&_button]:p-0 ${buttonVisibility}`}
+      >
+        <NodeTestActions nodeId={id} />
+      </div>
+
+      <div className="absolute left-2 top-2">
+        <PinnedBadge nodeId={id} />
       </div>
 
       {/* Settings Button */}

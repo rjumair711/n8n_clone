@@ -4,9 +4,26 @@ import { geminiChannel } from "./channels/gemini";
 import { inngest } from "./client";
 import { NonRetriableError } from "inngest";
 import { CronExpressionParser } from "cron-parser";
-import { buildGraph, getActiveOutputs, runWorkflowGraph } from "./engine";
+import {
+  PARTIAL_RUN_MODES,
+  RERUN_UPSTREAM_TYPES,
+  buildGraph,
+  getActiveOutputs,
+  planPartialRun,
+  runWorkflowGraph,
+  type PartialRunMode,
+  type PartialRunPlan,
+} from "./engine";
+import {
+  loadNodeData,
+  loadPinnedNodeIds,
+  pickPartialRunStart,
+  type NodeDataSource,
+} from "@/features/executions/server/test-data";
+import { getNodeLabel } from "@/config/node-labels";
 import {
   ALL_OUTPUTS,
+  applyNodeData,
   runNodeForItems,
   type NodeRunResult,
   type StreamItem,
@@ -66,6 +83,19 @@ import {
 } from "@/lib/execution-wait";
 
 const toJson = (value: unknown) => value as Prisma.InputJsonValue;
+
+// "Run this node only" / "Run from here": the node and how much runs
+const readPartialRun = (
+  value: unknown
+): { nodeId: string; mode: PartialRunMode } | null => {
+  const partial = value as { nodeId?: unknown; mode?: unknown } | null;
+
+  return partial &&
+    typeof partial.nodeId === "string" &&
+    PARTIAL_RUN_MODES.includes(partial.mode as PartialRunMode)
+    ? { nodeId: partial.nodeId, mode: partial.mode as PartialRunMode }
+    : null;
+};
 
 // Per-node error handling, saved in the node's data by the canvas toolbar
 type NodeErrorSettings = {
@@ -351,6 +381,88 @@ export const executeWorkflow =
       }
 
       // =========================================
+      // TEST DATA: PINNED NODES AND PARTIAL RUNS
+      // =========================================
+      // Only runs started from the editor ask for these. A webhook, a
+      // schedule or the public chat always runs every node.
+
+      const pinnedNodeIds = new Set<string>(
+        event.data.usePinnedData === true
+          ? await step.run("load-pinned-nodes", () =>
+              loadPinnedNodeIds(workflowId)
+            )
+          : []
+      );
+
+      const partialRequest = readPartialRun(event.data.partial);
+      let partialPlan: PartialRunPlan | null = null;
+      let partialStartIds: string[] | undefined;
+
+      if (partialRequest) {
+        const planned = planPartialRun(
+          graph,
+          partialRequest.nodeId,
+          partialRequest.mode
+        );
+
+        if ("problem" in planned) {
+          throw new NonRetriableError(planned.problem);
+        }
+
+        partialPlan = planned;
+
+        if (planned.rootIds.length === 0) {
+          // Nothing is connected before it
+          partialStartIds = [planned.targetId];
+        } else {
+          const startId = await step.run("partial-run-start", () =>
+            pickPartialRunStart({
+              workflowId,
+              rootIds: planned.rootIds,
+              pinnedNodeIds: [...pinnedNodeIds],
+              executionId: execution.id,
+            })
+          );
+
+          if (!startId) {
+            throw new NonRetriableError(
+              "The nodes before this one have no saved or pinned data. Run the workflow once with Execute workflow, or pin data on a node before it. (A workflow set to \"Don't save node input/output\" keeps none.)"
+            );
+          }
+
+          partialStartIds = [startId];
+        }
+      }
+
+      // Whether the partial run got as far as the node it was asked to run
+      let partialTargetReached = false;
+
+      const describeNode = (node: (typeof allNodes)[number]) => {
+        const variableName = (node.data as { variableName?: unknown } | null)
+          ?.variableName;
+
+        return typeof variableName === "string" && variableName.trim()
+          ? `${getNodeLabel(node.type)} (${variableName.trim()})`
+          : getNodeLabel(node.type);
+      };
+
+      // Where a node's data comes from when it is not run
+      const getNodeDataSource = (
+        node: (typeof allNodes)[number]
+      ): NodeDataSource | null => {
+        // The node the user asked to run always runs
+        if (partialPlan?.targetId === node.id) return null;
+
+        if (pinnedNodeIds.has(node.id)) return "pinned";
+
+        return partialPlan &&
+          partialPlan.upstreamIds.includes(node.id) &&
+          !RERUN_UPSTREAM_TYPES.has(node.type)
+          ? "saved"
+          : null;
+      };
+
+      // =========================================
       // RUN A SINGLE NODE
       // =========================================
 
@@ -362,6 +474,64 @@ export const executeWorkflow =
           items: StreamItem[] | null;
         }
       ): Promise<NodeRunResult> => {
+        if (partialPlan?.targetId === node.id) partialTargetReached = true;
+
+        // Pinned, or before the part that runs: the node is not run and
+        // its pinned or saved data is used
+        const dataSource = getNodeDataSource(node);
+
+        if (dataSource) {
+          const data = await step.run(`node-data-${node.id}`, () =>
+            loadNodeData({
+              workflowId,
+              nodeId: node.id,
+              source: dataSource,
+              isStart: (graph.incoming.get(node.id) ?? []).length === 0,
+              executionId: execution.id,
+            })
+          );
+
+          if (!data && dataSource === "saved") {
+            throw new NonRetriableError(
+              `${describeNode(node)} comes before the node you ran and has no saved data. Run the workflow once with Execute workflow, or pin data on it.`
+            );
+          }
+
+          // A pin that was removed while the run was starting: run the node
+          if (data) {
+            const result = applyNodeData({
+              node,
+              context,
+              items: meta.items,
+              data,
+              getActiveOutputs,
+            });
+
+            await step.run(`node-data-used-${node.id}`, async () => {
+              await prisma.executionNode.create({
+                data: {
+                  executionId: execution.id,
+                  nodeId: node.id,
+                  nodeName: node.name,
+                  nodeType: node.type,
+                  status: ExecutionStatus.SUCCESS,
+                  dataSource,
+                  ...(saveNodeData
+                    ? {
+                        input: toJson(redactor.data(context)),
+                        output: toJson(redactor.data(result.context)),
+                      }
+                    : {}),
+                  completedAt: new Date(),
+                  durationMs: 0,
+                },
+              });
+            });
+
+            return result;
+          }
+        }
+
         // Paid-plan nodes stop the run with a message the user can act on
         const requiredPlan = getRequiredPlanForNode(
           node.type,
@@ -638,6 +808,11 @@ export const executeWorkflow =
       const context = await runWorkflowGraph({
         graph,
         trigger: event.data.trigger,
+        // A partial run starts where its saved data starts and stays
+        // inside the part it covers
+        ...(partialPlan
+          ? { startNodeIds: partialStartIds, scope: partialPlan.scope }
+          : {}),
         // {{execution.resumeUrl}} is there from the first node on, so the
         // URL can be sent out before a Wait node pauses the run
         context: withResumeUrl(
@@ -650,6 +825,12 @@ export const executeWorkflow =
         ),
         runNode,
       });
+
+      if (partialPlan && !partialTargetReached) {
+        throw new NonRetriableError(
+          "The saved data does not lead to this node: in the run it comes from, a node before this one sent the workflow down another branch (or stopped it). Run the workflow once so that it reaches this node, or pin data that does."
+        );
+      }
 
       // =========================================
       // FINALIZE EXECUTION
