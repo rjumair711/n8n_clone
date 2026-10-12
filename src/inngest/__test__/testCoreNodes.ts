@@ -14445,6 +14445,107 @@ pour()</code></pre>
     assert.ok(rss.includes("seenIds: [...new Set([...handled, ...seen])].slice(0, MAX_SEEN_IDS),"));
   });
 
+  await test("http query auth: the key is added to the address at run time and redacted from what is stored", async () => {
+    const { parseQueryAuth, applyQueryAuthentication, applyAuthentication } = await import(
+      "@/features/executions/components/http-request/executor"
+    );
+    const { encrypt } = await import("@/lib/encryption");
+    const { createRunRedactor } = await import("@/lib/execution-redaction");
+
+    assert.deepEqual(parseQueryAuth("api_key: zb-secret-key-123"), { name: "api_key", value: "zb-secret-key-123" });
+    // Only the first colon separates: a value may contain more
+    assert.deepEqual(parseQueryAuth(" key :a:b:c "), { name: "key", value: "a:b:c" });
+    for (const bad of ["zb-secret-key-123", ": value", "api_key:", "api key: value", "a=b: value", "a&b: value"]) {
+      assert.throws(() => parseQueryAuth(bad), /Query Auth credential must look like "api_key: your-key"/, bad);
+    }
+
+    // Added to the address, in place of a parameter of the same name
+    const url = new URL("https://api.example.com/v2/validate?email=a%40b.com&api_key=typed-in");
+    applyQueryAuthentication(url, "query", "api_key: zb-secret-key-123");
+    assert.equal(url.toString(), "https://api.example.com/v2/validate?email=a%40b.com&api_key=zb-secret-key-123");
+
+    // The other kinds of authentication leave the address alone, and Query
+    // Auth sets no header
+    for (const other of ["none", "basic", "bearer", "header"]) {
+      const untouched = new URL("https://api.example.com/v2/validate?email=a%40b.com");
+      applyQueryAuthentication(untouched, other, "api_key: zb-secret-key-123");
+      assert.equal(untouched.search, "?email=a%40b.com", other);
+    }
+    const headers = new Headers();
+    applyAuthentication(headers, "query", "api_key: zb-secret-key-123");
+    assert.deepEqual([...headers.keys()], []);
+
+    // What is stored about the run: the value is gone from node input and
+    // output, from error messages and from an address that repeats it, also
+    // in the percent-encoded form an address carries it in
+    const secret = "k/ey+with=odd&chars 1";
+    const redactor = createRunRedactor([
+      encrypt("api_key: zb-secret-key-123"),
+      encrypt(`token: ${secret}`),
+    ]);
+
+    const address = new URL("https://api.example.com/check");
+    applyQueryAuthentication(address, "query", `token: ${secret}`);
+    assert.equal(address.search.includes(secret), false);
+
+    const stored = JSON.stringify(
+      redactor.data({
+        verify: {
+          httpResponse: {
+            data: {
+              requested: "https://api.example.com/v2/validate?api_key=zb-secret-key-123&email=a@b.com",
+              other: address.toString(),
+              encoded: encodeURIComponent(secret),
+              status: "valid",
+            },
+          },
+        },
+      })
+    );
+    const error = redactor.text(
+      `Request failed with status 401: key zb-secret-key-123 is not valid for ${address.toString()}`
+    );
+    const result = JSON.stringify(redactor.result({ url: address.toString(), key: "zb-secret-key-123" }));
+
+    for (const text of [stored, error, result]) {
+      assert.equal(text.includes("zb-secret-key-123"), false, text);
+      assert.equal(text.includes(secret), false, text);
+      assert.equal(text.includes(encodeURIComponent(secret)), false, text);
+      assert.equal(text.includes(address.searchParams.toString().slice("token=".length)), false, text);
+      assert.match(text, /\[REDACTED\]/);
+    }
+    // The rest of the data is still readable
+    assert.match(stored, /"status":"valid"/);
+    assert.match(stored, /api\.example\.com\/v2\/validate\?api_key=\[REDACTED\]&email=a@b\.com/);
+
+    // The executor adds it last, and the node's dialogs offer the new type
+    const { readFileSync } = await import("node:fs");
+    const { join } = await import("node:path");
+    const read = (path: string) => readFileSync(join(process.cwd(), path), "utf8");
+
+    const executor = read("src/features/executions/components/http-request/executor.ts");
+    assert.ok(
+      executor.indexOf("url.searchParams.set(key, value);") <
+        executor.indexOf("applyQueryAuthentication(url, authentication, secret);")
+    );
+    assert.ok(read("src/features/executions/components/http-request/dialog.tsx").includes("CredentialType.HTTP_QUERY_AUTH"));
+    assert.ok(read("src/features/executions/components/ai/nodes.tsx").includes("query: CredentialType.HTTP_QUERY_AUTH,"));
+
+    // The MCP Client adds it to the address it calls, never to the stored endpoint
+    const mcp = read("src/features/executions/components/ai/mcp.ts");
+    assert.ok(mcp.includes("applyQueryAuthentication(url, authentication, secret);"));
+    assert.ok(mcp.includes("new McpSseClient(url, headers, authorize)"));
+    assert.ok(mcp.includes("new McpHttpClient(url, headers)"));
+
+    // The migration only adds the enum value
+    const { readdirSync } = await import("node:fs");
+    const folder = readdirSync("prisma/migrations").find((name) => name.endsWith("_http_query_auth"));
+    assert.ok(folder, "migration");
+    const sql = read(`prisma/migrations/${folder}/migration.sql`);
+    assert.match(sql, /ALTER TYPE "CredentialType" ADD VALUE 'HTTP_QUERY_AUTH';/);
+    assert.equal(/\b(DROP|DELETE FROM|TRUNCATE|UPDATE "|RENAME)\b/.test(sql), false);
+  });
+
   console.log(`\n${passed} checks passed`);
 };
 

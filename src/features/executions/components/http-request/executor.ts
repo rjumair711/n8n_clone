@@ -22,7 +22,8 @@ type HttpRequestData = {
   endpoint?: string;
   method?: (typeof HTTP_METHODS)[number];
 
-  // "none" | "basic" | "bearer" | "header", with the secret in a credential
+  // "none" | "basic" | "bearer" | "header" | "query", with the secret in a
+  // credential
   authentication?: string;
   credentialId?: string;
 
@@ -53,6 +54,7 @@ const AUTH_LABELS: Record<string, string> = {
   basic: "Basic Auth",
   bearer: "Bearer Auth",
   header: "Header Auth",
+  query: "Query Auth",
 };
 
 // The name the server suggests, else the last part of the URL
@@ -118,6 +120,40 @@ export const applyAuthentication = (
       return;
     }
   }
+};
+
+/**
+ * A Query Auth credential, stored as "name: value": the API key some
+ * services only take in the address (?api_key=...).
+ */
+export const parseQueryAuth = (secret: string): { name: string; value: string } => {
+  const separator = secret.indexOf(":");
+  const name = secret.slice(0, separator).trim();
+  const value = secret.slice(separator + 1).trim();
+
+  if (separator <= 0 || !name || !value || /[\s&=?#]/.test(name)) {
+    throw new NonRetriableError(
+      'HTTP Request node: the Query Auth credential must look like "api_key: your-key"'
+    );
+  }
+
+  return { name, value };
+};
+
+/**
+ * Adds a Query Auth credential's parameter to the address a request is
+ * about to be sent to. The node's own URL never holds it. A parameter of
+ * the same name that was typed into the node is replaced.
+ */
+export const applyQueryAuthentication = (
+  url: URL,
+  authentication: string,
+  secret: string
+) => {
+  if (authentication !== "query") return;
+
+  const { name, value } = parseQueryAuth(secret);
+  url.searchParams.set(name, value);
 };
 
 export const httpRequestExecutor: NodeExecutor<HttpRequestData> = async ({
@@ -245,6 +281,7 @@ export const httpRequestExecutor: NodeExecutor<HttpRequestData> = async ({
 
       // Applied last so a header from the list cannot replace the credential
       applyAuthentication(headers, authentication, secret);
+      applyQueryAuthentication(url, authentication, secret);
 
       const response = await safeFetch(url, {
         method,
