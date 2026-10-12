@@ -15,16 +15,62 @@ type GmailTriggerData = {
 };
 
 type GmailTriggerState = {
-  // Messages received after this moment are new
+  // Messages received after this moment are new. It stays where it is while
+  // messages are still waiting for a later poll.
   lastCheckedAt?: number;
   // Ids already handled, because Gmail's "after:" filter is only to the second
   seenIds?: string[];
 };
 
-const MAX_MESSAGES_PER_POLL = 10;
-const MAX_SEEN_IDS = 200;
+// How many messages one poll starts runs for; the rest wait for the next
+export const GMAIL_MESSAGES_PER_POLL = 10;
+const MAX_SEEN_IDS = 1000;
 // Looks a little further back than the last poll so nothing is missed
 const OVERLAP_SECONDS = 120;
+// Only ids are listed, so a burst of mail can be listed whole
+const LIST_PAGE_SIZE = 100;
+const MAX_LISTED_IDS = 500;
+
+/**
+ * Which of the listed messages a poll handles: the oldest ones that were
+ * not handled before, oldest first. Gmail lists the newest message first.
+ * `waiting` is how many are left for the next polls.
+ */
+export const pickGmailBatch = (
+  listedIds: string[],
+  seenIds: Iterable<string>,
+  limit = GMAIL_MESSAGES_PER_POLL
+): { batch: string[]; waiting: number } => {
+  const seen = new Set(seenIds);
+  const unseen = [...new Set(listedIds)].filter((id) => !seen.has(id));
+  const batch = unseen.slice(-limit).reverse();
+
+  return { batch, waiting: unseen.length - batch.length };
+};
+
+/**
+ * What a poll remembers. Only the messages it handled are marked as seen,
+ * so the ones that are waiting are found again. While any are waiting the
+ * "new since" moment does not move, or the next poll would no longer ask
+ * Gmail for them.
+ */
+export const nextGmailTriggerState = ({
+  state,
+  handledIds,
+  waiting,
+  now,
+}: {
+  state: GmailTriggerState;
+  handledIds: string[];
+  waiting: boolean;
+  now: number;
+}): GmailTriggerState => ({
+  lastCheckedAt: waiting ? state.lastCheckedAt : now,
+  seenIds: [...new Set([...handledIds, ...(state.seenIds ?? [])])].slice(
+    0,
+    MAX_SEEN_IDS
+  ),
+});
 
 /**
  * Checks one Gmail Trigger node for new mail and starts a run per message.
@@ -62,7 +108,8 @@ const pollGmailTrigger = async ({
   }
 
   const pollMinutes = Math.max(Number(data.pollMinutes) || 1, 1);
-  // The heartbeat is not exact to the second
+  // The heartbeat is not exact to the second. With messages waiting from an
+  // earlier poll this is always due, so they are handled a minute apart.
   if (now - state.lastCheckedAt < pollMinutes * 60_000 - 10_000) {
     return { skipped: "not due" };
   }
@@ -79,23 +126,31 @@ const pollGmailTrigger = async ({
 
   const after = Math.floor(state.lastCheckedAt / 1000) - OVERLAP_SECONDS;
 
-  const list = await gmail.users.messages.list({
-    userId: "me",
-    q: `${(data.query || "").trim()} after:${after}`.trim(),
-    maxResults: 25,
-  });
+  const q = `${(data.query || "").trim()} after:${after}`.trim();
 
-  const seen = new Set(state.seenIds ?? []);
-  const listedIds = (list.data.messages ?? []).flatMap((entry) =>
-    entry.id ? [entry.id] : []
-  );
+  // Newest first
+  const listedIds: string[] = [];
+  let pageToken: string | undefined;
 
-  const newIds = listedIds
-    .filter((id) => !seen.has(id))
-    .slice(0, MAX_MESSAGES_PER_POLL);
+  do {
+    const list = await gmail.users.messages.list({
+      userId: "me",
+      q,
+      maxResults: LIST_PAGE_SIZE,
+      pageToken,
+    });
+
+    for (const entry of list.data.messages ?? []) {
+      if (entry.id) listedIds.push(entry.id);
+    }
+
+    pageToken = list.data.nextPageToken ?? undefined;
+  } while (pageToken && listedIds.length < MAX_LISTED_IDS);
+
+  const { batch, waiting } = pickGmailBatch(listedIds, state.seenIds ?? []);
 
   const messages = await Promise.all(
-    newIds.map(async (id) => {
+    batch.map(async (id) => {
       const message = await gmail.users.messages.get({
         userId: "me",
         id,
@@ -124,15 +179,20 @@ const pollGmailTrigger = async ({
     });
   }
 
-  await saveState({
-    lastCheckedAt: now,
-    seenIds: [...new Set([...newIds, ...listedIds, ...seen])].slice(
-      0,
-      MAX_SEEN_IDS
-    ),
-  });
+  // The whole batch is done with: a message of it either started a run or
+  // is older than this trigger. Messages beyond the batch are not marked.
+  await saveState(
+    nextGmailTriggerState({
+      state,
+      handledIds: batch,
+      // Also when Gmail had more pages than were listed
+      waiting: waiting > 0 || !!pageToken,
+      now,
+    })
+  );
 
-  return { started: fresh.length };
+  return { started: fresh.length, waiting };
+
 };
 
 // Gmail has no push without a Pub/Sub topic, so new mail is found by

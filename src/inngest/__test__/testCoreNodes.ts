@@ -14387,6 +14387,64 @@ pour()</code></pre>
     assert.match(executor, /metadataHeaders: \["From", "Reply-To", "To", "Cc", "Subject", "Message-ID", "References"\],/);
   });
 
+  await test("gmail trigger: messages beyond one poll's limit wait for the next poll", async () => {
+    const { GMAIL_MESSAGES_PER_POLL, pickGmailBatch, nextGmailTriggerState } = await import(
+      "@/inngest/gmail-trigger"
+    );
+
+    assert.equal(GMAIL_MESSAGES_PER_POLL, 10);
+
+    // Gmail lists the newest first: m25 ... m1
+    const listed = Array.from({ length: 25 }, (_, index) => `m${25 - index}`);
+
+    const first = pickGmailBatch(listed, []);
+    assert.deepEqual(first.batch, ["m1", "m2", "m3", "m4", "m5", "m6", "m7", "m8", "m9", "m10"]);
+    assert.equal(first.waiting, 15);
+
+    // Fewer than the limit, already seen ones, a repeated id, an empty list
+    assert.deepEqual(pickGmailBatch(["c", "b", "a"], ["b"]), { batch: ["a", "c"], waiting: 0 });
+    assert.deepEqual(pickGmailBatch(["b", "b", "a"], []), { batch: ["a", "b"], waiting: 0 });
+    assert.deepEqual(pickGmailBatch([], ["a"]), { batch: [], waiting: 0 });
+    assert.deepEqual(pickGmailBatch(["c", "b", "a"], [], 2), { batch: ["a", "b"], waiting: 1 });
+
+    // Four polls of the same 25 messages: every one is handled once, oldest
+    // first, and the "new since" moment only moves when none are waiting
+    let state: { lastCheckedAt?: number; seenIds?: string[] } = { lastCheckedAt: 1000, seenIds: ["old"] };
+    const handled: string[] = [];
+    const moments: (number | undefined)[] = [];
+
+    for (const now of [2000, 3000, 4000, 5000]) {
+      const { batch, waiting } = pickGmailBatch(listed, state.seenIds ?? []);
+      handled.push(...batch);
+      state = nextGmailTriggerState({ state, handledIds: batch, waiting: waiting > 0, now });
+      moments.push(state.lastCheckedAt);
+
+      // Nothing that was not handled is marked as seen
+      assert.deepEqual([...(state.seenIds ?? [])].sort(), [...handled, "old"].sort());
+    }
+
+    assert.deepEqual(handled, Array.from({ length: 25 }, (_, index) => `m${index + 1}`));
+    assert.deepEqual(moments, [1000, 1000, 4000, 5000]);
+
+    // The trigger uses both, lists every page, and no longer marks what it listed
+    const { readFileSync } = await import("node:fs");
+    const { join } = await import("node:path");
+    const read = (path: string) => readFileSync(join(process.cwd(), path), "utf8");
+
+    const trigger = read("src/inngest/gmail-trigger.ts");
+    assert.ok(trigger.includes("const { batch, waiting } = pickGmailBatch(listedIds, state.seenIds ?? []);"));
+    assert.ok(trigger.includes("handledIds: batch,"));
+    assert.ok(trigger.includes("waiting: waiting > 0 || !!pageToken,"));
+    assert.ok(trigger.includes("} while (pageToken && listedIds.length < MAX_LISTED_IDS);"));
+    assert.equal(trigger.includes("...listedIds, ...seen"), false);
+
+    // The RSS Feed Trigger, the other polling trigger: only its batch is marked
+    const rss = read("src/inngest/rss-trigger.ts");
+    assert.ok(rss.includes("const batch = fresh.reverse().slice(0, MAX_ITEMS_PER_POLL);"));
+    assert.ok(rss.includes("? batch.map((item) => item.id)"));
+    assert.ok(rss.includes("seenIds: [...new Set([...handled, ...seen])].slice(0, MAX_SEEN_IDS),"));
+  });
+
   console.log(`\n${passed} checks passed`);
 };
 
