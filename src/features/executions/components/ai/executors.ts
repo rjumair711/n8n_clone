@@ -48,6 +48,7 @@ import { embeddingUsage } from "@/lib/ai-cost";
 import {
   assertAiBudget,
   getAiUsageScope,
+  recordAccountAiUsage,
   recordAiUsage,
   recordModelCalls,
   type AiUsageScope,
@@ -656,11 +657,15 @@ export const saveDocument = async ({
   metadata,
   extraMetadata = {},
   source,
+  usageName,
 }: {
   label: string;
   settings: EmbeddingSettings;
   apiKey: string;
   scope: AiUsageScope;
+  // Outside a workflow run (the chatbot page): the name the embedding call
+  // is written down under, on the account
+  usageName?: string;
   userId: string;
   collection: string;
   chunks: TextChunk[];
@@ -685,12 +690,17 @@ export const saveDocument = async ({
     values: chunks.map((chunk) => chunk.content),
   });
 
-  await recordAiUsage({
-    scope,
+  const call = {
     ...getEmbeddingUsageKey(settings),
-    kind: "embedding",
+    kind: "embedding" as const,
     usage: embeddingUsage(usage),
-  });
+  };
+
+  if (usageName) {
+    await recordAccountAiUsage({ userId, name: usageName, ...call });
+  } else {
+    await recordAiUsage({ scope, ...call });
+  }
 
   const stored = await storeChunks({
     userId,

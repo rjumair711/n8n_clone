@@ -20,7 +20,7 @@ the instruction "build this workflow in the editor".
 ```bash
 npx prisma migrate deploy
 npm run dev:all
-npx tsx --conditions=react-server src/inngest/__test__/testCoreNodes.ts   # expect "239 checks passed"
+npx tsx --conditions=react-server src/inngest/__test__/testCoreNodes.ts   # expect "245 checks passed"
 ```
 
 Make a second account with a different email. Several checks need it.
@@ -986,6 +986,62 @@ Needs the `ai_credits` migration applied, an admin account with two-factor on, a
 | 25 | Remove `POLAR_CREDIT_PACKS` and restart | no buy buttons, only the link to the plans |
 
 **Key rotation.** `npm run rotate-encryption-key -- --dry-run` counts the platform's provider keys with the credentials.
+
+## T13j. One-click chatbot
+
+Needs a model credential and an OpenAI or Gemini credential (one Gemini credential does both), on an account whose plan (or trial) has the AI Agent. Use the test account. Have a small PDF with text, a .docx or .txt file, and a public web page at hand. The WhatsApp steps need a plan with WhatsApp, a WhatsApp credential and a Meta app.
+
+**Create.**
+
+| # | Do | Expect |
+|---|----|--------|
+| 1 | Sidebar → **Chatbots** | the **Create a chatbot** page |
+| 2 | Leave Name empty | **Create chatbot** is disabled |
+| 3 | Pick a `.png` under Documents | "...: not a PDF, Word (.docx) or text file" in red; the button is disabled |
+| 4 | Type `not a url, ftp://x.com` under Website pages | "Not a web address: ..."; the button is disabled |
+| 5 | Name `Acme Support`, upload the PDF and the text file, type one page address, pick the model and the embedding credential, add a welcome message. **Create chatbot** | "The chatbot is created. Reading your documents...", each document gets a tick and "n parts", then the chatbot's page opens |
+| 6 | Look at the chatbot's page | it says the chatbot is on; Website widget snippet, Share link, a WhatsApp card, and "What it knows" lists the three sources |
+| 7 | **Try the chat** and ask something only the PDF answers | the bot answers from the PDF. Ask something that is nowhere in the documents: it says it does not know |
+| 8 | Ask a follow-up that needs the previous answer ("and how much is that per year?") | it understands: Memory keeps the conversation |
+| 9 | Paste the widget snippet into a test HTML page and open it | a floating chat button; the same bot answers |
+| 10 | **Open the workflow in the editor** | Chat Trigger → AI Agent, with a model node, Memory and Vector Store (Search Documents: chatbot-...) underneath; the workflow is active. The agent's Tools list shows `knowledge_base` |
+| 11 | **Billing** | "AI spend this month" has lines for "Chatbot knowledge" (embedding) |
+| 12 | **Workflows** | the chatbot is in the list like any workflow. **Chatbots** lists it under "Your chatbots" |
+
+**Knowledge.**
+
+| # | Do | Expect |
+|---|----|--------|
+| 13 | On the chatbot's page add the same PDF again | "already there, unchanged"; the list does not grow |
+| 14 | Add a changed version of the text file under the same name | it replaces the old one (still one entry) |
+| 15 | Add `http://localhost:3000/` or `http://169.254.169.254/` as a page | a red line: it cannot be read; nothing is added |
+| 16 | Add a scanned PDF (no text) | "... has no text: it is probably a scan" |
+| 17 | Add a file larger than 3 MB | refused before it is sent: "larger than 3 MB" |
+| 18 | **Remove** a source, then ask the chat about it | it is gone from the list and the bot no longer knows it |
+| 19 | With an account AI budget that is used up (Settings), add a page | the budget message; nothing is embedded |
+
+**On / off and editing.**
+
+| # | Do | Expect |
+|---|----|--------|
+| 20 | Switch **On** off, reload the share link | the chat is not available. Switch it on again: it works |
+| 21 | In the editor change the agent's System Message and save | the chatbot's page still works; the bot follows the new message |
+| 22 | In the editor remove the Vector Store node and save | the chatbot's page says it has no knowledge base |
+| 23 | Open `/chatbots/<id of a workflow without a Chat Trigger>` and `/chatbots/<someone else's workflow id>` | "This workflow is not a chatbot..." and "Chatbot not found." |
+
+**WhatsApp.**
+
+| # | Do | Expect |
+|---|----|--------|
+| 24 | On a plan without WhatsApp: the create page and the chatbot's page | "WhatsApp requires the ... plan"; the switch is disabled |
+| 25 | On a plan with it: on the chatbot's page pick the WhatsApp credential, type the Meta app's App Secret, **Connect WhatsApp** | the card now shows the Webhook URL and the Verify Token. The App Secret is not shown anywhere |
+| 26 | In the editor | a WhatsApp Trigger into the same AI Agent, and after the agent IF → WhatsApp |
+| 27 | In Meta: WhatsApp > Configuration, paste the Webhook URL and Verify Token, Verify and save, subscribe to `messages` | Meta accepts the webhook |
+| 28 | Send a WhatsApp message to the number | the bot's answer arrives on WhatsApp. The run in Executions went WhatsApp Trigger → AI Agent → IF → WhatsApp |
+| 29 | Send a message on the website chat | answered in the chat; the run stopped at IF, no WhatsApp message was sent |
+| 30 | Create another chatbot with **WhatsApp** switched on in the form | it is created with the WhatsApp nodes; its page shows the Webhook URL at once |
+
+**Plan.** As a Free user whose trial is over, open **Chatbots**: a red note that a chatbot needs the AI Agent's plan, and the button is disabled.
 
 ## T14. Text Classifier and Information Extractor
 
