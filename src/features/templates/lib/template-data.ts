@@ -16,8 +16,9 @@ export type TemplateConnection = {
 };
 
 // Node settings that are secrets, or that point at something only the
-// author's account has. They never go into a template.
-const PRIVATE_KEYS = new Set([
+// author's account has. They never go into a template, and "Build with AI"
+// never sends them to a model (see ai-builder/lib/private-keys.ts).
+export const PRIVATE_KEYS = new Set([
   // Which stored credential a node uses
   "credentialId",
   // A node's second credential: the Vector Store's reranker, the Document

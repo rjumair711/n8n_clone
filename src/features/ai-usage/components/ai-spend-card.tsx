@@ -107,7 +107,7 @@ export const AiSpendCard = () => {
                             <p className="text-sm font-medium">By workflow</p>
                             <ul className="mt-2 divide-y">
                                 {data.workflows.map((workflow) => (
-                                    <li key={workflow.workflowId ?? "deleted"} className="space-y-1 py-2.5">
+                                    <li key={workflow.workflowId ?? workflow.name} className="space-y-1 py-2.5">
                                         <div className="flex items-baseline justify-between gap-4 text-sm">
                                             {workflow.workflowId ? (
                                                 <Link

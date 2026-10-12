@@ -6,6 +6,7 @@ import { canUseAdminActions, isAdmin } from "@/lib/admin";
 import { assertOwnership } from "@/lib/ownership";
 import { describeAuditTarget } from "@/lib/audit-actions";
 import { recordAudit } from "@/lib/audit-log";
+import { BUILDER_USAGE_NAME } from "@/lib/ai-usage";
 import {
     MAX_BUDGET_USD,
     normalizePriceKey,
@@ -121,7 +122,7 @@ export const aiUsageRouter = createTRPCRouter({
         const since = startOfUtcMonth();
         const where = { userId, createdAt: { gte: since } };
 
-        const [user, total, unpricedCalls, perWorkflow, budgeted] = await Promise.all([
+        const [user, total, unpricedCalls, perWorkflow, budgeted, builder] = await Promise.all([
             prisma.user.findUniqueOrThrow({
                 where: { id: userId },
                 select: { aiBudgetCents: true },
@@ -147,6 +148,12 @@ export const aiUsageRouter = createTRPCRouter({
             prisma.workflow.findMany({
                 where: { userId, aiBudgetCents: { not: null } },
                 select: { id: true },
+            }),
+            // "Build with AI" calls belong to no workflow
+            prisma.aiUsage.aggregate({
+                where: { ...where, workflowId: null, nodeName: BUILDER_USAGE_NAME },
+                _count: { _all: true },
+                _sum: { costUsd: true },
             }),
         ]);
 
@@ -178,13 +185,31 @@ export const aiUsageRouter = createTRPCRouter({
         const known = new Set(workflows.map((workflow) => workflow.id));
         const gone = perWorkflow.filter((row) => !row.workflowId || !known.has(row.workflowId));
 
-        if (gone.length > 0) {
+        const builderCalls = builder._count._all;
+        const builderCostUsd = Number(builder._sum.costUsd ?? 0);
+        const goneCalls =
+            gone.reduce((sum, row) => sum + row._count._all, 0) - builderCalls;
+
+        if (goneCalls > 0) {
             listed.push({
                 workflowId: null,
                 name: "Deleted workflows",
                 budgetCents: null,
-                calls: gone.reduce((sum, row) => sum + row._count._all, 0),
-                costUsd: roundCost(gone.reduce((sum, row) => sum + Number(row._sum.costUsd ?? 0), 0)),
+                calls: goneCalls,
+                costUsd: roundCost(
+                    gone.reduce((sum, row) => sum + Number(row._sum.costUsd ?? 0), 0) -
+                        builderCostUsd
+                ),
+            });
+        }
+
+        if (builderCalls > 0) {
+            listed.push({
+                workflowId: null,
+                name: BUILDER_USAGE_NAME,
+                budgetCents: null,
+                calls: builderCalls,
+                costUsd: roundCost(builderCostUsd),
             });
         }
 

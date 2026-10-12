@@ -34,6 +34,7 @@ import { ExecutionEdge } from "@/components/react-flow/execution-edge";
 import { useExecutionStore } from "@/features/executions/store/execution-store";
 import { useExecutionNodes } from "@/features/executions/hooks/use-execution-nodes";
 import { useExecutionSubscription } from "@/features/executions/hooks/use-execution-subscription";
+import { EditorBuildWithAi } from "@/features/ai-builder/components/editor-build-with-ai";
 
 // 1. Import your AI Agent Dialog component
 
@@ -250,7 +251,10 @@ export const Editor = ({ workflowId }: { workflowId: string }) => {
                     <MiniMap pannable zoomable className="rounded-xl border bg-background shadow-md" />
 
                     <Panel position="top-right">
-                        <AddNodeButton />
+                        <div className="flex items-center gap-2">
+                            <EditorBuildWithAi />
+                            <AddNodeButton />
+                        </div>
                     </Panel>
 
                     <Panel position="bottom-center">

@@ -40,7 +40,7 @@ export const TelegramNode = memo((props: NodeProps<TelegramNodeType>) => {
     }
 
     const nodeData = props.data;
-    const description = nodeData?.chatId 
+    const description = nodeData?.chatId && nodeData?.credentialId
         ? `To: ${nodeData.chatId} (${nodeData.text?.slice(0, 30)}...)` 
         : "Not Configured";
 

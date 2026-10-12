@@ -18,6 +18,10 @@ export const CHAT_VISITOR_RATE_LIMIT =
 // Submissions per minute for one hosted form
 export const FORM_RATE_LIMIT =
     Number(process.env.FORM_RATE_LIMIT_PER_MINUTE) || 30;
+// "Build with AI" requests per minute for one user. Each one calls a model
+// with the user's own credential, up to twice
+export const AI_BUILDER_RATE_LIMIT =
+    Number(process.env.AI_BUILDER_RATE_LIMIT_PER_MINUTE) || 10;
 
 /**
  * Counts a request against a fixed one-minute window and says whether it is

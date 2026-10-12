@@ -3741,7 +3741,15 @@ const main = async () => {
         if (name === "generated" || name === "__test__") return [];
         return statSync(join(process.cwd(), path)).isDirectory() ? walk(path) : /\.tsx?$/.test(name) ? [path] : [];
       });
-    const known = new Set([...callSites.map(([path]) => path), "src/features/editor/components/agent/agent-loop.ts"]);
+    // "Build with AI" calls a model outside a run: written down under its
+    // own name, after the account's budget was checked
+    const builderPath = "src/features/ai-builder/server/routers.ts";
+    const builderSource = read(builderPath);
+    assert.equal(count(builderSource, /\b(generateText|streamText|generateObject|streamObject|embedMany|embed)\(/g), 1, `${builderPath}: model calls`);
+    assert.match(builderSource, /const result = await generateText\(\{[^}]*\}\);\s+(\/\/[^\n]*\s+)?await recordAccountAiUsage\(\{\s+userId,\s+name: BUILDER_USAGE_NAME,/);
+    assert.ok(builderSource.indexOf("await getAccountAiBudgetProblem(userId)") < builderSource.indexOf("await loadBuilderModel("));
+
+    const known = new Set([...callSites.map(([path]) => path), "src/features/editor/components/agent/agent-loop.ts", builderPath]);
     for (const path of walk("src")) {
       if (known.has(path)) continue;
       assert.equal(/\b(generateText|streamText|generateObject|streamObject|embedMany|embed)\(/.test(read(path)), false, `${path} calls a model without recording it`);
@@ -11165,6 +11173,725 @@ pour()</code></pre>
       read(`prisma/migrations/${folder}/migration.sql`).split(/\r?\n/).filter((line) => line.trim() && !line.startsWith("--")),
       [`ALTER TYPE "NodeType" ADD VALUE 'THINK_TOOL';`, `ALTER TYPE "NodeType" ADD VALUE 'AI_AGENT_TOOL';`]
     );
+  });
+
+  // ------------------------------------------------------ BUILD WITH AI
+  console.log("Build with AI");
+
+  const builderCatalogue = await import("@/features/ai-builder/lib/catalogue");
+  const { MANUAL_SPECS } = await import("@/features/ai-builder/lib/manual-specs");
+  const builderKeys = await import("@/features/ai-builder/lib/private-keys");
+  const builderWorkflow = await import("@/features/ai-builder/lib/workflow");
+  const builderPrompt = await import("@/features/ai-builder/lib/prompt");
+  const { generateWorkflow } = await import("@/features/ai-builder/lib/generate");
+  const builderModels = await import("@/features/ai-builder/lib/builder-models");
+
+  // A node made from an integration config, as createIntegrationNode gets it
+  const fakeSmsConfig = {
+    label: "Fake SMS",
+    description: "Sends a text message",
+    logo: "/logos/fake.svg",
+    credentialType: "TWILIO",
+    defaultVariableName: "sms",
+    operations: [
+      { value: "send", label: "Send" },
+      { value: "lookup", label: "Look up" },
+    ],
+    subInputs: [{ id: "sub-model", label: "Model" }],
+    hint: "The message id is at {{<name>.sid}}.",
+    fields: [
+      { name: "to", label: "To", required: true, operations: ["send"], placeholder: "+15551234567" },
+      { name: "lines", label: "Lines", type: "textarea", placeholder: "a = 1\n  b   = 2\n" },
+      { name: "urgent", label: "Urgent", type: "switch", defaultValue: "false" },
+      { name: "channel", label: "Channel", type: "select", options: [{ value: "sms", label: "SMS" }, { value: "whatsapp", label: "WhatsApp" }] },
+      { name: "sender", label: "Sender", required: true, showWhen: () => true },
+      // Never shown to a model: a second credential, a secret, the user's workflow
+      { name: "backupCredentialId", label: "Backup Credential", type: "credential" },
+      { name: "signingSecret", label: "Signing Secret" },
+      { name: "workflowId", label: "Workflow", type: "workflow" },
+    ],
+  } as never;
+
+  const testCatalogue = builderCatalogue.buildNodeCatalogue({
+    types: ["INITIAL", ...Object.keys(MANUAL_SPECS), "FAKE_SMS", "FAKE_TRIGGER", "STRUCTURED_OUTPUT_PARSER", "MYSTERY"],
+    options: [
+      { type: "IF", label: "IF", description: "Route to a true or false branch", category: "CORE LOGIC" },
+      { type: "FAKE_SMS", label: "SMS", description: "Send a text", category: "COMMUNICATIONS" },
+    ],
+    configs: {
+      FAKE_SMS: fakeSmsConfig,
+      FAKE_TRIGGER: { label: "Fake Trigger", description: "Starts on a fake event", logo: "/x.svg", trigger: true, fields: [] } as never,
+      STRUCTURED_OUTPUT_PARSER: { label: "Parser", description: "JSON answers", logo: "/x.svg", fields: [] } as never,
+    },
+    manual: MANUAL_SPECS,
+  });
+  const catalogueEntry = (type: string) => testCatalogue.find((entry) => entry.type === type)!;
+
+  await test("the catalogue describes every node type: fields, ports, and nothing secret", () => {
+    // The empty canvas's placeholder is not a node a model can use
+    assert.equal(testCatalogue.some((entry) => entry.type === "INITIAL"), false);
+
+    const sms = catalogueEntry("FAKE_SMS");
+    assert.equal(sms.label, "SMS");
+    assert.equal(sms.description, "Send a text");
+    assert.equal(sms.category, "COMMUNICATIONS");
+    assert.equal(sms.trigger, false);
+    assert.equal(sms.credential, "TWILIO");
+    assert.equal(sms.variableName, "sms");
+    assert.equal(sms.stringValues, true);
+    assert.deepEqual(sms.operations, [{ value: "send", label: "Send" }, { value: "lookup", label: "Look up" }]);
+    assert.deepEqual(sms.fields.map((field) => field.name), ["to", "lines", "urgent", "channel", "sender"]);
+    // One entry per line stays one entry per line in the example
+    assert.equal(sms.fields[1].example, "a = 1\nb = 2");
+    assert.deepEqual(sms.userConfigured, ["Backup Credential", "Signing Secret", "Workflow"]);
+    assert.deepEqual(sms.fields[0], { name: "to", label: "To", type: "text", example: "+15551234567", required: true, operations: ["send"] });
+    assert.deepEqual(sms.fields[2].options, ["true", "false"]);
+    assert.deepEqual(sms.fields[3].options, ["sms", "whatsapp"]);
+    // Shown only for some values of another field: not checked as required
+    assert.equal(sms.fields[4].required, undefined);
+    assert.equal(sms.fields[4].conditional, true);
+    assert.deepEqual(sms.inputs, [
+      { id: "target-1", label: "Main" },
+      { id: "sub-model", label: "Model", accepts: builderCatalogue.SUB_PORT_ACCEPTS["sub-model"] },
+    ]);
+    assert.deepEqual(sms.outputs, [{ id: "source-1", label: "Main" }]);
+    assert.equal(sms.notes, "The message id is at {{<name>.sid}}.");
+
+    // A trigger has no inputs
+    assert.deepEqual(catalogueEntry("FAKE_TRIGGER").inputs, []);
+    assert.equal(catalogueEntry("FAKE_TRIGGER").trigger, true);
+    assert.deepEqual(catalogueEntry("WEBHOOK_TRIGGER").inputs, []);
+
+    // Hand-written nodes come from manual-specs.ts, with their own handles
+    assert.deepEqual(catalogueEntry("IF").outputs.map((port) => port.id), ["true", "false"]);
+    assert.deepEqual(catalogueEntry("LOOP").outputs.map((port) => port.id), ["loop", "done"]);
+    assert.deepEqual(catalogueEntry("AI_AGENT").inputs.map((port) => port.id), ["flow-in", "sub-model", "sub-parser", "sub-memory", "sub-tools"]);
+    assert.deepEqual(catalogueEntry("AI_AGENT").outputs.map((port) => port.id), ["flow-out"]);
+    assert.equal(catalogueEntry("OPENAI").credential, "OPENAI");
+    assert.equal(catalogueEntry("IF").stringValues, undefined);
+
+    // A node nobody described is still listed, by name
+    assert.deepEqual(catalogueEntry("MYSTERY"), {
+      type: "MYSTERY", label: "Mystery", description: "", category: "Other", trigger: false,
+      fields: [], inputs: [{ id: "target-1", label: "Main" }], outputs: [{ id: "source-1", label: "Main" }],
+    });
+
+    // No credential, secret or webhook URL is a field the model fills in
+    for (const entry of testCatalogue) {
+      for (const field of entry.fields) {
+        assert.equal(builderKeys.isPrivateKey(field.name), false, `${entry.type}.${field.name}`);
+      }
+    }
+
+    // What the browser sends passes the server's shape check
+    assert.equal(builderCatalogue.catalogueSchema.safeParse(testCatalogue).success, true);
+    assert.equal(builderCatalogue.catalogueSchema.safeParse([{ type: "X" }]).success, false);
+
+    // A node with far more text than a prompt needs is shortened, not refused
+    const wordy = builderCatalogue.buildNodeCatalogue({
+      types: ["WORDY"],
+      options: [{ type: "WORDY", label: "Wordy", description: "d".repeat(2000), category: "X" }],
+      configs: {
+        WORDY: {
+          label: "Wordy", description: "x", logo: "/x.svg", hint: "h".repeat(5000),
+          fields: [
+            ...Array.from({ length: 120 }, (_, index) => ({ name: `field${index}`, label: "Field", description: "long ".repeat(400), placeholder: "p".repeat(900) })),
+            { name: "zone", label: "Zone", type: "select", defaultValue: "z".repeat(900), options: Array.from({ length: 500 }, (_, index) => ({ value: `zone-${index}`, label: "Zone" })) },
+          ],
+        } as never,
+      },
+      manual: {},
+    });
+    assert.equal(builderCatalogue.catalogueSchema.safeParse(wordy).success, true);
+    assert.equal(wordy[0].description.length, 300);
+    assert.equal(wordy[0].fields.length, 80);
+    assert.ok(JSON.stringify(wordy).length < 60_000);
+  });
+
+  await test("every node type in the registry is described for the model", async () => {
+    const { readFileSync, readdirSync } = await import("node:fs");
+    const read = (path: string) => readFileSync(path, "utf8");
+
+    const registry = [...read("src/config/node-components.ts").matchAll(/\[NodeType\.([A-Z0-9_]+)\]: (\w+),/g)]
+      .map((match) => ({ type: match[1], component: match[2] }));
+    assert.ok(registry.length > 90, "the registry was read");
+
+    const componentDir = "src/features/executions/components";
+    const nodeFiles = readdirSync(componentDir, { withFileTypes: true })
+      .filter((entry) => entry.isDirectory())
+      .flatMap((entry) => readdirSync(`${componentDir}/${entry.name}`)
+        .filter((file) => /^nodes?\.tsx$/.test(file))
+        .map((file) => read(`${componentDir}/${entry.name}/${file}`)))
+      .join("\n");
+    const selector = read("src/components/node-selector.tsx");
+
+    for (const { type, component } of registry) {
+      if (type === "INITIAL") continue;
+
+      // Its settings: a config the catalogue reads, or a hand-written spec
+      const fromConfig = new RegExp(`export const ${component} = createIntegrationNode\\(`).test(nodeFiles);
+      assert.ok(
+        fromConfig || type in MANUAL_SPECS,
+        `${type} has no integration config: describe it in src/features/ai-builder/lib/manual-specs.ts`
+      );
+      // Its name and description
+      assert.ok(selector.includes(`type: NodeType.${type},`), `${type} is not in the node selector`);
+    }
+
+    // A spec for a node that is made from a config would hide the config
+    for (const type of Object.keys(MANUAL_SPECS)) {
+      const component = registry.find((entry) => entry.type === type)?.component;
+      assert.ok(component, `${type} is not in the registry`);
+      assert.equal(new RegExp(`export const ${component} = createIntegrationNode\\(`).test(nodeFiles), false, type);
+    }
+
+    // The registry hands each config on, and the browser builds the catalogue from it
+    assert.match(read("src/features/executions/components/integration-node.tsx"), /return Object\.assign\(IntegrationNode, \{ integrationConfig: config \}\);/);
+    const fromRegistry = read("src/features/ai-builder/components/node-catalogue.ts");
+    assert.match(fromRegistry, /types: Object\.keys\(nodeComponents\),/);
+    assert.match(fromRegistry, /options: NODE_SECTIONS\.flatMap\(/);
+    assert.match(fromRegistry, /manual: MANUAL_SPECS,/);
+    assert.match(selector, /export const NODE_SECTIONS = \[/);
+  });
+
+  await test("credentials and secrets are never shown to the model, and it cannot set them", () => {
+    const settings = {
+      endpoint: "https://api.example.com",
+      credentialId: "cred_1",
+      rerankCredentialId: "cred_2",
+      approvalCredentialId: "cred_3",
+      webhookUrl: "https://hooks.slack.com/services/T/B/x",
+      approvalWebhookUrl: "https://hooks.slack.com/services/T/B/y",
+      secret: "whsec",
+      signingSecret: "s",
+      verifyToken: "v",
+      appSecret: "a",
+      workflowId: "wf_1",
+      toolSettings: { node_1: { name: "lookup" } },
+      maxTokens: "500",
+      variableName: "api",
+    };
+    assert.deepEqual(builderKeys.hidePrivateSettings(settings), {
+      endpoint: "https://api.example.com",
+      maxTokens: "500",
+      variableName: "api",
+    });
+
+    const shown = builderWorkflow.describeCurrentWorkflow(
+      [
+        { id: "ck_start", type: "INITIAL", position: { x: 0, y: 0 }, data: {} },
+        { id: "ck_hook", type: "WEBHOOK_TRIGGER", position: { x: 0, y: 0 }, data: { secret: "whsec", responseMode: "lastNode" } },
+        { id: "ck_slack", type: "SLACK", position: { x: 260, y: 0 }, data: { variableName: "slack", content: "Hi", webhookUrl: "https://hooks.slack.com/x" } },
+      ],
+      [{ source: "ck_hook", target: "ck_slack", sourceHandle: "source-1", targetHandle: "target-1" }]
+    );
+    assert.deepEqual(shown.workflow, {
+      nodes: [
+        { id: "n1", type: "WEBHOOK_TRIGGER", data: { responseMode: "lastNode" } },
+        { id: "n2", type: "SLACK", data: { variableName: "slack", content: "Hi" } },
+      ],
+      connections: [{ from: "n1", to: "n2", fromOutput: "source-1", toInput: "target-1" }],
+    });
+    assert.deepEqual([...shown.idByAlias], [["n1", "ck_hook"], ["n2", "ck_slack"]]);
+    assert.equal(JSON.stringify(shown.workflow).includes("whsec"), false);
+
+    // A model that writes a credential or a secret anyway is ignored
+    const { workflow, errors } = builderWorkflow.checkGeneratedWorkflow(
+      {
+        nodes: [
+          { id: "a", type: "MANUAL_TRIGGER" },
+          { id: "b", type: "TELEGRAM", data: { chatId: "1", text: "Hi", credentialId: "cred_stolen", botToken: "123:abc" } },
+        ],
+        connections: [{ from: "a", to: "b" }],
+      },
+      testCatalogue
+    );
+    assert.deepEqual(errors, []);
+    assert.deepEqual(workflow!.nodes[1].data, { chatId: "1", text: "Hi", variableName: "telegram" });
+  });
+
+  type BuilderAnswer = {
+    name: string;
+    summary: string;
+    nodes: { id: string; type: string; data: Record<string, unknown> }[];
+    connections: { from: string; to: string; fromOutput?: string; toInput?: string }[];
+  };
+
+  const validAnswer = (): BuilderAnswer => ({
+    name: "  Big orders  ",
+    summary: "Posts large orders to Slack.",
+    nodes: [
+      { id: "n1", type: "webhook_trigger", data: {} },
+      { id: "n2", type: "IF", data: { conditions: [{ inputKey: "webhook.body.amount", operator: "greater_than", value: "100" }], combinator: "and" } },
+      { id: "n3", type: "SLACK", data: { variableName: "slack", content: "Large order: {{webhook.body.amount}}" } },
+      { id: "n4", type: "FAKE_SMS", data: { to: "+15551234567", urgent: true, channel: "sms", retries: 3 } },
+    ],
+    connections: [
+      { from: "n1", to: "n2" },
+      { from: "n2", to: "n3", fromOutput: "True" },
+      { from: "n2", to: "n4", fromOutput: "false", toInput: "main" },
+      // Said twice: one connection
+      { from: "n2", to: "n4", fromOutput: "false" },
+    ],
+  });
+
+  await test("a generated workflow is checked: node types, settings, ports", () => {
+    const { workflow, errors } = builderWorkflow.checkGeneratedWorkflow(validAnswer(), testCatalogue);
+    assert.deepEqual(errors, []);
+    assert.equal(workflow!.name, "Big orders");
+    assert.deepEqual(workflow!.nodes.map((node) => node.type), ["WEBHOOK_TRIGGER", "IF", "SLACK", "FAKE_SMS"]);
+    // Ports are the editor's real handle ids
+    assert.deepEqual(workflow!.connections, [
+      { from: "n1", to: "n2", fromOutput: "source-1", toInput: "target-1" },
+      { from: "n2", to: "n3", fromOutput: "true", toInput: "target-1" },
+      { from: "n2", to: "n4", fromOutput: "false", toInput: "target-1" },
+    ]);
+    // A node made from a config saves strings, and gets its defaults
+    assert.deepEqual(workflow!.nodes[3].data, {
+      to: "+15551234567", urgent: "true", channel: "sms", retries: "3", operation: "send", variableName: "sms",
+    });
+
+    const check = (change: (answer: ReturnType<typeof validAnswer>) => void, locked?: Record<string, string>) => {
+      const answer = validAnswer();
+      change(answer);
+      const result = builderWorkflow.checkGeneratedWorkflow(answer, testCatalogue, locked);
+      assert.equal(result.workflow, null);
+      return result.errors;
+    };
+
+    // Not JSON of the right shape at all
+    assert.equal(builderWorkflow.checkGeneratedWorkflow({ nodes: "none" }, testCatalogue).workflow, null);
+    assert.match(builderWorkflow.checkGeneratedWorkflow({ nodes: [] }, testCatalogue).errors[0], /The workflow has no nodes/);
+
+    // Unknown node types, and ones the plan does not include
+    assert.match(check((answer) => { answer.nodes[2].type = "SLACK_V2"; })[0], /Node "n3": "SLACK_V2" is not a node type\. Use only the types in the catalogue\./);
+    assert.match(
+      check((answer) => { answer.nodes[2].type = "GMAIL"; }, { GMAIL: "Intermediate" })[0],
+      /Node "n3" \(GMAIL\): this node needs the Intermediate plan, which this account does not have\./
+    );
+    // ...and only that is reported for the node, not its connections too
+    assert.equal(check((answer) => { answer.nodes[2].type = "SLACK_V2"; }).length, 1);
+
+    assert.deepEqual(check((answer) => { answer.nodes[1].id = "n1"; }).slice(0, 1), ['Two nodes have the id "n1". Every node needs its own id.']);
+    assert.ok(check((answer) => { answer.nodes[0].type = "SET_VARIABLE"; answer.nodes[0].data = { variableName: "a", variableValue: "1" } as never; })
+      .some((error) => /has no trigger node/.test(error)));
+    assert.ok(check((answer) => { answer.nodes.push({ id: "n5", type: "MANUAL_TRIGGER", data: {} }, { id: "n6", type: "MANUAL_TRIGGER", data: {} }); })
+      .includes("Only one MANUAL_TRIGGER is allowed per workflow."));
+
+    // Settings
+    assert.deepEqual(check((answer) => { delete (answer.nodes[2].data as Record<string, unknown>).content; }), ['Node "n3" (SLACK): "content" is required.']);
+    assert.deepEqual(check((answer) => { (answer.nodes[1].data as Record<string, unknown>).combinator = "xor"; }), ['Node "n2" (IF): "combinator" is "xor". Use one of: and, or.']);
+    assert.deepEqual(check((answer) => { (answer.nodes[1].data as Record<string, unknown>).conditions = "amount > 100"; }), ['Node "n2" (IF): "conditions" must be a JSON array.']);
+    assert.deepEqual(check((answer) => { (answer.nodes[3].data as Record<string, unknown>).operation = "call"; }), ['Node "n4" (FAKE_SMS): operation "call" does not exist. Use one of: send, lookup.']);
+    assert.deepEqual(check((answer) => { (answer.nodes[2].data as Record<string, unknown>).variableName = "my slack"; }).length, 1);
+    // A field of another operation is not required
+    assert.equal(
+      builderWorkflow.checkGeneratedWorkflow({ nodes: [{ id: "a", type: "FAKE_TRIGGER" }, { id: "b", type: "FAKE_SMS", data: { operation: "lookup" } }], connections: [{ from: "a", to: "b" }] }, testCatalogue).errors.length,
+      0
+    );
+    // A value that is an expression is not compared with the options
+    assert.equal(
+      builderWorkflow.checkGeneratedWorkflow({ nodes: [{ id: "a", type: "FAKE_TRIGGER" }, { id: "b", type: "FAKE_SMS", data: { to: "1", channel: "{{form.channel}}" } }], connections: [{ from: "a", to: "b" }] }, testCatalogue).errors.length,
+      0
+    );
+    assert.ok(check((answer) => { answer.nodes[3].data = { ...answer.nodes[3].data, variableName: "slack" } as never; })
+      .includes('Nodes "n3" and "n4" both use the variableName "slack". Give each its own.'));
+
+    // Connections
+    assert.deepEqual(check((answer) => { answer.connections[0].to = "n9"; }).slice(0, 1), ['A connection uses the node id "n9", which no node has.']);
+    assert.deepEqual(
+      check((answer) => { answer.connections[1].fromOutput = "maybe"; }).slice(0, 1),
+      ['The connection from "n2" to "n3": IF has no output "maybe". Its outputs are: "true", "false".']
+    );
+    assert.match(check((answer) => { delete answer.connections[1].fromOutput; })[0], /has to say which output of IF it leaves from \(fromOutput\): "true", "false"\./);
+    assert.match(check((answer) => { answer.connections.push({ from: "n3", to: "n1" }); })[0], /WEBHOOK_TRIGGER is a trigger\. It starts the workflow and nothing can be connected into it\./);
+    assert.match(check((answer) => { answer.connections.push({ from: "n3", to: "n4", toInput: "sub-model" }); })[0], /the "sub-model" port of FAKE_SMS only takes OPENAI, .*MODEL_ROUTER, not SLACK\./);
+    assert.match(check((answer) => { answer.connections.push({ from: "n3", to: "n4", toInput: "sub-tools" }); })[0], /FAKE_SMS has no input "sub-tools"\. Its inputs are: "target-1", "sub-model"\./);
+    assert.ok(check((answer) => { answer.nodes.push({ id: "n5", type: "DELAY", data: { delayAmount: 1, delayUnit: "seconds" } }); })
+      .includes('Node "n5" (DELAY) is not connected to anything.'));
+    assert.ok(check((answer) => { answer.connections.push({ from: "n3", to: "n3" }); }).includes('Node "n3" (SLACK) is connected to itself.'));
+  });
+
+  await test("cycles are refused; a Loop node's back edge is dropped instead", () => {
+    const cyclic = builderWorkflow.checkGeneratedWorkflow(
+      {
+        nodes: [
+          { id: "t", type: "MANUAL_TRIGGER" },
+          { id: "a", type: "DELAY", data: { delayAmount: 1, delayUnit: "seconds" } },
+          { id: "b", type: "DELAY", data: { delayAmount: 1, delayUnit: "seconds" } },
+        ],
+        connections: [{ from: "t", to: "a" }, { from: "a", to: "b" }, { from: "b", to: "a" }],
+      },
+      testCatalogue
+    );
+    assert.equal(cyclic.workflow, null);
+    assert.match(cyclic.errors[0], /^The connections form a cycle \("a", "b"\)\. A workflow only runs forward\./);
+    assert.match(cyclic.errors[0], /connect them to the "loop" output of a LOOP node and do not connect back\./);
+
+    // n8n's way of drawing a loop: the last node of the body goes back to the loop
+    const looped = builderWorkflow.checkGeneratedWorkflow(
+      {
+        nodes: [
+          { id: "t", type: "MANUAL_TRIGGER" },
+          { id: "loop", type: "LOOP", data: { itemsPath: "orders.items" } },
+          { id: "each", type: "SLACK", data: { content: "{{loop.item.name}}" } },
+          { id: "wait", type: "DELAY", data: { delayAmount: "2", delayUnit: "seconds" } },
+          { id: "after", type: "SLACK", data: { variableName: "done", content: "Done" } },
+        ],
+        connections: [
+          { from: "t", to: "loop" },
+          { from: "loop", to: "each", fromOutput: "loop" },
+          { from: "each", to: "wait" },
+          { from: "wait", to: "loop" },
+          { from: "loop", to: "after", fromOutput: "done" },
+        ],
+      },
+      testCatalogue
+    );
+    assert.deepEqual(looped.errors, []);
+    assert.deepEqual(looped.workflow!.connections.map((conn) => `${conn.from}>${conn.to}:${conn.fromOutput}`), [
+      "t>loop:source-1", "loop>each:loop", "each>wait:source-1", "loop>after:done",
+    ]);
+    // Numbers typed as text are numbers for a hand-written dialog
+    assert.equal(looped.workflow!.nodes[3].data.delayAmount, 2);
+    assert.equal(looped.workflow!.nodes[1].data.variableName, "loop");
+
+    // A connection into the loop from outside its body is an ordinary one
+    // (here it makes a real cycle through the "done" output)
+    const realCycle = builderWorkflow.checkGeneratedWorkflow(
+      {
+        nodes: [
+          { id: "t", type: "MANUAL_TRIGGER" },
+          { id: "loop", type: "LOOP", data: { itemsPath: "orders.items" } },
+          { id: "after", type: "SLACK", data: { content: "Done" } },
+        ],
+        connections: [{ from: "t", to: "loop" }, { from: "loop", to: "after", fromOutput: "done" }, { from: "after", to: "loop" }],
+      },
+      testCatalogue
+    );
+    assert.match(realCycle.errors[0], /^The connections form a cycle/);
+  });
+
+  await test("sub-ports and outputs that follow from the settings", () => {
+    const agentAnswer = (connections: unknown[]) => ({
+      nodes: [
+        { id: "chat", type: "CHAT_TRIGGER" },
+        { id: "agent", type: "AI_AGENT", data: { systemMessage: "Be brief" } },
+        { id: "model", type: "OPENAI", data: { variableName: "agentModel" } },
+        { id: "memory", type: "BUFFER_MEMORY", data: { sessionId: "{{sessionId}}", windowSize: "10" } },
+        { id: "tool", type: "HTTP_REQUEST", data: { variableName: "lookup", method: "GET", endpoint: 'https://api.example.com/{{$fromAI "id" "The order id"}}', body: { a: 1 } } },
+      ],
+      connections,
+    });
+
+    // The model left the ports of the model and the memory out: they go
+    // where they fit, not into the main flow
+    const { workflow, errors } = builderWorkflow.checkGeneratedWorkflow(
+      agentAnswer([
+        { from: "chat", to: "agent" },
+        { from: "model", to: "agent" },
+        { from: "memory", to: "agent" },
+        { from: "tool", to: "agent", toInput: "Tools" },
+      ]),
+      testCatalogue
+    );
+    assert.deepEqual(errors, []);
+    assert.deepEqual(workflow!.connections, [
+      { from: "chat", to: "agent", fromOutput: "source-1", toInput: "flow-in" },
+      { from: "model", to: "agent", fromOutput: "source-1", toInput: "sub-model" },
+      { from: "memory", to: "agent", fromOutput: "source-1", toInput: "sub-memory" },
+      { from: "tool", to: "agent", fromOutput: "source-1", toInput: "sub-tools" },
+    ]);
+    assert.equal(workflow!.nodes[3].data.windowSize, 10);
+    // An object given for a text field is saved as its JSON
+    assert.equal(workflow!.nodes[4].data.body, '{"a":1}');
+
+    // An agent cannot run without a model
+    const noModel = builderWorkflow.checkGeneratedWorkflow(agentAnswer([{ from: "chat", to: "agent" }]), testCatalogue);
+    assert.ok(noModel.errors.some((error) => /^Node "agent" \(AI_AGENT\) has no chat model\./.test(error)));
+
+    // Switch: one output per rule, by the rule's id, and "default"
+    const switched = (fromOutput: string, fallbackBranch = true) => builderWorkflow.checkGeneratedWorkflow(
+      {
+        nodes: [
+          { id: "t", type: "MANUAL_TRIGGER" },
+          { id: "sw", type: "SWITCH", data: { rules: [{ id: "rule-vip", label: "VIP", inputKey: "plan", operator: "equals", value: "vip" }], fallbackBranch } },
+          { id: "s", type: "SLACK", data: { content: "x" } },
+        ],
+        connections: [{ from: "t", to: "sw" }, { from: "sw", to: "s", fromOutput }],
+      },
+      testCatalogue
+    );
+    assert.deepEqual(switched("rule-vip").errors, []);
+    assert.deepEqual(switched("vip").workflow!.connections[1].fromOutput, "rule-vip");
+    assert.deepEqual(switched("default").errors, []);
+    assert.match(switched("default", false).errors[0], /SWITCH has no output "default"\. Its outputs are: "rule-vip"\./);
+    assert.match(switched("rule-gold").errors[0], /Its outputs are: "rule-vip", "default"\./);
+
+    assert.deepEqual(
+      builderWorkflow.getNodeOutputs({ type: "TEXT_CLASSIFIER", data: { categories: "Billing question: about invoices\nBug" } }, catalogueEntry("IF"))
+        .map((port) => port.id),
+      ["category-billing-question", "category-bug", "other"]
+    );
+  });
+
+  await test("an invalid answer is sent back once, with what was wrong", async () => {
+    const calls: { system: string; messages: { role: string; content: string }[] }[] = [];
+    const answers = [
+      // A model that explains itself and forgets the trigger
+      'Here you go:\n```json\n{"nodes":[{"id":"a","type":"SLACK","data":{"content":"Hi"}}],"connections":[]}\n```',
+      `\`\`\`json\n${JSON.stringify(validAnswer())}\n\`\`\``,
+    ];
+    const callModel = async (request: (typeof calls)[number]) => {
+      calls.push({ system: request.system, messages: [...request.messages] });
+      return answers[calls.length - 1] ?? "I cannot do that.";
+    };
+
+    const fixed = await generateWorkflow({ callModel, catalogue: testCatalogue, description: "Post big orders to Slack" });
+    assert.equal(fixed.ok, true);
+    assert.equal(fixed.attempts, 2);
+    assert.equal(calls.length, 2);
+    assert.equal(calls[0].system, builderPrompt.SYSTEM_PROMPT);
+    assert.equal(calls[0].messages.length, 1);
+    assert.match(calls[0].messages[0].content, /# Workflow to build\n\nPost big orders to Slack$/);
+    // The second call carries the first answer and the problems found
+    assert.deepEqual(calls[1].messages.map((message) => message.role), ["user", "assistant", "user"]);
+    assert.equal(calls[1].messages[1].content, answers[0]);
+    assert.match(calls[1].messages[2].content, /^That answer cannot be used:\n\n- The workflow has no trigger node/);
+    assert.match(calls[1].messages[2].content, /Answer again with the complete corrected JSON object and nothing else\.$/);
+
+    // Right the first time: one call
+    calls.length = 0;
+    answers[0] = JSON.stringify(validAnswer());
+    const first = await generateWorkflow({ callModel, catalogue: testCatalogue, description: "x" });
+    assert.deepEqual([first.ok, first.attempts, calls.length], [true, 1, 1]);
+
+    // Wrong twice: no third call, and the problems of the last answer come back
+    calls.length = 0;
+    answers[0] = "Sure! I will build that.";
+    answers[1] = '{"nodes":[{"id":"a","type":"TELEPORT"}]}';
+    const failed = await generateWorkflow({ callModel, catalogue: testCatalogue, description: "x" });
+    assert.equal(failed.ok, false);
+    assert.equal(calls.length, 2);
+    assert.match(calls[1].messages[2].content, /- The answer contains no JSON object\./);
+    assert.deepEqual(!failed.ok && failed.errors, ['Node "a": "TELEPORT" is not a node type. Use only the types in the catalogue.']);
+
+    assert.deepEqual(builderWorkflow.parseModelJson('x {"a": 1} y'), { ok: true, value: { a: 1 } });
+    assert.equal(builderWorkflow.parseModelJson('{"a": 1,}').ok, false);
+  });
+
+  await test("the prompt carries the catalogue, the canvas and the request", () => {
+    const fresh = builderPrompt.buildUserPrompt({ catalogue: testCatalogue, description: "  Email me new orders  " });
+    assert.match(fresh, /^# Catalogue\n\n\[\{"type":"/);
+    assert.equal(fresh.includes("# Current workflow"), false);
+    assert.match(fresh, /# Workflow to build\n\nEmail me new orders$/);
+    // The catalogue in the prompt is the catalogue, less what only the editor uses
+    const sent = JSON.parse(fresh.slice(fresh.indexOf("["), fresh.indexOf("\n\n# Workflow to build")));
+    assert.equal(sent.length, testCatalogue.length);
+    assert.equal("category" in sent[0], false);
+    // What most nodes have in common is said once, in the system prompt
+    const sentSms = sent.find((entry: { type: string }) => entry.type === "FAKE_SMS");
+    assert.deepEqual(sentSms.fields[0], { name: "to", example: "+15551234567", required: true, operations: ["send"] });
+    assert.deepEqual(sentSms.fields[2], { name: "urgent", options: ["true", "false"], default: "false", type: "switch" });
+    assert.equal("outputs" in sentSms, false);
+    assert.deepEqual(sentSms.inputs.map((port: { id: string }) => port.id), ["target-1", "sub-model"]);
+    const sentSlack = sent.find((entry: { type: string }) => entry.type === "SLACK");
+    assert.deepEqual(["inputs" in sentSlack, "outputs" in sentSlack, "trigger" in sentSlack], [false, false, false]);
+    const sentHook = sent.find((entry: { type: string }) => entry.type === "WEBHOOK_TRIGGER");
+    assert.deepEqual([sentHook.trigger, "inputs" in sentHook], [true, false]);
+    assert.match(builderPrompt.SYSTEM_PROMPT, /a field without a "type" is text/);
+    assert.match(builderPrompt.SYSTEM_PROMPT, /A node without "outputs" in the catalogue has one output, and a node without "inputs" has one main input \(a trigger has none\)/);
+    assert.deepEqual(sent.find((entry: { type: string }) => entry.type === "IF").outputs, [{ id: "true", label: "True" }, { id: "false", label: "False" }]);
+
+    const editing = builderPrompt.buildUserPrompt({
+      catalogue: testCatalogue,
+      description: "Send it on WhatsApp instead",
+      current: { nodes: [{ id: "n1", type: "MANUAL_TRIGGER", data: {} }], connections: [] },
+      history: ["Email me new orders"],
+    });
+    assert.match(editing, /# Current workflow\n\nThe user's current workflow is given below\. Answer with the complete workflow after the requested change/);
+    assert.match(editing, /\{"nodes":\[\{"id":"n1","type":"MANUAL_TRIGGER","data":\{\}\}\],"connections":\[\]\}/);
+    assert.match(editing, /# Earlier requests \(already done\)\n\n- Email me new orders/);
+    assert.match(editing, /# Change to make\n\nSend it on WhatsApp instead$/);
+    // An empty canvas is a new workflow
+    assert.equal(builderPrompt.buildUserPrompt({ catalogue: testCatalogue, description: "x", current: { nodes: [], connections: [] } }).includes("# Current workflow"), false);
+
+    assert.match(builderPrompt.SYSTEM_PROMPT, /Answer with one JSON object and nothing else/);
+    assert.match(builderPrompt.SYSTEM_PROMPT, /Never write credentials, API keys, tokens, passwords, webhook URLs or secrets into any field/);
+    assert.match(builderPrompt.SYSTEM_PROMPT, /no cycles/);
+  });
+
+  await test("the result opens in the editor without credentials, and an edit keeps what was there", () => {
+    let counter = 0;
+    const createId = () => `new_${++counter}`;
+
+    const built = builderWorkflow.toEditorGraph({
+      workflow: builderWorkflow.checkGeneratedWorkflow(
+        {
+          name: "Support bot",
+          nodes: [
+            { id: "chat", type: "CHAT_TRIGGER" },
+            { id: "agent", type: "AI_AGENT", data: {} },
+            { id: "model", type: "OPENAI", data: { variableName: "agentModel" } },
+            { id: "tg", type: "TELEGRAM", data: { chatId: "1", text: "{{aiAgentOutput.output}}" } },
+            { id: "slack", type: "SLACK", data: { content: "{{aiAgentOutput.output}}" } },
+          ],
+          connections: [
+            { from: "chat", to: "agent" },
+            { from: "model", to: "agent", toInput: "sub-model" },
+            { from: "agent", to: "tg" },
+            { from: "agent", to: "slack" },
+          ],
+        },
+        testCatalogue
+      ).workflow!,
+      catalogue: testCatalogue,
+      createId,
+    });
+
+    assert.deepEqual(built.nodes.map((node) => node.id), ["new_1", "new_2", "new_3", "new_4", "new_5"]);
+    // No node has a credential: the canvas shows them as "Not Configured"
+    assert.equal(built.nodes.some((node) => "credentialId" in node.data), false);
+    assert.deepEqual(built.todo, [
+      "OpenAI: pick a credential",
+      "Telegram: pick a credential",
+      "Slack: set Webhook URL (a Slack incoming webhook)",
+    ]);
+    // A new agent asks before it uses tools that write, like one from the node selector
+    assert.equal(built.nodes[1].data.toolApprovalDefault, "risk");
+    assert.deepEqual(built.edges.map((edge) => [edge.source, edge.target, edge.sourceHandle, edge.targetHandle]), [
+      ["new_1", "new_2", "source-1", "flow-in"],
+      ["new_3", "new_2", "source-1", "sub-model"],
+      ["new_2", "new_4", "flow-out", "target-1"],
+      ["new_2", "new_5", "flow-out", "target-1"],
+    ]);
+    // Left to right in running order, the model under its agent, no two nodes on one spot
+    const at = (index: number) => built.nodes[index].position;
+    assert.deepEqual(at(0), { x: 0, y: 0 });
+    assert.deepEqual(at(1), { x: 260, y: 0 });
+    assert.deepEqual(at(2), { x: 260, y: 200 });
+    assert.equal(at(3).x, 520);
+    assert.equal(at(4).x, 520);
+    assert.notEqual(at(3).y, at(4).y);
+    assert.equal(new Set(built.nodes.map((node) => `${node.position.x}:${node.position.y}`)).size, 5);
+
+    // -- A follow-up: "send it on WhatsApp instead" of Telegram
+    const canvas = [
+      { id: "ck_hook", type: "WEBHOOK_TRIGGER", position: { x: 40, y: 80 }, data: { secret: "whsec_keep", responseMode: "immediately" } },
+      { id: "ck_tg", type: "TELEGRAM", position: { x: 300, y: 80 }, data: { variableName: "telegram", credentialId: "cred_tg", chatId: "1", text: "New order" } },
+      { id: "ck_mail", type: "EMAIL_SEND", position: { x: 300, y: 240 }, data: { credentialId: "cred_smtp", recipient: "a@example.com", subject: "Order", body: "Old" } },
+    ];
+    const shown = builderWorkflow.describeCurrentWorkflow(canvas, [
+      { source: "ck_hook", target: "ck_tg", sourceHandle: "source-1", targetHandle: "target-1" },
+      { source: "ck_hook", target: "ck_mail", sourceHandle: "source-1", targetHandle: "target-1" },
+    ]);
+    const edited = builderWorkflow.checkGeneratedWorkflow(
+      {
+        summary: "Replaced Telegram with a second Slack message.",
+        nodes: [
+          { id: "n1", type: "WEBHOOK_TRIGGER", data: { responseMode: "lastNode" } },
+          // Same id, another type: a new node, without Telegram's credential
+          { id: "n2", type: "SLACK", data: { variableName: "slack", content: "New order" } },
+          { id: "n3", type: "EMAIL_SEND", data: { recipient: "a@example.com", subject: "Order", body: "New" } },
+          { id: "n4", type: "DELAY", data: { delayAmount: 5, delayUnit: "seconds" } },
+        ],
+        connections: [{ from: "n1", to: "n2" }, { from: "n1", to: "n3" }, { from: "n3", to: "n4" }],
+      },
+      testCatalogue
+    );
+    assert.deepEqual(edited.errors, []);
+
+    counter = 0;
+    const graph = builderWorkflow.toEditorGraph({
+      workflow: edited.workflow!,
+      catalogue: testCatalogue,
+      current: canvas,
+      idByAlias: shown.idByAlias,
+      createId,
+    });
+    const node = (id: string) => graph.nodes.find((item) => item.id === id)!;
+
+    // Kept nodes: same id, same place, the change applied, credential and secret untouched
+    assert.deepEqual(node("ck_hook"), {
+      id: "ck_hook", type: "WEBHOOK_TRIGGER", position: { x: 40, y: 80 },
+      data: { secret: "whsec_keep", responseMode: "lastNode" },
+    });
+    assert.deepEqual(node("ck_mail").data, { credentialId: "cred_smtp", recipient: "a@example.com", subject: "Order", body: "New" });
+    assert.deepEqual(node("ck_mail").position, { x: 300, y: 240 });
+    // The replaced node is gone, and its credential with it
+    assert.equal(graph.nodes.some((item) => item.id === "ck_tg"), false);
+    assert.equal(JSON.stringify(graph).includes("cred_tg"), false);
+    assert.deepEqual(node("new_1").type, "SLACK");
+    assert.deepEqual(node("new_1").data, { variableName: "slack", content: "New order" });
+    // New nodes go next to what they follow, not on top of anything
+    assert.deepEqual(node("new_2").position, { x: 560, y: 240 });
+    assert.equal(new Set(graph.nodes.map((item) => `${item.position.x}:${item.position.y}`)).size, 4);
+    assert.deepEqual(graph.edges.map((edge) => `${edge.source}>${edge.target}`), ["ck_hook>new_1", "ck_hook>ck_mail", "ck_mail>new_2"]);
+    // Only what is new still has to be set up
+    assert.deepEqual(graph.todo, ["Slack: set Webhook URL (a Slack incoming webhook)"]);
+    assert.equal(graph.summary, "Replaced Telegram with a second Slack message.");
+  });
+
+  await test("Build with AI: the user's own model, their plan, and never an active workflow", async () => {
+    assert.deepEqual([...builderModels.BUILDER_CREDENTIAL_TYPES], ["OPENAI", "ANTHROPIC", "GEMINI", "DEEPSEEK", "KIMI", "QWEN", "OPENAI_COMPATIBLE"]);
+    assert.equal(builderModels.isBuilderCredentialType("SMTP"), false);
+    assert.equal(builderModels.getBuilderDefaultModel("OPENAI"), "gpt-4o-mini");
+    assert.equal(builderModels.getBuilderDefaultModel("DEEPSEEK"), "deepseek-flash");
+    assert.equal(builderModels.getBuilderDefaultModel("OPENAI_COMPATIBLE", "kimi"), "kimi-k2.6");
+    // A provider without a default: the user names the model
+    assert.equal(builderModels.getBuilderDefaultModel("OPENAI_COMPATIBLE", "openrouter"), "");
+
+    const { readFileSync } = await import("node:fs");
+    const read = (path: string) => readFileSync(path, "utf8");
+    const router = read("src/features/ai-builder/server/routers.ts");
+
+    // Rate limited, with a credential that belongs to the user, of a model type
+    assert.match(router, /consumeRateLimit\(\s*`ai-builder:\$\{userId\}`,\s*AI_BUILDER_RATE_LIMIT\s*\)/);
+    assert.match(router, /assertOwnership\(\s*await prisma\.credential\.findUnique\(/);
+    assert.match(router, /if \(!isBuilderCredentialType\(credential\.type\)\)/);
+    // The provider's error never carries the key
+    assert.match(router, /redactString\(\s*String\(\(error as Error\)\?\.message \?\? error\),\s*\{ secrets: \[apiKey\] \}\s*\)/);
+    // Node types and the plan are decided on the server, whatever the catalogue says
+    assert.match(router, /if \(!NODE_TYPES\.has\(entry\.type\) \|\| entry\.type === NodeType\.INITIAL\)/);
+    assert.match(router, /getRequiredPlanForNode\(\s*entry\.type,\s*user\.plan,\s*user\.trialEndsAt\s*\)/);
+    assert.match(router, /if \(requiredPlan && !onCanvas\.has\(entry\.type\)\)/);
+    // The workflow limit is checked before the model is called
+    assert.ok(router.indexOf("if (workflowCount >= workflowLimit)") < router.indexOf("const result = await runBuilder({ userId, input });"));
+    assert.ok(router.indexOf("const result = await runBuilder({ userId, input });") > router.indexOf("createWorkflow: protectedProcedure"));
+    // Created inactive, and nothing in the builder ever activates one
+    assert.match(router, /data: \{ name: graph\.name \|\| generateSlug\(3\), userId \},/);
+    assert.equal(/active\s*:/.test(router), false);
+    assert.equal(/setActive|syncTelegramWebhooks/.test(router), false);
+    // The editor's request saves nothing
+    const generate = router.slice(router.indexOf("generate: protectedProcedure"), router.indexOf("createWorkflow: protectedProcedure"));
+    assert.equal(/prisma\.|tx\./.test(generate), false);
+
+    assert.match(read("src/trpc/routers/_app.ts"), /aiBuilder: aiBuilderRouter,/);
+    // Its model calls have a line of their own on the usage page
+    assert.match(read("src/features/ai-usage/server/routers.ts"), /where: \{ \.\.\.where, workflowId: null, nodeName: BUILDER_USAGE_NAME \},/);
+    assert.match(read("src/features/ai-usage/server/routers.ts"), /name: BUILDER_USAGE_NAME,/);
+    assert.match(read("src/app/api/trpc/[trpc]/route.ts"), /export const maxDuration = 60;/);
+    assert.match(read("src/lib/rate-limit.ts"), /AI_BUILDER_RATE_LIMIT =\s*Number\(process\.env\.AI_BUILDER_RATE_LIMIT_PER_MINUTE\) \|\| 10;/);
+
+    // A button in the editor and in the workflows list
+    assert.match(read("src/features/editor/components/editor.tsx"), /<EditorBuildWithAi \/>/);
+    assert.match(read("src/features/workflows/components/workflows.tsx"), /actions=\{<BuildWithAiButton \/>\}/);
+    // The editor applies the result to the canvas and leaves saving to the user
+    const editorDialog = read("src/features/ai-builder/components/editor-build-with-ai.tsx");
+    assert.match(editorDialog, /setEdges\(graph\.edges\);/);
+    assert.match(editorDialog, /history: turns\.slice\(-MAX_HISTORY\)\.map\(\(turn\) => turn\.request\),/);
+    assert.equal(/workflows\.update|setActive/.test(editorDialog), false);
+
+    // A node without its credential says so on the canvas
+    for (const name of ["email", "telegram", "openai", "gemini", "anthropic", "googleSheet", "googleCalender"]) {
+      const source = read(`src/features/executions/components/${name}/node.tsx`);
+      assert.match(source, /credentialId[\s\S]{0,160}"Not Configured"/, name);
+    }
+    assert.match(read("src/features/executions/components/notion/node.tsx"), /nodeData\?\.operation && nodeData\?\.databaseId && nodeData\?\.credentialId/);
+    for (const name of ["slack", "discord"]) {
+      assert.match(read(`src/features/executions/components/${name}/node.tsx`), /nodeData\?\.content && nodeData\?\.webhookUrl/, name);
+    }
+    assert.match(read("src/features/executions/components/integration-node.tsx"), /!nodeData\.credentialId\s*\? "Not Configured"/);
   });
 
   console.log(`\n${passed} checks passed`);

@@ -41,7 +41,8 @@ export const AnthropicNode = memo((props: NodeProps<AnthropicNodeType>) => {
     }
 
     const nodeData = props.data;
-    const description = nodeData?.userPrompt ? `claude-sonnet-5-5: ${nodeData.userPrompt.slice(0, 50)}...` : "Not Configured";
+    // Without a credential it cannot run, whatever else is filled in
+    const description = nodeData?.userPrompt && nodeData?.credentialId ? `claude-sonnet-5-5: ${nodeData.userPrompt.slice(0, 50)}...` : "Not Configured";
 
 
 
