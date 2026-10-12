@@ -14328,6 +14328,65 @@ pour()</code></pre>
     assert.equal(/\b(DROP|DELETE FROM|TRUNCATE|UPDATE "|RENAME)\b/.test(sql), false);
   });
 
+  await test("gmail: a reply goes to the sender, or to the recipients of a message we sent", async () => {
+    const { getReplyRecipients } = await import(
+      "@/features/executions/components/gmail/executor"
+    );
+
+    const message = (labelIds: string[], headers: Record<string, string>) => ({
+      id: "m1",
+      threadId: "t1",
+      labelIds,
+      payload: {
+        headers: Object.entries(headers).map(([name, value]) => ({ name, value })),
+      },
+    });
+
+    // A message we received: its sender, as before. Its To and Cc are ours.
+    const received = message(["INBOX", "UNREAD"], {
+      From: "Editor <editor@site.com>",
+      To: "me@outreach.com",
+      Cc: "boss@outreach.com",
+    });
+    assert.deepEqual(getReplyRecipients(received), { to: "Editor <editor@site.com>" });
+    assert.deepEqual(getReplyRecipients(received, true), { to: "Editor <editor@site.com>" });
+    assert.deepEqual(
+      getReplyRecipients(message(["INBOX"], { From: "a@site.com", "Reply-To": "replies@site.com" })),
+      { to: "replies@site.com" }
+    );
+    // No labels at all (an old or partial answer) is not "sent by us"
+    assert.deepEqual(getReplyRecipients({ payload: received.payload }), { to: "Editor <editor@site.com>" });
+
+    // A message we sent (a follow-up): the people it was sent to, not us
+    const sent = message(["SENT"], {
+      From: "me@outreach.com",
+      To: "editor@site.com, second@site.com",
+      Cc: "assistant@site.com",
+    });
+    assert.deepEqual(getReplyRecipients(sent), { to: "editor@site.com, second@site.com" });
+    assert.deepEqual(getReplyRecipients(sent, true), {
+      to: "editor@site.com, second@site.com",
+      cc: "assistant@site.com",
+    });
+    // Keep with no Cc on the original adds none
+    assert.deepEqual(getReplyRecipients(message(["SENT"], { From: "me@outreach.com", To: "a@site.com" }), true), {
+      to: "a@site.com",
+    });
+    // A sent message without a To header falls back to the old rule
+    assert.deepEqual(getReplyRecipients(message(["SENT"], { From: "me@outreach.com" })), { to: "me@outreach.com" });
+
+    // The reply stays in the thread, and Cc is only kept when the node says so
+    const { readFileSync } = await import("node:fs");
+    const { join } = await import("node:path");
+    const read = (path: string) => readFileSync(join(process.cwd(), path), "utf8");
+    const executor = read("src/features/executions/components/gmail/executor.ts");
+    assert.match(executor, /threadId: original\.data\.threadId,/);
+    assert.match(executor, /inReplyTo: originalId,/);
+    assert.match(executor, /references: `\$\{getHeader\(original\.data, "References"\)\} \$\{originalId\}`\.trim\(\),/);
+    assert.match(executor, /\.\.\.getReplyRecipients\(original\.data, data\.replyCc === "keep"\),/);
+    assert.match(executor, /metadataHeaders: \["From", "Reply-To", "To", "Cc", "Subject", "Message-ID", "References"\],/);
+  });
+
   console.log(`\n${passed} checks passed`);
 };
 

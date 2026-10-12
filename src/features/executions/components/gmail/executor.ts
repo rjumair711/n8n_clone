@@ -21,6 +21,8 @@ type GmailData = {
   query?: string;
   limit?: string;
   messageId?: string;
+  // Reply: "keep" copies the Cc of a message we sent ourselves
+  replyCc?: string;
   // Comma-separated file variables, e.g. "pdf.file, report.file"
   attachments?: string;
 };
@@ -136,6 +138,28 @@ export const summarizeMessage = (message: gmail_v1.Schema$Message) => ({
     findBody(message.payload, "text/plain") ||
     findBody(message.payload, "text/html"),
 });
+
+/**
+ * Who a reply goes to. A reply to a message we received goes to its sender
+ * (Reply-To, else From). A message we sent ourselves (a follow-up in the
+ * same thread) has us as its sender, so the reply goes to the people it was
+ * sent to, and to its Cc when `keepCc` is set.
+ */
+export const getReplyRecipients = (
+  original: gmail_v1.Schema$Message,
+  keepCc = false
+): { to: string; cc?: string } => {
+  if (original.labelIds?.includes("SENT")) {
+    const to = getHeader(original, "To");
+    const cc = keepCc ? getHeader(original, "Cc") : "";
+
+    if (to) return { to, ...(cc ? { cc } : {}) };
+  }
+
+  return {
+    to: getHeader(original, "Reply-To") || getHeader(original, "From"),
+  };
+};
 
 const toGmailError = (error: any) => {
   if (error instanceof NonRetriableError) return error;
@@ -258,7 +282,7 @@ export const gmailExecutor: NodeExecutor<GmailData> = async ({
               userId: "me",
               id: messageId,
               format: "metadata",
-              metadataHeaders: ["From", "Reply-To", "Subject", "Message-ID", "References"],
+              metadataHeaders: ["From", "Reply-To", "To", "Cc", "Subject", "Message-ID", "References"],
             });
 
             const subject = getHeader(original.data, "Subject");
@@ -269,9 +293,7 @@ export const gmailExecutor: NodeExecutor<GmailData> = async ({
               requestBody: {
                 threadId: original.data.threadId,
                 raw: buildRawEmail({
-                  to:
-                    getHeader(original.data, "Reply-To") ||
-                    getHeader(original.data, "From"),
+                  ...getReplyRecipients(original.data, data.replyCc === "keep"),
                   subject: /^re:/i.test(subject) ? subject : `Re: ${subject}`,
                   body: renderTemplate(data.message, context),
                   html: data.emailType === "html",
