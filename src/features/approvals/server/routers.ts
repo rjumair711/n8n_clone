@@ -1,4 +1,4 @@
-import { createTRPCRouter, protectedProcedure } from "@/trpc/init";
+import { createTRPCRouter, editorProcedure, viewerProcedure } from "@/trpc/init";
 import { TRPCError } from "@trpc/server";
 import z from "zod";
 import { decideApproval, listPendingApprovals } from "./requests";
@@ -6,11 +6,11 @@ import { decideApproval, listPendingApprovals } from "./requests";
 export const approvalsRouter = createTRPCRouter({
     // The requests the user can still answer; with an execution id, only
     // that execution's
-    getPending: protectedProcedure
+    getPending: viewerProcedure
         .input(z.object({ executionId: z.string().optional() }).optional())
         .query(async ({ ctx, input }) => {
             const items = await listPendingApprovals(
-                ctx.auth.user.id,
+                ctx.workspace.ownerId,
                 input?.executionId
             );
 
@@ -21,7 +21,7 @@ export const approvalsRouter = createTRPCRouter({
         }),
 
     // APPROVE or REJECT, in the app: the request has to be the user's own
-    decide: protectedProcedure
+    decide: editorProcedure
         .input(
             z.object({
                 id: z.string(),
@@ -33,7 +33,7 @@ export const approvalsRouter = createTRPCRouter({
                 id: input.id,
                 decision: input.decision,
                 via: "app",
-                userId: ctx.auth.user.id,
+                userId: ctx.workspace.ownerId,
             });
 
             if (outcome === "not_found") {

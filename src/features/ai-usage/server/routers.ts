@@ -1,7 +1,7 @@
 import { TRPCError } from "@trpc/server";
 import z from "zod";
 import prisma from "@/lib/db";
-import { createTRPCRouter, protectedProcedure } from "@/trpc/init";
+import { createTRPCRouter, protectedProcedure, viewerProcedure, workspaceAdminProcedure } from "@/trpc/init";
 import { canUseAdminActions, isAdmin } from "@/lib/admin";
 import { assertOwnership } from "@/lib/ownership";
 import { describeAuditTarget } from "@/lib/audit-actions";
@@ -80,7 +80,7 @@ const toPrice = (price: {
 
 export const aiUsageRouter = createTRPCRouter({
     // The model calls of one execution: a line per node and model, and the total
-    getExecution: protectedProcedure
+    getExecution: viewerProcedure
         .input(z.object({ executionId: z.string() }))
         .query(async ({ ctx, input }) => {
             assertOwnership(
@@ -88,13 +88,13 @@ export const aiUsageRouter = createTRPCRouter({
                     where: { id: input.executionId },
                     select: { workflow: { select: { userId: true } } },
                 }),
-                ctx.auth.user.id,
+                ctx.workspace.ownerId,
                 "Execution",
                 (execution) => execution.workflow.userId
             );
 
             const rows = await prisma.aiUsage.findMany({
-                where: { executionId: input.executionId, userId: ctx.auth.user.id },
+                where: { executionId: input.executionId, userId: ctx.workspace.ownerId },
                 orderBy: { createdAt: "asc" },
                 select: {
                     nodeId: true,
@@ -117,8 +117,8 @@ export const aiUsageRouter = createTRPCRouter({
         }),
 
     // This month's AI spend of the account, per workflow, with the budgets
-    getMonthly: protectedProcedure.query(async ({ ctx }) => {
-        const userId = ctx.auth.user.id;
+    getMonthly: viewerProcedure.query(async ({ ctx }) => {
+        const userId = ctx.workspace.ownerId;
         const since = startOfUtcMonth();
         const where = { userId, createdAt: { gte: since } };
 
@@ -227,11 +227,11 @@ export const aiUsageRouter = createTRPCRouter({
     }),
 
     // The account's monthly AI budget, over all its workflows
-    setUserBudget: protectedProcedure
+    setUserBudget: workspaceAdminProcedure
         .input(z.object({ budgetUsd: budgetInput }))
         .mutation(async ({ ctx, input }) => {
             const user = await prisma.user.update({
-                where: { id: ctx.auth.user.id },
+                where: { id: ctx.workspace.ownerId },
                 data: { aiBudgetCents: toBudgetCents(input.budgetUsd) },
                 select: { aiBudgetCents: true },
             });
@@ -239,7 +239,7 @@ export const aiUsageRouter = createTRPCRouter({
             return { budgetCents: user.aiBudgetCents };
         }),
 
-    getWorkflowBudget: protectedProcedure
+    getWorkflowBudget: viewerProcedure
         .input(z.object({ workflowId: z.string() }))
         .query(async ({ ctx, input }) => {
             const workflow = assertOwnership(
@@ -247,13 +247,13 @@ export const aiUsageRouter = createTRPCRouter({
                     where: { id: input.workflowId },
                     select: { userId: true, aiBudgetCents: true },
                 }),
-                ctx.auth.user.id,
+                ctx.workspace.ownerId,
                 "Workflow"
             );
 
             const spent = await prisma.aiUsage.aggregate({
                 where: {
-                    userId: ctx.auth.user.id,
+                    userId: ctx.workspace.ownerId,
                     workflowId: input.workflowId,
                     createdAt: { gte: startOfUtcMonth() },
                 },
@@ -266,7 +266,7 @@ export const aiUsageRouter = createTRPCRouter({
             };
         }),
 
-    setWorkflowBudget: protectedProcedure
+    setWorkflowBudget: workspaceAdminProcedure
         .input(z.object({ workflowId: z.string(), budgetUsd: budgetInput }))
         .mutation(async ({ ctx, input }) => {
             assertOwnership(
@@ -274,12 +274,12 @@ export const aiUsageRouter = createTRPCRouter({
                     where: { id: input.workflowId },
                     select: { userId: true },
                 }),
-                ctx.auth.user.id,
+                ctx.workspace.ownerId,
                 "Workflow"
             );
 
             const workflow = await prisma.workflow.update({
-                where: { id: input.workflowId, userId: ctx.auth.user.id },
+                where: { id: input.workflowId, userId: ctx.workspace.ownerId },
                 data: { aiBudgetCents: toBudgetCents(input.budgetUsd) },
                 select: { id: true, name: true, aiBudgetCents: true },
             });

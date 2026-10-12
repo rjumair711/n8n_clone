@@ -1,9 +1,12 @@
+import { resolveWorkspace } from "@/lib/workspaces";
 import { auth } from "@/lib/auth";
 import prisma from "@/lib/db";
 import { headers } from "next/headers";
 import { NextResponse } from "next/server";
 
-export async function GET() {
+// `?own=1` (the billing page): the signed-in user's own plan, whatever
+// workspace the browser is in
+export async function GET(request: Request) {
   const session = await auth.api.getSession({
     headers: await headers(),
   });
@@ -15,9 +18,15 @@ export async function GET() {
     );
   }
 
+  // The plan and its counters are the workspace's: its owner's
+  const workspace = await resolveWorkspace(
+    session.user,
+    new URL(request.url).searchParams.get("own") ? null : undefined
+  );
+
   const user = await prisma.user.findUnique({
     where: {
-      id: session.user.id,
+      id: workspace.ownerId,
     },
   });
 
@@ -35,5 +44,11 @@ export async function GET() {
     workflowCount: user.workflowCount,
     executionsUsed: user.executionsUsed,
     trialEndsAt: user.trialEndsAt,
+    workspace: {
+      id: workspace.id,
+      name: workspace.name,
+      role: workspace.role,
+      personal: workspace.personal,
+    },
   });
 }

@@ -5,7 +5,7 @@ import { decrypt } from "@/lib/encryption";
 import { assertOwnership } from "@/lib/ownership";
 import { redactString } from "@/lib/redaction";
 import { safeFetch } from "@/lib/ssrf";
-import { createTRPCRouter, protectedProcedure } from "@/trpc/init";
+import { createTRPCRouter, editorProcedure } from "@/trpc/init";
 import { isIncludedCredential } from "@/config/ai-credits";
 import { listIncludedProviders } from "@/lib/ai-credits";
 import {
@@ -44,7 +44,7 @@ export const chatModelsRouter = createTRPCRouter({
      * provider: when the list cannot be loaded, the preset's models come
      * back with the reason.
      */
-    list: protectedProcedure
+    list: editorProcedure
         .input(
             z.object({
                 nodeType: z.enum(["CHAT_MODEL", "DEEPSEEK", "KIMI", "QWEN"]),
@@ -76,7 +76,7 @@ export const chatModelsRouter = createTRPCRouter({
                     where: { id: input.credentialId },
                     select: { userId: true, type: true, value: true },
                 }),
-                ctx.auth.user.id,
+                ctx.workspace.ownerId,
                 "Credential"
             );
 

@@ -1,3 +1,5 @@
+import { resolveWorkspace } from "@/lib/workspaces";
+import { hasRole, roleError } from "@/lib/workspace-roles";
 import { headers } from "next/headers";
 import { type NextRequest, NextResponse } from "next/server";
 import { CredentialType } from "@prisma/client";
@@ -85,8 +87,18 @@ export async function GET(request: NextRequest) {
             email = ticket.getPayload()?.email;
         }
 
+        // The credential goes into the workspace the user is working in,
+        // and credentials are for its admins
+        const workspace = await resolveWorkspace(session.user);
+
+        if (!hasRole(workspace.role, "ADMIN")) {
+            return fail(roleError(workspace.role, "ADMIN"));
+        }
+
+        // The workspace's owner: its data is stored under that account,
+        // and the plan's limits are that account's
         const user = await prisma.user.findUniqueOrThrow({
-            where: { id: session.user.id },
+            where: { id: workspace.ownerId },
         });
 
         const credentialCount = await prisma.credential.count({
@@ -115,12 +127,14 @@ export async function GET(request: NextRequest) {
                 type: CredentialType.GOOGLE_OAUTH2,
                 value: encrypt(JSON.stringify(value)),
                 userId: user.id,
+                workspaceId: workspace.id,
             },
             select: { id: true, name: true, type: true },
         });
 
         await recordAudit({
             userId: user.id,
+            actor: workspace.actor,
             action: "credential.created",
             target: describeAuditTarget(`${created.type} credential`, created),
         });

@@ -1,6 +1,6 @@
 import { PAGINATION } from "@/config/constants";
 import prisma from "@/lib/db";
-import { createTRPCRouter, protectedProcedure } from "@/trpc/init";
+import { createTRPCRouter, editorProcedure, viewerProcedure, workspaceAdminProcedure } from "@/trpc/init";
 import z from "zod";
 import { TRPCError } from "@trpc/server";
 import { RetryError, retryExecution } from "./retry";
@@ -22,16 +22,16 @@ import {
 export const executionsRouter = createTRPCRouter({
 
     // "Execution data retention": how long the user's execution data is kept
-    getRetention: protectedProcedure.query(async ({ ctx }) => {
+    getRetention: viewerProcedure.query(async ({ ctx }) => {
         const user = await prisma.user.findUniqueOrThrow({
-            where: { id: ctx.auth.user.id },
+            where: { id: ctx.workspace.ownerId },
             select: { executionRetentionDays: true },
         });
 
         return { days: normalizeRetentionDays(user.executionRetentionDays) };
     }),
 
-    setRetention: protectedProcedure
+    setRetention: workspaceAdminProcedure
         .input(
             z.object({
                 days: z
@@ -44,7 +44,7 @@ export const executionsRouter = createTRPCRouter({
         )
         .mutation(async ({ ctx, input }) => {
             const user = await prisma.user.update({
-                where: { id: ctx.auth.user.id },
+                where: { id: ctx.workspace.ownerId },
                 data: { executionRetentionDays: input.days },
                 select: { executionRetentionDays: true },
             });
@@ -53,11 +53,11 @@ export const executionsRouter = createTRPCRouter({
         }),
 
     // RUN AGAIN: same trigger, same starting data, current workflow
-    retry: protectedProcedure
+    retry: editorProcedure
         .input(z.object({ id: z.string() }))
         .mutation(async ({ ctx, input }) => {
             try {
-                return await retryExecution(input.id, ctx.auth.user.id);
+                return await retryExecution(input.id, ctx.workspace.ownerId);
             } catch (error) {
                 if (error instanceof RetryError) {
                     throw new TRPCError({
@@ -76,11 +76,11 @@ export const executionsRouter = createTRPCRouter({
         }),
 
     // CANCEL: only an execution that is paused at a Wait node
-    cancel: protectedProcedure
+    cancel: editorProcedure
         .input(z.object({ id: z.string() }))
         .mutation(async ({ ctx, input }) => {
             try {
-                return await cancelExecution(input.id, ctx.auth.user.id);
+                return await cancelExecution(input.id, ctx.workspace.ownerId);
             } catch (error) {
                 if (error instanceof CancelError) {
                     throw new TRPCError({
@@ -94,7 +94,7 @@ export const executionsRouter = createTRPCRouter({
         }),
 
     // UPDATE ONE
-    getOne: protectedProcedure
+    getOne: viewerProcedure
         .input(z.object({ id: z.string() }))
         .query(async ({ ctx, input }) => {
             const { workflow, ...execution } = assertOwnership(
@@ -110,7 +110,7 @@ export const executionsRouter = createTRPCRouter({
                         }
                     }
                 }),
-                ctx.auth.user.id,
+                ctx.workspace.ownerId,
                 "Execution",
                 (found) => found.workflow.userId
             )
@@ -138,7 +138,7 @@ export const executionsRouter = createTRPCRouter({
         }),
 
     // Data of the workflow's most recent run, for the editor's variable picker
-    getLatestData: protectedProcedure
+    getLatestData: viewerProcedure
         .input(z.object({ workflowId: z.string() }))
         .query(async ({ ctx, input }) => {
             assertOwnership(
@@ -146,7 +146,7 @@ export const executionsRouter = createTRPCRouter({
                     where: { id: input.workflowId },
                     select: { userId: true },
                 }),
-                ctx.auth.user.id,
+                ctx.workspace.ownerId,
                 "Workflow"
             )
 
@@ -154,7 +154,7 @@ export const executionsRouter = createTRPCRouter({
                 where: {
                     workflowId: input.workflowId,
                     workflow: {
-                        userId: ctx.auth.user.id
+                        userId: ctx.workspace.ownerId
                     }
                 },
                 orderBy: {
@@ -188,7 +188,7 @@ export const executionsRouter = createTRPCRouter({
         }),
 
     // UPDATE MANY
-    getMany: protectedProcedure
+    getMany: viewerProcedure
         .input(
             z.object({
                 page: z.number().default(PAGINATION.DEFAULT_PAGE),
@@ -206,7 +206,7 @@ export const executionsRouter = createTRPCRouter({
                     skip: (page - 1) * pageSize,
                     take: pageSize,
                     where: {
-                        workflow: { userId: ctx.auth.user.id },
+                        workflow: { userId: ctx.workspace.ownerId },
                     },
                     orderBy: {
                         startedAt: "desc"
@@ -222,7 +222,7 @@ export const executionsRouter = createTRPCRouter({
                 }),
                 prisma.execution.count({
                     where: {
-                        workflow: { userId: ctx.auth.user.id },
+                        workflow: { userId: ctx.workspace.ownerId },
                     }
                 })
             ])

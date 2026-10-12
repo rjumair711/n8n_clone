@@ -90,9 +90,11 @@ const createUser = (label: string) =>
 type TestUser = Awaited<ReturnType<typeof createUser>>;
 
 // What protectedProcedure would have read from the user's session cookie
-const callerFor = (user: TestUser) =>
+// `workspaceId` is what the browser's workspace cookie would have picked
+const callerFor = (user: TestUser, workspaceId?: string) =>
   createCallerFactory(appRouter)({
     userId: user.id,
+    workspaceId,
     session: {
       user,
       session: {
@@ -387,6 +389,97 @@ const main = async () => {
       if ((await prisma.execution.count({ where: { workflowId: workflow.id } })) !== 1) {
         throw new Error("an execution was started or deleted");
       }
+    });
+
+    // ------------------------------------------------------------ TEAMS
+    console.log("\nB as a member of A's workspace: what the role allows, and no more");
+
+    const expectForbidden = async (call: () => Promise<unknown>) => {
+      try {
+        await call();
+      } catch (error) {
+        if (error instanceof TRPCError && error.code === "FORBIDDEN") return;
+        throw new Error(`expected FORBIDDEN, got ${error instanceof TRPCError ? error.code : error}`);
+      }
+      throw new Error("expected FORBIDDEN, but the call succeeded");
+    };
+
+    // Made the first time A used the app, above
+    const workspaceA = await prisma.workspace.findUniqueOrThrow({ where: { ownerId: userA.id } });
+    const inA = callerFor(userB, workspaceA.id);
+
+    await check("picking a workspace B is not a member of gives B's own", async () => {
+      await expectTrpc404(() => inA.workflows.getOne({ id: workflow.id }));
+      if ((await inA.workspaces.getCurrent()).current.id === workspaceA.id) throw new Error("B is in A's workspace");
+    });
+
+    const membership = await prisma.workspaceMember.create({
+      data: { workspaceId: workspaceA.id, userId: userB.id, role: "VIEWER" },
+    });
+    const setRole = (role: string) =>
+      prisma.workspaceMember.update({ where: { id: membership.id }, data: { role } });
+
+    await check("a viewer reads the workflow and the credential's name, never its value", async () => {
+      if ((await inA.workflows.getOne({ id: workflow.id })).id !== workflow.id) throw new Error("wrong workflow");
+
+      const listed = (await inA.credentials.getMany({})).items.find((item) => item.id === credential.id);
+      if (!listed) throw new Error("the credential is not listed");
+      if ("value" in listed || JSON.stringify(listed).includes(credential.value)) throw new Error("the value was sent");
+    });
+    await check("a viewer changes nothing", async () => {
+      await expectForbidden(() => inA.workflows.updateName({ id: workflow.id, name: "renamed by a viewer" }));
+      await expectForbidden(() => inA.workflows.execute({ id: workflow.id }));
+      await expectForbidden(() => inA.workflows.remove({ id: workflow.id }));
+      await expectForbidden(() => inA.credentials.getOne({ id: credential.id }));
+      await expectForbidden(() => inA.workspaces.invite({ email: `c-${run}@tenant-test.invalid`, role: "VIEWER" }));
+    });
+    await check("without picking A's workspace, a member still sees only their own", () =>
+      expectTrpc404(() => asB.workflows.getOne({ id: workflow.id })));
+
+    await setRole("EDITOR");
+    await check("an editor changes workflows, not credentials or members", async () => {
+      await inA.workflows.updateName({ id: workflow.id, name: "renamed by an editor" });
+      await inA.workflows.updateName({ id: workflow.id, name: "A's workflow" });
+      await expectForbidden(() => inA.credentials.remove({ id: credential.id }));
+      await expectForbidden(() => inA.credentials.update({ id: credential.id, name: "x", type: credential.type }));
+      await expectForbidden(() => inA.workspaces.rename({ name: "taken over" }));
+    });
+
+    await setRole("ADMIN");
+    await check("an admin manages members, but not the owner or other admins", async () => {
+      const members = (await inA.workspaces.getMembers()).members;
+      const owner = members.find((member) => member.role === "OWNER");
+      if (!owner) throw new Error("the owner is not listed");
+
+      await expectForbidden(() => inA.workspaces.setRole({ memberId: owner.id, role: "VIEWER" }));
+      await expectForbidden(() => inA.workspaces.removeMember({ memberId: owner.id }));
+      await expectForbidden(() => inA.workspaces.invite({ email: `c-${run}@tenant-test.invalid`, role: "ADMIN" }));
+      // Their own role is not theirs to change
+      await expectForbidden(() => inA.workspaces.setRole({ memberId: membership.id, role: "VIEWER" }));
+    });
+    await check("what a member makes belongs to the workspace, under its owner", async () => {
+      const made = await inA.workflows.create();
+      const row = await prisma.workflow.findUniqueOrThrow({ where: { id: made.id } });
+      if (row.userId !== userA.id || row.workspaceId !== workspaceA.id) throw new Error("not A's workspace's");
+      await inA.workflows.remove({ id: made.id });
+    });
+
+    await prisma.workspaceMember.delete({ where: { id: membership.id } });
+    await check("a member who was removed is out on the next request", () =>
+      expectTrpc404(() => inA.workflows.getOne({ id: workflow.id })));
+
+    await check("an invitation is only for the address it was sent to", async () => {
+      await asA.workspaces.invite({ email: userB.email, role: "EDITOR" });
+      const invitation = (await asB.workspaces.getInvitations())[0];
+      if (!invitation) throw new Error("B does not see the invitation");
+
+      // A cannot answer it for B
+      await expectTrpc404(() => asA.workspaces.answerInvitation({ id: invitation.id, accept: true }));
+      await asB.workspaces.answerInvitation({ id: invitation.id, accept: true });
+      if ((await inA.workspaces.getCurrent()).current.role !== "EDITOR") throw new Error("B did not join as an editor");
+
+      await asB.workspaces.leave({ workspaceId: workspaceA.id });
+      await expectTrpc404(() => inA.workflows.getOne({ id: workflow.id }));
     });
   } finally {
     // Workflows, executions, credentials, files and API keys go with the users

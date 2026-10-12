@@ -3,7 +3,7 @@ import { NodeType, type Prisma, SubscriptionPlan } from "@prisma/client";
 import { TRPCError } from "@trpc/server";
 import z from "zod";
 import prisma from "@/lib/db";
-import { createTRPCRouter, protectedProcedure } from "@/trpc/init";
+import { createTRPCRouter, protectedProcedure, editorProcedure, viewerProcedure } from "@/trpc/init";
 import { PLAN_LIMITS } from "@/config/plans";
 import {
     ADMIN_TWO_FACTOR_MESSAGE,
@@ -73,11 +73,11 @@ const templateAuditTarget = (
 export const templatesRouter = createTRPCRouter({
     // The gallery. Everyone sees every published template; `locked` says
     // whether the user's plan can use it. Admins also see unpublished ones.
-    getMany: protectedProcedure.query(async ({ ctx }) => {
+    getMany: viewerProcedure.query(async ({ ctx }) => {
         const isAdmin = isAdminUser(ctx.auth.user);
 
         const user = await prisma.user.findUniqueOrThrow({
-            where: { id: ctx.auth.user.id },
+            where: { id: ctx.workspace.ownerId },
             select: { plan: true, trialEndsAt: true },
         });
 
@@ -112,7 +112,7 @@ export const templatesRouter = createTRPCRouter({
     }),
 
     // Copies a template into the user's account as a new workflow
-    use: protectedProcedure
+    use: editorProcedure
         .input(z.object({ id: z.string() }))
         .mutation(async ({ ctx, input }) => {
             const isAdmin = isAdminUser(ctx.auth.user);
@@ -126,7 +126,7 @@ export const templatesRouter = createTRPCRouter({
             }
 
             const user = await prisma.user.findUniqueOrThrow({
-                where: { id: ctx.auth.user.id },
+                where: { id: ctx.workspace.ownerId },
             });
 
             // Checked here, not only in the gallery: the lock is a rule
@@ -163,7 +163,7 @@ export const templatesRouter = createTRPCRouter({
 
             const workflow = await prisma.$transaction(async (tx) => {
                 const created = await tx.workflow.create({
-                    data: { name: template.name, userId: user.id },
+                    data: { name: template.name, userId: user.id, workspaceId: ctx.workspace.id },
                 });
 
                 if (nodes.length === 0) {

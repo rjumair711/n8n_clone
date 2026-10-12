@@ -1,3 +1,4 @@
+import { resolveWorkspace } from "@/lib/workspaces";
 import { auth } from "@/lib/auth";
 import { headers } from "next/headers";
 import { NextResponse } from "next/server";
@@ -29,7 +30,11 @@ export async function GET(
 
   try {
     return NextResponse.json(
-      await getOwnedExecutionNodes(executionId, session.user.id)
+      await getOwnedExecutionNodes(
+        executionId,
+        // Of the workspace the user is working in: any member may read
+        (await resolveWorkspace(session.user)).ownerId
+      )
     );
   } catch (error) {
     const response = notFoundResponse(error);

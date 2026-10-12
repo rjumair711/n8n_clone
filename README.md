@@ -159,6 +159,28 @@ Every workflow keeps its earlier versions, so a change can be looked at and undo
 * **Executions record their version.** Each execution's page shows "Workflow version: Version 12": the saved workflow that run used. The number stays on the execution after the version itself was removed. Executions from before this feature say "Not recorded".
 * **What a version holds.** A copy of the nodes and connections as they are stored, including anything typed into a node's fields. It is only readable by the workflow's owner, like the workflow itself, and the list of versions does not carry the nodes.
 
+## Teams and roles
+
+Every account has a **workspace**, and can be a member of other people's. Workflows, credentials, executions, chatbots, evaluations, AI usage and budgets belong to the workspace you are working in; pick it in the sidebar. Your two-factor settings, sessions and API keys are your own.
+
+* **Members.** Under **Settings → Workspace and team** an admin invites someone by email with a role. No email is sent: the invitation waits until that person signs in to RXJ with that address, sees it under Settings and accepts or declines it. Where email verification is on, only a verified address can take an invitation. A member can leave; an admin can change a role or remove a member. What a member built stays in the workspace.
+* **Roles.**
+
+  | | Viewer | Editor | Admin | Owner |
+  |---|---|---|---|---|
+  | See workflows, executions, usage and the names of credentials | yes | yes | yes | yes |
+  | Create, edit, run and delete workflows; chatbots, evaluations, approvals, templates | | yes | yes | yes |
+  | Use a credential in a node | | yes | yes | yes |
+  | Add, change and delete credentials; AI budgets; execution retention | | | yes | yes |
+  | Invite, remove and change editors and viewers; rename the workspace | | | yes | yes |
+  | Make or remove admins | | | | yes |
+
+* **Credentials are used, never shown.** A member picks a credential by its name. Its value is not sent to any browser, the owner's included; only admins can replace or delete it.
+* **Plan limits are per workspace.** A workspace has its owner's plan: the number of workflows and credentials, the month's executions, locked nodes, AI credits and AI budgets are counted for the workspace, whoever of its members acts. The sidebar shows the plan of the workspace you are in; **Billing** is always about your own account.
+* **Audit log.** What members do in a workspace is in its owner's audit log, with who did it.
+* **How it is stored.** A workspace's data is kept under its owner's account: a workflow a member creates has the owner's user id and the workspace's id. That is why running a workflow, its credentials and its limits work the same for every member. Which workspace a request is for comes from a cookie that only picks among the workspaces the user is a member of; the membership and the role are read from the database on every request.
+* **Not there yet.** One workspace per account: a second workspace, moving a workflow between workspaces and handing a workspace to another owner are not possible. An API key works in its owner's own workspace. The pages do not hide what a role cannot do; the server refuses it with a message that says which role it needs.
+
 ## Agent evaluations
 
 Test a workflow over a set of inputs, score what it answers, and compare runs. Open it with the **Evaluations** button in the editor's header (`/workflows/<id>/evaluations`).
@@ -903,7 +925,7 @@ Supported credential types:
   * The engine runs on the server's main thread, so a script that uses its whole timeout holds up other requests on that server for that long. Keep the timeout low unless a script really needs it.
 * **Credentials** are encrypted with AES-256-GCM and never sent to the browser; the key can be changed without losing them (see "Credential encryption and key rotation").
 * **Files:** download links are signed and expire after 15 minutes; files are always sent as attachments with `nosniff`; XLSX, DOCX, PDF and CSV files are checked against size, page, time and row limits before or while they are read (see "Files").
-* **Tenant isolation:** every workflow, execution, credential, file and API key belongs to one account. Anything that loads one of them by id goes through a single check, `assertOwnership` in `src/lib/ownership.ts`: a record that belongs to someone else gets the same `404` "not found" as one that does not exist, in the app, in `/api/v1` and on file download links. `scripts/test-tenant-isolation.ts` tries every such route as a second user (see `docs/TESTING.md`, T11d).
+* **Tenant isolation:** every workflow, execution, credential and file belongs to one workspace (kept under its owner's account, see Teams and roles), and every API key to one account. Anything that loads one of them by id goes through a single check, `assertOwnership` in `src/lib/ownership.ts`: a record that belongs to someone else gets the same `404` "not found" as one that does not exist, in the app, in `/api/v1` and on file download links. `scripts/test-tenant-isolation.ts` tries every such route as a second user (see `docs/TESTING.md`, T11d).
 * **Execution logs:** credential values and common secret shapes are replaced with `[REDACTED]` before node input, output and errors are stored or sent to Sentry; execution data is deleted after 7, 30 or 90 days; a workflow can be set not to save node data at all (see "Execution logs: redaction and retention").
 * **SQL injection:** in the Postgres and MySQL nodes, values belong in **Query Parameters** (a JSON array, one value per `$1` or `?`), which accepts expressions such as `["{{webhook.body.email}}"]` and never mixes them into the SQL. An "Execute Query" whose query text contains a `{{ }}` expression shows a warning in the editor and is refused when the workflow runs, unless the node's **Allow expressions in query text (unsafe)** option is on (off by default). Nodes that already had expressions in their query before this rule keep working: the migration switches the option on for them.
 * **SSH:** the server address is part of the credential, so a saved key can only be used against that server. Private and local addresses are refused, a command has a time limit (30 seconds, up to 120) and an output limit, and the node is not unlocked by the free trial. Use `{{shellQuote value}}` for anything that comes from outside the workflow, such as webhook data, so it cannot be read as extra commands.

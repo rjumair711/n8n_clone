@@ -3811,12 +3811,16 @@ const main = async () => {
     assert.match(router, /action: "model_price\.saved"/);
     assert.match(router, /action: "model_price\.deleted"/);
 
-    // Everything else is the signed-in user's own data
-    for (const procedure of ["getExecution", "getMonthly", "setUserBudget", "getWorkflowBudget", "setWorkflowBudget"]) {
-      assert.match(router, new RegExp(`${procedure}: protectedProcedure`), procedure);
+    // Everything else is the workspace's own data: read by its members,
+    // and the budgets set by its admins
+    for (const procedure of ["getExecution", "getMonthly", "getWorkflowBudget"]) {
+      assert.match(router, new RegExp(`${procedure}: viewerProcedure`), procedure);
+    }
+    for (const procedure of ["setUserBudget", "setWorkflowBudget"]) {
+      assert.match(router, new RegExp(`${procedure}: workspaceAdminProcedure`), procedure);
     }
     assert.equal((router.match(/assertOwnership\(/g) ?? []).length, 3);
-    assert.match(router, /where: \{ executionId: input\.executionId, userId: ctx\.auth\.user\.id \}/);
+    assert.match(router, /where: \{ executionId: input\.executionId, userId: ctx\.workspace\.ownerId \}/);
 
     assert.match(readFileSync(join(process.cwd(), "src/trpc/routers/_app.ts"), "utf8"), /aiUsage: aiUsageRouter/);
   });
@@ -6316,7 +6320,7 @@ const main = async () => {
     const requests = read("src/features/approvals/server/requests.ts");
     assert.match(requests, /status: APPROVAL_STATUS\.PENDING,\s*expiresAt: \{ gt: now \}/);
     assert.match(requests, /const owner = userId \? \{ userId \} : \{\};/);
-    assert.match(read("src/features/approvals/server/routers.ts"), /userId: ctx\.auth\.user\.id/);
+    assert.match(read("src/features/approvals/server/routers.ts"), /userId: ctx\.workspace\.ownerId/);
 
     // Opening a link answers nothing: only the page's button (POST) does
     const route = read("src/app/api/approvals/[id]/route.ts");
@@ -11859,13 +11863,13 @@ pour()</code></pre>
     assert.match(router, /if \(requiredPlan && !onCanvas\.has\(entry\.type\)\)/);
     // The workflow limit is checked before the model is called
     assert.ok(router.indexOf("if (workflowCount >= workflowLimit)") < router.indexOf("const result = await runBuilder({ userId, input });"));
-    assert.ok(router.indexOf("const result = await runBuilder({ userId, input });") > router.indexOf("createWorkflow: protectedProcedure"));
+    assert.ok(router.indexOf("const result = await runBuilder({ userId, input });") > router.indexOf("createWorkflow: editorProcedure"));
     // Created inactive, and nothing in the builder ever activates one
-    assert.match(router, /data: \{ name: graph\.name \|\| generateSlug\(3\), userId \},/);
+    assert.match(router, /data: \{ name: graph\.name \|\| generateSlug\(3\), userId, workspaceId: ctx\.workspace\.id \},/);
     assert.equal(/active\s*:/.test(router), false);
     assert.equal(/setActive|syncTelegramWebhooks/.test(router), false);
     // The editor's request saves nothing
-    const generate = router.slice(router.indexOf("generate: protectedProcedure"), router.indexOf("createWorkflow: protectedProcedure"));
+    const generate = router.slice(router.indexOf("generate: editorProcedure"), router.indexOf("createWorkflow: editorProcedure"));
     assert.equal(/prisma\.|tx\./.test(generate), false);
 
     assert.match(read("src/trpc/routers/_app.ts"), /aiBuilder: aiBuilderRouter,/);
@@ -12504,7 +12508,7 @@ pour()</code></pre>
     assert.match(router, /NodeType\.WHATSAPP_TRIGGER,\s+user\.plan,\s+user\.trialEndsAt/);
 
     // The page gets the Verify Token (typed into Meta), never the App Secret
-    const answer = router.slice(router.indexOf("get: protectedProcedure"), router.indexOf("addUrl: protectedProcedure"));
+    const answer = router.slice(router.indexOf("get: viewerProcedure"), router.indexOf("addUrl: editorProcedure"));
     assert.equal(/appSecret/.test(answer.replace(/hasAppSecret/g, "")), false);
     assert.equal(/console\.(log|error|warn)/.test(router + knowledge), false);
   });
@@ -13229,8 +13233,8 @@ pour()</code></pre>
     const router = read("src/features/workflows/server/routers.ts");
     // Every pin procedure checks the workflow's owner first
     for (const name of ["getPinnedNodes", "pinNode", "unpinNode"]) {
-      const body = router.slice(router.indexOf(`${name}: protectedProcedure`));
-      assert.match(body.slice(0, 700), /await getOwnedWorkflow\(input\.id, ctx\.auth\.user\.id\);/, name);
+      const body = router.slice(router.search(new RegExp(`${name}: (viewer|editor)Procedure`)));
+      assert.match(body.slice(0, 700), /await getOwnedWorkflow\(input\.id, ctx\.workspace\.ownerId\);/, name);
     }
     // The pinned data itself is not sent to the browser with the list
     assert.match(router, /select: \{ nodeId: true, executionId: true, createdAt: true \},/);
@@ -13453,7 +13457,7 @@ pour()</code></pre>
     const run = read("src/inngest/functions.ts");
 
     // A save keeps a version, after the save itself, and cannot undo it
-    const update = router.slice(router.indexOf("update: protectedProcedure"), router.indexOf("// VERSION HISTORY"));
+    const update = router.slice(router.indexOf("update: editorProcedure"), router.indexOf("// VERSION HISTORY"));
     assert.ok(update.indexOf("await prisma.$transaction(") < update.indexOf("await saveWorkflowVersion({"));
     assert.match(update, /try \{\s+await saveWorkflowVersion\(\{[\s\S]*?\} catch \(error\) \{\s+console\.error\(/);
     // What is logged about a failure is its kind, never the workflow's data
@@ -13467,16 +13471,16 @@ pour()</code></pre>
     // The list and the restore check the workflow's owner, and a version
     // is only ever looked up inside that workflow
     for (const name of ["getVersions", "restoreVersion"]) {
-      const body = router.slice(router.indexOf(`${name}: protectedProcedure`));
+      const body = router.slice(router.search(new RegExp(`${name}: (viewer|editor)Procedure`)));
       assert.match(body.slice(0, 600), /getOwnedWorkflow\(input\.id, /, name);
     }
     assert.match(router, /where: \{ id: input\.versionId, workflowId: workflow\.id \},/);
     // The list does not carry the nodes (they can hold secrets typed into them)
-    const list = router.slice(router.indexOf("getVersions: protectedProcedure"), router.indexOf("restoreVersion: protectedProcedure"));
+    const list = router.slice(router.indexOf("getVersions: viewerProcedure"), router.indexOf("restoreVersion: editorProcedure"));
     assert.equal(/nodes: true|connections: true/.test(list), false);
 
     // A restore follows the rules of a save, makes a version and is audited
-    const restore = router.slice(router.indexOf("restoreVersion: protectedProcedure"), router.indexOf("// UPDATE ONE"));
+    const restore = router.slice(router.indexOf("restoreVersion: editorProcedure"), router.indexOf("// UPDATE ONE"));
     assert.match(restore, /where: \{ id: \{ in: linkedIds \}, userId \},/);
     assert.match(restore, /workflowId: \{ not: workflow\.id \}/);
     assert.match(restore, /nodeTypes\.has\(node\.type\)/);
@@ -13684,7 +13688,7 @@ pour()</code></pre>
     const fn = read("src/inngest/evaluations.ts");
 
     // Every procedure starts from a workflow, dataset, run or row of the user
-    const procedures = router.split(/\n    (\w+): protectedProcedure/).slice(1);
+    const procedures = router.split(/\n    (\w+): (?:viewer|editor)Procedure/).slice(1);
     assert.equal(procedures.length / 2, 13);
     for (let index = 0; index < procedures.length; index += 2) {
       assert.match(
@@ -13699,7 +13703,7 @@ pour()</code></pre>
 
     // A run: the plan's lock and executions, one at a time per workflow,
     // and only when there is a saved result to score
-    const start = router.slice(router.indexOf("startRun: protectedProcedure"), router.indexOf("cancelRun: protectedProcedure"));
+    const start = router.slice(router.indexOf("startRun: editorProcedure"), router.indexOf("cancelRun: editorProcedure"));
     assert.match(start, /if \(!dataset\.workflow\.saveExecutionData\) \{/);
     assert.match(start, /getRequiredPlanForNode\(dataset\.trigger, user\.plan, user\.trialEndsAt\)/);
     assert.match(start, /if \(executionsThisMonth \+ rows\.length > executionLimit\) \{/);
@@ -13743,6 +13747,171 @@ pour()</code></pre>
     assert.match(sql, /REFERENCES "Workflow"\("id"\) ON DELETE CASCADE/);
     assert.equal(/\b(DROP|DELETE FROM|TRUNCATE|UPDATE "|RENAME)\b/.test(sql), false);
     assert.equal(/ALTER TABLE "(?!eval_)/.test(sql), false);
+  });
+
+  // -------------------------------------------------- TEAMS AND ROLES
+  console.log("Teams and roles");
+
+  const roles = await import("@/lib/workspace-roles");
+
+  await test("a role allows what it and the roles below it allow", () => {
+    const order = ["VIEWER", "EDITOR", "ADMIN", "OWNER"] as const;
+
+    for (const [have, role] of order.entries()) {
+      for (const [need, needed] of order.entries()) {
+        assert.equal(roles.hasRole(role, needed), have >= need, `${role} for ${needed}`);
+      }
+    }
+
+    // Anything that is not one of the four roles has no rights
+    for (const role of ["", "owner", "SUPERUSER", null, undefined, 4]) {
+      assert.equal(roles.hasRole(role, "VIEWER"), false, String(role));
+    }
+
+    assert.equal(roles.isAssignableRole("ADMIN"), true);
+    // Nobody is made an owner
+    assert.equal(roles.isAssignableRole("OWNER"), false);
+    assert.equal(
+      roles.roleError("VIEWER", "EDITOR"),
+      "Your role in this workspace (Viewer) cannot do this. It needs Editor or higher."
+    );
+    assert.equal(roles.roleError("ADMIN", "OWNER"), "Your role in this workspace (Admin) cannot do this. It needs Owner.");
+
+    assert.equal(roles.normalizeInviteEmail("  Ali@Example.COM "), "ali@example.com");
+    assert.equal(roles.personalWorkspaceName("Ali"), "Ali's workspace");
+    assert.equal(roles.personalWorkspaceName("  "), "My workspace");
+  });
+
+  await test("members are managed by admins and the owner; only the owner decides who is an admin", () => {
+    const can = (actor: unknown, target: unknown, next: "ADMIN" | "EDITOR" | "VIEWER" | null) =>
+      roles.canManageMember({ actor, target, next });
+
+    // The owner: everyone but the owner
+    assert.equal(can("OWNER", "VIEWER", "ADMIN"), true);
+    assert.equal(can("OWNER", "ADMIN", "VIEWER"), true);
+    assert.equal(can("OWNER", "ADMIN", null), true);
+    assert.equal(can("OWNER", "OWNER", "VIEWER"), false);
+    assert.equal(can("OWNER", "OWNER", null), false);
+
+    // An admin: editors and viewers, and nobody becomes an admin
+    assert.equal(can("ADMIN", "VIEWER", "EDITOR"), true);
+    assert.equal(can("ADMIN", "EDITOR", null), true);
+    assert.equal(can("ADMIN", "EDITOR", "ADMIN"), false);
+    assert.equal(can("ADMIN", "ADMIN", "VIEWER"), false);
+    assert.equal(can("ADMIN", "ADMIN", null), false);
+    assert.equal(can("ADMIN", "OWNER", null), false);
+
+    // Editors and viewers manage nobody
+    for (const actor of ["EDITOR", "VIEWER", "", null]) {
+      assert.equal(can(actor, "VIEWER", "VIEWER"), false, String(actor));
+      assert.equal(can(actor, "VIEWER", null), false, String(actor));
+    }
+    // A member whose role is not a role is not managed by guessing
+    assert.equal(can("OWNER", "SOMETHING", "VIEWER"), false);
+  });
+
+  await test("a workspace's data is reached through a role, and credentials never show their value", async () => {
+    const { readFileSync, readdirSync } = await import("node:fs");
+    const { join } = await import("node:path");
+    const read = (path: string) => readFileSync(join(process.cwd(), path), "utf8").replace(/\r\n/g, "\n");
+
+    // The workspace is read from the database on every request: the cookie
+    // only picks one the user is a member of
+    const lib = read("src/lib/workspaces.ts");
+    assert.match(lib, /prisma\.workspaceMember\.findUnique\(\{\s+where: \{ workspaceId_userId: \{ workspaceId: picked, userId: user\.id \} \},/);
+    assert.match(lib, /if \(membership && isWorkspaceRole\(membership\.role\)\) \{/);
+    // A member is never the owner, whatever their row says
+    assert.match(lib, /role: personal \? "OWNER" : membership\.role === "OWNER" \? "ADMIN" : membership\.role,/);
+    assert.match(lib, /const own = await ensurePersonalWorkspace\(user\);/);
+
+    const init = read("src/trpc/init.ts");
+    assert.match(init, /if \(!hasRole\(ctx\.workspace\.role, needed\)\) \{\s+throw new TRPCError\(\{\s+code: "FORBIDDEN",/);
+    assert.match(init, /export const viewerProcedure = requireRole\("VIEWER"\)/);
+    assert.match(init, /export const editorProcedure = requireRole\("EDITOR"\)/);
+    assert.match(init, /export const workspaceAdminProcedure = requireRole\("ADMIN"\)/);
+
+    // Routers of things that belong to a workspace have no procedure that
+    // only asks "is someone signed in", and scope their data by the
+    // workspace's owner, never by who is calling
+    const procedures = (source: string) =>
+      [...source.matchAll(/\n    (\w+): (\w+Procedure)/g)].map((match) => [match[1], match[2]] as const);
+
+    for (const feature of ["workflows", "credentials", "executions", "approvals", "chatbots", "evaluations", "ai-builder"]) {
+      const source = read(`src/features/${feature}/server/routers.ts`);
+      const list = procedures(source);
+
+      assert.ok(list.length > 0, feature);
+      for (const [name, procedure] of list) {
+        assert.match(procedure, /^(viewer|editor|workspaceAdmin)Procedure$/, `${feature}.${name}`);
+      }
+      assert.equal(/ctx\.auth\.user\.id/.test(source), false, `${feature}: data scoped by the caller`);
+    }
+
+    // What changes something needs an editor at least
+    const byName = (feature: string) => new Map(procedures(read(`src/features/${feature}/server/routers.ts`)));
+    const workflows = byName("workflows");
+    for (const name of ["execute", "create", "remove", "update", "updateName", "setActive", "restoreVersion", "pinNode"]) {
+      assert.equal(workflows.get(name), "editorProcedure", name);
+    }
+    for (const name of ["getOne", "getMany", "getVersions"]) assert.equal(workflows.get(name), "viewerProcedure", name);
+
+    // Credentials: every member can pick one by name, only admins make,
+    // change or delete them, and nothing ever selects the value
+    const credentials = byName("credentials");
+    for (const name of ["create", "update", "remove", "getOne"]) {
+      assert.equal(credentials.get(name), "workspaceAdminProcedure", name);
+    }
+    for (const name of ["getMany", "getByType"]) assert.equal(credentials.get(name), "viewerProcedure", name);
+
+    const credentialSource = read("src/features/credentials/server/routers.ts");
+    assert.equal(/value: true/.test(credentialSource), false);
+    assert.equal((credentialSource.match(/select: /g) ?? []).length, (credentialSource.match(/select: (SAFE_CREDENTIAL_FIELDS|\{ \.\.\.SAFE_CREDENTIAL_FIELDS, userId: true \})/g) ?? []).length);
+
+    // New workflows and credentials are the workspace's, stored under its owner
+    assert.match(read("src/features/workflows/server/routers.ts"), /userId: ctx\.workspace\.ownerId,\s+workspaceId: ctx\.workspace\.id,/);
+    assert.match(credentialSource, /userId: ctx\.workspace\.ownerId,\s+workspaceId: ctx\.workspace\.id,/);
+    for (const path of ["src/app/api/oauth/google/callback/route.ts", "src/app/api/oauth/salesforce/callback/route.ts"]) {
+      const route = read(path);
+      assert.ok(route.indexOf('if (!hasRole(workspace.role, "ADMIN")) {') < route.indexOf("prisma.credential.create("), path);
+      assert.match(route, /userId: user\.id,\s+workspaceId: workspace\.id,/, path);
+    }
+
+    // Members: only inside the caller's workspace, by the rules above
+    const team = read("src/features/workspaces/server/routers.ts");
+    const teamProcedures = new Map(procedures(team));
+    for (const name of ["rename", "invite", "cancelInvite", "setRole", "removeMember"]) {
+      assert.equal(teamProcedures.get(name), "workspaceAdminProcedure", name);
+    }
+    assert.equal((team.match(/where: \{ id: input\.memberId, workspaceId: ctx\.workspace\.id \},/g) ?? []).length, 2);
+    assert.match(team, /where: \{ id: input\.id, workspaceId: ctx\.workspace\.id \},/);
+    assert.equal((team.match(/!canManageMember\(\{ actor: ctx\.workspace\.role, target, next: /g) ?? []).length, 2);
+    // An invitation is found by the signed-in user's own address only, and
+    // one's own workspace cannot be left
+    assert.match(team, /id: input\.id,\s+email: normalizeInviteEmail\(ctx\.auth\.user\.email\),/);
+    assert.match(team, /workspace: \{ ownerId: \{ not: ctx\.auth\.user\.id \} \},/);
+    assert.match(read("src/trpc/routers/_app.ts"), /workspaces: workspacesRouter,/);
+
+    // In a workspace the audit line says which member it was
+    const audit = read("src/lib/audit-log.ts");
+    assert.match(audit, /target: actor \? `\$\{target \?\? ""\} \(by \$\{actor\}\)`\.trim\(\) : target \|\| null,/);
+    assert.match(read("src/features/workflows/server/routers.ts"), /userId: ctx\.workspace\.ownerId,\s+actor: ctx\.workspace\.actor,/);
+
+    // The migration: new tables, two nullable columns, and a backfill
+    // that can run twice
+    const folder = readdirSync("prisma/migrations").find((name) => name.endsWith("_workspaces"));
+    assert.ok(folder, "migration");
+    const sql = read(`prisma/migrations/${folder}/migration.sql`);
+    assert.match(sql, /ALTER TABLE "Workflow" ADD COLUMN\s+"workspaceId" TEXT;/);
+    assert.match(sql, /ALTER TABLE "Credential" ADD COLUMN\s+"workspaceId" TEXT;/);
+    for (const table of ["workspace", "workspace_member", "workspace_invite"]) {
+      assert.match(sql, new RegExp(`CREATE TABLE "${table}" \\(`), table);
+    }
+    assert.match(sql, /INSERT INTO "workspace" [\s\S]*?FROM "user" u\s+ON CONFLICT \("ownerId"\) DO NOTHING;/);
+    assert.match(sql, /INSERT INTO "workspace_member" [\s\S]*?'OWNER'[\s\S]*?ON CONFLICT \("workspaceId", "userId"\) DO NOTHING;/);
+    assert.match(sql, /UPDATE "Workflow" wf\s+SET "workspaceId" = w\."id"\s+FROM "workspace" w\s+WHERE w\."ownerId" = wf\."userId" AND wf\."workspaceId" IS NULL;/);
+    assert.match(sql, /UPDATE "Credential" c\s+SET "workspaceId" = w\."id"\s+FROM "workspace" w\s+WHERE w\."ownerId" = c\."userId" AND c\."workspaceId" IS NULL;/);
+    assert.equal(/\b(DROP|DELETE FROM|TRUNCATE|RENAME|NOT NULL DEFAULT)\b.*"(Workflow|Credential|user)"/.test(sql), false);
+    assert.equal(/\b(DROP|DELETE FROM|TRUNCATE|RENAME)\b/.test(sql), false);
   });
 
   console.log(`\n${passed} checks passed`);

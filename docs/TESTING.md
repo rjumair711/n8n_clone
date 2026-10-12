@@ -20,7 +20,7 @@ the instruction "build this workflow in the editor".
 ```bash
 npx prisma migrate deploy
 npm run dev:all
-npx tsx --conditions=react-server src/inngest/__test__/testCoreNodes.ts   # expect "265 checks passed"
+npx tsx --conditions=react-server src/inngest/__test__/testCoreNodes.ts   # expect "268 checks passed"
 ```
 
 Make a second account with a different email. Several checks need it.
@@ -429,6 +429,34 @@ Needs the `agent_evaluations` migration applied and `npm run dev:all` (the rows 
 | 19 | Delete a row, a run, then the dataset | gone; deleting the dataset removes its runs |
 | 20 | As the second account open `/workflows/<first account's id>/evaluations`, or call `evaluations.getRuns` / `startRun` with its dataset id | "Workflow not found." / "Dataset not found." |
 
+## T6f. Teams and roles
+
+Needs the `workspaces` migration applied. Use two accounts, A and B, in two browsers (or one normal and one private window). A has a workflow and a credential.
+
+| # | Do | Expect |
+|---|----|--------|
+| 1 | As A, look at the sidebar and at **Settings → Workspace and team** | a workspace picker showing "A's workspace"; A is listed as Owner. A's workflows and credentials from before are all there |
+| 2 | As A invite B's email as **Viewer** | "Invitation for … saved"; it is listed under the form, with Cancel. No email arrives |
+| 3 | As B open Settings | "Invitations for you": A's workspace, as Viewer. The sidebar says "1 workspace invitation" |
+| 4 | As B press **Accept**, then pick A's workspace in the sidebar | the app reloads in A's workspace: A's workflows, executions and credentials are listed; the usage card shows A's plan and counts |
+| 5 | As B (viewer) open a workflow, change something and Save; try Execute, delete, **Add credential**, opening a credential | each is refused: "Your role in this workspace (Viewer) cannot do this. It needs Editor or higher." (Admin for credentials). Nothing changed |
+| 6 | As A change B to **Editor**. As B (no sign-out needed) edit and save the workflow, run it, create a workflow | all work. The new workflow is in A's list, counts towards A's plan, and its runs use A's executions |
+| 7 | As B (editor) open a node that needs a credential | A's credentials can be picked by name. The Credentials page lists them; opening one, adding or deleting one is refused. No page or response shows a credential's value |
+| 8 | As B run a workflow that uses A's credential | it runs |
+| 9 | As A change B to **Admin**. As B add a credential, rename the workspace, invite a third address | all work. Inviting as Admin is not offered; A's row has no role picker and no Remove |
+| 10 | As A open **Settings → Audit log** | B's actions are there, ending in "(by b@…)" |
+| 11 | As B switch back to "B's workspace" in the sidebar | only B's own workflows and credentials; B's own plan |
+| 12 | As B open `/workflows/<id of A's workflow>` while in B's own workspace | "Workflow not found." |
+| 13 | As A press **Remove** on B. As B reload | B is back in their own workspace; A's workspace is no longer in the picker. The workflow B made stays in A's workspace |
+| 14 | Invite B again, as B accept, then **Leave this workspace** | B is back in their own workspace |
+| 15 | As B, in the browser's console set `document.cookie = "rxj-workspace=<A's workspace id>; path=/"` after being removed, reload | B's own workspace: the cookie only picks among workspaces B is a member of |
+| 16 | As A on the FREE plan with 2 credentials, as admin B add a third | refused with A's plan limit: limits are the workspace's |
+| 17 | As B in A's workspace open **Billing** | B's own plan, not A's |
+| 18 | As B use one of B's API keys against `/api/v1/workflows` | B's own workflows: an API key works in its owner's own workspace |
+| 19 | Sign up a new account | it has its own workspace from the first page on |
+
+**After the migration ran on a copy of real data**, check the backfill: `SELECT count(*) FROM "user"` equals `SELECT count(*) FROM "workspace"`, and `SELECT count(*) FROM "Workflow" WHERE "workspaceId" IS NULL` and the same for `"Credential"` are 0.
+
 ## T7. Sub-workflows
 
 Workflow A, name it `Child`: **When Executed by Another Workflow** → Set Variable (name `greeting`, value `Hello {{name}}`). Save.
@@ -657,7 +685,8 @@ It creates two temporary users (emails ending in `@tenant-test.invalid`), gives 
 - calls every tRPC procedure that takes an id (`workflows`: getOne, updateName, update, setActive, setSaveExecutionData, execute, remove; `executions`: getOne, getLatestData, retry; `credentials`: getOne, update, remove; `apiKeys`: remove);
 - calls `/api/v1` with B's API key: `GET /executions/:id`, `POST /executions/:id/retry`, `POST /workflows/:id/execute`, `GET /executions?workflowId=`;
 - asks the loaders behind `GET /api/files/:id` and `GET /api/executions/:id/nodes` for A's file and node logs;
-- checks that B's lists contain nothing of A's, and that B's workflow cannot be linked to A's credential or connected to A's nodes.
+- checks that B's lists contain nothing of A's, and that B's workflow cannot be linked to A's credential or connected to A's nodes;
+- then makes B a member of A's workspace and checks each role: a viewer reads but changes nothing and never gets a credential's value, an editor changes workflows but not credentials or members, an admin cannot touch the owner or make admins, a removed member is out at once, and an invitation can only be answered by the address it was sent to. Needs the `workspaces` migration applied.
 
 **Expect:** every line starts with `ok`, the last line is `N checks passed, 0 failed`, and the exit code is 0. Each attempt must be answered with 404, and A's records must be unchanged at the end. Both users and everything they own are deleted when it finishes, also when a check fails.
 

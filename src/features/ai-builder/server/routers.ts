@@ -25,7 +25,7 @@ import { decrypt } from "@/lib/encryption";
 import { assertOwnership } from "@/lib/ownership";
 import { AI_BUILDER_RATE_LIMIT, consumeRateLimit } from "@/lib/rate-limit";
 import { redactString } from "@/lib/redaction";
-import { createTRPCRouter, protectedProcedure } from "@/trpc/init";
+import { createTRPCRouter, editorProcedure } from "@/trpc/init";
 import {
     BUILDER_CREDENTIAL_TYPES,
     isBuilderCredentialType,
@@ -372,11 +372,11 @@ const runBuilder = async ({
 export const aiBuilderRouter = createTRPCRouter({
     // The user's credentials that can call a chat model, for the dialog's
     // "Model" list. Never the secrets.
-    getModelCredentials: protectedProcedure.query(async ({ ctx }) => {
+    getModelCredentials: editorProcedure.query(async ({ ctx }) => {
         const [own, included] = await Promise.all([
             prisma.credential.findMany({
                 where: {
-                    userId: ctx.auth.user.id,
+                    userId: ctx.workspace.ownerId,
                     type: { in: [...BUILDER_CREDENTIAL_TYPES] },
                 },
                 orderBy: { updatedAt: "desc" },
@@ -407,7 +407,7 @@ export const aiBuilderRouter = createTRPCRouter({
      * one on the canvas. Nothing is saved: the editor shows the result and
      * the user saves it, or undoes it.
      */
-    generate: protectedProcedure
+    generate: editorProcedure
         .input(
             z.object({
                 ...builderInput,
@@ -420,7 +420,7 @@ export const aiBuilderRouter = createTRPCRouter({
         )
         .mutation(({ ctx, input }) =>
             runBuilder({
-                userId: ctx.auth.user.id,
+                userId: ctx.workspace.ownerId,
                 input,
                 current: input.current,
                 history: input.history,
@@ -431,10 +431,10 @@ export const aiBuilderRouter = createTRPCRouter({
      * For the workflows list: builds a workflow from a description and
      * saves it as a new, inactive workflow.
      */
-    createWorkflow: protectedProcedure
+    createWorkflow: editorProcedure
         .input(z.object(builderInput))
         .mutation(async ({ ctx, input }) => {
-            const userId = ctx.auth.user.id;
+            const userId = ctx.workspace.ownerId;
 
             const user = await prisma.user.findUniqueOrThrow({
                 where: { id: userId },
@@ -461,7 +461,7 @@ export const aiBuilderRouter = createTRPCRouter({
                 // `active` is left at its default, false: a generated
                 // workflow never runs before its owner has looked at it
                 const created = await tx.workflow.create({
-                    data: { name: graph.name || generateSlug(3), userId },
+                    data: { name: graph.name || generateSlug(3), userId, workspaceId: ctx.workspace.id },
                 });
 
                 await tx.node.createMany({

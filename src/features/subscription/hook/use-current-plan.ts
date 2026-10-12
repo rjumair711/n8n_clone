@@ -1,12 +1,14 @@
 import { useQuery } from "@tanstack/react-query";
 
-export const useCurrentPlan = () => {
+// The plan of the workspace the browser is in (its owner's). With `own`,
+// the signed-in user's own plan: what the billing page is about.
+export const useCurrentPlan = ({ own = false }: { own?: boolean } = {}) => {
   return useQuery({
-    queryKey: ["current-plan"],
+    queryKey: own ? ["current-plan", "own"] : ["current-plan"],
 
     queryFn: async () => {
       const response = await fetch(
-        "/api/subscription/current"
+        own ? "/api/subscription/current?own=1" : "/api/subscription/current"
       );
 
       if (!response.ok) {
