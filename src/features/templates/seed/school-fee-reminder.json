@@ -1,0 +1,80 @@
+{
+  "key": "school_fee_reminder",
+  "category": "Reminders",
+  "minPlan": "PRO",
+  "nodes": [
+    {
+      "id": "schedule",
+      "type": "SCHEDULE_TRIGGER",
+      "position": { "x": 0, "y": 0 },
+      "data": { "variableName": "scheduleTrigger", "cronExpression": "0 9 1 * *" }
+    },
+    {
+      "id": "sheet",
+      "type": "GOOGLE_DRIVE",
+      "position": { "x": 320, "y": 0 },
+      "data": { "variableName": "feeSheet", "operation": "download_file", "fileId": "" }
+    },
+    {
+      "id": "rows",
+      "type": "EXTRACT_FROM_FILE",
+      "position": { "x": 640, "y": 0 },
+      "data": {
+        "variableName": "students",
+        "operation": "csv",
+        "file": "feeSheet.file",
+        "header": "yes",
+        "delimiter": "comma"
+      }
+    },
+    {
+      "id": "unpaid",
+      "type": "IF",
+      "position": { "x": 960, "y": 0 },
+      "data": {
+        "combinator": "and",
+        "conditions": [
+          { "inputKey": "item.phone", "operator": "exists", "value": "" },
+          { "inputKey": "item.status", "operator": "not_equals", "value": "paid" }
+        ]
+      }
+    },
+    {
+      "id": "remind",
+      "type": "WHATSAPP",
+      "position": { "x": 1280, "y": 0 },
+      "data": {
+        "variableName": "reminder",
+        "operation": "send_template",
+        "phoneNumberId": "",
+        "to": "{{item.phone}}",
+        "templateName": "fee_reminder",
+        "languageCode": "@text:languageCode",
+        "templateParamsJson": "[{{json item.parent}}, {{json item.student}}, {{json item.amount}}, {{json item.due}}]"
+      }
+    }
+  ],
+  "connections": [
+    { "fromNodeId": "schedule", "toNodeId": "sheet", "fromOutput": "source-1", "toInput": "target-1" },
+    { "fromNodeId": "sheet", "toNodeId": "rows", "fromOutput": "source-1", "toInput": "target-1" },
+    { "fromNodeId": "rows", "toNodeId": "unpaid", "fromOutput": "source-1", "toInput": "target-1" },
+    { "fromNodeId": "unpaid", "toNodeId": "remind", "fromOutput": "true", "toInput": "target-1" }
+  ],
+  "text": {
+    "en": {
+      "name": "School fee reminder on WhatsApp",
+      "description": "On the 1st of every month at 09:00, reads your fee list from a Google Sheet and sends a WhatsApp reminder to the parents whose status is not paid. Sheet columns (first row): student, parent, phone, amount, due, status. Write paid in status when a fee is paid. First create an approved WhatsApp template named fee_reminder, for example: \"Dear {{1}}, the school fee of {{2}} ({{3}}) is due on {{4}}. Please pay on time.\" Set up: pick your Google credential and the sheet on the Google Drive node; pick your WhatsApp credential and type your Phone Number ID on the WhatsApp node.",
+      "languageCode": "en_US"
+    },
+    "ur": {
+      "name": "واٹس ایپ پر اسکول فیس کی یاد دہانی",
+      "description": "ہر مہینے کی پہلی تاریخ کو صبح 9 بجے گوگل شیٹ سے فیس کی فہرست پڑھتا ہے اور جن والدین کا status paid نہیں انہیں واٹس ایپ پر یاد دہانی بھیجتا ہے۔ شیٹ کے کالم (پہلی سطر): student, parent, phone, amount, due, status۔ فیس ادا ہونے پر status میں paid لکھیں۔ پہلے fee_reminder نام کا واٹس ایپ ٹیمپلیٹ منظور کروائیں، مثلاً: \"محترم {{1}}، {{2}} کی اسکول فیس ({{3}}) کی آخری تاریخ {{4}} ہے۔ براہِ کرم وقت پر ادا کریں۔\" سیٹ اپ: Google Drive نوڈ پر گوگل credential اور شیٹ چنیں؛ WhatsApp نوڈ پر واٹس ایپ credential اور Phone Number ID دیں۔",
+      "languageCode": "ur"
+    },
+    "ar": {
+      "name": "تذكير بالرسوم المدرسية على واتساب",
+      "description": "في اليوم الأول من كل شهر الساعة 09:00 يقرأ قائمة الرسوم من جدول Google Sheets ويرسل تذكيراً على واتساب لأولياء الأمور الذين حالتهم ليست paid. أعمدة الجدول (الصف الأول): student, parent, phone, amount, due, status. اكتب paid في status عند سداد الرسوم. أنشئ أولاً قالب واتساب معتمداً باسم fee_reminder، مثلاً: \"عزيزي {{1}}، الرسوم المدرسية للطالب {{2}} ({{3}}) مستحقة في {{4}}. نرجو السداد في الموعد.\" الإعداد: اختر حساب Google والجدول في عقدة Google Drive؛ اختر credential واتساب واكتب Phone Number ID في عقدة WhatsApp.",
+      "languageCode": "ar"
+    }
+  }
+}

@@ -12507,6 +12507,330 @@ pour()</code></pre>
     assert.equal(/console\.(log|error|warn)/.test(router + knowledge), false);
   });
 
+  // ------------------------------------------------ LOCALIZED TEMPLATES
+  console.log("Localized templates");
+
+  const templateLanguages = await import("@/features/templates/lib/template-languages");
+  const starterTemplates = await import("@/features/templates/lib/starter-templates");
+  const allStarters = starterTemplates.buildStarterTemplates();
+  // Arabic script: Urdu and Arabic
+  const RTL_TEXT = /[؀-ۿ]/;
+
+  await test("a template has a language; the column is added with English as its default", async () => {
+    const { readFileSync, readdirSync } = await import("node:fs");
+
+    assert.deepEqual(templateLanguages.TEMPLATE_LANGUAGE_CODES, ["en", "ur", "ar"]);
+    assert.deepEqual(
+      templateLanguages.TEMPLATE_LANGUAGES.map((language) => language.dir),
+      ["ltr", "rtl", "rtl"]
+    );
+    assert.equal(templateLanguages.isTemplateLanguage("ur"), true);
+    assert.equal(templateLanguages.isTemplateLanguage("fr"), false);
+    assert.equal(templateLanguages.isTemplateLanguage(undefined), false);
+    // A value the app does not know is shown as English, not hidden
+    assert.equal(templateLanguages.getTemplateLanguage("fr").value, "en");
+    assert.equal(templateLanguages.getTemplateLanguage(null).value, "en");
+    assert.equal(templateLanguages.getTemplateLanguage("ar").dir, "rtl");
+
+    // The migration: one new column with a default, so the code that runs
+    // before the deploy keeps working and existing templates are English
+    const folder = readdirSync("prisma/migrations").find((name) => name.endsWith("_template_language"));
+    assert.ok(folder, "migration");
+    const sql = readFileSync(`prisma/migrations/${folder}/migration.sql`, "utf8").replace(/\r\n/g, "\n").trim();
+    assert.equal(
+      sql,
+      `-- AlterTable\nALTER TABLE "workflow_template" ADD COLUMN     "language" TEXT NOT NULL DEFAULT 'en';`
+    );
+    assert.match(readFileSync("prisma/schema.prisma", "utf8"), /language\s+String\s+@default\("en"\)/);
+
+    const router = readFileSync("src/features/templates/server/routers.ts", "utf8");
+    assert.match(router, /language: z\.enum\(TEMPLATE_LANGUAGE_CODES\)\.default\(DEFAULT_TEMPLATE_LANGUAGE\),/);
+    assert.match(router, /category: true,\s+language: true,/);
+
+    // The gallery filters by it
+    const gallery = readFileSync("src/features/templates/components/templates.tsx", "utf8");
+    assert.match(gallery, /language === "all" \|\| getTemplateLanguage\(item\.language\)\.value === language/);
+    assert.match(gallery, /<SelectItem value="all">All languages<\/SelectItem>/);
+  });
+
+  await test("every starter template is there in English, Urdu and Arabic", () => {
+    assert.deepEqual(
+      starterTemplates.STARTER_SEEDS.map((seed) => seed.key),
+      ["clinic_appointment_bot", "school_fee_reminder", "shop_order_bot", "real_estate_lead_bot", "support_faq_bot"]
+    );
+    assert.equal(allStarters.length, 15);
+    assert.equal(new Set(allStarters.map((starter) => starter.id)).size, 15);
+
+    for (const seed of starterTemplates.STARTER_SEEDS) {
+      assert.match(seed.key, /^[a-z_]+$/);
+      assert.deepEqual(Object.keys(seed.text).sort(), ["ar", "en", "ur"], seed.key);
+
+      // Each language has the same texts, and the nodes use every one
+      const used = [...starterTemplates.findTextKeys(seed.nodes)].sort();
+      assert.ok(used.length > 0, seed.key);
+
+      for (const language of ["en", "ur", "ar"]) {
+        assert.deepEqual(
+          Object.keys(seed.text[language]).sort(),
+          [...used, "description", "name"].sort(),
+          `${seed.key} (${language}): its texts`
+        );
+      }
+    }
+
+    for (const starter of allStarters) {
+      const label = `${starter.key} (${starter.language})`;
+
+      assert.equal(starter.id, `tpl_starter_${starter.key}_${starter.language}`);
+      assert.match(starter.id, /^tpl_[a-z_]+$/);
+      // What the admin's edit form accepts
+      assert.ok(starter.name.length > 0 && starter.name.length <= 80, `${label}: name length`);
+      assert.ok(
+        starter.description.length > 0 && starter.description.length <= 600,
+        `${label}: description has ${starter.description.length} characters`
+      );
+      assert.ok(starter.category.length <= 40);
+
+      // Written in its language: Urdu and Arabic in Arabic script
+      assert.equal(RTL_TEXT.test(starter.name), starter.language !== "en", `${label}: name`);
+      assert.equal(RTL_TEXT.test(starter.description), starter.language !== "en", `${label}: description`);
+      assert.equal(JSON.stringify(starter.nodes).includes("@text:"), false, `${label}: a text was not filled in`);
+
+      const agent = starter.nodes.find((node) => node.type === "AI_AGENT");
+      if (agent) {
+        assert.equal(RTL_TEXT.test(String(agent.data.systemMessage)), starter.language !== "en", `${label}: system message`);
+        // Whatever the language, the same safety rules
+        assert.ok(String(agent.data.systemMessage).length > 400, label);
+      }
+    }
+
+    // The three versions of a template are the same workflow
+    for (const seed of starterTemplates.STARTER_SEEDS) {
+      const [english, urdu, arabic] = allStarters.filter((starter) => starter.key === seed.key);
+      const shape = (starter: typeof english) =>
+        starter.nodes.map((node) => `${node.type}:${Object.keys(node.data).sort().join(",")}`);
+
+      assert.deepEqual(shape(urdu), shape(english), seed.key);
+      assert.deepEqual(shape(arabic), shape(english), seed.key);
+      assert.deepEqual(urdu.nodeTypes, english.nodeTypes);
+    }
+
+    // Urdu and Arabic are not copies of each other
+    const urduClinic = allStarters.find((starter) => starter.id === "tpl_starter_clinic_appointment_bot_ur")!;
+    const arabicClinic = allStarters.find((starter) => starter.id === "tpl_starter_clinic_appointment_bot_ar")!;
+    assert.notEqual(urduClinic.name, arabicClinic.name);
+    // Letters Urdu has and Arabic does not
+    assert.match(urduClinic.description, /[ٹڈڑںےپچگ]/);
+    assert.equal(/[ٹڈڑںے]/.test(arabicClinic.description), false);
+
+    assert.throws(
+      () =>
+        starterTemplates.buildStarterTemplate(
+          { ...starterTemplates.STARTER_SEEDS[0], text: { en: { name: "x", description: "y" } } },
+          "en"
+        ),
+      /the text "systemMessage" is missing/
+    );
+  });
+
+  await test("starter templates are valid workflows: no secrets, a model for every agent, a plan that can run them", async () => {
+    const { readFileSync } = await import("node:fs");
+    const { scanTemplateForSecrets } = await import("@/features/templates/lib/template-secrets");
+    const { getRequiredPlanForNode } = await import("@/config/plans");
+    const { getToolParameters, getToolRisk } = await import("@/features/executions/lib/agent-tools");
+    const { toolRequiresApproval } = await import("@/lib/approvals");
+    const { instantiateTemplate } = await import("@/features/templates/lib/template-data");
+
+    const nodeTypes = new Set(
+      (/enum NodeType \{([^}]*)\}/.exec(readFileSync("prisma/schema.prisma", "utf8"))?.[1] ?? "")
+        .split(/\s+/)
+        .filter(Boolean)
+    );
+
+    for (const starter of allStarters) {
+      const label = `${starter.key} (${starter.language})`;
+      const ids = new Set(starter.nodes.map((node) => node.id));
+
+      assert.equal(ids.size, starter.nodes.length, `${label}: node ids are unique`);
+      assert.deepEqual(starter.nodeTypes, [...new Set(starter.nodes.map((node) => node.type))]);
+
+      for (const node of starter.nodes) {
+        assert.equal(nodeTypes.has(node.type), true, `${label}: ${node.type} is a node type`);
+        assert.ok(node.id.startsWith(`${starter.id}_`), label);
+        // No credential, secret or webhook URL travels with a template
+        assert.equal(
+          /credentialId|"secret"|appSecret|verifyToken|webhookUrl|workflowId/.test(JSON.stringify(node.data)),
+          false,
+          node.id
+        );
+        // A plan that can use the template can run every node of it
+        assert.equal(
+          getRequiredPlanForNode(node.type, starter.minPlan as "FREE", null),
+          null,
+          `${label}: ${node.type} needs more than ${starter.minPlan}`
+        );
+      }
+
+      assert.deepEqual(scanTemplateForSecrets(starter.nodes), [], label);
+
+      for (const connection of starter.connections) {
+        assert.equal(ids.has(connection.fromNodeId) && ids.has(connection.toNodeId), true, label);
+      }
+
+      // The engine starts it at its one trigger
+      const graph = buildGraph(starter.nodes, starter.connections);
+      const trigger = starter.nodes[0];
+      assert.match(trigger.type, /_TRIGGER$/, label);
+      assert.deepEqual(getStartNodeIds(graph, trigger.type), [trigger.id], label);
+
+      const agent = starter.nodes.find((node) => node.type === "AI_AGENT");
+
+      if (agent) {
+        const plugged = (port: string) =>
+          starter.connections
+            .filter((connection) => connection.toNodeId === agent.id && connection.toInput === port)
+            .map((connection) => starter.nodes.find((node) => node.id === connection.fromNodeId)!);
+
+        assert.deepEqual(plugged("sub-model").map((node) => node.type), ["GEMINI"], label);
+        assert.deepEqual(plugged("sub-memory").map((node) => node.type), ["BUFFER_MEMORY"], label);
+        assert.equal(agent.data.promptType, "auto");
+
+        // Each tool has its name and description under its own node id,
+        // fields the model fills in, and runs without a person's approval
+        const tools = plugged("sub-tools");
+        const settings = (agent.data.toolSettings ?? {}) as Record<
+          string,
+          { name: string; description: string; requireApproval?: boolean }
+        >;
+        assert.deepEqual(Object.keys(settings).sort(), tools.map((tool) => tool.id).sort(), label);
+
+        for (const tool of tools) {
+          assert.match(settings[tool.id].name, /^[a-z_]+$/);
+          assert.ok(settings[tool.id].description.length > 20);
+          assert.ok(String(agent.data.systemMessage).includes(settings[tool.id].name), `${label}: the prompt names the tool`);
+          assert.ok(getToolParameters(tool.type, tool.data).length >= 4, label);
+          assert.equal(getToolRisk(tool.type, tool.data), "write");
+          assert.equal(
+            toolRequiresApproval({
+              saved: settings[tool.id].requireApproval,
+              risk: "write",
+              defaultByRisk: agent.data.toolApprovalDefault === "risk",
+            }),
+            false,
+            label
+          );
+          // Who wrote is taken from WhatsApp, not asked from the model
+          assert.match(String(tool.data.rowData), /\{\{whatsapp\.from\}\}/);
+        }
+      }
+
+      // A WhatsApp bot answers the person who wrote, from the number they wrote to
+      if (trigger.type === "WHATSAPP_TRIGGER") {
+        const reply = starter.nodes.find((node) => node.type === "WHATSAPP")!;
+        assert.equal(reply.data.to, "{{whatsapp.from}}");
+        assert.equal(reply.data.phoneNumberId, "{{whatsapp.phoneNumberId}}");
+        assert.equal(reply.data.message, "{{aiAgentOutput.output}}");
+        assert.deepEqual(trigger.data, {});
+      }
+
+      // Using it gives the user nodes of their own, tools still named
+      let next = 0;
+      const copy = instantiateTemplate(starter.nodes, starter.connections, () => `copy${++next}`);
+      const copiedAgent = copy.nodes.find((node) => node.type === "AI_AGENT");
+      if (copiedAgent?.data.toolSettings) {
+        const copiedIds = new Set(copy.nodes.map((node) => node.id));
+        assert.ok(Object.keys(copiedAgent.data.toolSettings).every((id) => copiedIds.has(id)), label);
+        assert.ok(Object.keys(copiedAgent.data.toolSettings).length > 0, label);
+      }
+    }
+
+    // The FAQ bot is a public website chat once it is activated
+    const { parseChatWidgetSettings } = await import("@/lib/chat-widget");
+    const faq = allStarters.find((starter) => starter.id === "tpl_starter_support_faq_bot_ur")!;
+    const widget = parseChatWidgetSettings(faq.nodes[0].data);
+    assert.equal(widget.public, true);
+    assert.equal(widget.title, "سپورٹ");
+    assert.equal(widget.direction, "rtl");
+  });
+
+  await test("the fee reminder messages only parents who have not paid, in the template's language", async () => {
+    const reminders = allStarters.filter((starter) => starter.key === "school_fee_reminder");
+
+    assert.deepEqual(
+      reminders.map((starter) => starter.nodes.find((node) => node.type === "WHATSAPP")!.data.languageCode),
+      ["en_US", "ur", "ar"]
+    );
+
+    const [english, urdu] = reminders;
+    assert.deepEqual(english.nodeTypes, ["SCHEDULE_TRIGGER", "GOOGLE_DRIVE", "EXTRACT_FROM_FILE", "IF", "WHATSAPP"]);
+
+    const byType = (type: string) => english.nodes.find((node) => node.type === type)!;
+    // The sheet arrives as CSV, and its rows are read from that file
+    assert.equal(byType("GOOGLE_DRIVE").data.operation, "download_file");
+    assert.equal(byType("EXTRACT_FROM_FILE").data.file, `${byType("GOOGLE_DRIVE").data.variableName}.file`);
+    assert.equal(byType("EXTRACT_FROM_FILE").data.operation, "csv");
+
+    const check = async (item: Record<string, string>) =>
+      ((await chatbotIfExecutor({ data: byType("IF").data, context: { item } } as never)) as { ifResult?: boolean })
+        .ifResult;
+
+    assert.equal(await check({ student: "Ali", parent: "Mr Khan", phone: "923001234567", amount: "5000", due: "10 Nov", status: "" }), true);
+    assert.equal(await check({ student: "Ali", parent: "Mr Khan", phone: "923001234567", amount: "5000", due: "10 Nov", status: "paid" }), false);
+    assert.equal(await check({ student: "Ali", parent: "Mr Khan", phone: "", amount: "5000", due: "10 Nov", status: "" }), false);
+
+    // Only the "true" output leads to the message
+    const send = byType("WHATSAPP");
+    assert.deepEqual(
+      english.connections.filter((connection) => connection.toNodeId === send.id).map((connection) => connection.fromOutput),
+      ["true"]
+    );
+    assert.equal(send.data.operation, "send_template");
+    assert.equal(send.data.to, "{{item.phone}}");
+
+    // The template's variables are valid JSON, also with Urdu names and quotes
+    const params = JSON.parse(
+      renderTemplate(String(urdu.nodes.find((node) => node.type === "WHATSAPP")!.data.templateParamsJson), {
+        item: { parent: 'جناب "خان"', student: "علی", amount: "5000", due: "10 نومبر" },
+      })
+    );
+    assert.deepEqual(params, ['جناب "خان"', "علی", "5000", "10 نومبر"]);
+    // The description shows the message with its four variables
+    for (const starter of reminders) {
+      assert.match(starter.description, /\{\{1\}\}[^]*\{\{2\}\}[^]*\{\{3\}\}[^]*\{\{4\}\}/, starter.language);
+      assert.match(starter.description, /fee_reminder/);
+    }
+  });
+
+  await test("only an admin adds starter templates, and adding them twice adds them once", async () => {
+    const { readFileSync } = await import("node:fs");
+    const router = readFileSync("src/features/templates/server/routers.ts", "utf8");
+
+    assert.match(router, /getStarters: adminProcedure\.query\(/);
+    assert.match(router, /addStarters: adminProcedure\s+\.input\(/);
+
+    const add = router.slice(router.indexOf("addStarters: adminProcedure"), router.indexOf("// ADMIN: workflows already made"));
+    // Only templates the app ships: an id that is not a starter adds nothing
+    assert.match(add, /buildStarterTemplates\(\)\.filter\(\(starter\) => wanted\.has\(starter\.id\)\)/);
+    assert.match(add, /skipDuplicates: true,/);
+    assert.match(add, /language: starter\.language,/);
+    assert.match(add, /published: input\.published,/);
+    assert.match(add, /createdById: ctx\.auth\.user\.id,/);
+    assert.match(add, /action: "template\.published",/);
+    // An existing row is never overwritten
+    assert.equal(/upsert|\.update\(|deleteMany|\.delete\(/.test(add), false);
+
+    // They are seed data for an admin, not rows a migration inserts
+    const { readdirSync } = await import("node:fs");
+    for (const folder of readdirSync("prisma/migrations")) {
+      if (folder.endsWith(".toml")) continue;
+      assert.equal(
+        readFileSync(`prisma/migrations/${folder}/migration.sql`, "utf8").includes("tpl_starter_"),
+        false,
+        folder
+      );
+    }
+  });
+
   console.log(`\n${passed} checks passed`);
 };
 
