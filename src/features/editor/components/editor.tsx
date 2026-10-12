@@ -35,6 +35,7 @@ import { useExecutionStore } from "@/features/executions/store/execution-store";
 import { useExecutionNodes } from "@/features/executions/hooks/use-execution-nodes";
 import { useExecutionSubscription } from "@/features/executions/hooks/use-execution-subscription";
 import { EditorBuildWithAi } from "@/features/ai-builder/components/editor-build-with-ai";
+import { usePinNode } from "@/features/executions/components/node-test-actions";
 
 // 1. Import your AI Agent Dialog component
 
@@ -67,6 +68,9 @@ export const Editor = ({ workflowId }: { workflowId: string }) => {
     // LIVE EXECUTION NODES
     // =====================================
     const { data: executionNodes = [] } = useExecutionNodes(activeExecutionId ?? undefined);
+
+    // "Pin this output" in the logs: the output of the run that is shown
+    const pinNode = usePinNode(workflowId);
 
     // =====================================
     // WORKFLOW
@@ -120,6 +124,24 @@ export const Editor = ({ workflowId }: { workflowId: string }) => {
                 : undefined,
         error: node.error,
         output: node.output ? JSON.stringify(node.output, null, 2) : undefined,
+        dataSource:
+            node.dataSource === "pinned" || node.dataSource === "saved"
+                ? node.dataSource
+                : undefined,
+        // A node that ran and whose output was stored, and is still on the canvas
+        onPin:
+            node.status === "SUCCESS" &&
+            node.output &&
+            !node.dataSource &&
+            activeExecutionId &&
+            nodes.some((canvasNode) => canvasNode.id === node.nodeId)
+                ? () =>
+                    pinNode.mutate({
+                        id: workflowId,
+                        nodeId: node.nodeId,
+                        executionId: activeExecutionId,
+                    })
+                : undefined,
     }));
 
     // =====================================

@@ -12831,6 +12831,432 @@ pour()</code></pre>
     }
   });
 
+  // -------------------------------------- PINNED DATA AND PARTIAL RUNS
+  console.log("Pinned data and partial execution");
+
+  const { applyNodeData, getNodeContribution } = await import("@/inngest/items");
+  const { planPartialRun, getActiveOutputs: engineActiveOutputs, RERUN_UPSTREAM_TYPES } = await import(
+    "@/inngest/engine"
+  );
+
+  await test("what a node added to the workflow's data is what gets pinned", () => {
+    // Only what is new or changed, not what earlier nodes had put there
+    assert.deepEqual(
+      getNodeContribution({
+        input: { webhook: { body: { id: 7 } }, counter: 1, same: { a: [1, 2] } },
+        output: { webhook: { body: { id: 7 } }, counter: 2, same: { a: [1, 2] }, myApiCall: { status: 200 } },
+        isStart: false,
+      }),
+      { counter: 2, myApiCall: { status: 200 } }
+    );
+
+    // A trigger: everything the run started with
+    assert.deepEqual(
+      getNodeContribution({
+        input: { webhook: { body: { id: 7 } } },
+        output: { webhook: { body: { id: 7 } } },
+        isStart: true,
+      }),
+      { webhook: { body: { id: 7 } } }
+    );
+
+    // A router's decision is kept, also when an earlier IF had decided the same
+    assert.deepEqual(
+      getNodeContribution({
+        input: { ifResult: true, order: 1 },
+        output: { ifResult: true, order: 1, if: { result: true } },
+        isStart: false,
+      }),
+      { ifResult: true, if: { result: true } }
+    );
+
+    // The links of the run it came from are not part of it
+    assert.deepEqual(
+      getNodeContribution({
+        input: {},
+        output: { execution: { resumeUrl: "https://app/resume/[redacted]", formUrl: "x" }, manual: true },
+        isStart: true,
+      }),
+      { manual: true }
+    );
+    assert.deepEqual(
+      getNodeContribution({
+        input: {},
+        output: { execution: { id: "exec_1", error: { message: "boom" }, resumeUrl: "x" } },
+        isStart: true,
+      }),
+      { execution: { id: "exec_1", error: { message: "boom" } } }
+    );
+
+    // No stored output: nothing
+    assert.deepEqual(getNodeContribution({ input: null, output: null, isStart: false }), {});
+    assert.deepEqual(getNodeContribution({ input: null, output: { a: 1 }, isStart: false }), { a: 1 });
+  });
+
+  await test("pinned data stands in for a node: variables, branch and list items", () => {
+    const outputs = (node: { type: string; data?: unknown }, context: Record<string, unknown>) =>
+      engineActiveOutputs(node as never, context);
+
+    // An ordinary node: its variables go into the data; this run's links stay
+    const plain = applyNodeData({
+      node: { id: "http", type: "HTTP_REQUEST", data: { variableName: "myApiCall" } },
+      context: { webhook: { id: 1 }, execution: { resumeUrl: "this-run" } },
+      items: null,
+      data: { myApiCall: { status: 200 }, execution: { id: "old" } },
+      getActiveOutputs: outputs,
+    });
+    assert.deepEqual(plain.context, {
+      webhook: { id: 1 },
+      myApiCall: { status: 200 },
+      execution: { id: "old", resumeUrl: "this-run" },
+    });
+    assert.equal(plain.outputItems, null);
+
+    // A list node: its list becomes the items of the next nodes
+    const list = applyNodeData({
+      node: { id: "split", type: "SPLIT_OUT", data: { variableName: "rows" } },
+      context: {},
+      items: null,
+      data: { rows: { items: [{ n: 1 }, { n: 2 }], count: 2 } },
+      getActiveOutputs: outputs,
+    });
+    assert.deepEqual(list.outputItems, {
+      "*": [
+        { json: { n: 1 }, vars: {} },
+        { json: { n: 2 }, vars: {} },
+      ],
+    });
+
+    // A node that ran once per item: each saved result goes back to its item
+    const incoming = [
+      { json: { n: 1 }, vars: { earlier: "a" } },
+      { json: { n: 2 }, vars: { earlier: "b" } },
+    ];
+    const perItem = applyNodeData({
+      node: { id: "http", type: "HTTP_REQUEST", data: { variableName: "call" } },
+      context: {},
+      items: incoming,
+      data: { call: { items: ["first", "second"], count: 2 } },
+      getActiveOutputs: outputs,
+    });
+    assert.deepEqual(perItem.outputItems, {
+      "*": [
+        { json: "first", vars: { earlier: "a", call: "first" } },
+        { json: "second", vars: { earlier: "b", call: "second" } },
+      ],
+    });
+
+    // Another number of items than was saved: the items pass on as they came
+    const mismatch = applyNodeData({
+      node: { id: "http", type: "HTTP_REQUEST", data: { variableName: "call" } },
+      context: {},
+      items: incoming.slice(0, 1),
+      data: { call: { items: ["first", "second"], count: 2 } },
+      getActiveOutputs: outputs,
+    });
+    assert.deepEqual(mismatch.outputItems, { "*": incoming.slice(0, 1) });
+
+    // A pinned IF sends the items the way it was pinned
+    const decided = applyNodeData({
+      node: { id: "if", type: "IF" },
+      context: {},
+      items: incoming,
+      data: { ifResult: false },
+      getActiveOutputs: outputs,
+    });
+    assert.deepEqual(Object.keys(decided.outputItems ?? {}), ["false"]);
+
+    // No decision was saved (it ran once per item): every output
+    const undecided = applyNodeData({
+      node: { id: "if", type: "IF" },
+      context: {},
+      items: incoming,
+      data: {},
+      getActiveOutputs: outputs,
+    });
+    assert.deepEqual(Object.keys(undecided.outputItems ?? {}), ["*"]);
+
+    // An Aggregate ends the list
+    assert.equal(
+      applyNodeData({
+        node: { id: "agg", type: "AGGREGATE", data: { variableName: "all" } },
+        context: {},
+        items: incoming,
+        data: { all: [1, 2] },
+        getActiveOutputs: outputs,
+      }).outputItems,
+      null
+    );
+  });
+
+  // start → fetch → check ─true→ send → log
+  //                       └false→ skip        other (a second branch off fetch)
+  // agent has a model plugged into it
+  const partialNodes = [
+    { id: "start", type: "MANUAL_TRIGGER" },
+    { id: "fetch", type: "HTTP_REQUEST", data: { variableName: "fetched" } },
+    { id: "check", type: "IF" },
+    { id: "send", type: "AI_AGENT", data: { variableName: "sent" } },
+    { id: "model", type: "CHAT_MODEL" },
+    { id: "log", type: "GOOGLE_SHEETS", data: { variableName: "logged" } },
+    { id: "skip", type: "SLACK", data: { variableName: "skipped" } },
+    { id: "other", type: "EMAIL_SEND", data: { variableName: "mailed" } },
+  ];
+  const partialEdge = (fromNodeId: string, toNodeId: string, fromOutput = "source-1", toInput = "target-1") => ({
+    fromNodeId,
+    toNodeId,
+    fromOutput,
+    toInput,
+  });
+  const partialGraph = buildGraph(partialNodes, [
+    partialEdge("start", "fetch"),
+    partialEdge("fetch", "check"),
+    partialEdge("fetch", "other"),
+    partialEdge("check", "send", "true", "flow-in"),
+    partialEdge("check", "skip", "false"),
+    partialEdge("model", "send", "source-1", "sub-model"),
+    partialEdge("send", "log", "flow-out"),
+  ]);
+
+  await test("a partial run covers the nodes before the chosen one, the node, and for Run from here what follows", () => {
+    const only = planPartialRun(partialGraph, "send", "node");
+    assert.ok(!("problem" in only));
+    assert.deepEqual(only.upstreamIds, ["start", "fetch", "check"]);
+    assert.deepEqual(only.rootIds, ["start"]);
+    assert.deepEqual([...only.scope].sort(), ["check", "fetch", "send", "start"]);
+
+    const from = planPartialRun(partialGraph, "send", "from");
+    assert.ok(!("problem" in from));
+    assert.deepEqual([...from.scope].sort(), ["check", "fetch", "log", "send", "start"]);
+    // The other branches are never part of it
+    assert.equal(from.scope.has("other"), false);
+    assert.equal(from.scope.has("skip"), false);
+
+    // A node with nothing before it starts by itself
+    const lone = planPartialRun(buildGraph([{ id: "a", type: "CODE" }], []), "a", "from");
+    assert.ok(!("problem" in lone));
+    assert.deepEqual(lone.rootIds, []);
+    assert.deepEqual([...lone.scope], ["a"]);
+
+    assert.match((planPartialRun(partialGraph, "model", "node") as { problem: string }).problem, /plugged into/);
+    assert.match((planPartialRun(partialGraph, "start", "from") as { problem: string }).problem, /use Execute workflow/);
+    assert.match((planPartialRun(partialGraph, "gone", "node") as { problem: string }).problem, /not in the saved workflow/);
+
+    // IF, Filter and Switch decide from the data and are run again
+    assert.deepEqual([...RERUN_UPSTREAM_TYPES].sort(), ["FILTER", "IF", "SWITCH"]);
+  });
+
+  // Which nodes ran; two branches of one node run in no fixed order
+  const sameNodes = (actual: string[], expected: string[]) =>
+    assert.deepEqual([...actual].sort(), [...expected].sort());
+
+  // The run function's rule for one node, with the executors replaced by a
+  // list of what ran
+  const runTestGraph = async ({
+    pinned = {},
+    saved = {},
+    partial,
+    startNodeIds,
+    executed,
+  }: {
+    pinned?: Record<string, Record<string, unknown>>;
+    saved?: Record<string, Record<string, unknown>>;
+    partial?: { targetId: string; upstreamIds: string[]; scope: Set<string> };
+    startNodeIds?: string[];
+    executed: string[];
+  }) =>
+    runWorkflowGraph({
+      graph: partialGraph,
+      trigger: "MANUAL_TRIGGER",
+      context: {},
+      ...(partial ? { startNodeIds, scope: partial.scope } : {}),
+      runNode: async (node, context, meta) => {
+        const isTarget = partial?.targetId === node.id;
+        const data = isTarget
+          ? undefined
+          : pinned[node.id] ??
+            (partial?.upstreamIds.includes(node.id) && !RERUN_UPSTREAM_TYPES.has(node.type)
+              ? saved[node.id]
+              : undefined);
+
+        if (data) {
+          return applyNodeData({
+            node,
+            context,
+            items: meta.items,
+            data,
+            getActiveOutputs: (target, current) => engineActiveOutputs(target as never, current),
+          });
+        }
+
+        executed.push(node.id);
+
+        if (node.type === "IF") {
+          return { ...context, ifResult: (context.fetched as { ok?: boolean } | undefined)?.ok === true };
+        }
+
+        const name = (node.data as { variableName?: string } | undefined)?.variableName;
+
+        return name ? { ...context, [name]: `ran ${node.id}` } : context;
+      },
+    });
+
+  await test("a pinned node is not run in a test run, and the run follows its pinned data", async () => {
+    // Nothing pinned: everything on the way runs
+    let executed: string[] = [];
+    await runTestGraph({ executed });
+    sameNodes(executed, ["start", "fetch", "check", "other", "skip"]);
+
+    // fetch pinned with data that passes the check: it is not run, and the
+    // true branch runs with its data
+    executed = [];
+    const context = await runTestGraph({ pinned: { fetch: { fetched: { ok: true } } }, executed });
+    sameNodes(executed, ["start", "check", "send", "other", "log"]);
+    assert.deepEqual(context.fetched, { ok: true });
+
+    // The IF itself pinned to "true", against what the data says
+    executed = [];
+    await runTestGraph({ pinned: { check: { ifResult: true } }, executed });
+    sameNodes(executed, ["start", "fetch", "send", "other", "log"]);
+
+    // A pinned trigger and a pinned agent: the costly node is skipped
+    executed = [];
+    const skipped = await runTestGraph({
+      pinned: {
+        start: { webhook: { body: { id: 7 } } },
+        fetch: { fetched: { ok: true } },
+        send: { sent: { output: "pinned answer" } },
+      },
+      executed,
+    });
+    sameNodes(executed, ["check", "other", "log"]);
+    assert.deepEqual(skipped.sent, { output: "pinned answer" });
+    assert.deepEqual(skipped.webhook, { body: { id: 7 } });
+  });
+
+  await test("Run this node only and Run from here use saved or pinned data for what comes before", async () => {
+    const saved = {
+      start: { manual: true },
+      fetch: { fetched: { ok: true } },
+    };
+
+    const only = planPartialRun(partialGraph, "send", "node");
+    const from = planPartialRun(partialGraph, "send", "from");
+    assert.ok(!("problem" in only) && !("problem" in from));
+
+    // Only the node: the nodes before it are not run (the IF is, it only
+    // decides), nothing after it and no other branch
+    let executed: string[] = [];
+    let context = await runTestGraph({ saved, partial: only, startNodeIds: ["start"], executed });
+    sameNodes(executed, ["check", "send"]);
+    assert.deepEqual(context.fetched, { ok: true });
+    assert.equal(context.sent, "ran send");
+    assert.equal("logged" in context, false);
+    assert.equal("mailed" in context, false);
+
+    // From here: the node and what follows it
+    executed = [];
+    context = await runTestGraph({ saved, partial: from, startNodeIds: ["start"], executed });
+    sameNodes(executed, ["check", "send", "log"]);
+    assert.equal(context.logged, "ran log");
+
+    // Pinned data wins over saved data
+    executed = [];
+    context = await runTestGraph({
+      saved,
+      pinned: { fetch: { fetched: { ok: true, from: "pin" } } },
+      partial: only,
+      startNodeIds: ["start"],
+      executed,
+    });
+    assert.deepEqual(context.fetched, { ok: true, from: "pin" });
+
+    // The node that was asked for runs even when it is pinned; a pinned
+    // node after it is still not run
+    executed = [];
+    context = await runTestGraph({
+      saved,
+      pinned: { send: { sent: "pinned" }, log: { logged: "pinned log" } },
+      partial: from,
+      startNodeIds: ["start"],
+      executed,
+    });
+    sameNodes(executed, ["check", "send"]);
+    assert.equal(context.sent, "ran send");
+    assert.equal(context.logged, "pinned log");
+
+    // Saved data that takes the other branch never reaches the node
+    executed = [];
+    await runTestGraph({
+      saved: { ...saved, fetch: { fetched: { ok: false } } },
+      partial: only,
+      startNodeIds: ["start"],
+      executed,
+    });
+    sameNodes(executed, ["check"]);
+  });
+
+  await test("pins and partial runs are for the editor only, stay inside one workflow, and a live run ignores them", async () => {
+    const { readFileSync, readdirSync, statSync } = await import("node:fs");
+    const { join } = await import("node:path");
+    const read = (path: string) => readFileSync(join(process.cwd(), path), "utf8");
+
+    const run = read("src/inngest/functions.ts");
+
+    // Pins are only loaded when the editor asked for them
+    assert.match(run, /event\.data\.usePinnedData === true\s+\? await step\.run\("load-pinned-nodes"/);
+    // The node the user asked to run always runs, before any pin is looked at
+    assert.match(run, /if \(partialPlan\?\.targetId === node\.id\) return null;\s+if \(pinnedNodeIds\.has\(node\.id\)\) return "pinned";/);
+    // A node that is not run costs no plan check, no executor and no retry
+    assert.ok(run.indexOf("const dataSource = getNodeDataSource(node);") < run.indexOf("// Paid-plan nodes stop the run"));
+    // What is stored about it goes through the run's redaction
+    assert.match(run, /dataSource,\s+\.\.\.\(saveNodeData\s+\? \{\s+input: toJson\(redactor\.data\(context\)\),\s+output: toJson\(redactor\.data\(result\.context\)\),/);
+    // A run that never reached its node fails and says why
+    assert.match(run, /if \(partialPlan && !partialTargetReached\) \{\s+throw new NonRetriableError\(/);
+
+    // Only the editor's execute procedure sends the two flags
+    const walk = (dir: string): string[] =>
+      readdirSync(join(process.cwd(), dir)).flatMap((name) => {
+        const path = `${dir}/${name}`;
+        if (name === "generated" || name === "__test__") return [];
+        return statSync(join(process.cwd(), path)).isDirectory() ? walk(path) : /\.tsx?$/.test(name) ? [path] : [];
+      });
+    const senders = walk("src").filter((path) => /usePinnedData: true/.test(read(path)));
+    assert.deepEqual(senders, ["src/features/workflows/server/routers.ts"]);
+
+    const router = read("src/features/workflows/server/routers.ts");
+    // Every pin procedure checks the workflow's owner first
+    for (const name of ["getPinnedNodes", "pinNode", "unpinNode"]) {
+      const body = router.slice(router.indexOf(`${name}: protectedProcedure`));
+      assert.match(body.slice(0, 700), /await getOwnedWorkflow\(input\.id, ctx\.auth\.user\.id\);/, name);
+    }
+    // The pinned data itself is not sent to the browser with the list
+    assert.match(router, /select: \{ nodeId: true, executionId: true, createdAt: true \},/);
+    // A partial run's node has to be a node of this workflow
+    assert.match(router, /where: \{ id: input\.partial\.nodeId, workflowId: workflow\.id \},/);
+    // Removing a node removes its pin
+    assert.match(router, /await removeStalePins\(id, \[\.\.\.nodeIds\]\);/);
+
+    const data = read("src/features/executions/server/test-data.ts");
+    // Saved data and pins are only ever read inside the workflow
+    assert.equal((data.match(/execution: \{ workflowId \}/g) ?? []).length, 3);
+    assert.match(data, /where: \{ workflowId_nodeId: \{ workflowId, nodeId \} \},/);
+    assert.match(data, /deleteMany\(\{\s+where: \{ workflowId, nodeId \},/);
+    assert.match(data, /deleteMany\(\{\s+where: \{ workflowId, nodeId: \{ notIn: nodeIds \} \},/);
+    // The size of a pin is limited
+    assert.match(data, /if \(bytes > MAX_PINNED_DATA_BYTES\) \{/);
+
+    // The migration only adds: a table and a nullable column
+    const folder = readdirSync("prisma/migrations").find((name) => name.endsWith("_pinned_data"));
+    assert.ok(folder, "migration");
+    const sql = read(`prisma/migrations/${folder}/migration.sql`).replace(/\r\n/g, "\n");
+    assert.match(sql, /ALTER TABLE "ExecutionNode" ADD COLUMN\s+"dataSource" TEXT;/);
+    assert.match(sql, /CREATE TABLE "pinned_data" \(/);
+    assert.match(sql, /CREATE UNIQUE INDEX "pinned_data_workflowId_nodeId_key" ON "pinned_data"\("workflowId", "nodeId"\);/);
+    assert.match(sql, /REFERENCES "Workflow"\("id"\) ON DELETE CASCADE ON UPDATE CASCADE;/);
+    assert.equal(/\b(DROP|DELETE|TRUNCATE|UPDATE "|RENAME|NOT NULL;)/.test(sql.replace(/ON (DELETE|UPDATE) CASCADE/g, "")), false);
+  });
+
   console.log(`\n${passed} checks passed`);
 };
 

@@ -320,3 +320,181 @@ export const runNodeForItems = async ({
 
   return { context: finalContext, outputItems: routed };
 };
+
+// =========================================================================
+// PINNED AND SAVED DATA
+// =========================================================================
+// In a test run a node can be given the data it produced in an earlier run
+// instead of being run: a pinned node, or (when only part of a workflow is
+// run) a node upstream of the part that runs. The data is what the node
+// added to the workflow's data in that earlier run.
+
+// Set for each run by the engine; never part of what a node produced
+const RUN_LINK_KEYS = ["resumeUrl", "formUrl"];
+
+const isPlainObject = (value: unknown): value is Record<string, unknown> =>
+  value !== null && typeof value === "object" && !Array.isArray(value);
+
+const isSameValue = (a: unknown, b: unknown): boolean => {
+  if (a === b) return true;
+  if (a === null || b === null || typeof a !== "object" || typeof b !== "object") {
+    return false;
+  }
+
+  if (Array.isArray(a) !== Array.isArray(b)) return false;
+
+  const keysA = Object.keys(a as object);
+  const keysB = Object.keys(b as object);
+
+  return (
+    keysA.length === keysB.length &&
+    keysA.every(
+      (key) =>
+        key in (b as object) &&
+        isSameValue(
+          (a as Record<string, unknown>)[key],
+          (b as Record<string, unknown>)[key]
+        )
+    )
+  );
+};
+
+/**
+ * What a node added to the workflow's data: the variables of its saved
+ * output that are not in its saved input, or differ from it. For a node
+ * that starts the workflow (a trigger) it is everything the run started
+ * with. A router's decision is always part of it, also when an earlier node
+ * had decided the same.
+ */
+export const getNodeContribution = ({
+  input,
+  output,
+  isStart,
+}: {
+  input: unknown;
+  output: unknown;
+  // The node has nothing before it
+  isStart: boolean;
+}): Record<string, unknown> => {
+  if (!isPlainObject(output)) return {};
+
+  const before = isPlainObject(input) ? input : {};
+  const contribution: Record<string, unknown> = {};
+
+  for (const [key, value] of Object.entries(output)) {
+    if (
+      isStart ||
+      ROUTING_KEYS.has(key) ||
+      !(key in before) ||
+      !isSameValue(before[key], value)
+    ) {
+      contribution[key] = value;
+    }
+  }
+
+  // {{execution.resumeUrl}} belongs to the run the data was taken from
+  if (isPlainObject(contribution.execution)) {
+    const execution = Object.fromEntries(
+      Object.entries(contribution.execution).filter(
+        ([key]) => !RUN_LINK_KEYS.includes(key)
+      )
+    );
+
+    if (Object.keys(execution).length > 0) contribution.execution = execution;
+    else delete contribution.execution;
+  }
+
+  return contribution;
+};
+
+const mergeNodeData = (
+  context: WorkflowContext,
+  data: Record<string, unknown>
+): WorkflowContext => {
+  const merged: WorkflowContext = { ...context, ...data };
+
+  // This run's own links stay
+  if (isPlainObject(context.execution) && isPlainObject(data.execution)) {
+    merged.execution = {
+      ...data.execution,
+      ...Object.fromEntries(
+        RUN_LINK_KEYS.filter((key) => key in (context.execution as object)).map(
+          (key) => [key, (context.execution as Record<string, unknown>)[key]]
+        )
+      ),
+    };
+  }
+
+  return merged;
+};
+
+/**
+ * Stands in for running a node: its pinned or saved data is put into the
+ * workflow's data, and the run goes on through the outputs that data leads
+ * to. A list node's list becomes the items of the next nodes, as it does
+ * when the node runs.
+ */
+export const applyNodeData = ({
+  node,
+  context,
+  items,
+  data,
+  getActiveOutputs,
+}: {
+  node: ItemNode;
+  context: WorkflowContext;
+  // The items arriving at the node; null when there are none
+  items: StreamItem[] | null;
+  data: Record<string, unknown>;
+  getActiveOutputs: (
+    node: ItemNode,
+    context: WorkflowContext
+  ) => string[] | null;
+}): NodeRunResult => {
+  const merged = mergeNodeData(context, data);
+
+  const list = LIST_OUTPUT_TYPES.has(node.type)
+    ? readOutputList(node, merged)
+    : null;
+
+  if (list) {
+    return {
+      context: merged,
+      outputItems: { [ALL_OUTPUTS]: list.map((json) => ({ json, vars: {} })) },
+    };
+  }
+
+  if (!items || LIST_END_TYPES.has(node.type)) {
+    return { context: merged, outputItems: null };
+  }
+
+  const isRouter = ROUTER_TYPES.has(node.type);
+  const variableName = getVariableName(node);
+
+  // A node that ran once per item saved every item's result under its
+  // variable: each result goes back to its item
+  const saved = variableName
+    ? (data[variableName] as { items?: unknown } | null)?.items
+    : undefined;
+
+  const next: StreamItem[] =
+    !isRouter && Array.isArray(saved) && saved.length === items.length
+      ? items.map((item, index) => ({
+          json: saved[index],
+          vars: { ...item.vars, [variableName as string]: saved[index] },
+        }))
+      : items;
+
+  // A router that ran once per item saved no single decision: the items go
+  // on through every output
+  const decided =
+    !isRouter || Object.keys(data).some((key) => ROUTING_KEYS.has(key));
+  const handles = decided ? getActiveOutputs(node, merged) : null;
+
+  return {
+    context: merged,
+    outputItems: handles
+      ? Object.fromEntries(handles.map((handle) => [handle, next]))
+      : { [ALL_OUTPUTS]: next },
+  };
+};

@@ -10,6 +10,7 @@ import {
     Copy,
     ListTree,
     LoaderCircle,
+    Pin,
     Trash2,
     XCircle,
 } from "lucide-react";
@@ -32,7 +33,17 @@ export interface ExecutionLog {
     error?: string;
     // Pretty-printed JSON
     output?: string;
+    // The node was not run: its pinned data, or the data of an earlier run
+    // (a partial run), was used
+    dataSource?: "pinned" | "saved";
+    // Pins this output; absent when there is nothing to pin
+    onPin?: () => void;
 }
+
+const DATA_SOURCE_LABELS = {
+    pinned: "Not run: pinned data",
+    saved: "Not run: data of its last run",
+} as const;
 
 interface ExecutionSidebarProps {
     logs: ExecutionLog[];
@@ -308,6 +319,22 @@ export const ExecutionSidebar = ({ logs, onClear }: ExecutionSidebarProps) => {
                                                     </>
                                                 )}
                                             </p>
+                                            {log.dataSource && (
+                                                <p className="text-xs text-violet-600 dark:text-violet-400">
+                                                    {DATA_SOURCE_LABELS[log.dataSource]}
+                                                </p>
+                                            )}
+                                            {log.onPin && (
+                                                <button
+                                                    type="button"
+                                                    onClick={log.onPin}
+                                                    title="In runs from the editor this node is then not run again: this output is used"
+                                                    className="mt-1 flex items-center gap-1 text-xs font-medium text-muted-foreground transition-colors hover:text-foreground"
+                                                >
+                                                    <Pin className="size-3" />
+                                                    Pin this output
+                                                </button>
+                                            )}
 
                                             {log.error && (
                                                 <div className="relative mt-2 rounded-md border border-red-200 bg-red-50 p-2.5 pr-10 text-xs leading-relaxed text-red-700 dark:border-red-900 dark:bg-red-950/40 dark:text-red-300">

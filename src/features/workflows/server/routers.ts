@@ -14,6 +14,13 @@ import { syncTelegramWebhooks } from "@/lib/telegram";
 import { assertOwnership } from "@/lib/ownership";
 import { describeAuditTarget } from "@/lib/audit-actions";
 import { recordAudit } from "@/lib/audit-log";
+import { PARTIAL_RUN_MODES } from "@/inngest/engine";
+import {
+    PinError,
+    pinNodeData,
+    removeStalePins,
+    unpinNodeData,
+} from "@/features/executions/server/test-data";
 
 // Every procedure that takes a workflow id starts here: a workflow that does
 // not exist and one that belongs to someone else are the same "not found"
@@ -38,6 +45,13 @@ export const workflowsRouter = createTRPCRouter({
             // Which trigger the editor's Execute button runs. Anything other
             // than the manual trigger is a test run with a sample payload.
             trigger: z.enum(TESTABLE_TRIGGERS).default(NodeType.MANUAL_TRIGGER),
+            // "Run this node only" ("node") or "Run from here" ("from"):
+            // the nodes before it are not run, their saved or pinned data
+            // is used. No trigger is started.
+            partial: z.object({
+                nodeId: z.string().min(1).max(100),
+                mode: z.enum(PARTIAL_RUN_MODES as [string, ...string[]]),
+            }).optional(),
         }))
         .mutation(async ({ input, ctx }) => {
             const user = await prisma.user.findUniqueOrThrow({
@@ -50,14 +64,29 @@ export const workflowsRouter = createTRPCRouter({
             // Runs use the saved workflow, so the trigger has to be saved too
             const triggerType = input.chat ? NodeType.CHAT_TRIGGER : input.trigger;
 
-            const triggerNode = await prisma.node.findFirst({
-                where: {
-                    workflowId: workflow.id,
-                    type: triggerType,
-                },
-            });
+            const triggerNode = input.partial
+                ? null
+                : await prisma.node.findFirst({
+                    where: {
+                        workflowId: workflow.id,
+                        type: triggerType,
+                    },
+                });
 
-            if (!triggerNode) {
+            if (input.partial) {
+                // The node of this workflow, as it was last saved
+                const target = await prisma.node.findFirst({
+                    where: { id: input.partial.nodeId, workflowId: workflow.id },
+                    select: { id: true },
+                });
+
+                if (!target) {
+                    throw new TRPCError({
+                        code: "BAD_REQUEST",
+                        message: "That node is not in the saved workflow. Save the workflow and try again.",
+                    });
+                }
+            } else if (!triggerNode) {
                 throw new TRPCError({
                     code: "BAD_REQUEST",
 
@@ -65,12 +94,15 @@ export const workflowsRouter = createTRPCRouter({
                 });
             }
 
-            // Plan locks apply to test runs too
-            const requiredPlan = getRequiredPlanForNode(
-                triggerType,
-                user.plan,
-                user.trialEndsAt
-            );
+            // Plan locks apply to test runs too. In a partial run no trigger
+            // runs; each node that does is checked when it runs.
+            const requiredPlan = input.partial
+                ? null
+                : getRequiredPlanForNode(
+                    triggerType,
+                    user.plan,
+                    user.trialEndsAt
+                );
 
             if (requiredPlan) {
                 throw new TRPCError({
@@ -116,11 +148,13 @@ export const workflowsRouter = createTRPCRouter({
 
                         status: "RUNNING",
 
-                        triggerSource: input.chat
-                            ? TRIGGER_SOURCES.CHAT
-                            : input.trigger === NodeType.MANUAL_TRIGGER
-                                ? TRIGGER_SOURCES.MANUAL
-                                : TRIGGER_SOURCES.MANUAL_TEST,
+                        triggerSource: input.partial
+                            ? TRIGGER_SOURCES.MANUAL_TEST
+                            : input.chat
+                                ? TRIGGER_SOURCES.CHAT
+                                : input.trigger === NodeType.MANUAL_TRIGGER
+                                    ? TRIGGER_SOURCES.MANUAL
+                                    : TRIGGER_SOURCES.MANUAL_TEST,
                     },
                 });
 
@@ -129,7 +163,14 @@ export const workflowsRouter = createTRPCRouter({
                 executionId:
                     execution.id,
 
-                ...(input.chat
+                // A run from the editor: pinned nodes are not run, their
+                // pinned data is used. Webhooks, schedules and the public
+                // chat never send this.
+                usePinnedData: true,
+
+                ...(input.partial
+                    ? { partial: input.partial, InitialData: {} }
+                    : input.chat
                     ? {
                         trigger: NodeType.CHAT_TRIGGER,
                         InitialData: {
@@ -145,7 +186,7 @@ export const workflowsRouter = createTRPCRouter({
                         trigger: input.trigger,
                         InitialData: buildTestPayload(
                             input.trigger,
-                            (triggerNode.data ?? {}) as Record<string, unknown>
+                            (triggerNode?.data ?? {}) as Record<string, unknown>
                         ),
                     }),
             });
@@ -237,6 +278,54 @@ export const workflowsRouter = createTRPCRouter({
 
         return workflow;
     }),
+
+    // PINNED DATA
+    // The nodes of a workflow that have pinned data, for the editor
+    getPinnedNodes: protectedProcedure
+        .input(z.object({ id: z.string() }))
+        .query(async ({ ctx, input }) => {
+            await getOwnedWorkflow(input.id, ctx.auth.user.id);
+
+            // Which nodes and since when; the data itself stays on the server
+            return prisma.pinnedData.findMany({
+                where: { workflowId: input.id },
+                select: { nodeId: true, executionId: true, createdAt: true },
+            });
+        }),
+
+    // Pins a node's output: from the given execution, or from the newest
+    // run that has it. In runs from the editor the node is then not run.
+    pinNode: protectedProcedure
+        .input(z.object({
+            id: z.string(),
+            nodeId: z.string().min(1).max(100),
+            executionId: z.string().min(1).max(100).optional(),
+        }))
+        .mutation(async ({ ctx, input }) => {
+            await getOwnedWorkflow(input.id, ctx.auth.user.id);
+
+            try {
+                return await pinNodeData({
+                    workflowId: input.id,
+                    nodeId: input.nodeId,
+                    executionId: input.executionId,
+                });
+            } catch (error) {
+                if (error instanceof PinError) {
+                    throw new TRPCError({ code: "BAD_REQUEST", message: error.message });
+                }
+
+                throw error;
+            }
+        }),
+
+    unpinNode: protectedProcedure
+        .input(z.object({ id: z.string(), nodeId: z.string().min(1).max(100) }))
+        .mutation(async ({ ctx, input }) => {
+            await getOwnedWorkflow(input.id, ctx.auth.user.id);
+
+            return { removed: await unpinNodeData(input.id, input.nodeId) };
+        }),
 
     // DELETE WORKFLOW
     remove: protectedProcedure
@@ -440,6 +529,9 @@ export const workflowsRouter = createTRPCRouter({
                 })
                 return workflow;
             })
+
+            // A node that was removed takes its pinned data with it
+            await removeStalePins(id, [...nodeIds]);
 
             // A Telegram Trigger added or changed while the workflow is
             // active needs its webhook registered right away

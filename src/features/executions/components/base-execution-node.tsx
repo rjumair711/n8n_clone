@@ -21,6 +21,7 @@ import { type NodeStatus, NodeStatusIndicator } from "@/components/react-flow/no
 import { cn } from "@/lib/utils";
 import { useNodeStatus } from "../hooks/use-node-status";
 import { NodeErrorSettings } from "@/components/node-error-settings";
+import { NodeTestActions, PinnedBadge } from "./node-test-actions";
 
 interface BaseExecutionNodeProps extends NodeProps {
     icon: LucideIcon | string;
@@ -74,7 +75,12 @@ export const BaseExecutionNode = memo(
                 description={description}
                 onDelete={handleDelete}
                 onSettings={onSettings}
-                extraActions={<NodeErrorSettings nodeId={id} />}
+                extraActions={
+                    <>
+                        <NodeErrorSettings nodeId={id} />
+                        <NodeTestActions nodeId={id} />
+                    </>
+                }
             >
                 <NodeStatusIndicator
                     status={status}
@@ -90,6 +96,7 @@ export const BaseExecutionNode = memo(
                             status === "error" && "shadow-lg shadow-red-500/20"
                         )}
                     >
+                        <PinnedBadge nodeId={id} />
                         <BaseNodeContent
                             className="justify-center"
                             style={
