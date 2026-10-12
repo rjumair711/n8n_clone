@@ -1,3 +1,4 @@
+import { readCredentialValue } from "@/lib/external-secrets";
 import "server-only";
 
 import { google } from "googleapis";
@@ -79,9 +80,10 @@ export const getGoogleAuthFromCredential = (
  * Auth for the Google nodes that accept either kind of credential: a
  * "Google account" (OAuth sign-in) or the older service account.
  */
-export const getGoogleAuth = (
+export const getGoogleAuth = async (
   label: string,
-  credential: { type: string; value: string },
+  // `userId`: whose secret stores a service account may read from
+  credential: { type: string; value: string; userId: string },
   scopes: string[]
 ) => {
   if (credential.type === "GOOGLE_OAUTH2") {
@@ -95,7 +97,7 @@ export const getGoogleAuth = (
   };
 
   try {
-    serviceAccount = JSON.parse(decrypt(credential.value));
+    serviceAccount = JSON.parse(await readCredentialValue(credential.value, credential.userId));
   } catch {
     throw new NonRetriableError(`${label} node: Invalid credential format`);
   }

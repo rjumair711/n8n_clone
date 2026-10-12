@@ -4,7 +4,7 @@ import { cache } from 'react';
 import { headers } from 'next/headers'
 import superjson from "superjson"
 import { polarClient } from '@/lib/polar';
-import { resolveWorkspace } from '@/lib/workspaces';
+import { PRODUCTION_MESSAGE, isProductionWorkspace, resolveWorkspace } from '@/lib/workspaces';
 import { hasRole, roleError, type WorkspaceRole } from '@/lib/workspace-roles';
 
 
@@ -94,6 +94,16 @@ const requireRole = (needed: WorkspaceRole) =>
 export const viewerProcedure = requireRole("VIEWER")
 // Builds and runs workflows
 export const editorProcedure = requireRole("EDITOR")
+// Builds or changes workflows by hand. Refused in a production workspace,
+// where workflows only change by a pull from Git; running a workflow and
+// turning it on or off use editorProcedure.
+export const builderProcedure = editorProcedure.use(({ ctx, next }) => {
+  if (isProductionWorkspace(ctx.workspace)) {
+    throw new TRPCError({ code: "FORBIDDEN", message: PRODUCTION_MESSAGE })
+  }
+
+  return next()
+})
 // Credentials, budgets, members
 export const workspaceAdminProcedure = requireRole("ADMIN")
 export const ownerProcedure = requireRole("OWNER")

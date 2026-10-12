@@ -27,6 +27,8 @@ export type ActiveWorkspace = {
   role: WorkspaceRole;
   // The signed-in user's own workspace
   personal: boolean;
+  // "production": workflows are not edited by hand, they are pulled from Git
+  environment: string;
   // Who did it, for the audit log, when it was not the owner
   actor?: string;
 };
@@ -40,7 +42,7 @@ type SessionUser = { id: string; name?: string | null; email?: string | null };
 export const ensurePersonalWorkspace = async (user: SessionUser) => {
   const existing = await prisma.workspace.findUnique({
     where: { ownerId: user.id },
-    select: { id: true, name: true },
+    select: { id: true, name: true, environment: true },
   });
 
   if (existing) return existing;
@@ -54,7 +56,7 @@ export const ensurePersonalWorkspace = async (user: SessionUser) => {
       ownerId: user.id,
       members: { create: { userId: user.id, role: "OWNER" } },
     },
-    select: { id: true, name: true },
+    select: { id: true, name: true, environment: true },
   });
 
   // Rows made by code from before workspaces (a deployment that was still
@@ -100,7 +102,7 @@ export const resolveWorkspace = async (
       where: { workspaceId_userId: { workspaceId: picked, userId: user.id } },
       select: {
         role: true,
-        workspace: { select: { id: true, name: true, ownerId: true } },
+        workspace: { select: { id: true, name: true, ownerId: true, environment: true } },
       },
     });
 
@@ -114,6 +116,7 @@ export const resolveWorkspace = async (
         // The owner is the owner, whatever the row says
         role: personal ? "OWNER" : membership.role === "OWNER" ? "ADMIN" : membership.role,
         personal,
+        environment: membership.workspace.environment,
         ...(personal ? {} : { actor: user.email || user.id }),
       };
     }
@@ -121,7 +124,14 @@ export const resolveWorkspace = async (
 
   const own = await ensurePersonalWorkspace(user);
 
-  return { id: own.id, name: own.name, ownerId: user.id, role: "OWNER", personal: true };
+  return {
+    id: own.id,
+    name: own.name,
+    ownerId: user.id,
+    role: "OWNER",
+    personal: true,
+    environment: own.environment,
+  };
 };
 
 /**
@@ -158,3 +168,14 @@ export const listWorkspaces = async (user: SessionUser) => {
     ),
   ];
 };
+
+export const PRODUCTION_MESSAGE =
+  "This workspace is a production environment: its workflows are not changed here. Change them in the development workspace, push, and pull here (Settings, Git sync).";
+
+/**
+ * Whether workflows may be built and changed by hand in this workspace.
+ * In a production environment they only change by a pull from Git. Turning
+ * a workflow on or off, running it and its credentials stay as they are.
+ */
+export const isProductionWorkspace = (workspace: Pick<ActiveWorkspace, "environment">) =>
+  workspace.environment === "production";

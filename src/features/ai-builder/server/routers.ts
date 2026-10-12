@@ -1,3 +1,4 @@
+import { readCredentialValue } from "@/lib/external-secrets";
 import { createId } from "@paralleldrive/cuid2";
 import { NodeType, type Prisma } from "@prisma/client";
 import { TRPCError } from "@trpc/server";
@@ -25,7 +26,7 @@ import { decrypt } from "@/lib/encryption";
 import { assertOwnership } from "@/lib/ownership";
 import { AI_BUILDER_RATE_LIMIT, consumeRateLimit } from "@/lib/rate-limit";
 import { redactString } from "@/lib/redaction";
-import { createTRPCRouter, editorProcedure } from "@/trpc/init";
+import { createTRPCRouter, editorProcedure, builderProcedure } from "@/trpc/init";
 import {
     BUILDER_CREDENTIAL_TYPES,
     isBuilderCredentialType,
@@ -171,7 +172,8 @@ export const loadBuilderModel = async (
         });
     }
 
-    const apiKey = decrypt(credential.value).trim();
+    // With what it reads from an external secret store read
+    const apiKey = (await readCredentialValue(credential.value, userId)).trim();
     const provider = PROVIDERS[credential.type];
 
     // A DeepSeek, Kimi or Qwen credential names its provider; a Chat Model
@@ -431,7 +433,7 @@ export const aiBuilderRouter = createTRPCRouter({
      * For the workflows list: builds a workflow from a description and
      * saves it as a new, inactive workflow.
      */
-    createWorkflow: editorProcedure
+    createWorkflow: builderProcedure
         .input(z.object(builderInput))
         .mutation(async ({ ctx, input }) => {
             const userId = ctx.workspace.ownerId;

@@ -181,6 +181,47 @@ Every account has a **workspace**, and can be a member of other people's. Workfl
 * **How it is stored.** A workspace's data is kept under its owner's account: a workflow a member creates has the owner's user id and the workspace's id. That is why running a workflow, its credentials and its limits work the same for every member. Which workspace a request is for comes from a cookie that only picks among the workspaces the user is a member of; the membership and the role are read from the database on every request.
 * **Not there yet.** One workspace per account: a second workspace, moving a workflow between workspaces and handing a workspace to another owner are not possible. An API key works in its owner's own workspace. The pages do not hide what a role cannot do; the server refuses it with a message that says which role it needs.
 
+## Enterprise features
+
+Three things for companies, all under **Settings**. Git sync and external secrets belong to the workspace and are set up by its admins; they need the **Pro** plan on the workspace's owner (the free trial does not unlock them). What is already set up keeps working after a downgrade; it can no longer be changed.
+
+### Environments and Git sync
+
+A workspace's workflows can be kept as JSON files in a GitHub repository, one file per workflow (`workflows/<id>.json`).
+
+* **Set up.** Pick the repository (`owner/name`), a branch that exists, a folder, and a **GitHub credential** of the workspace whose token can reach the repository ("Contents: read and write" to push). Say whether the workspace is **development** or **production**.
+* **Push** (development only) writes every workflow of the workspace to the branch as one commit, and removes the files of workflows that are gone. Nothing is committed when the branch already holds the same. A push is never forced: when the branch moved in the meantime GitHub refuses it.
+* **Pull** makes the workspace's workflows what the files say: a file of a workflow the workspace has replaces its nodes and connections (kept in version history, so it can be undone), any other file becomes a new, inactive workflow. A workflow whose file is not in the branch is left as it is and listed. The plan's workflow limit applies.
+* **Production** workspaces only pull. Their workflows cannot be created, edited, renamed, deleted or restored by hand ("This workspace is a production environment..."); they can still be run and turned on and off, and their credentials are managed as usual. A typical setup is two accounts' workspaces, one development and one production, on two branches or one, with the team as members of both.
+* **Credentials are never in the repository.** A file names the credential a node uses by type and name. The workspace that pulls links a credential of the same type and name; when it has none, the pull says which is needed and the node is left without one.
+* **Secrets typed into nodes stop a push.** A workflow with an API key in a header or a token in a URL is not written to a repository; the push says which workflow and what kind of secret. Move it to a credential.
+* **Ids.** A workflow keeps the id it was first pushed with. In another workspace its nodes get ids of their own, the same on every pull, so executions and pinned data stay with their node. A node that runs another workflow of the same pull is pointed at the local copy.
+* **Limits.** GitHub only (its API, with a token). Up to 300 workflows and 1 MB per file. Workflow names, the Active switch, settings, AI budgets, pinned data and evaluation datasets are not synced, only nodes and connections (and the name).
+
+### External secrets
+
+A credential can read its value from **HashiCorp Vault** (KV engine, version 1 or 2) or **AWS Secrets Manager** instead of storing it.
+
+* Add a store under Settings with a name (`vault`, `aws`...), and what reaches it: for Vault the address, a token, the KV mount and optionally a namespace; for AWS a region and an access key. These are stored encrypted and never shown again. Use a token or key that can only read the secrets that are needed.
+* In a credential's field, write a reference instead of the secret: the store's name, the secret's path or name, and after `#` the field, in double curly braces starting with `$secrets.`. The Settings card shows an example. For Vault a field is always named; an AWS secret that is one text is used whole when no field is named. A credential that is JSON (an SMTP server) can use references in any of its fields.
+* The value is read when the credential is used, kept in the server's memory for 5 minutes (`EXTERNAL_SECRETS_CACHE_SECONDS`), and never saved. A rotated secret is picked up after that time. Values that were read are removed from what is stored about a run, like every credential value.
+* **Test** on a store reads one secret and shows the names of its fields, never a value.
+* A reference only reaches the stores of the credential's own workspace. Vault is called at the address that was saved, without following redirects; an address in a private network is refused unless the operator allowed it (`PRIVATE_NETWORK_ALLOWLIST`). AWS is called at Amazon's own address for the region.
+* Not supported: "Google account" and Salesforce credentials made by signing in (they hold tokens the app refreshes), AWS binary secrets, and Vault login methods other than a token.
+
+### Single sign-on (SSO)
+
+People of a company can sign in through its identity provider with **OpenID Connect (OIDC)**: Okta, Microsoft Entra ID, Google Workspace, Keycloak and others. On the login page they type their work email and press **Sign in with SSO**.
+
+* **Register a provider** under Settings: a short id, the email domain, the provider's issuer URL, a client ID and a client secret. At the provider, register the redirect URI the card shows. An account can register providers when it is on the Pro plan (3), or is a platform admin with two-factor on (10).
+* **The operator has to allow the provider's address first**: its origin (for example the Okta or Entra address) must be in `TRUSTED_ORIGINS`, or registering fails with "not trusted".
+* **The domain has to be proved.** After registering, the card shows a DNS TXT record. Add it at the domain and press **Verify domain**. Until then the provider signs nobody in. This is what makes it safe: only who controls a domain's DNS can have its addresses signed in through their provider.
+* **Accounts.** Someone who signs in through a provider for the first time gets an account, and joins the workspace of whoever registered the provider as a **Viewer**. Someone who already has an account with that address is signed in to it. Two-factor codes of RXJ are not asked for after an SSO sign-in: the provider is trusted to do that.
+* **SAML is not available yet.** The plugin's SAML support in the Better Auth version this app is on depends on a library version with known high-severity advisories; the fixed one needs Better Auth 1.7.7. Until that upgrade the server refuses every SAML request and no SAML provider can be registered.
+* The provider's client secret is stored by the sign-on plugin in its own table, not encrypted with `ENCRYPTION_KEY` like credentials are.
+
+**Dependencies.** `better-auth`, `@better-auth/sso`, `@better-auth/core`, `@better-auth/utils`, `@better-fetch/fetch` and `better-call` are pinned to exact versions that belong together. Upgrade them together.
+
 ## Agent evaluations
 
 Test a workflow over a set of inputs, score what it answers, and compare runs. Open it with the **Evaluations** button in the editor's header (`/workflows/<id>/evaluations`).
@@ -1267,7 +1308,8 @@ The live app on Vercel and local development use the **same** database, so the s
 | `ENCRYPTION_KEY` | Encrypts stored credentials and OAuth tokens. A long random value |
 | `ENCRYPTION_KEY_PREVIOUS` | Only while changing `ENCRYPTION_KEY`: the old key, so values written with it can still be read. See "Credential encryption and key rotation" |
 | `NEXT_PUBLIC_APP_URL` | Public address of the app; used for webhook URLs, OAuth redirects and trusted origins |
-| `TRUSTED_ORIGINS` | Extra origins allowed to sign in, comma-separated |
+| `TRUSTED_ORIGINS` | Extra origins allowed to sign in, comma-separated. Also where the address of every SSO identity provider has to be listed before it can be registered |
+| `EXTERNAL_SECRETS_CACHE_SECONDS` | How long a secret read from Vault or AWS Secrets Manager is used before it is read again, default 300. 0: read every time |
 | `ADMIN_EMAILS` | Who may publish, edit and delete workflow templates, comma-separated. The account's email must also be verified |
 | `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` | Google sign-in and the "Google account" credential. Add `<app URL>/api/oauth/google/callback` as an authorised redirect URI |
 | `GITHUB_CLIENT_ID`, `GITHUB_CLIENT_SECRET` | GitHub sign-in |

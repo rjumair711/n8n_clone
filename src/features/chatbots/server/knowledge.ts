@@ -1,9 +1,9 @@
+import { readCredentialValue } from "@/lib/external-secrets";
 import "server-only";
 
 import { createHash } from "crypto";
 import { TRPCError } from "@trpc/server";
 import prisma from "@/lib/db";
-import { decrypt } from "@/lib/encryption";
 import { BlockedRequestError } from "@/lib/ssrf";
 import { removeMissingDocuments } from "@/lib/vector-search";
 import { getAccountAiBudgetProblem } from "@/lib/ai-usage";
@@ -145,7 +145,7 @@ const loadEmbeddingKey = async (userId: string, store: Store) => {
     );
   }
 
-  return decrypt(credential.value).trim();
+  return (await readCredentialValue(credential.value, userId)).trim();
 };
 
 /**

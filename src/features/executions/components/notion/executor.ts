@@ -1,10 +1,10 @@
+import { readCredentialValue } from "@/lib/external-secrets";
 import type { NodeExecutor } from "@/features/executions/types";
 import { renderEscapedTemplate } from "@/features/executions/lib/templates";
 import { NonRetriableError } from "inngest";
 import Handlebars from "handlebars";
 import ky from "ky";
 import prisma from "@/lib/db";
-import { decrypt } from "@/lib/encryption";
 import { NotionNodeData } from "./node";
 
 export const notionExecutor: NodeExecutor<NotionNodeData> = async ({
@@ -48,7 +48,7 @@ export const notionExecutor: NodeExecutor<NotionNodeData> = async ({
   }
 
   // 3. Decrypt token and resolve Handlebars vars
-  const accessToken = decrypt(credential.value);
+  const accessToken = await readCredentialValue(credential.value, userId);
   const databaseId = renderEscapedTemplate(data.databaseId, context).trim();
 
   const headers = {

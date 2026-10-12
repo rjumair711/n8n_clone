@@ -11863,13 +11863,13 @@ pour()</code></pre>
     assert.match(router, /if \(requiredPlan && !onCanvas\.has\(entry\.type\)\)/);
     // The workflow limit is checked before the model is called
     assert.ok(router.indexOf("if (workflowCount >= workflowLimit)") < router.indexOf("const result = await runBuilder({ userId, input });"));
-    assert.ok(router.indexOf("const result = await runBuilder({ userId, input });") > router.indexOf("createWorkflow: editorProcedure"));
+    assert.ok(router.indexOf("const result = await runBuilder({ userId, input });") > router.indexOf("createWorkflow: builderProcedure"));
     // Created inactive, and nothing in the builder ever activates one
     assert.match(router, /data: \{ name: graph\.name \|\| generateSlug\(3\), userId, workspaceId: ctx\.workspace\.id \},/);
     assert.equal(/active\s*:/.test(router), false);
     assert.equal(/setActive|syncTelegramWebhooks/.test(router), false);
     // The editor's request saves nothing
-    const generate = router.slice(router.indexOf("generate: editorProcedure"), router.indexOf("createWorkflow: editorProcedure"));
+    const generate = router.slice(router.indexOf("generate: editorProcedure"), router.indexOf("createWorkflow: builderProcedure"));
     assert.equal(/prisma\.|tx\./.test(generate), false);
 
     assert.match(read("src/trpc/routers/_app.ts"), /aiBuilder: aiBuilderRouter,/);
@@ -13233,7 +13233,7 @@ pour()</code></pre>
     const router = read("src/features/workflows/server/routers.ts");
     // Every pin procedure checks the workflow's owner first
     for (const name of ["getPinnedNodes", "pinNode", "unpinNode"]) {
-      const body = router.slice(router.search(new RegExp(`${name}: (viewer|editor)Procedure`)));
+      const body = router.slice(router.search(new RegExp(`${name}: (viewer|editor|builder)Procedure`)));
       assert.match(body.slice(0, 700), /await getOwnedWorkflow\(input\.id, ctx\.workspace\.ownerId\);/, name);
     }
     // The pinned data itself is not sent to the browser with the list
@@ -13457,7 +13457,7 @@ pour()</code></pre>
     const run = read("src/inngest/functions.ts");
 
     // A save keeps a version, after the save itself, and cannot undo it
-    const update = router.slice(router.indexOf("update: editorProcedure"), router.indexOf("// VERSION HISTORY"));
+    const update = router.slice(router.indexOf("update: builderProcedure"), router.indexOf("// VERSION HISTORY"));
     assert.ok(update.indexOf("await prisma.$transaction(") < update.indexOf("await saveWorkflowVersion({"));
     assert.match(update, /try \{\s+await saveWorkflowVersion\(\{[\s\S]*?\} catch \(error\) \{\s+console\.error\(/);
     // What is logged about a failure is its kind, never the workflow's data
@@ -13471,16 +13471,16 @@ pour()</code></pre>
     // The list and the restore check the workflow's owner, and a version
     // is only ever looked up inside that workflow
     for (const name of ["getVersions", "restoreVersion"]) {
-      const body = router.slice(router.search(new RegExp(`${name}: (viewer|editor)Procedure`)));
+      const body = router.slice(router.search(new RegExp(`${name}: (viewer|editor|builder)Procedure`)));
       assert.match(body.slice(0, 600), /getOwnedWorkflow\(input\.id, /, name);
     }
     assert.match(router, /where: \{ id: input\.versionId, workflowId: workflow\.id \},/);
     // The list does not carry the nodes (they can hold secrets typed into them)
-    const list = router.slice(router.indexOf("getVersions: viewerProcedure"), router.indexOf("restoreVersion: editorProcedure"));
+    const list = router.slice(router.indexOf("getVersions: viewerProcedure"), router.indexOf("restoreVersion: builderProcedure"));
     assert.equal(/nodes: true|connections: true/.test(list), false);
 
     // A restore follows the rules of a save, makes a version and is audited
-    const restore = router.slice(router.indexOf("restoreVersion: editorProcedure"), router.indexOf("// UPDATE ONE"));
+    const restore = router.slice(router.indexOf("restoreVersion: builderProcedure"), router.indexOf("// UPDATE ONE"));
     assert.match(restore, /where: \{ id: \{ in: linkedIds \}, userId \},/);
     assert.match(restore, /workflowId: \{ not: workflow\.id \}/);
     assert.match(restore, /nodeTypes\.has\(node\.type\)/);
@@ -13842,7 +13842,7 @@ pour()</code></pre>
 
       assert.ok(list.length > 0, feature);
       for (const [name, procedure] of list) {
-        assert.match(procedure, /^(viewer|editor|workspaceAdmin)Procedure$/, `${feature}.${name}`);
+        assert.match(procedure, /^(viewer|editor|builder|workspaceAdmin)Procedure$/, `${feature}.${name}`);
       }
       assert.equal(/ctx\.auth\.user\.id/.test(source), false, `${feature}: data scoped by the caller`);
     }
@@ -13850,8 +13850,12 @@ pour()</code></pre>
     // What changes something needs an editor at least
     const byName = (feature: string) => new Map(procedures(read(`src/features/${feature}/server/routers.ts`)));
     const workflows = byName("workflows");
-    for (const name of ["execute", "create", "remove", "update", "updateName", "setActive", "restoreVersion", "pinNode"]) {
+    for (const name of ["execute", "setActive", "pinNode"]) {
       assert.equal(workflows.get(name), "editorProcedure", name);
+    }
+    // Building by hand: an editor too, and not in a production workspace
+    for (const name of ["create", "remove", "update", "updateName", "restoreVersion"]) {
+      assert.equal(workflows.get(name), "builderProcedure", name);
     }
     for (const name of ["getOne", "getMany", "getVersions"]) assert.equal(workflows.get(name), "viewerProcedure", name);
 
@@ -13912,6 +13916,416 @@ pour()</code></pre>
     assert.match(sql, /UPDATE "Credential" c\s+SET "workspaceId" = w\."id"\s+FROM "workspace" w\s+WHERE w\."ownerId" = c\."userId" AND c\."workspaceId" IS NULL;/);
     assert.equal(/\b(DROP|DELETE FROM|TRUNCATE|RENAME|NOT NULL DEFAULT)\b.*"(Workflow|Credential|user)"/.test(sql), false);
     assert.equal(/\b(DROP|DELETE FROM|TRUNCATE|RENAME)\b/.test(sql), false);
+  });
+
+  // -------------------------------------------------- ENTERPRISE
+  console.log("Enterprise: external secrets, Git sync, SSO");
+
+  const secretRefs = await import("@/lib/secret-refs");
+  const workflowFiles = await import("@/features/enterprise/lib/workflow-files");
+  const ssoConfig = await import("@/lib/sso-config");
+
+  await test("a credential names a secret of a store, and the value takes its place", () => {
+    assert.deepEqual(
+      secretRefs.parseSecretRefs("{{$secrets.vault.team/openai#api_key}} {{ $secrets.aws.prod/db }} {{$secrets.Bad.x}} {{$json.x}}"),
+      [
+        { raw: "{{$secrets.vault.team/openai#api_key}}", store: "vault", secret: "team/openai", field: "api_key" },
+        { raw: "{{ $secrets.aws.prod/db }}", store: "aws", secret: "prod/db", field: null },
+      ]
+    );
+    assert.equal(secretRefs.hasSecretRefs("sk-plain-key"), false);
+    assert.equal(secretRefs.hasSecretRefs("{{$secrets.vault.a#b}}"), true);
+    assert.equal(secretRefs.formatSecretRef("vault", "team/openai", "api_key"), "{{$secrets.vault.team/openai#api_key}}");
+
+    // In a credential that is JSON the value is put into the text, so a
+    // secret with quotes or line breaks cannot break (or add to) the JSON
+    const values = new Map([["{{$secrets.vault.smtp#pass}}", 'p"a\\ss\n","admin":true,"x":"']]);
+    const smtp = JSON.parse(
+      secretRefs.substituteSecrets('{"host":"h","pass":"{{$secrets.vault.smtp#pass}}","port":587}', values)
+    );
+    assert.deepEqual(smtp, { host: "h", pass: 'p"a\\ss\n","admin":true,"x":"', port: 587 });
+    assert.equal(secretRefs.substituteSecrets("{{$secrets.vault.smtp#pass}}", new Map([["{{$secrets.vault.smtp#pass}}", "abc"]])), "abc");
+    // A reference without a value stays as it is: never an empty secret
+    assert.equal(secretRefs.substituteSecrets("{{$secrets.vault.other#x}}", values), "{{$secrets.vault.other#x}}");
+
+    // One value out of what the store answered
+    const ref = (field: string | null) => ({ raw: "", store: "s", secret: "x", field });
+    assert.equal(secretRefs.pickSecretValue({ a: "1", b: 2 }, ref("a")), "1");
+    assert.equal(secretRefs.pickSecretValue({ a: "1", b: 2 }, ref("b")), "2");
+    assert.equal(secretRefs.pickSecretValue("plain", ref(null)), "plain");
+    assert.equal(secretRefs.pickSecretValue('{"k":"v"}', ref("k")), "v");
+    assert.throws(() => secretRefs.pickSecretValue({ a: 1 }, ref(null)), /has several fields\. Name one/);
+    assert.throws(() => secretRefs.pickSecretValue({ a: 1 }, ref("zz")), /has no field "zz"/);
+    assert.throws(() => secretRefs.pickSecretValue({ a: 1 }, ref("constructor")), /has no field/);
+    assert.throws(() => secretRefs.pickSecretValue("plain", ref("k")), /is one text/);
+    // The settings page gets the names of the fields, never a value
+    assert.deepEqual(secretRefs.listSecretFields({ b: "secret-b", a: "secret-a" }), ["a", "b"]);
+    assert.deepEqual(secretRefs.listSecretFields("plain"), []);
+
+    // What reaches a store
+    assert.deepEqual(secretRefs.readVaultConfig({ url: "https://vault.example.com/", token: " t ", mount: "/kv/" }), {
+      url: "https://vault.example.com",
+      token: "t",
+      mount: "kv",
+      kvVersion: 2,
+    });
+    assert.ok("error" in secretRefs.readVaultConfig({ url: "vault.example.com", token: "t" }));
+    assert.ok("error" in secretRefs.readVaultConfig({ url: "https://v", token: "" }));
+    assert.ok("error" in secretRefs.readVaultConfig({ url: "https://v", token: "t", mount: "a b" }));
+    assert.deepEqual(secretRefs.readAwsConfig({ region: "EU-west-1", accessKeyId: "AKIAIOSFODNN7EXAMPLE", secretAccessKey: "s" }), {
+      region: "eu-west-1",
+      accessKeyId: "AKIAIOSFODNN7EXAMPLE",
+      secretAccessKey: "s",
+    });
+    // The region is part of the address that is called: nothing but a region
+    for (const region of ["evil.com/x", "us-east-1.evil.com", "us-east-1#", ""]) {
+      assert.ok("error" in secretRefs.readAwsConfig({ region, accessKeyId: "AKIAIOSFODNN7EXAMPLE", secretAccessKey: "s" }), region);
+    }
+
+    assert.equal(
+      secretRefs.vaultSecretUrl({ url: "https://v", token: "t", mount: "secret", kvVersion: 2 }, "team/open ai"),
+      "https://v/v1/secret/data/team/open%20ai"
+    );
+    assert.equal(secretRefs.vaultSecretUrl({ url: "https://v", token: "t", mount: "kv", kvVersion: 1 }, "a"), "https://v/v1/kv/a");
+    assert.equal(secretRefs.isSecretName("team/openai_key.v2@x"), true);
+    for (const name of ["../sys/seal", "a/../b", "a?b", "a b", ""]) assert.equal(secretRefs.isSecretName(name), false, name);
+    assert.equal(secretRefs.isStoreName("my-vault_2"), true);
+    assert.equal(secretRefs.isStoreName("Vault"), false);
+    assert.equal(secretRefs.isStoreName("2vault"), false);
+  });
+
+  await test("requests to AWS Secrets Manager are signed (Signature Version 4)", async () => {
+    const { deriveAwsSigningKey, signAwsJsonRequest } = await import("@/lib/aws-sigv4");
+
+    // The example in AWS's documentation of deriving a signing key
+    assert.equal(
+      deriveAwsSigningKey("wJalrXUtnFEMI/K7MDENG+bPxRfiCYEXAMPLEKEY", "20120215", "us-east-1", "iam").toString("hex"),
+      "f4780e2d9f65fa895f9c67b32ce1baf0b0d8a43505a000a1a9e090d414db404d"
+    );
+
+    const sign = (body: string) =>
+      signAwsJsonRequest({
+        service: "secretsmanager",
+        region: "eu-west-1",
+        target: "secretsmanager.GetSecretValue",
+        body,
+        accessKeyId: "AKIDEXAMPLE",
+        secretAccessKey: "wJalrXUtnFEMI/K7MDENG+bPxRfiCYEXAMPLEKEY",
+        now: new Date("2026-10-12T18:00:00.123Z"),
+      });
+
+    const signed = sign('{"SecretId":"prod/db"}');
+    // Amazon's own address for the region, and nothing of the secret key
+    assert.equal(signed.url, "https://secretsmanager.eu-west-1.amazonaws.com/");
+    assert.equal(signed.headers["x-amz-date"], "20261012T180000Z");
+    assert.equal(signed.headers["x-amz-target"], "secretsmanager.GetSecretValue");
+    assert.match(
+      signed.headers.authorization,
+      /^AWS4-HMAC-SHA256 Credential=AKIDEXAMPLE\/20261012\/eu-west-1\/secretsmanager\/aws4_request, SignedHeaders=content-type;host;x-amz-date;x-amz-target, Signature=[0-9a-f]{64}$/
+    );
+    assert.equal(JSON.stringify(signed).includes("wJalrXUtnFEMI"), false);
+    // The same request signs the same; another body does not
+    assert.equal(sign('{"SecretId":"prod/db"}').headers.authorization, signed.headers.authorization);
+    assert.notEqual(sign('{"SecretId":"prod/other"}').headers.authorization, signed.headers.authorization);
+  });
+
+  await test("a workflow is a file in the repository, without credentials, and a file is a workflow again", () => {
+    const file = workflowFiles.toWorkflowFile({
+      id: "wf1",
+      name: "Order desk",
+      nodes: [
+        { id: "n2", type: "HTTP_REQUEST", position: { x: 5, y: 6 }, data: { z: 1, a: 2, credentialId: "c1" }, credentialId: "c1" },
+        { id: "n1", type: "MANUAL_TRIGGER", position: null, data: null },
+      ],
+      connections: [{ fromNodeId: "n1", toNodeId: "n2", fromOutput: "main", toInput: "main" }],
+      credentials: new Map([["c1", { name: "API", type: "HTTP_HEADER" }]]),
+    });
+
+    // In a fixed order, and the credential by name and type: its id (and
+    // of course its value) is not in the file
+    assert.deepEqual(file.nodes.map((node) => node.id), ["n1", "n2"]);
+    assert.deepEqual(file.nodes[1], {
+      id: "n2",
+      type: "HTTP_REQUEST",
+      position: { x: 5, y: 6 },
+      data: { a: 2, z: 1 },
+      credential: { name: "API", type: "HTTP_HEADER" },
+    });
+    const text = workflowFiles.serializeWorkflowFile(file);
+    assert.equal(text.includes("c1"), false);
+    assert.equal(text.endsWith("}\n"), true);
+    assert.equal(workflowFiles.workflowFilePath("workflows", "wf1"), "workflows/wf1.json");
+
+    // The same workflow, saved in another order, is the same text: a
+    // commit shows only what changed
+    const again = workflowFiles.toWorkflowFile({
+      id: "wf1",
+      name: "Order desk",
+      nodes: [
+        { id: "n1", type: "MANUAL_TRIGGER", position: { x: 0, y: 0 }, data: {} },
+        { id: "n2", type: "HTTP_REQUEST", position: { y: 6, x: 5 }, data: { a: 2, z: 1 }, credentialId: "c1" },
+      ],
+      connections: [{ toInput: "main", fromOutput: "main", toNodeId: "n2", fromNodeId: "n1" }],
+      credentials: new Map([["c1", { name: "API", type: "HTTP_HEADER" }]]),
+    });
+    assert.equal(workflowFiles.serializeWorkflowFile(again), text);
+
+    const parsed = workflowFiles.parseWorkflowFile(text);
+    assert.equal(parsed.ok, true);
+    assert.deepEqual(workflowFiles.parseWorkflowFile("{}").ok, false);
+    assert.deepEqual(workflowFiles.parseWorkflowFile("not json"), { ok: false, error: "it is not JSON" });
+    assert.match(
+      (workflowFiles.parseWorkflowFile(JSON.stringify({ ...file, connections: [{ fromNodeId: "n1", toNodeId: "gone" }] })) as { error: string }).error,
+      /points at a node that is not in the file/
+    );
+
+    // Pulled into another workspace: ids of its own (the same on every
+    // pull), and the credential of the same type and name
+    const pull = () =>
+      workflowFiles.fromWorkflowFile({
+        file,
+        workspaceId: "ws-prod",
+        keepNodeIds: false,
+        nodeTypes: new Set(["MANUAL_TRIGGER", "HTTP_REQUEST"]),
+        credentials: new Map([["HTTP_HEADER\nAPI", "c9"]]),
+        workflowIds: new Map(),
+      });
+    const imported = pull();
+    assert.deepEqual(imported, pull());
+    assert.equal(imported.nodes.every((node) => /^g[0-9a-f]{31}$/.test(node.id)), true);
+    assert.notEqual(imported.nodes[0].id, imported.nodes[1].id);
+    assert.equal(imported.nodes[1].credentialId, "c9");
+    assert.equal(imported.nodes[1].data.credentialId, "c9");
+    assert.deepEqual(imported.connections, [
+      { fromNodeId: imported.nodes[0].id, toNodeId: imported.nodes[1].id, fromOutput: "main", toInput: "main" },
+    ]);
+    assert.deepEqual(imported.warnings, []);
+    // Another workspace gets other ids
+    assert.notEqual(workflowFiles.importedNodeId("ws-prod", "wf1", "n1"), workflowFiles.importedNodeId("ws-dev", "wf1", "n1"));
+
+    // Pulled where it was made: the ids it has. A credential that is not
+    // there and a node type this app does not have are said, not guessed
+    const home = workflowFiles.fromWorkflowFile({
+      file: { ...file, nodes: [...file.nodes, { id: "n3", type: "FROM_THE_FUTURE", position: { x: 0, y: 0 }, data: {}, credential: null }] },
+      workspaceId: "ws-dev",
+      keepNodeIds: true,
+      nodeTypes: new Set(["MANUAL_TRIGGER", "HTTP_REQUEST"]),
+      credentials: new Map(),
+      workflowIds: new Map(),
+    });
+    assert.deepEqual(home.nodes.map((node) => node.id), ["n1", "n2"]);
+    assert.equal(home.nodes[1].credentialId, null);
+    assert.deepEqual(home.warnings, [
+      "left out 1 node of a type this app does not have (FROM_THE_FUTURE)",
+      'needs a HTTP_HEADER credential named "API"',
+    ]);
+
+    // A node that runs another workflow of the same pull names the local one
+    const caller = workflowFiles.fromWorkflowFile({
+      file: { ...file, nodes: [{ id: "n1", type: "EXECUTE_WORKFLOW", position: { x: 0, y: 0 }, data: { workflowId: "wf-child" }, credential: null }], connections: [] },
+      workspaceId: "ws-prod",
+      keepNodeIds: false,
+      nodeTypes: new Set(["EXECUTE_WORKFLOW"]),
+      credentials: new Map(),
+      workflowIds: new Map([["wf-child", "local-child"]]),
+    });
+    assert.equal(caller.nodes[0].data.workflowId, "local-child");
+
+    // A secret typed into a node keeps the workflow out of the repository
+    assert.deepEqual(workflowFiles.findFileSecrets(file), []);
+    assert.equal(
+      workflowFiles.findFileSecrets({
+        ...file,
+        nodes: [{ ...file.nodes[1], data: { headers: "Authorization: Bearer sk-abcdefghijklmnopqrstuvwxyz123456" } }],
+      }).length,
+      1
+    );
+
+    assert.equal(workflowFiles.isRepoName("acme/flows"), true);
+    for (const repo of ["acme", "acme/flows/x", "acme/flows?x", "../etc", "acme/..", "acme/.", "-acme/x", "/x"]) assert.equal(workflowFiles.isRepoName(repo), false, repo);
+    assert.equal(workflowFiles.isBranchName("release/1.0"), true);
+    for (const branch of ["a..b", "/main", "main/", "a b", "x.lock"]) assert.equal(workflowFiles.isBranchName(branch), false, branch);
+    assert.equal(workflowFiles.isFolderPath("flows/prod"), true);
+    for (const folder of ["../x", "a//b", "/a", "a/./b"]) assert.equal(workflowFiles.isFolderPath(folder), false, folder);
+  });
+
+  await test("an identity provider is registered for a domain, and signs nobody in before the domain is proved", async () => {
+    const oidc = ssoConfig.buildSsoRegistration(
+      { providerId: "Acme-Okta", domain: " Acme.com, acme.org ", issuer: "https://acme.okta.com/", clientId: "id", clientSecret: "sec" },
+      "https://app.example.com/"
+    );
+    assert.ok("body" in oidc);
+    assert.deepEqual(oidc.body, {
+      providerId: "acme-okta",
+      domain: "acme.com,acme.org",
+      issuer: "https://acme.okta.com",
+      oidcConfig: { clientId: "id", clientSecret: "sec", pkce: true },
+    });
+    assert.equal(oidc.urls.oidcRedirect, "https://app.example.com/api/auth/sso/callback/acme-okta");
+
+    const bad = (changes: Partial<Parameters<typeof ssoConfig.buildSsoRegistration>[0]>) =>
+      "error" in
+      ssoConfig.buildSsoRegistration(
+        { providerId: "acme", domain: "acme.com", issuer: "https://idp.acme.com", clientId: "id", clientSecret: "s", ...changes },
+        "https://app.example.com"
+      );
+    assert.equal(bad({}), false);
+    assert.equal(bad({ providerId: "x" }), true);
+    assert.equal(bad({ providerId: "acme/../x" }), true);
+    assert.equal(bad({ domain: "acme" }), true);
+    assert.equal(bad({ domain: "" }), true);
+    assert.equal(bad({ issuer: "http://idp.acme.com" }), true);
+    assert.equal(bad({ clientSecret: " " }), true);
+
+    // SAML is switched off: none of its addresses answers, and a provider
+    // cannot be given a SAML configuration
+    assert.equal(ssoConfig.isSamlRequest("/sso/saml2/sp/acs/:providerId", undefined), true);
+    assert.equal(ssoConfig.isSamlRequest("/sso/saml2/callback/:providerId", {}), true);
+    assert.equal(ssoConfig.isSamlRequest("/sso/saml2/sp/metadata", undefined), true);
+    assert.equal(ssoConfig.isSamlRequest("/sso/register", { providerId: "a", samlConfig: { entryPoint: "https://idp" } }), true);
+    assert.equal(ssoConfig.isSamlRequest("/sso/update-provider", { samlConfig: {} }), true);
+    assert.equal(ssoConfig.isSamlRequest("/sso/register", oidc.body), false);
+    assert.equal(ssoConfig.isSamlRequest("/sso/callback/:providerId", undefined), false);
+    assert.equal(ssoConfig.isSamlRequest("/sign-in/sso", { email: "a@acme.com" }), false);
+    assert.equal(ssoConfig.isSamlRequest(undefined, { samlConfig: {} }), false);
+
+    assert.deepEqual(ssoConfig.getSsoDnsRecord("acme", "acme.com,acme.org", "tok"), {
+      type: "TXT",
+      host: "_better-auth-token-acme.acme.com",
+      value: "_better-auth-token-acme=tok",
+    });
+
+    const { readFileSync } = await import("node:fs");
+    const { join } = await import("node:path");
+    const read = (path: string) => readFileSync(join(process.cwd(), path), "utf8").replace(/\r\n/g, "\n");
+
+    // The plugin: registration only for who may, the domain proved by DNS
+    // before a provider signs anyone in, and SAML answers only to a
+    // sign-in that was started here
+    const authSource = read("src/lib/auth.ts");
+    assert.match(authSource, /sso\(\{[\s\S]*?providersLimit: getSsoProviderLimit,[\s\S]*?domainVerification: \{ enabled: true \},/);
+    // Refused before anything else of the request is looked at
+    assert.match(authSource, /before: createAuthMiddleware\(async \(ctx\) => \{\s+(\/\/.*\s+)*if \(isSamlRequest\(ctx\.path, ctx\.body\)\) \{\s+throw new APIError\("BAD_REQUEST", \{ message: SAML_UNAVAILABLE \}\)/);
+    assert.match(authSource, /allowIdpInitiated: false,/);
+    assert.match(authSource, /algorithms: \{ onDeprecated: "reject" \},/);
+    assert.equal(/trustEmailVerified/.test(authSource), false);
+
+    // Who may register: a platform admin with two-factor, or an account
+    // whose plan includes the enterprise features. Everyone else: 0.
+    const ssoSource = read("src/lib/sso.ts");
+    assert.match(ssoSource, /if \(!user\) return 0/);
+    assert.match(ssoSource, /if \(canUseAdminActions\(user\)\) return SSO_ADMIN_PROVIDER_LIMIT/);
+    assert.match(ssoSource, /return PLAN_LIMITS\[user\.plan\]\?\.features\.enterprise \? SSO_PLAN_PROVIDER_LIMIT : 0/);
+    // An account made through a provider joins with the least role, and
+    // a role someone already has is not changed
+    assert.equal(ssoConfig.SSO_JOIN_ROLE, "VIEWER");
+    assert.match(ssoSource, /update: \{\},\s+create: \{ workspaceId: workspace\.id, userId, role: SSO_JOIN_ROLE \},/);
+
+    const plans = await import("@/config/plans");
+    assert.equal(plans.PLAN_LIMITS.PRO.features.enterprise, true);
+    for (const plan of ["FREE", "BEGINNER", "INTERMEDIATE"] as const) {
+      assert.equal(plans.PLAN_LIMITS[plan].features.enterprise, false, plan);
+      // Not unlocked by the free trial either
+      assert.equal(plans.getRequiredPlanForFeature("enterprise", plan, new Date(Date.now() + 86_400_000)), "Pro", plan);
+    }
+    assert.equal(plans.getRequiredPlanForFeature("enterprise", "PRO"), null);
+  });
+
+  await test("enterprise settings are for a workspace's admins; secrets and tokens stay on the server", async () => {
+    const { readFileSync, readdirSync, statSync } = await import("node:fs");
+    const { join } = await import("node:path");
+    const read = (path: string) => readFileSync(join(process.cwd(), path), "utf8").replace(/\r\n/g, "\n");
+
+    const router = read("src/features/enterprise/server/routers.ts");
+    const procedures = new Map(
+      [...router.matchAll(/\n    (\w+): (\w+Procedure)/g)].map((match) => [match[1], match[2]] as const)
+    );
+    for (const name of ["saveGit", "removeGit", "pushGit", "pullGit", "saveSecretStore", "removeSecretStore", "testSecret"]) {
+      assert.equal(procedures.get(name), "workspaceAdminProcedure", name);
+    }
+    // Changing something needs the plan; what is there keeps working without
+    for (const name of ["saveGit", "pushGit", "pullGit", "saveSecretStore"]) {
+      const body = router.slice(router.indexOf(`${name}: workspaceAdminProcedure`));
+      assert.match(body.slice(0, 1500), /await assertPlan\(ctx\.workspace\.ownerId\);/, name);
+    }
+    // A store's settings are encrypted, never selected for the browser,
+    // and only reached inside the caller's workspace
+    assert.match(router, /config: encrypt\(JSON\.stringify\(config\)\),/);
+    const listed = router.slice(router.indexOf("getSecretStores: viewerProcedure"), router.indexOf("saveSecretStore: workspaceAdminProcedure"));
+    assert.equal(/config/.test(listed), false);
+    assert.equal((router.match(/where: \{ id: input\.id, workspaceId: ctx\.workspace\.id \},/g) ?? []).length, 3);
+    assert.match(router, /where: \{ id: input\.credentialId, userId: ctx\.workspace\.ownerId, type: "GITHUB" \},/);
+    assert.match(router, /if \(ctx\.workspace\.environment === "production"\) \{\s+refuse\("A production workspace only pulls/);
+    assert.match(read("src/trpc/routers/_app.ts"), /enterprise: enterpriseRouter,/);
+
+    // A production workspace's workflows are not built by hand
+    const init = read("src/trpc/init.ts");
+    assert.match(init, /export const builderProcedure = editorProcedure\.use\(\(\{ ctx, next \}\) => \{\s+if \(isProductionWorkspace\(ctx\.workspace\)\) \{\s+throw new TRPCError\(\{ code: "FORBIDDEN", message: PRODUCTION_MESSAGE \}\)/);
+    for (const [feature, names] of [
+      ["workflows", ["create", "remove", "update", "updateName", "restoreVersion"]],
+      ["templates", ["use"]],
+      ["ai-builder", ["createWorkflow"]],
+      ["chatbots", ["create", "connectWhatsapp"]],
+    ] as const) {
+      const source = read(`src/features/${feature}/server/routers.ts`);
+      for (const name of names) assert.match(source, new RegExp(`\\n    ${name}: builderProcedure`), `${feature}.${name}`);
+    }
+
+    // External secrets: a store is found by the credential's owner, a
+    // redirect is refused so the token only goes where it was saved for,
+    // and values are kept for redaction, never for a step's result
+    const external = read("src/lib/external-secrets.ts");
+    assert.match(external, /where: \{ userId, name: \{ in: \[\.\.\.new Set\(refs\.map\(\(ref\) => ref\.store\)\)\] \} \},/);
+    assert.match(external, /"x-vault-token": config\.token,[\s\S]*?redirect: "error",/);
+    assert.match(external, /await safeFetch\(vaultSecretUrl\(config, secret\), \{/);
+    assert.match(external, /if \(!isSecretName\(secret\)\) return fail\(/);
+    assert.match(read("src/lib/execution-redaction.ts"), /const all = \(\) => \[\.\.\.stored, \.\.\.getResolvedExternalValues\(\)\];/);
+    const engine = read("src/inngest/functions.ts");
+    assert.ok(engine.indexOf("await primeExternalSecrets(userId, credentialValues ?? []);") < engine.indexOf("const redactor = createRunRedactor("));
+    assert.ok(engine.indexOf("await primeExternalSecrets(userId, credentialValues ?? []);") > 0);
+
+    // Every place that uses a user's credential reads it through the one
+    // function that knows about external secrets. What is still decrypted
+    // directly: the platform's own keys and stored OAuth tokens.
+    const walk = (dir: string): string[] =>
+      readdirSync(join(process.cwd(), dir)).flatMap((name) => {
+        const path = `${dir}/${name}`;
+        if (name === "generated" || name === "__test__") return [];
+        return statSync(join(process.cwd(), path)).isDirectory() ? walk(path) : /\.tsx?$/.test(name) ? [path] : [];
+      });
+    const direct = walk("src")
+      .filter((path) => !["src/lib/encryption.ts", "src/lib/external-secrets.ts", "src/lib/execution-redaction.ts"].includes(path))
+      .flatMap((path) => [...read(path).matchAll(/\bdecrypt\(([^)]*)\)/g)].map((match) => `${path}: ${match[1]}`));
+    assert.deepEqual(direct.sort(), [
+      "src/features/ai-builder/server/routers.ts: keys[provider]",
+      "src/features/executions/lib/connected-model.ts: includedKeys[spec.usageProvider]",
+      "src/lib/google-oauth.ts: encryptedValue",
+      "src/lib/salesforce-oauth.ts: encryptedValue",
+    ]);
+
+    // Git sync: only GitHub's API is called, never forced, and the token
+    // is cleaned out of anything that is said about a failure
+    const git = read("src/features/enterprise/server/git.ts");
+    assert.match(git, /const GITHUB_API = "https:\/\/api\.github\.com";/);
+    assert.match(git, /fetch\(`\$\{GITHUB_API\}\/repos\/\$\{target\.repo\}\$\{path\}`, \{/);
+    assert.equal(/force: true/.test(git), false);
+    assert.match(git, /redactString\(String\(\(error as Error\)\?\.message \?\? error\), \{ secrets: \[target\.token\] \}\)/);
+    assert.ok(git.indexOf("const withSecrets = files.flatMap(") < git.indexOf('"POST", "/git/trees"'));
+    assert.match(git, /where: \{ id: settings\.credentialId, userId: ownerId, type: "GITHUB" \},/);
+    // Pulled workflows are the workspace's, new ones inactive, within the plan
+    assert.match(git, /if \(existing\.length \+ toCreate\.length > limit\) \{/);
+    assert.equal(/active: true/.test(git), false);
+
+    // The migration only adds: tables, a nullable column, a column with a default
+    const folder = readdirSync("prisma/migrations").find((name) => name.endsWith("_enterprise"));
+    assert.ok(folder, "migration");
+    const sql = read(`prisma/migrations/${folder}/migration.sql`);
+    assert.match(sql, /ALTER TABLE "Workflow" ADD COLUMN\s+"gitSourceId" TEXT;/);
+    assert.match(sql, /ALTER TABLE "workspace" ADD COLUMN\s+"environment" TEXT NOT NULL DEFAULT 'development';/);
+    for (const table of ["workspace_git", "secret_store", "sso_provider"]) {
+      assert.match(sql, new RegExp(`CREATE TABLE "${table}" \\(`), table);
+    }
+    assert.equal(/\b(DROP|DELETE FROM|TRUNCATE|UPDATE "|RENAME)\b/.test(sql), false);
   });
 
   console.log(`\n${passed} checks passed`);

@@ -4,6 +4,9 @@ import { recordAudit } from "./audit-log"
 import { prismaAdapter } from "better-auth/adapters/prisma"
 import { APIError, createAuthMiddleware, getIp } from "better-auth/api"
 import { captcha, twoFactor } from "better-auth/plugins"
+import { sso } from "@better-auth/sso"
+import { getSsoProviderLimit, joinSsoWorkspace } from "./sso"
+import { SAML_UNAVAILABLE, isSamlRequest } from "./sso-config"
 import { DISPOSABLE_EMAIL_MESSAGE, isDisposableEmail } from "./disposable-email"
 import { getTurnstileConfig } from "./turnstile"
 import {
@@ -190,6 +193,13 @@ export const auth = betterAuth({
 
   hooks: {
     before: createAuthMiddleware(async (ctx) => {
+      // SAML is switched off: see SAML_UNAVAILABLE in sso-config.ts. No
+      // SAML provider can be registered, and none of the plugin's SAML
+      // addresses answers.
+      if (isSamlRequest(ctx.path, ctx.body)) {
+        throw new APIError("BAD_REQUEST", { message: SAML_UNAVAILABLE })
+      }
+
       // Refused before anything else happens, so the form gets this message
       if (ctx.path === PASSWORD_SIGN_UP) {
         const email = emailOf(ctx.body)
@@ -320,6 +330,32 @@ export const auth = betterAuth({
           }),
         ]
       : []),
+    // Single sign-on with a company's identity provider, over OpenID
+    // Connect. (The plugin also speaks SAML; that is switched off in the
+    // `before` hook above.) Providers are registered in Settings
+    // (src/features/enterprise) and kept in the sso_provider table.
+    sso({
+      // Who may register a provider, and how many: see src/lib/sso.ts.
+      // Everyone else gets 0, which refuses the registration.
+      providersLimit: getSsoProviderLimit,
+      // A provider signs nobody in until a DNS record has proved that its
+      // email domain belongs to whoever registered it. This is what makes
+      // it safe to let an account be reached through the provider: only
+      // the domain's owner can claim addresses of that domain.
+      domainVerification: { enabled: true },
+      // An account made by signing in through a provider joins the
+      // workspace of whoever registered it
+      provisionUser: async ({ user, provider }) => {
+        await joinSsoWorkspace(user.id, provider.userId)
+      },
+      // For the day SAML is switched on
+      saml: {
+        // Only answers to a sign-in that was started here
+        allowIdpInitiated: false,
+        requireTimestamps: true,
+        algorithms: { onDeprecated: "reject" },
+      },
+    }),
     // After twoFactor on purpose: its hook has then already turned a
     // password sign-in that still needs a code into a "twoFactorRedirect"
     auditLogPlugin,

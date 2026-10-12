@@ -60,7 +60,7 @@ export const googleCalendarExecutor: NodeExecutor<GoogleCalendarNodeData> = asyn
         // Run the appropriate Google API step based on the operation selection
         const result = await step.run(`${operation}-calendar-event`, async () => {
             // A Google account (OAuth) or a service account
-            const auth = getGoogleAuth("Google Calendar", credential, [
+            const auth = await getGoogleAuth("Google Calendar", credential, [
                 "https://www.googleapis.com/auth/calendar.events",
             ]);
 

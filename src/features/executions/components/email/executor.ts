@@ -1,12 +1,12 @@
 // email/executor.ts
 
+import { readCredentialValue } from "@/lib/external-secrets";
 import { EMAIL_CHANNEL_NAME, emailChannel } from "@/inngest/channels/email";
 import { renderEscapedTemplate } from "@/features/executions/lib/templates";
 import { NodeExecutor } from "../../types";
 import { NonRetriableError } from "inngest";
 import nodemailer from "nodemailer";
 import prisma from "@/lib/db";
-import { decrypt } from "@/lib/encryption";
 import Handlebars from "handlebars";
 import { loadFiles, resolveFileIds } from "../files/executors";
 
@@ -80,7 +80,7 @@ export const emailExecutor: NodeExecutor<EmailData> = async ({
   };
 
   try {
-    smtpConfig = JSON.parse(decrypt(credential.value));
+    smtpConfig = JSON.parse(await readCredentialValue(credential.value, userId));
   } catch {
     throw new NonRetriableError(
       "Email node: Invalid SMTP credential format"

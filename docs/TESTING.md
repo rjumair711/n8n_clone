@@ -20,7 +20,7 @@ the instruction "build this workflow in the editor".
 ```bash
 npx prisma migrate deploy
 npm run dev:all
-npx tsx --conditions=react-server src/inngest/__test__/testCoreNodes.ts   # expect "268 checks passed"
+npx tsx --conditions=react-server src/inngest/__test__/testCoreNodes.ts   # expect "273 checks passed"
 ```
 
 Make a second account with a different email. Several checks need it.
@@ -456,6 +456,62 @@ Needs the `workspaces` migration applied. Use two accounts, A and B, in two brow
 | 19 | Sign up a new account | it has its own workspace from the first page on |
 
 **After the migration ran on a copy of real data**, check the backfill: `SELECT count(*) FROM "user"` equals `SELECT count(*) FROM "workspace"`, and `SELECT count(*) FROM "Workflow" WHERE "workspaceId" IS NULL` and the same for `"Credential"` are 0.
+
+## T6g. Enterprise: Git sync, external secrets, SSO
+
+Needs the `enterprise` migration applied, and the workspace's owner on the **Pro** plan (set `plan` to `PRO` on a test account's row).
+
+**Git sync.** Needs an empty GitHub repository with one commit on `main` (a README), a fine-grained token for it with "Contents: read and write", saved as a **GitHub** credential. Two accounts: D (development) and P (production), each on Pro, each with that credential under the same name.
+
+| # | Do | Expect |
+|---|----|--------|
+| 1 | As an account on the Free plan open Settings → Environments and Git sync and press Save | "This needs the Pro plan..." |
+| 2 | As D save: the repository, branch `main`, folder `workflows`, the credential, Development | "Git sync saved"; Push and Pull appear |
+| 3 | As D build two workflows (one with a node that uses a credential), press **Push to Git** | "Pushed 2 workflows (commit …)". On GitHub: one commit with `workflows/<id>.json` for each. The files name the credential by name and type; no credential id or value is in them |
+| 4 | Press Push again without changing anything | "Nothing to push"; no new commit |
+| 5 | In a workflow type `Authorization: Bearer ` and a long made-up token into an HTTP Request header, save, Push | refused: names the workflow and "a secret typed into a node". Nothing is committed |
+| 6 | Remove that, delete one workflow, Push | one commit: the changed file, and the deleted workflow's file removed |
+| 7 | As P save the same repository and branch as **Production**, press **Pull from Git** | "Pulled: 1 new, 0 updated"; the workflow is there, inactive, with its nodes linked to P's credential of that name |
+| 8 | As P, with a credential missing | the pull lists `needs a … credential named "…"`; the node is "Not Configured" |
+| 9 | As P open the pulled workflow, change it and Save; try to create, rename, delete a workflow, use a template | each refused: "This workspace is a production environment..." |
+| 10 | As P turn the workflow on and run it | works |
+| 11 | As P press Push | disabled; calling `enterprise.pushGit` is refused: "A production workspace only pulls." |
+| 12 | As D change the workflow, Push; as P Pull | "0 new, 1 updated"; P's workflow has the change, its executions list is intact, History shows a new version |
+| 13 | Edit a file on GitHub so it is not valid JSON, Pull | that file is listed under "Not applied", the others are pulled |
+| 14 | Set the branch to one that does not exist, Push | 'The branch "…" was not found...' |
+| 15 | Replace the credential's token by a wrong one, Push | "GitHub refused the token..." The token is in no message |
+| 16 | As an editor (not admin) of the workspace press Save or Push | refused: needs Admin |
+| 17 | **Remove** | the settings are gone, the workspace is Development again, nothing is deleted here or on GitHub |
+
+**External secrets.** Needs a Vault you can reach (for a local one: `vault server -dev`, and `127.0.0.1:8200` in `PRIVATE_NETWORK_ALLOWLIST`) with a KV v2 secret, for example `vault kv put secret/team/openai api_key=<a real OpenAI key>`; or an AWS account with a secret in Secrets Manager and an access key that may read it.
+
+| # | Do | Expect |
+|---|----|--------|
+| 18 | Settings → External secrets: add a store `vault` with the address and token | listed. Reload: the token is shown nowhere |
+| 19 | **Test** with `team/openai` | "Found. Fields: api_key". With `team/nothing`: 'has no secret "team/nothing"' |
+| 20 | Create an OpenAI credential whose value is the reference the card shows for `vault`, `team/openai`, `api_key`; use it in an OpenAI node and run | the node answers. The execution's node data, and the Credential row in the database, hold the reference or `[REDACTED]`, never the key |
+| 21 | Change the credential's reference to a field that does not exist, run | the node fails with 'has no field "…"'; no value of the secret is in the message |
+| 22 | Change the secret in Vault, run again within 5 minutes, then after | the old value until the cache time is over, then the new one |
+| 23 | Stop Vault, wait for the cache time, run | the node fails with 'Secret store "vault" could not be reached...' |
+| 24 | Add a store whose address is `http://169.254.169.254` | refused: the address cannot be used |
+| 25 | An AWS store with region `eu-west-1.evil.com` | refused: "Enter an AWS region..." |
+| 26 | As a second account create a credential with the first account's reference | the node fails: "this workspace has none by that name" |
+| 27 | Delete the store, run the workflow | the node fails with that message |
+
+**SSO (OIDC).** Needs an identity provider you control (Keycloak, Okta developer, Entra) and a domain whose DNS you can edit; the provider's origin in `TRUSTED_ORIGINS`.
+
+| # | Do | Expect |
+|---|----|--------|
+| 28 | Settings → Single sign-on on a Free account | "Registering an identity provider needs the Pro plan..." |
+| 29 | On a Pro account register: id `acme`, domain, issuer URL, client ID and secret | "Provider registered"; a TXT record is shown; the provider is "Domain not verified: off" |
+| 30 | Without `TRUSTED_ORIGINS` listing the provider | registering fails: the discovery endpoint "is not trusted" |
+| 31 | On the login page type an address of that domain, press **Sign in with SSO** | refused: the provider's domain has not been verified |
+| 32 | Add the TXT record, press **Verify domain** | "… is verified". Before the record exists: "Unable to verify domain ownership" |
+| 33 | Sign in with SSO as a person who has no RXJ account | signed in after the provider's own login; the new account is a Viewer of the registrant's workspace, and has its own workspace too |
+| 34 | Sign in with SSO as a person who already has an account with that address | signed in to that account |
+| 35 | Sign in with SSO with an address of another domain | "Single sign-on is not set up for this email's domain" |
+| 36 | `POST /api/auth/sso/register` with a `samlConfig`, or open `/api/auth/sso/saml2/sp/metadata?providerId=acme` | refused: "SAML sign-on is not available yet..." |
+| 37 | Delete the provider, sign in with SSO again | as in 35 |
 
 ## T7. Sub-workflows
 

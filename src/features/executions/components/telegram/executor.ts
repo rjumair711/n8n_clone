@@ -1,9 +1,9 @@
+import { readCredentialValue } from "@/lib/external-secrets";
 import type { NodeExecutor } from "@/features/executions/types";
 import { renderEscapedTemplate } from "@/features/executions/lib/templates";
 import { NonRetriableError } from "inngest";
 import Handlebars from "handlebars";
 import prisma from "@/lib/db";
-import { decrypt } from "@/lib/encryption";
 import { fetch, FormData, ProxyAgent } from "undici";
 import { loadFiles, resolveFileId } from "../files/executors";
 
@@ -60,7 +60,7 @@ export const telegramExecutor: NodeExecutor<TelegramData> = async ({
   }
 
   try {
-    const botToken = decrypt(credential.value).trim();
+    const botToken = (await readCredentialValue(credential.value, userId)).trim();
 
     // ✅ Fix 2: Typed step.run so 'result' is not unknown
     const result = await step.run("telegram-send-message", async (): Promise<TelegramAPIResponse> => {

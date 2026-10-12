@@ -3,7 +3,7 @@ import { NodeType, type Prisma, SubscriptionPlan } from "@prisma/client";
 import { TRPCError } from "@trpc/server";
 import z from "zod";
 import prisma from "@/lib/db";
-import { createTRPCRouter, protectedProcedure, editorProcedure, viewerProcedure } from "@/trpc/init";
+import { createTRPCRouter, protectedProcedure, viewerProcedure, builderProcedure } from "@/trpc/init";
 import { PLAN_LIMITS } from "@/config/plans";
 import {
     ADMIN_TWO_FACTOR_MESSAGE,
@@ -112,7 +112,7 @@ export const templatesRouter = createTRPCRouter({
     }),
 
     // Copies a template into the user's account as a new workflow
-    use: editorProcedure
+    use: builderProcedure
         .input(z.object({ id: z.string() }))
         .mutation(async ({ ctx, input }) => {
             const isAdmin = isAdminUser(ctx.auth.user);
