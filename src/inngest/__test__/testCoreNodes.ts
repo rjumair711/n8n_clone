@@ -13479,6 +13479,10 @@ pour()</code></pre>
     assert.match(restore, /workflowId: \{ not: workflow\.id \}/);
     assert.match(restore, /nodeTypes\.has\(node\.type\)/);
     assert.match(restore, /restoredFromNumber: version\.number,/);
+    // What the workflow holds now is kept as a version before it is replaced
+    const keepCurrent = restore.indexOf("nodes: currentNodes,");
+    assert.ok(keepCurrent > 0 && keepCurrent < restore.indexOf("await prisma.$transaction("));
+    assert.match(restore, /prisma\.node\.findMany\(\{ where: \{ workflowId: workflow\.id \} \}\)/);
     assert.match(restore, /action: "workflow\.version_restored",/);
     assert.match(restore, /await removeStalePins\(workflow\.id, \[\.\.\.nodeIds\]\);/);
     // It changes nodes and connections only: not the name, not Active

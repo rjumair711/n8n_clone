@@ -397,6 +397,7 @@ Needs the `workflow_versions` migration applied. Use a new workflow: Manual Trig
 | 13 | On a node pick a credential, save, delete that credential under Credentials, then restore that version | restored; the node has no credential ("Not Configured") |
 | 14 | **Settings → Audit log** | "Workflow version restored" lines with the workflow's name and the version number |
 | 15 | Use a template (Templates → Use template), do not save, run it once, open History | Version 1 was made by the run |
+| 15b | On a chatbot's workflow that has at least two versions, add the WhatsApp side from the chatbot's page (a change without Save), then restore an older version | two new versions: the workflow as it was just before the restore, then the restored one |
 | 16 | As the second account call `workflows.getVersions` / `restoreVersion` with the first account's workflow id (or open its editor URL) | "Workflow not found." |
 | 17 | An execution from before this feature | "Workflow version: Not recorded" |
 | 18 | Set `WORKFLOW_VERSION_LIMIT=3`, restart, save three more changes | History keeps only the newest 3; older runs still show their version number |

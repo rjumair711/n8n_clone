@@ -15,7 +15,7 @@ import { assertOwnership } from "@/lib/ownership";
 import { describeAuditTarget } from "@/lib/audit-actions";
 import { recordAudit } from "@/lib/audit-log";
 import { PARTIAL_RUN_MODES } from "@/inngest/engine";
-import { readVersionSnapshot, readVersionSummary } from "../lib/versions";
+import { readVersionSnapshot, readVersionSummary, toVersionSnapshot } from "../lib/versions";
 import { hashSnapshot, saveWorkflowVersion } from "./versions";
 import {
     PinError,
@@ -636,18 +636,32 @@ export const workflowsRouter = createTRPCRouter({
 
             const snapshot = readVersionSnapshot(version.nodes, version.connections);
 
-            const latest = await prisma.workflowVersion.findFirst({
-                where: { workflowId: workflow.id },
-                orderBy: { number: "desc" },
-                select: { contentHash: true },
-            });
+            // What the workflow holds right now. It is not always the newest
+            // version: a workflow can be changed without the editor's Save
+            // (a chatbot given its WhatsApp side, for example).
+            const [currentNodes, currentConnections] = await Promise.all([
+                prisma.node.findMany({ where: { workflowId: workflow.id } }),
+                prisma.connection.findMany({ where: { workflowId: workflow.id } }),
+            ]);
 
-            if (latest?.contentHash === hashSnapshot(snapshot)) {
+            if (
+                hashSnapshot(toVersionSnapshot(currentNodes, currentConnections)) ===
+                hashSnapshot(snapshot)
+            ) {
                 throw new TRPCError({
                     code: "BAD_REQUEST",
                     message: "The workflow is already the same as this version.",
                 });
             }
+
+            // Kept as a version before it is replaced, so the restore can
+            // always be undone. Nothing is added when it already is the
+            // newest version. Not caught: without it there is no way back.
+            await saveWorkflowVersion({
+                workflowId: workflow.id,
+                nodes: currentNodes,
+                connections: currentConnections,
+            });
 
             // The same rules as a save: only the user's own credentials
             // that still exist are linked, only node types that still
