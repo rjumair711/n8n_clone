@@ -3,7 +3,7 @@ import { CredentialType, NodeType, type Prisma } from "@prisma/client";
 import { TRPCError } from "@trpc/server";
 import z from "zod";
 import prisma from "@/lib/db";
-import { createTRPCRouter, protectedProcedure } from "@/trpc/init";
+import { createTRPCRouter, editorProcedure, viewerProcedure } from "@/trpc/init";
 import { PLAN_LIMITS, getRequiredPlanForNode } from "@/config/plans";
 import { INCLUDED_CREDENTIAL_ID } from "@/config/ai-credits";
 import { getAppUrl } from "@/lib/app-url";
@@ -170,8 +170,8 @@ export const chatbotsRouter = createTRPCRouter({
      * that can embed documents or send on WhatsApp (never their secrets),
      * and what the plan allows.
      */
-    getOptions: protectedProcedure.query(async ({ ctx }) => {
-        const userId = ctx.auth.user.id;
+    getOptions: viewerProcedure.query(async ({ ctx }) => {
+        const userId = ctx.workspace.ownerId;
 
         const [user, credentials, workflowCount] = await Promise.all([
             loadUser(userId),
@@ -210,10 +210,10 @@ export const chatbotsRouter = createTRPCRouter({
     }),
 
     // The user's chatbots: workflows whose knowledge base was made here
-    list: protectedProcedure.query(async ({ ctx }) => {
+    list: viewerProcedure.query(async ({ ctx }) => {
         const workflows = await prisma.workflow.findMany({
             where: {
-                userId: ctx.auth.user.id,
+                userId: ctx.workspace.ownerId,
                 nodes: {
                     some: {
                         type: NodeType.VECTOR_STORE,
@@ -234,7 +234,7 @@ export const chatbotsRouter = createTRPCRouter({
      * share link only work for an active workflow. Documents and pages are
      * added afterwards, one request each.
      */
-    create: protectedProcedure
+    create: editorProcedure
         .input(
             z.object({
                 name: z.string().trim().min(1).max(CHATBOT_MAX_NAME_LENGTH),
@@ -251,7 +251,7 @@ export const chatbotsRouter = createTRPCRouter({
             })
         )
         .mutation(async ({ ctx, input }) => {
-            const userId = ctx.auth.user.id;
+            const userId = ctx.workspace.ownerId;
             const user = await loadUser(userId);
 
             // A chatbot that could not run is not made
@@ -327,7 +327,7 @@ export const chatbotsRouter = createTRPCRouter({
 
             const workflow = await prisma.$transaction(async (tx) => {
                 const created = await tx.workflow.create({
-                    data: { name: input.name, userId, active: true },
+                    data: { name: input.name, userId, workspaceId: ctx.workspace.id, active: true },
                 });
 
                 await tx.node.createMany({ data: toNodeRows(created.id, graph.nodes) });
@@ -352,10 +352,10 @@ export const chatbotsRouter = createTRPCRouter({
         }),
 
     // Everything the chatbot's page shows
-    get: protectedProcedure
+    get: viewerProcedure
         .input(z.object({ id: z.string().min(1).max(100) }))
         .query(async ({ ctx, input }) => {
-            const userId = ctx.auth.user.id;
+            const userId = ctx.workspace.ownerId;
             const { workflow, parts } = await loadChatbot(input.id, userId);
             const appUrl = getAppUrl();
             const user = await loadUser(userId);
@@ -399,7 +399,7 @@ export const chatbotsRouter = createTRPCRouter({
         }),
 
     // One web page into the knowledge base
-    addUrl: protectedProcedure
+    addUrl: editorProcedure
         .input(
             z.object({
                 id: z.string().min(1).max(100),
@@ -407,7 +407,7 @@ export const chatbotsRouter = createTRPCRouter({
             })
         )
         .mutation(async ({ ctx, input }) => {
-            const userId = ctx.auth.user.id;
+            const userId = ctx.workspace.ownerId;
             const { urls } = parseUrlList(input.url);
 
             if (urls.length !== 1) return refuse(`"${input.url}" is not a web address.`);
@@ -418,7 +418,7 @@ export const chatbotsRouter = createTRPCRouter({
         }),
 
     // One document into the knowledge base
-    addFile: protectedProcedure
+    addFile: editorProcedure
         .input(
             z.object({
                 id: z.string().min(1).max(100),
@@ -428,7 +428,7 @@ export const chatbotsRouter = createTRPCRouter({
             })
         )
         .mutation(async ({ ctx, input }) => {
-            const userId = ctx.auth.user.id;
+            const userId = ctx.workspace.ownerId;
             const store = await beforeAddingSource(input.id, userId);
 
             const source = await readFileSource(
@@ -439,7 +439,7 @@ export const chatbotsRouter = createTRPCRouter({
             return addSource({ userId, store, source });
         }),
 
-    removeSource: protectedProcedure
+    removeSource: editorProcedure
         .input(
             z.object({
                 id: z.string().min(1).max(100),
@@ -447,7 +447,7 @@ export const chatbotsRouter = createTRPCRouter({
             })
         )
         .mutation(async ({ ctx, input }) => {
-            const userId = ctx.auth.user.id;
+            const userId = ctx.workspace.ownerId;
             const { parts } = await loadChatbot(input.id, userId);
 
             if (!parts.store) return { removed: 0 };
@@ -461,10 +461,10 @@ export const chatbotsRouter = createTRPCRouter({
      * Adds the WhatsApp side to a chatbot that does not have it: a WhatsApp
      * Trigger into the same agent, and the reply after it.
      */
-    connectWhatsapp: protectedProcedure
+    connectWhatsapp: editorProcedure
         .input(whatsappInput.extend({ id: z.string().min(1).max(100) }))
         .mutation(async ({ ctx, input }) => {
-            const userId = ctx.auth.user.id;
+            const userId = ctx.workspace.ownerId;
             const { workflow, parts } = await loadChatbot(input.id, userId);
 
             if (parts.whatsapp) {

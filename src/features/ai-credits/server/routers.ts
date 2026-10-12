@@ -18,7 +18,7 @@ import { describeAuditTarget } from "@/lib/audit-actions";
 import { recordAudit } from "@/lib/audit-log";
 import prisma from "@/lib/db";
 import { encrypt } from "@/lib/encryption";
-import { createTRPCRouter, protectedProcedure } from "@/trpc/init";
+import { createTRPCRouter, protectedProcedure, viewerProcedure } from "@/trpc/init";
 
 // The platform's provider keys are used by every account and paid for by
 // the platform: an admin with two-factor on, like the price table
@@ -42,9 +42,9 @@ const adminProcedure = protectedProcedure.use(({ ctx, next }) => {
 
 export const aiCreditsRouter = createTRPCRouter({
     // The signed-in user's credits, and the packs on sale
-    getStatus: protectedProcedure.query(async ({ ctx }) => {
+    getStatus: viewerProcedure.query(async ({ ctx }) => {
         const [status, providers] = await Promise.all([
-            getCreditStatus(ctx.auth.user.id),
+            getCreditStatus(ctx.workspace.ownerId),
             listIncludedProviders(),
         ]);
 
@@ -67,7 +67,7 @@ export const aiCreditsRouter = createTRPCRouter({
 
     // ADMIN: every provider that was set up. `isAdmin` is false for
     // everyone else, and the list is then empty: the card renders nothing.
-    getProviders: protectedProcedure.query(async ({ ctx }) => {
+    getProviders: viewerProcedure.query(async ({ ctx }) => {
         if (!isAdmin(ctx.auth.user)) {
             return { isAdmin: false, needsTwoFactor: false, options: [], providers: [] };
         }

@@ -11,7 +11,8 @@ import { getTrialDaysLeft } from "@/lib/subscription/get-trial-days-left";
 
 export default function BillingPage() {
   const queryClient = useQueryClient(); // 2. Access the query client cache
-  const { data, isLoading } = useCurrentPlan();
+  // Billing is the user's own account, whatever workspace they work in
+  const { data, isLoading } = useCurrentPlan({ own: true });
 
   const trialDaysLeft = getTrialDaysLeft(
     data?.trialEndsAt ?? null

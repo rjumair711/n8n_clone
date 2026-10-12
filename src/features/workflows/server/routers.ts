@@ -1,6 +1,6 @@
 import { PAGINATION } from "@/config/constants";
 import prisma from "@/lib/db";
-import { createTRPCRouter, protectedProcedure } from "@/trpc/init";
+import { createTRPCRouter, editorProcedure, viewerProcedure } from "@/trpc/init";
 import { generateSlug } from "random-word-slugs"
 import z from "zod";
 import type { Node, Edge } from "@xyflow/react"
@@ -36,7 +36,7 @@ const getOwnedWorkflow = async (id: string, userId: string) =>
 export const workflowsRouter = createTRPCRouter({
 
     //EXECUTE WORKFLOW
-    execute: protectedProcedure
+    execute: editorProcedure
         .input(z.object({
             id: z.string(),
             // Sent by the editor's chat panel: runs the Chat Trigger branch
@@ -58,10 +58,10 @@ export const workflowsRouter = createTRPCRouter({
         .mutation(async ({ input, ctx }) => {
             const user = await prisma.user.findUniqueOrThrow({
                 where: {
-                    id: ctx.auth.user.id,
+                    id: ctx.workspace.ownerId,
                 },
             });
-            const workflow = await getOwnedWorkflow(input.id, ctx.auth.user.id);
+            const workflow = await getOwnedWorkflow(input.id, ctx.workspace.ownerId);
 
             // Runs use the saved workflow, so the trigger has to be saved too
             const triggerType = input.chat ? NodeType.CHAT_TRIGGER : input.trigger;
@@ -121,7 +121,7 @@ export const workflowsRouter = createTRPCRouter({
             const executionsThisMonth = await prisma.execution.count({
                 where: {
                     workflow: {
-                        userId: ctx.auth.user.id,
+                        userId: ctx.workspace.ownerId,
                     },
                     startedAt: {
                         gte: startOfMonth,
@@ -195,7 +195,7 @@ export const workflowsRouter = createTRPCRouter({
 
             await prisma.user.update({
                 where: {
-                    id: ctx.auth.user.id,
+                    id: ctx.workspace.ownerId,
                 },
 
                 data: {
@@ -215,17 +215,17 @@ export const workflowsRouter = createTRPCRouter({
 
 
     // CREATE WORKFLOW
-    create: protectedProcedure.mutation(async ({ ctx }) => {
+    create: editorProcedure.mutation(async ({ ctx }) => {
         const user = await prisma.user.findUniqueOrThrow({
             where: {
-                id: ctx.auth.user.id,
+                id: ctx.workspace.ownerId,
             },
         });
 
         const workflowCount =
             await prisma.workflow.count({
                 where: {
-                    userId: ctx.auth.user.id,
+                    userId: ctx.workspace.ownerId,
                 },
             });
 
@@ -249,7 +249,8 @@ export const workflowsRouter = createTRPCRouter({
                 data: {
                     name: generateSlug(3),
 
-                    userId: ctx.auth.user.id,
+                    userId: ctx.workspace.ownerId,
+                    workspaceId: ctx.workspace.id,
 
                     nodes: {
                         create: {
@@ -268,7 +269,7 @@ export const workflowsRouter = createTRPCRouter({
 
         await prisma.user.update({
             where: {
-                id: ctx.auth.user.id,
+                id: ctx.workspace.ownerId,
             },
 
             data: {
@@ -283,10 +284,10 @@ export const workflowsRouter = createTRPCRouter({
 
     // PINNED DATA
     // The nodes of a workflow that have pinned data, for the editor
-    getPinnedNodes: protectedProcedure
+    getPinnedNodes: viewerProcedure
         .input(z.object({ id: z.string() }))
         .query(async ({ ctx, input }) => {
-            await getOwnedWorkflow(input.id, ctx.auth.user.id);
+            await getOwnedWorkflow(input.id, ctx.workspace.ownerId);
 
             // Which nodes and since when; the data itself stays on the server
             return prisma.pinnedData.findMany({
@@ -297,14 +298,14 @@ export const workflowsRouter = createTRPCRouter({
 
     // Pins a node's output: from the given execution, or from the newest
     // run that has it. In runs from the editor the node is then not run.
-    pinNode: protectedProcedure
+    pinNode: editorProcedure
         .input(z.object({
             id: z.string(),
             nodeId: z.string().min(1).max(100),
             executionId: z.string().min(1).max(100).optional(),
         }))
         .mutation(async ({ ctx, input }) => {
-            await getOwnedWorkflow(input.id, ctx.auth.user.id);
+            await getOwnedWorkflow(input.id, ctx.workspace.ownerId);
 
             try {
                 return await pinNodeData({
@@ -321,29 +322,30 @@ export const workflowsRouter = createTRPCRouter({
             }
         }),
 
-    unpinNode: protectedProcedure
+    unpinNode: editorProcedure
         .input(z.object({ id: z.string(), nodeId: z.string().min(1).max(100) }))
         .mutation(async ({ ctx, input }) => {
-            await getOwnedWorkflow(input.id, ctx.auth.user.id);
+            await getOwnedWorkflow(input.id, ctx.workspace.ownerId);
 
             return { removed: await unpinNodeData(input.id, input.nodeId) };
         }),
 
     // DELETE WORKFLOW
-    remove: protectedProcedure
+    remove: editorProcedure
         .input(z.object({ id: z.string() }))
         .mutation(async ({ ctx, input }) => {
-            await getOwnedWorkflow(input.id, ctx.auth.user.id);
+            await getOwnedWorkflow(input.id, ctx.workspace.ownerId);
 
             const deleted = await prisma.workflow.delete({
                 where: {
                     id: input.id,
-                    userId: ctx.auth.user.id
+                    userId: ctx.workspace.ownerId
                 }
             })
 
             await recordAudit({
-                userId: ctx.auth.user.id,
+                userId: ctx.workspace.ownerId,
+                actor: ctx.workspace.actor,
                 action: "workflow.deleted",
                 target: describeAuditTarget("Workflow", deleted),
             });
@@ -352,30 +354,30 @@ export const workflowsRouter = createTRPCRouter({
         }),
 
     // UPDATE WORKFLOW NAME
-    updateName: protectedProcedure
+    updateName: editorProcedure
         .input(z.object({ id: z.string(), name: z.string().min(1) }))
         .mutation(async ({ ctx, input }) => {
-            await getOwnedWorkflow(input.id, ctx.auth.user.id);
+            await getOwnedWorkflow(input.id, ctx.workspace.ownerId);
 
             return prisma.workflow.update({
                 where: {
                     id: input.id,
-                    userId: ctx.auth.user.id
+                    userId: ctx.workspace.ownerId
                 },
                 data: { name: input.name },
             })
         }),
 
     // "Don't save node input/output": only status and errors are kept
-    setSaveExecutionData: protectedProcedure
+    setSaveExecutionData: editorProcedure
         .input(z.object({ id: z.string(), save: z.boolean() }))
         .mutation(async ({ ctx, input }) => {
-            await getOwnedWorkflow(input.id, ctx.auth.user.id);
+            await getOwnedWorkflow(input.id, ctx.workspace.ownerId);
 
             return prisma.workflow.update({
                 where: {
                     id: input.id,
-                    userId: ctx.auth.user.id
+                    userId: ctx.workspace.ownerId
                 },
                 data: { saveExecutionData: input.save },
                 select: { id: true, name: true, saveExecutionData: true },
@@ -385,16 +387,16 @@ export const workflowsRouter = createTRPCRouter({
     // ACTIVATE / DEACTIVATE WORKFLOW
     // Only active workflows run from schedules and webhooks. Manual runs and
     // the chat panel always work, so a workflow can be tested while inactive.
-    setActive: protectedProcedure
+    setActive: editorProcedure
         .input(z.object({ id: z.string(), active: z.boolean() }))
         .mutation(async ({ ctx, input }) => {
-            await getOwnedWorkflow(input.id, ctx.auth.user.id);
+            await getOwnedWorkflow(input.id, ctx.workspace.ownerId);
 
             // Telegram Trigger: the bot's webhook is registered on activation
             // and removed on deactivation, like n8n does
             const telegramError = await syncTelegramWebhooks({
                 workflowId: input.id,
-                userId: ctx.auth.user.id,
+                userId: ctx.workspace.ownerId,
                 active: input.active,
             })
 
@@ -408,13 +410,14 @@ export const workflowsRouter = createTRPCRouter({
             const workflow = await prisma.workflow.update({
                 where: {
                     id: input.id,
-                    userId: ctx.auth.user.id
+                    userId: ctx.workspace.ownerId
                 },
                 data: { active: input.active },
             })
 
             await recordAudit({
-                userId: ctx.auth.user.id,
+                userId: ctx.workspace.ownerId,
+                actor: ctx.workspace.actor,
                 action: input.active ? "workflow.activated" : "workflow.deactivated",
                 target: describeAuditTarget("Workflow", workflow),
             });
@@ -423,7 +426,7 @@ export const workflowsRouter = createTRPCRouter({
         }),
 
     // UPDATE WORKFLOW
-    update: protectedProcedure
+    update: editorProcedure
         .input(z.object({
             id: z.string(),
             nodes: z.array(
@@ -450,7 +453,7 @@ export const workflowsRouter = createTRPCRouter({
         .mutation(async ({ ctx, input }) => {
             const { id, nodes, edges } = input;
 
-            const workflow = await getOwnedWorkflow(input.id, ctx.auth.user.id);
+            const workflow = await getOwnedWorkflow(input.id, ctx.workspace.ownerId);
 
             // A node is only linked to a credential of the same user. An id
             // that is someone else's, or of a credential that was deleted,
@@ -462,7 +465,7 @@ export const workflowsRouter = createTRPCRouter({
                     ? []
                     : (
                         await prisma.credential.findMany({
-                            where: { id: { in: linkedIds }, userId: ctx.auth.user.id },
+                            where: { id: { in: linkedIds }, userId: ctx.workspace.ownerId },
                             select: { id: true },
                         })
                     ).map((credential) => credential.id)
@@ -570,7 +573,7 @@ export const workflowsRouter = createTRPCRouter({
             if (workflow.active) {
                 const telegramError = await syncTelegramWebhooks({
                     workflowId: id,
-                    userId: ctx.auth.user.id,
+                    userId: ctx.workspace.ownerId,
                     active: true,
                 })
 
@@ -588,10 +591,10 @@ export const workflowsRouter = createTRPCRouter({
     // VERSION HISTORY
     // The versions of a workflow, newest first: when, and what changed.
     // The nodes themselves are only read when a version is restored.
-    getVersions: protectedProcedure
+    getVersions: viewerProcedure
         .input(z.object({ id: z.string() }))
         .query(async ({ ctx, input }) => {
-            await getOwnedWorkflow(input.id, ctx.auth.user.id);
+            await getOwnedWorkflow(input.id, ctx.workspace.ownerId);
 
             const versions = await prisma.workflowVersion.findMany({
                 where: { workflowId: input.id },
@@ -619,10 +622,10 @@ export const workflowsRouter = createTRPCRouter({
 
     // Puts the workflow back to one of its versions. That makes a new
     // version, so restoring can itself be undone.
-    restoreVersion: protectedProcedure
+    restoreVersion: editorProcedure
         .input(z.object({ id: z.string(), versionId: z.string().min(1).max(100) }))
         .mutation(async ({ ctx, input }) => {
-            const userId = ctx.auth.user.id;
+            const userId = ctx.workspace.ownerId;
             const workflow = await getOwnedWorkflow(input.id, userId);
 
             // A version of this workflow: another workflow's id finds nothing
@@ -769,7 +772,7 @@ export const workflowsRouter = createTRPCRouter({
         }),
 
     // UPDATE ONE
-    getOne: protectedProcedure
+    getOne: viewerProcedure
         .input(z.object({ id: z.string() }))
         .query(async ({ ctx, input }) => {
             const workflow = assertOwnership(
@@ -777,7 +780,7 @@ export const workflowsRouter = createTRPCRouter({
                     where: { id: input.id },
                     include: { nodes: true, connections: true },
                 }),
-                ctx.auth.user.id,
+                ctx.workspace.ownerId,
                 "Workflow"
             )
             // Transform server nodes to react-flow compatible nodes
@@ -810,7 +813,7 @@ export const workflowsRouter = createTRPCRouter({
 
 
     // UPDATE MANY
-    getMany: protectedProcedure
+    getMany: viewerProcedure
         .input(
             z.object({
                 page: z.number().default(PAGINATION.DEFAULT_PAGE),
@@ -829,7 +832,7 @@ export const workflowsRouter = createTRPCRouter({
                     skip: (page - 1) * pageSize,
                     take: pageSize,
                     where: {
-                        userId: ctx.auth.user.id,
+                        userId: ctx.workspace.ownerId,
                         name: {
                             contains: search,
                             mode: "insensitive",
@@ -841,7 +844,7 @@ export const workflowsRouter = createTRPCRouter({
                 }),
                 prisma.workflow.count({
                     where: {
-                        userId: ctx.auth.user.id,
+                        userId: ctx.workspace.ownerId,
                         name: {
                             contains: search,
                             mode: "insensitive",

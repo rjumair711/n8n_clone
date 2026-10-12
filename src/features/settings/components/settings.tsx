@@ -2,6 +2,7 @@
 
 import { ModelPricesCard } from "@/features/ai-usage/components/model-prices-card";
 import { IncludedAiCard } from "@/features/ai-credits/components/included-ai-card";
+import { WorkspaceCard } from "@/features/workspaces/components/workspace-card";
 import { AuditLogCard } from "./audit-log-card";
 import { SessionsCard } from "./sessions-card";
 import { TwoFactorCard } from "./two-factor-card";
@@ -11,11 +12,12 @@ export const Settings = () => (
         <div>
             <h1 className="text-lg font-semibold md:text-xl">Settings</h1>
             <p className="text-sm text-muted-foreground">
-                Two-factor authentication, the devices signed in to your account, and
-                what happened on it.
+                Your workspace and its team, two-factor authentication, the devices
+                signed in to your account, and what happened on it.
             </p>
         </div>
 
+        <WorkspaceCard />
         <TwoFactorCard />
         <SessionsCard />
         <AuditLogCard />

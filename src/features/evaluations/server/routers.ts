@@ -6,7 +6,7 @@ import { modelInput } from "@/features/ai-builder/server/routers";
 import { inngest } from "@/inngest/client";
 import prisma from "@/lib/db";
 import { assertOwnership } from "@/lib/ownership";
-import { createTRPCRouter, protectedProcedure } from "@/trpc/init";
+import { createTRPCRouter, editorProcedure, viewerProcedure } from "@/trpc/init";
 import {
     EVAL_MAX_COMPARE,
     EVAL_MAX_DATASETS,
@@ -118,10 +118,10 @@ const number = (value: Prisma.Decimal | null) => (value === null ? null : Number
 export const evaluationsRouter = createTRPCRouter({
     // The page: the workflow's datasets, and what a dataset can start from
     // and score
-    getOverview: protectedProcedure
+    getOverview: viewerProcedure
         .input(z.object({ workflowId: z.string() }))
         .query(async ({ ctx, input }) => {
-            const workflow = await getOwnedWorkflow(input.workflowId, ctx.auth.user.id);
+            const workflow = await getOwnedWorkflow(input.workflowId, ctx.workspace.ownerId);
 
             const [datasets, nodes] = await Promise.all([
                 prisma.evalDataset.findMany({
@@ -170,10 +170,10 @@ export const evaluationsRouter = createTRPCRouter({
             };
         }),
 
-    getDataset: protectedProcedure
+    getDataset: viewerProcedure
         .input(z.object({ id: z.string() }))
         .query(async ({ ctx, input }) => {
-            const { workflow, ...dataset } = await getOwnedDataset(input.id, ctx.auth.user.id);
+            const { workflow, ...dataset } = await getOwnedDataset(input.id, ctx.workspace.ownerId);
 
             const rows = await prisma.evalRow.findMany({
                 where: { datasetId: dataset.id },
@@ -184,10 +184,10 @@ export const evaluationsRouter = createTRPCRouter({
             return { ...dataset, rows };
         }),
 
-    createDataset: protectedProcedure
+    createDataset: editorProcedure
         .input(datasetInput.extend({ workflowId: z.string() }))
         .mutation(async ({ ctx, input }) => {
-            const workflow = await getOwnedWorkflow(input.workflowId, ctx.auth.user.id);
+            const workflow = await getOwnedWorkflow(input.workflowId, ctx.workspace.ownerId);
             checkDataset(input);
 
             const count = await prisma.evalDataset.count({ where: { workflowId: workflow.id } });
@@ -203,10 +203,10 @@ export const evaluationsRouter = createTRPCRouter({
             return dataset;
         }),
 
-    updateDataset: protectedProcedure
+    updateDataset: editorProcedure
         .input(datasetInput.extend({ id: z.string() }))
         .mutation(async ({ ctx, input }) => {
-            const dataset = await getOwnedDataset(input.id, ctx.auth.user.id);
+            const dataset = await getOwnedDataset(input.id, ctx.workspace.ownerId);
             checkDataset(input);
 
             await prisma.evalDataset.update({
@@ -217,10 +217,10 @@ export const evaluationsRouter = createTRPCRouter({
             return { id: dataset.id };
         }),
 
-    removeDataset: protectedProcedure
+    removeDataset: editorProcedure
         .input(z.object({ id: z.string() }))
         .mutation(async ({ ctx, input }) => {
-            const dataset = await getOwnedDataset(input.id, ctx.auth.user.id);
+            const dataset = await getOwnedDataset(input.id, ctx.workspace.ownerId);
 
             // Its rows, runs and results go with it. A run that is still
             // going finds nothing left and stops.
@@ -231,7 +231,7 @@ export const evaluationsRouter = createTRPCRouter({
 
     // ROWS
     // One row, or many at once (pasted as JSON)
-    addRows: protectedProcedure
+    addRows: editorProcedure
         .input(
             z.object({
                 datasetId: z.string(),
@@ -239,7 +239,7 @@ export const evaluationsRouter = createTRPCRouter({
             })
         )
         .mutation(async ({ ctx, input }) => {
-            const dataset = await getOwnedDataset(input.datasetId, ctx.auth.user.id);
+            const dataset = await getOwnedDataset(input.datasetId, ctx.workspace.ownerId);
 
             for (const row of input.rows) checkRow(dataset.scorer, row.expected);
 
@@ -266,7 +266,7 @@ export const evaluationsRouter = createTRPCRouter({
             return { added: input.rows.length };
         }),
 
-    updateRow: protectedProcedure
+    updateRow: editorProcedure
         .input(rowInput.extend({ id: z.string() }))
         .mutation(async ({ ctx, input }) => {
             const row = assertOwnership(
@@ -276,7 +276,7 @@ export const evaluationsRouter = createTRPCRouter({
                         dataset: { select: { scorer: true, workflow: { select: { userId: true } } } },
                     },
                 }),
-                ctx.auth.user.id,
+                ctx.workspace.ownerId,
                 "Row",
                 (found) => found.dataset.workflow.userId
             );
@@ -294,7 +294,7 @@ export const evaluationsRouter = createTRPCRouter({
             return { id: row.id };
         }),
 
-    removeRow: protectedProcedure
+    removeRow: editorProcedure
         .input(z.object({ id: z.string() }))
         .mutation(async ({ ctx, input }) => {
             const row = assertOwnership(
@@ -302,7 +302,7 @@ export const evaluationsRouter = createTRPCRouter({
                     where: { id: input.id },
                     include: { dataset: { select: { workflow: { select: { userId: true } } } } },
                 }),
-                ctx.auth.user.id,
+                ctx.workspace.ownerId,
                 "Row",
                 (found) => found.dataset.workflow.userId
             );
@@ -317,7 +317,7 @@ export const evaluationsRouter = createTRPCRouter({
     // Runs the saved workflow once for every row. The rows are real
     // executions: they count towards the plan, and their nodes do what
     // they do (send the message, write the record).
-    startRun: protectedProcedure
+    startRun: editorProcedure
         .input(
             z.object({
                 datasetId: z.string(),
@@ -325,7 +325,7 @@ export const evaluationsRouter = createTRPCRouter({
             })
         )
         .mutation(async ({ ctx, input }) => {
-            const userId = ctx.auth.user.id;
+            const userId = ctx.workspace.ownerId;
             const dataset = await getOwnedDataset(input.datasetId, userId);
 
             // What is scored is read from the saved result of each run
@@ -436,10 +436,10 @@ export const evaluationsRouter = createTRPCRouter({
         }),
 
     // Stops a run after the row it is on. Rows that did not run stay "Not run".
-    cancelRun: protectedProcedure
+    cancelRun: editorProcedure
         .input(z.object({ id: z.string() }))
         .mutation(async ({ ctx, input }) => {
-            const run = await getOwnedRun(input.id, ctx.auth.user.id);
+            const run = await getOwnedRun(input.id, ctx.workspace.ownerId);
 
             const cancelled = await prisma.evalRun.updateMany({
                 where: { id: run.id, status: EVAL_RUN_STATUS.RUNNING },
@@ -453,10 +453,10 @@ export const evaluationsRouter = createTRPCRouter({
             return { id: run.id, cancelled: cancelled.count > 0 };
         }),
 
-    removeRun: protectedProcedure
+    removeRun: editorProcedure
         .input(z.object({ id: z.string() }))
         .mutation(async ({ ctx, input }) => {
-            const run = await getOwnedRun(input.id, ctx.auth.user.id);
+            const run = await getOwnedRun(input.id, ctx.workspace.ownerId);
 
             if (run.status === EVAL_RUN_STATUS.RUNNING) {
                 refuse("Cancel the run before deleting it.");
@@ -468,10 +468,10 @@ export const evaluationsRouter = createTRPCRouter({
         }),
 
     // A dataset's runs, newest first: score, cost and latency of each
-    getRuns: protectedProcedure
+    getRuns: viewerProcedure
         .input(z.object({ datasetId: z.string() }))
         .query(async ({ ctx, input }) => {
-            const dataset = await getOwnedDataset(input.datasetId, ctx.auth.user.id);
+            const dataset = await getOwnedDataset(input.datasetId, ctx.workspace.ownerId);
 
             const runs = await prisma.evalRun.findMany({
                 where: { datasetId: dataset.id },
@@ -500,7 +500,7 @@ export const evaluationsRouter = createTRPCRouter({
         }),
 
     // The rows of up to four runs of one dataset, side by side
-    getResults: protectedProcedure
+    getResults: viewerProcedure
         .input(
             z.object({
                 datasetId: z.string(),
@@ -508,7 +508,7 @@ export const evaluationsRouter = createTRPCRouter({
             })
         )
         .query(async ({ ctx, input }) => {
-            const dataset = await getOwnedDataset(input.datasetId, ctx.auth.user.id);
+            const dataset = await getOwnedDataset(input.datasetId, ctx.workspace.ownerId);
 
             // Only runs of this dataset: another dataset's id finds nothing
             const results = await prisma.evalResult.findMany({

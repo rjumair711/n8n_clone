@@ -1,3 +1,4 @@
+import { resolveWorkspace } from "@/lib/workspaces";
 import { headers } from "next/headers";
 import { type NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
@@ -67,7 +68,13 @@ export async function GET(
 
     // Scoped to the owner: another account's file id is "not found"
     try {
-        return download(await getOwnedWorkflowFile(fileId, session.user.id));
+        return download(
+            await getOwnedWorkflowFile(
+                fileId,
+                // Of the workspace the user is working in: any member may read
+                (await resolveWorkspace(session.user)).ownerId
+            )
+        );
     } catch (error) {
         const response = notFoundResponse(error);
         if (response) return response;

@@ -1,6 +1,6 @@
 import { PAGINATION } from "@/config/constants";
 import prisma from "@/lib/db";
-import { createTRPCRouter, protectedProcedure } from "@/trpc/init";
+import { createTRPCRouter, viewerProcedure, workspaceAdminProcedure } from "@/trpc/init";
 import z from "zod";
 import { CredentialType } from "@prisma/client"
 import { encrypt } from "@/lib/encryption";
@@ -38,7 +38,7 @@ export const credentialsRouter = createTRPCRouter({
 
 
     // CREATE CREDENTIAL
-    create: protectedProcedure
+    create: workspaceAdminProcedure
         .input(
             z.object({
                 name: z.string().min(1, "Name is required"),
@@ -53,14 +53,14 @@ export const credentialsRouter = createTRPCRouter({
             const user =
                 await prisma.user.findUniqueOrThrow({
                     where: {
-                        id: ctx.auth.user.id,
+                        id: ctx.workspace.ownerId,
                     },
                 });
 
             const credentialCount =
                 await prisma.credential.count({
                     where: {
-                        userId: ctx.auth.user.id,
+                        userId: ctx.workspace.ownerId,
                     },
                 });
 
@@ -79,7 +79,8 @@ export const credentialsRouter = createTRPCRouter({
                 data: {
                     name,
 
-                    userId: ctx.auth.user.id,
+                    userId: ctx.workspace.ownerId,
+                    workspaceId: ctx.workspace.id,
 
                     type,
 
@@ -89,7 +90,8 @@ export const credentialsRouter = createTRPCRouter({
             });
 
             await recordAudit({
-                userId: ctx.auth.user.id,
+                userId: ctx.workspace.ownerId,
+                actor: ctx.workspace.actor,
                 action: "credential.created",
                 target: describeAuditTarget(`${type} credential`, { name, id: created.id }),
             });
@@ -99,21 +101,22 @@ export const credentialsRouter = createTRPCRouter({
 
 
     // DELETE CREDENTIAL
-    remove: protectedProcedure
+    remove: workspaceAdminProcedure
         .input(z.object({ id: z.string() }))
         .mutation(async ({ ctx, input }) => {
-            await getOwnedCredential(input.id, ctx.auth.user.id);
+            await getOwnedCredential(input.id, ctx.workspace.ownerId);
 
             const deleted = await prisma.credential.delete({
                 where: {
                     id: input.id,
-                    userId: ctx.auth.user.id
+                    userId: ctx.workspace.ownerId
                 },
                 select: SAFE_CREDENTIAL_FIELDS,
             })
 
             await recordAudit({
-                userId: ctx.auth.user.id,
+                userId: ctx.workspace.ownerId,
+                actor: ctx.workspace.actor,
                 action: "credential.deleted",
                 target: describeAuditTarget(`${deleted.type} credential`, deleted),
             });
@@ -122,7 +125,7 @@ export const credentialsRouter = createTRPCRouter({
         }),
 
     // UPDATE CREDENTIAL
-    update: protectedProcedure
+    update: workspaceAdminProcedure
         .input(z.object({
             id: z.string(),
             name: z.string().min(1, "Name is required"),
@@ -139,10 +142,10 @@ export const credentialsRouter = createTRPCRouter({
             // belongs to the type it was entered for
             const replaceSecret = !!value;
 
-            await getOwnedCredential(id, ctx.auth.user.id);
+            await getOwnedCredential(id, ctx.workspace.ownerId);
 
             const updated = await prisma.credential.update({
-                where: { id, userId: ctx.auth.user.id },
+                where: { id, userId: ctx.workspace.ownerId },
                 data: {
                     name,
                     ...(replaceSecret ? { type, value: encrypt(value) } : {}),
@@ -151,7 +154,8 @@ export const credentialsRouter = createTRPCRouter({
             })
 
             await recordAudit({
-                userId: ctx.auth.user.id,
+                userId: ctx.workspace.ownerId,
+                actor: ctx.workspace.actor,
                 action: "credential.updated",
                 // Says whether the secret itself was replaced, never what it is
                 target:
@@ -163,13 +167,13 @@ export const credentialsRouter = createTRPCRouter({
         }),
 
     // GET ONE
-    getOne: protectedProcedure
+    getOne: workspaceAdminProcedure
         .input(z.object({ id: z.string() }))
         .query(async ({ ctx, input }) => {
             // The owner id was only needed for the check
             const { userId: _owner, ...credential } = await getOwnedCredential(
                 input.id,
-                ctx.auth.user.id
+                ctx.workspace.ownerId
             )
 
             // All the form learns about the secret: that one is saved
@@ -177,7 +181,7 @@ export const credentialsRouter = createTRPCRouter({
         }),
 
     // UPDATE MANY
-    getMany: protectedProcedure
+    getMany: viewerProcedure
         .input(
             z.object({
                 page: z.number().default(PAGINATION.DEFAULT_PAGE),
@@ -196,7 +200,7 @@ export const credentialsRouter = createTRPCRouter({
                     skip: (page - 1) * pageSize,
                     take: pageSize,
                     where: {
-                        userId: ctx.auth.user.id,
+                        userId: ctx.workspace.ownerId,
                         name: {
                             contains: search,
                             mode: "insensitive",
@@ -209,7 +213,7 @@ export const credentialsRouter = createTRPCRouter({
                 }),
                 prisma.credential.count({
                     where: {
-                        userId: ctx.auth.user.id,
+                        userId: ctx.workspace.ownerId,
                         name: {
                             contains: search,
                             mode: "insensitive",
@@ -232,7 +236,7 @@ export const credentialsRouter = createTRPCRouter({
                 hasPreviousPage,
             }
         }),
-    getByType: protectedProcedure
+    getByType: viewerProcedure
         .input(
             z.object({
                 type: z.enum(CredentialType),
@@ -242,7 +246,7 @@ export const credentialsRouter = createTRPCRouter({
             const { type } = input;
 
             const credentials = await prisma.credential.findMany({
-                where: { type, userId: ctx.auth.user.id },
+                where: { type, userId: ctx.workspace.ownerId },
                 orderBy: {
                     updatedAt: "desc",
                 },

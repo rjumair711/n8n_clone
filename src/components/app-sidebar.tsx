@@ -35,6 +35,7 @@ import { authClient } from "@/lib/auth-client"
 import { UsageCard } from "@/components/subscription/usage-card";
 import { getTrialDaysLeft } from "@/lib/subscription/get-trial-days-left";
 import { useCurrentPlan } from "@/features/subscription/hook/use-current-plan"
+import { WorkspaceSwitcher } from "@/features/workspaces/components/workspace-switcher"
 
 const menuItems = [
     {
@@ -104,6 +105,8 @@ export const AppSidebar = () => {
                         </div>
                     </div>
                 )}
+
+                {!isCollapsed && <WorkspaceSwitcher />}
 
                 {!isCollapsed && (
                     <div className="px-3 pt-3">

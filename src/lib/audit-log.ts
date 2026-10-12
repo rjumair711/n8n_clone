@@ -11,6 +11,9 @@ type AuditEntry = {
     target?: string | null;
     // Read from the current request when left out
     ipAddress?: string | null;
+    // In a workspace, the line goes in the owner's log (`userId`). When it
+    // was a member who acted, this says who: their email.
+    actor?: string | null;
 };
 
 const requestIp = async () => {
@@ -35,13 +38,14 @@ export const recordAudit = async ({
     action,
     target,
     ipAddress,
+    actor,
 }: AuditEntry): Promise<void> => {
     try {
         await prisma.auditLog.create({
             data: {
                 userId,
                 action,
-                target: target || null,
+                target: actor ? `${target ?? ""} (by ${actor})`.trim() : target || null,
                 ipAddress: ipAddress === undefined ? await requestIp() : ipAddress,
             },
         });
