@@ -20,7 +20,7 @@ the instruction "build this workflow in the editor".
 ```bash
 npx prisma migrate deploy
 npm run dev:all
-npx tsx --conditions=react-server src/inngest/__test__/testCoreNodes.ts   # expect "245 checks passed"
+npx tsx --conditions=react-server src/inngest/__test__/testCoreNodes.ts   # expect "250 checks passed"
 ```
 
 Make a second account with a different email. Several checks need it.
@@ -453,6 +453,25 @@ Repeat with Title `رسید نمبر 42` and Content `محترم علی خان،
 | 4 | In the workflow change the header to `{"Authorization": "Bearer {{token}}"}` and save. Edit the template, pick the workflow under **Replace content with workflow**, **Save changes** | saved at once, no box |
 | 5 | Put `sk-proj-AbCdEfGhIjKlMnOp_QrStUv-123` in an AI Agent's System Message and `postgresql://app:s3cr3t@db.example.com/main` in any text field, save, publish as a new template | both nodes are listed, each with its field and kind ("an \"sk-\" API key", "a password in a URL") |
 | 6 | After a block, pick a different workflow in the dialog | the red box disappears until the next save attempt |
+
+**Languages and starter templates.** Needs the `template_language` migration applied.
+
+| # | Do | Expect |
+|---|----|--------|
+| 1 | As admin open **Templates** | a **Starter templates** button next to **New template**. With only English templates in the gallery there is no language filter |
+| 2 | **Starter templates** | 15 lines: five templates, each in English, Urdu and Arabic, with its language and plan. Urdu and Arabic names read right to left |
+| 3 | **Select all**, leave "Publish right away" off, **Add 15 to the gallery** | "15 starter templates added". They are in the gallery marked Hidden; the language filter appeared |
+| 4 | Open **Starter templates** again | every line is ticked, disabled and says "In the gallery" |
+| 5 | Pick **اردو (Urdu)** in the language filter | only the five Urdu templates, right to left, each with "· اردو (Urdu)" after its category. **All languages** shows everything again |
+| 6 | Combine the filter with a category (WhatsApp bots) and with the search | the three work together |
+| 7 | Edit an Urdu template | Language shows اردو (Urdu). Switch **Published** on and save: "Template saved" |
+| 8 | Delete one starter template, then add it again from **Starter templates** | it can be ticked again and comes back as shipped |
+| 9 | As the second account | hidden starters are not listed; the published one is, and the language filter works. No Starter templates button |
+| 10 | As the second account (with a plan or trial that has WhatsApp), **Use template** on "واٹس ایپ کلینک اپائنٹمنٹ بوٹ" | the workflow opens: WhatsApp Trigger → AI Agent → WhatsApp, with Gemini, Memory and Google Sheets under the agent. The agent's System Message is in Urdu; its tool is `book_appointment`. WhatsApp Trigger, Gemini, Google Sheets and WhatsApp are marked Not Configured |
+| 11 | Set that workflow up (Verify Token, App Secret, credentials, Spreadsheet ID), activate it and message the number in Urdu | the bot answers in Urdu, asks for the missing details one at a time and, after you confirm, adds a row to the sheet |
+| 12 | **Use template** on the English "School fee reminder on WhatsApp" | Schedule Trigger → Google Drive → Extract from File → IF → WhatsApp (Send Template, `fee_reminder`, `en_US`). The Arabic copy has language code `ar`, the Urdu one `ur` |
+| 13 | **New template** from one of your workflows, Language العربية (Arabic) | it is saved as Arabic and found by the Arabic filter |
+| 14 | A template made before this task | English; nothing about it changed |
 
 ## T11. API keys
 

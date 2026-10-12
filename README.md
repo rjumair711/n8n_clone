@@ -1031,7 +1031,7 @@ RXJ includes onboarding UX to improve activation and retention.
 
 * First-time onboarding page
 * Create workflow CTA
-* Workflow templates (see below)
+* Workflow templates, with starter templates in English, Urdu and Arabic (see below)
 * Build with AI: a workflow from a description (see below)
 * One-click chatbot: documents or website pages in, a website widget, share link and WhatsApp out (see below)
 * Guided product introduction
@@ -1049,6 +1049,18 @@ The **Templates** page is a gallery of ready-made workflows. "Use template" copi
 * **Secret scan:** before a template is published or updated, every field of every node is scanned for the secret shapes the log redaction knows (`sk-` keys, Bearer tokens, JWTs, AWS, Slack and GitHub tokens, passwords in URLs) and for hand-typed values in `Authorization`, `Cookie` and `X-API-Key` headers. Values made only of `{{ }}` expressions pass. If anything is found the template is not saved and the dialog lists the node and field (never the value). An admin can tick **I checked this, publish anyway** to save it regardless. Editing only a template's details scans its stored content again. The scan knows those shapes only, so a secret of another shape still has to be caught by reading the workflow.
 * **Plans:** each template has a minimum plan. Locked templates are shown with a lock and offer the upgrade. An active free trial opens every template, the same way it opens plan-locked nodes.
 * Using a template counts toward the plan's workflow limit, and workflows already made from a template do not change when the template is edited or deleted.
+* **Languages.** Every template has a language: English, Urdu or Arabic (templates made before the field existed are English). The gallery has a language filter next to the search, shown once it holds templates in more than one language; Urdu and Arabic names and descriptions are shown right to left. An admin picks the language under **New template** and in the edit dialog.
+* **Starter templates** ship with the app as JSON seed data in `src/features/templates/seed/`, each in English, Urdu and Arabic (15 in all). They are not in the gallery until an admin adds them: **Templates → Starter templates**, tick the ones wanted, and add them hidden (to read them first) or published. Adding them again changes nothing: one that is already there, also one edited since, is left alone.
+
+  | Starter template | What it does | Plan |
+  | ---------------- | ------------ | ---- |
+  | WhatsApp clinic appointment bot | Answers patients about doctors, hours and fees and books appointments into a Google Sheet. Gives no medical advice | Pro |
+  | School fee reminder on WhatsApp | On the 1st of the month reads the fee list from a Google Sheet and sends an approved WhatsApp template to parents who have not paid | Pro |
+  | WhatsApp shop order bot | Shows the menu, takes the order, adds up the total and saves it in a Google Sheet | Pro |
+  | WhatsApp real estate lead bot | Asks what the person wants (buy, rent or sell, type, area, budget, timeline) and saves the lead in a Google Sheet | Pro |
+  | Support FAQ bot | A website chat that answers from a list of questions and answers written into the agent's instructions | Intermediate |
+
+  The plan is the cheapest one that can run every node of the template (WhatsApp is Pro, the AI Agent is Intermediate); an admin can change it. The agent's instructions and example details (clinic, menu, FAQ) are written in the template's language and are meant to be replaced. A seed file holds the workflow once and its texts per language; a setting written `@text:<key>` takes that text. To add a template or a translation, edit the JSON: the tests check that every language has every text.
 
 ## Build with AI
 

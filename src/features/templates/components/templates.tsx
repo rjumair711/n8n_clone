@@ -5,6 +5,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { SubscriptionPlan } from "@prisma/client";
 import {
     EyeOffIcon,
+    LanguagesIcon,
     LayoutTemplateIcon,
     LockIcon,
     PencilIcon,
@@ -49,6 +50,13 @@ import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
 import { Checkbox } from "@/components/ui/checkbox";
 import { PLAN_NAMES } from "../lib/template-data";
+import {
+    DEFAULT_TEMPLATE_LANGUAGE,
+    TEMPLATE_LANGUAGES,
+    getTemplateLanguage,
+    isTemplateLanguage,
+    type TemplateLanguage,
+} from "../lib/template-languages";
 import type { TemplateSecretFinding } from "../lib/template-secrets";
 
 // Triggers and plumbing say little about what a template does
@@ -61,6 +69,7 @@ type TemplateForm = {
     name: string;
     description: string;
     category: string;
+    language: TemplateLanguage;
     minPlan: SubscriptionPlan;
     published: boolean;
 };
@@ -70,6 +79,7 @@ const emptyForm: TemplateForm = {
     name: "",
     description: "",
     category: "General",
+    language: DEFAULT_TEMPLATE_LANGUAGE,
     minPlan: SubscriptionPlan.FREE,
     published: true,
 };
@@ -87,6 +97,13 @@ export const Templates = () => {
 
     const [search, setSearch] = useState("");
     const [category, setCategory] = useState("All");
+    // "all", or the language of the templates shown
+    const [language, setLanguage] = useState("all");
+    // ADMIN: the starter templates dialog, what is ticked in it, and whether
+    // they are added published
+    const [startersOpen, setStartersOpen] = useState(false);
+    const [starterIds, setStarterIds] = useState<string[]>([]);
+    const [startersPublished, setStartersPublished] = useState(false);
     const [upgradeOpen, setUpgradeOpen] = useState(false);
     const [form, setForm] = useState<TemplateForm | null>(null);
     // What the secret scan found when the last save was blocked, and whether
@@ -112,6 +129,26 @@ export const Templates = () => {
 
     const refresh = () =>
         queryClient.invalidateQueries(trpc.templates.getMany.queryOptions());
+
+    const { data: starters } = useQuery({
+        ...trpc.templates.getStarters.queryOptions(),
+        enabled: isAdmin && startersOpen,
+    });
+
+    const addStarters = useMutation(
+        trpc.templates.addStarters.mutationOptions({
+            onSuccess: (result) => {
+                toast.success(
+                    `${result.added} starter template${result.added === 1 ? "" : "s"} added${result.skipped ? `, ${result.skipped} already there` : ""}`
+                );
+                setStartersOpen(false);
+                setStarterIds([]);
+                refresh();
+                queryClient.invalidateQueries(trpc.templates.getStarters.queryOptions());
+            },
+            onError: (error) => toast.error(error.message),
+        })
+    );
 
     const applyTemplate = useMutation(
         trpc.templates.use.mutationOptions({
@@ -162,11 +199,17 @@ export const Templates = () => {
         [items]
     );
 
+    // Only the languages the gallery has templates in
+    const languages = TEMPLATE_LANGUAGES.filter((entry) =>
+        items.some((item) => getTemplateLanguage(item.language).value === entry.value)
+    );
+
     const visible = items.filter((item) => {
         const query = search.trim().toLowerCase();
 
         return (
             (category === "All" || item.category === category) &&
+            (language === "all" || getTemplateLanguage(item.language).value === language) &&
             (!query ||
                 item.name.toLowerCase().includes(query) ||
                 item.description.toLowerCase().includes(query) ||
@@ -181,6 +224,7 @@ export const Templates = () => {
             name: form.name,
             description: form.description,
             category: form.category,
+            language: form.language,
             minPlan: form.minPlan,
             published: form.published,
             ...(findings && confirmSecrets ? { confirmSecrets: true } : {}),
@@ -217,10 +261,16 @@ export const Templates = () => {
                     </p>
                 </div>
                 {isAdmin && (
-                    <Button onClick={() => openForm({ ...emptyForm })}>
-                        <PlusIcon className="size-4" />
-                        New template
-                    </Button>
+                    <div className="flex flex-wrap gap-2">
+                        <Button variant="outline" onClick={() => setStartersOpen(true)}>
+                            <LanguagesIcon className="size-4" />
+                            Starter templates
+                        </Button>
+                        <Button onClick={() => openForm({ ...emptyForm })}>
+                            <PlusIcon className="size-4" />
+                            New template
+                        </Button>
+                    </div>
                 )}
             </div>
 
@@ -243,6 +293,21 @@ export const Templates = () => {
                         onChange={(event) => setSearch(event.target.value)}
                     />
                 </div>
+                {languages.length > 1 && (
+                    <Select value={language} onValueChange={setLanguage}>
+                        <SelectTrigger className="w-44" aria-label="Language">
+                            <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                            <SelectItem value="all">All languages</SelectItem>
+                            {languages.map((entry) => (
+                                <SelectItem key={entry.value} value={entry.value}>
+                                    {entry.label}
+                                </SelectItem>
+                            ))}
+                        </SelectContent>
+                    </Select>
+                )}
                 <div className="flex flex-wrap gap-2">
                     {categories.map((name) => (
                         <Button
@@ -276,21 +341,34 @@ export const Templates = () => {
                         const badges = template.nodeTypes.filter(
                             (type) => !HIDDEN_BADGE_TYPES.has(type)
                         );
+                        // Urdu and Arabic read right to left
+                        const written = getTemplateLanguage(template.language);
 
                         return (
                             <Card key={template.id} className="flex flex-col shadow-none">
                                 <CardHeader>
                                     <div className="flex items-start justify-between gap-2">
-                                        <CardTitle className="text-base">{template.name}</CardTitle>
+                                        <CardTitle className="text-base" lang={written.value} dir={written.dir}>
+                                            {template.name}
+                                        </CardTitle>
                                         <Badge variant={template.minPlan === "FREE" ? "secondary" : "default"}>
                                             {template.locked && <LockIcon className="size-3" />}
                                             {PLAN_NAMES[template.minPlan]}
                                         </Badge>
                                     </div>
-                                    <CardDescription>{template.category}</CardDescription>
+                                    <CardDescription>
+                                        {template.category}
+                                        {written.value !== DEFAULT_TEMPLATE_LANGUAGE && ` · ${written.label}`}
+                                    </CardDescription>
                                 </CardHeader>
                                 <CardContent className="flex-1 space-y-3">
-                                    <p className="text-sm text-muted-foreground">{template.description}</p>
+                                    <p
+                                        className="text-sm text-muted-foreground"
+                                        lang={written.value}
+                                        dir={written.dir}
+                                    >
+                                        {template.description}
+                                    </p>
                                     <div className="flex flex-wrap gap-1.5">
                                         {badges.slice(0, MAX_BADGES).map((type) => (
                                             <Badge key={type} variant="outline" className="font-normal">
@@ -347,6 +425,7 @@ export const Templates = () => {
                                                         name: template.name,
                                                         description: template.description,
                                                         category: template.category,
+                                                        language: getTemplateLanguage(template.language).value,
                                                         minPlan: template.minPlan,
                                                         published: template.published,
                                                     })
@@ -432,6 +511,7 @@ export const Templates = () => {
                                     id="template-name"
                                     placeholder="WhatsApp support bot"
                                     value={form.name}
+                                    dir="auto"
                                     onChange={(event) => setForm({ ...form, name: event.target.value })}
                                 />
                             </div>
@@ -442,8 +522,34 @@ export const Templates = () => {
                                     id="template-description"
                                     placeholder="What it does, and what the user has to connect to make it work."
                                     value={form.description}
+                                    dir="auto"
                                     onChange={(event) => setForm({ ...form, description: event.target.value })}
                                 />
+                            </div>
+
+                            <div className="space-y-2">
+                                <Label>Language</Label>
+                                <Select
+                                    value={form.language}
+                                    onValueChange={(value) =>
+                                        isTemplateLanguage(value) && setForm({ ...form, language: value })
+                                    }
+                                >
+                                    <SelectTrigger className="w-full">
+                                        <SelectValue />
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                        {TEMPLATE_LANGUAGES.map((entry) => (
+                                            <SelectItem key={entry.value} value={entry.value}>
+                                                {entry.label}
+                                            </SelectItem>
+                                        ))}
+                                    </SelectContent>
+                                </Select>
+                                <p className="text-xs text-muted-foreground">
+                                    The language the name, the description and the texts inside the
+                                    workflow are written in. The gallery can be filtered by it.
+                                </p>
                             </div>
 
                             <div className="grid grid-cols-2 gap-4">
@@ -543,6 +649,107 @@ export const Templates = () => {
                             onClick={submitForm}
                         >
                             {findings ? "Publish anyway" : form?.id ? "Save changes" : "Publish template"}
+                        </Button>
+                    </DialogFooter>
+                </DialogContent>
+            </Dialog>
+
+            <Dialog open={startersOpen} onOpenChange={setStartersOpen}>
+                <DialogContent className="max-h-[90vh] overflow-y-auto">
+                    <DialogHeader>
+                        <DialogTitle>Starter templates</DialogTitle>
+                        <DialogDescription>
+                            Templates that ship with the app, each in English, Urdu and
+                            Arabic. Tick the ones to add to the gallery. One that is already
+                            there is not changed. Afterwards they can be edited, hidden and
+                            deleted like any template.
+                        </DialogDescription>
+                    </DialogHeader>
+
+                    {!starters ? (
+                        <p className="text-sm text-muted-foreground">Loading...</p>
+                    ) : (
+                        <div className="space-y-4">
+                            <div className="flex gap-2">
+                                <Button
+                                    size="sm"
+                                    variant="outline"
+                                    onClick={() =>
+                                        setStarterIds(
+                                            starters.filter((starter) => !starter.inGallery).map((starter) => starter.id)
+                                        )
+                                    }
+                                >
+                                    Select all
+                                </Button>
+                                <Button size="sm" variant="ghost" onClick={() => setStarterIds([])}>
+                                    Clear
+                                </Button>
+                            </div>
+
+                            <ul className="divide-y text-sm">
+                                {starters.map((starter) => {
+                                    const written = getTemplateLanguage(starter.language);
+
+                                    return (
+                                        <li key={starter.id} className="flex items-center gap-3 py-2">
+                                            <Checkbox
+                                                id={`starter-${starter.id}`}
+                                                disabled={starter.inGallery}
+                                                checked={starter.inGallery || starterIds.includes(starter.id)}
+                                                onCheckedChange={(checked) =>
+                                                    setStarterIds((current) =>
+                                                        checked === true
+                                                            ? [...current.filter((id) => id !== starter.id), starter.id]
+                                                            : current.filter((id) => id !== starter.id)
+                                                    )
+                                                }
+                                            />
+                                            <Label
+                                                htmlFor={`starter-${starter.id}`}
+                                                className="flex-1 font-normal"
+                                                lang={written.value}
+                                                dir={written.dir}
+                                            >
+                                                {starter.name}
+                                            </Label>
+                                            <span className="shrink-0 text-xs text-muted-foreground">
+                                                {starter.inGallery
+                                                    ? "In the gallery"
+                                                    : `${written.label} · ${PLAN_NAMES[starter.minPlan] ?? starter.minPlan}`}
+                                            </span>
+                                        </li>
+                                    );
+                                })}
+                            </ul>
+
+                            <div className="flex items-center justify-between gap-4 rounded-md border p-3">
+                                <div>
+                                    <Label htmlFor="starters-published">Publish right away</Label>
+                                    <p className="text-xs text-muted-foreground">
+                                        Off: they are added hidden, so you can read them first and
+                                        publish each one from its edit dialog.
+                                    </p>
+                                </div>
+                                <Switch
+                                    id="starters-published"
+                                    checked={startersPublished}
+                                    onCheckedChange={setStartersPublished}
+                                />
+                            </div>
+                        </div>
+                    )}
+
+                    <DialogFooter>
+                        <Button
+                            disabled={starterIds.length === 0 || addStarters.isPending}
+                            onClick={() =>
+                                addStarters.mutate({ ids: starterIds, published: startersPublished })
+                            }
+                        >
+                            {starterIds.length === 0
+                                ? "Add to the gallery"
+                                : `Add ${starterIds.length} to the gallery`}
                         </Button>
                     </DialogFooter>
                 </DialogContent>

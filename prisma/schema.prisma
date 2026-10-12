@@ -755,6 +755,9 @@ model WorkflowTemplate {
   name        String
   description String           @db.Text
   category    String           @default("General")
+  // The language its texts are written in: "en", "ur" or "ar" (see
+  // src/features/templates/lib/template-languages.ts)
+  language    String           @default("en")
   // The cheapest plan that may use it
   minPlan     SubscriptionPlan @default(FREE)
   // Hidden from the gallery while false
