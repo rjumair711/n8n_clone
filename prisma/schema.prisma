@@ -54,6 +54,11 @@ model User {
   // Optional monthly AI budget in US cents, over all workflows. Null: none
   aiBudgetCents          Int?
   aiUsage                AiUsage[]
+  // Bought AI credits that are left, in US dollars (see src/lib/ai-credits.ts).
+  // The plan's monthly allowance is not stored: it is the plan's number less
+  // what the month's included calls cost.
+  aiCreditBalanceUsd     Decimal          @default(0) @db.Decimal(18, 10)
+  aiCreditPurchases      AiCreditPurchase[]
   memorySummaries        AgentMemorySummary[]
   contactFacts           ContactFact[]
 
@@ -104,12 +109,48 @@ model AiUsage {
   cachedInputTokens Int @default(0)
   // US dollars. Null when the price table had no row for the model.
   costUsd     Decimal? @db.Decimal(18, 10)
+  // True for a call made with the platform's key ("RXJ AI (included)"): its
+  // cost was taken from the user's AI credits
+  included    Boolean  @default(false)
   createdAt   DateTime @default(now())
 
   @@index([userId, createdAt])
   @@index([workflowId, createdAt])
   @@index([executionId])
   @@map("ai_usage")
+}
+
+// "RXJ AI (included)": a provider key of the platform that every user may
+// use, paid with their AI credits. Set up by admins in Settings. One row
+// per Chat Model provider preset; the key is encrypted like a credential.
+model PlatformAiProvider {
+  id        String   @id @default(cuid())
+  // A provider of src/features/executions/lib/chat-model-providers.ts
+  provider  String   @unique
+  apiKey    String
+  // The model IDs users may pick. Each needs a row in the price table.
+  models    String[]
+  enabled   Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @default(now()) @updatedAt
+
+  @@map("platform_ai_provider")
+}
+
+// A credit pack bought through Polar. One row per paid order: the order id
+// is unique, so an event Polar sends twice adds the credits once.
+model AiCreditPurchase {
+  id           String   @id @default(cuid())
+  userId       String
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  polarOrderId String   @unique
+  productId    String
+  // The value of the credits that were added, in US dollars
+  amountUsd    Decimal  @db.Decimal(18, 10)
+  createdAt    DateTime @default(now())
+
+  @@index([userId, createdAt])
+  @@map("ai_credit_purchase")
 }
 
 // What a model costs, in US dollars per million tokens. Edited by admins

@@ -18,6 +18,8 @@ import prisma from "./db"
 // 💡 Added 'webhooks' to the import line below
 import { checkout, polar, portal, webhooks } from "@polar-sh/better-auth"
 import { polarClient } from "./polar"
+import { getCreditPacks, readCreditOrder } from "@/config/ai-credits"
+import { grantCreditPurchase } from "./ai-credits"
 import { SubscriptionPlan } from "@prisma/client"
 import { Resend } from "resend"
 
@@ -350,6 +352,13 @@ export const auth = betterAuth({
           secret: process.env.POLAR_WEBHOOK_SECRET!,
           onPayload: async ({ data, type }) => {
             console.log(`📦 Received Polar Event Type: ${type}`);
+
+            // A paid order of an AI credit pack adds its credits. Counted
+            // once per order, also when /api/webhooks/polar gets the event too.
+            const creditOrder = readCreditOrder(type, data as never, getCreditPacks());
+            if (creditOrder) {
+              await grantCreditPurchase(creditOrder);
+            }
 
             // 1. Upgrade user when they subscribe or modify their plan
             if (type === "subscription.created" || type === "subscription.updated") {

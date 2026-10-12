@@ -20,7 +20,7 @@ the instruction "build this workflow in the editor".
 ```bash
 npx prisma migrate deploy
 npm run dev:all
-npx tsx --conditions=react-server src/inngest/__test__/testCoreNodes.ts   # expect "235 checks passed"
+npx tsx --conditions=react-server src/inngest/__test__/testCoreNodes.ts   # expect "239 checks passed"
 ```
 
 Make a second account with a different email. Several checks need it.
@@ -935,6 +935,57 @@ Needs the `think_and_agent_tool` migration applied and a model credential. Use t
 | 8 | Put the AI Agent Tool in the normal flow | "connect it to an AI Agent's Tools port. It does not run as a step of its own." |
 | 9 | A second AI Agent Tool on the first one's Tools port (three levels) | works; the innermost agent's answer travels up |
 | 10 | Set a monthly AI budget that is used up | the manager fails on the budget before anything is called |
+
+## T13i. Built-in AI credits: RXJ AI (included)
+
+Needs the `ai_credits` migration applied, an admin account with two-factor on, and one cheap provider key (for example Zhipu GLM or DeepSeek). Use the test account for the user steps. The Polar steps need the Polar **sandbox**.
+
+**Admin: set it up.**
+
+| # | Do | Expect |
+|---|----|--------|
+| 1 | As an ordinary user open **Settings** | no "RXJ AI (included)" card. On a Chat Model node the credential list has no "RXJ AI (included)"; Billing has no "AI credits" card |
+| 2 | As an admin without two-factor open **Settings** | the card says to turn two-factor on |
+| 3 | As an admin with two-factor: pick a provider, paste its key, enter one model ID, **Add provider** | "Included AI provider ... saved"; the provider is listed with its model and an amber line "No price for ..." |
+| 4 | Under **AI model prices** add that provider and model with a price (for a free model use 0 for input and output, or a small number to see credits move) | the amber line is gone after a reload |
+| 5 | **Edit** the provider, leave the key empty, add a second model, **Save provider** | saved; the key still works (step 7) |
+| 6 | Look at **Settings → Audit log** | "Included AI provider saved" lines; the key is in none of them |
+
+**User: use it.**
+
+| # | Do | Expect |
+|---|----|--------|
+| 7 | Trigger manually → **Chat Model**: Credential **RXJ AI (included)**, User Prompt `Say hello`. Save and run | Provider and Model were filled in with an included pair; the node answers. The execution's AI usage table has the call with its cost |
+| 8 | Open **Billing** | an **AI credits** card: credits left, "x / 100 used" (Free), and the plan link |
+| 9 | Set Model to something that is not included and save the dialog | "Not part of RXJ AI (included). Included: ..." under Model |
+| 10 | Type a Base URL of your own (a request catcher) with an included provider and model, run | the request goes to the provider's own address; nothing arrives at your URL |
+| 11 | Chat Trigger → AI Agent with that Chat Model node on its Chat Model port; chat | the agent answers; its calls cost credits |
+| 12 | **Build with AI**: pick "RXJ AI (included): ..." as the credential and build something | it works without a key of your own; the call is on the Billing page under Build with AI and cost credits |
+| 13 | As admin remove the model's price, run step 7 again | the node fails: `the included model "..." has no price yet, so it cannot be used` |
+| 14 | As admin switch the provider off (**Edit**, Offered to users off) | the node fails with "is not part of RXJ AI (included)"; new nodes no longer offer it |
+
+**Hard stop.** Give the included model a high price (for example 1000 per million output tokens) so a few calls use up the 100 Free credits, or set the test user's month of usage past the allowance.
+
+| # | Do | Expect |
+|---|----|--------|
+| 15 | Run step 7 until the credits are gone | the next run fails before calling the model: "RXJ AI (included) credits are used up: the Free plan includes 100 credits a month ... Upgrade your plan or buy credits at `<app>/billing` ..." |
+| 16 | Open **Billing** | 0 credits left, a red note with the **Upgrade your plan** link |
+| 17 | Build with AI with RXJ AI (included) | a toast with the same message; no model call |
+| 18 | Switch the node to a credential of your own | it runs: the stop only concerns included calls |
+| 19 | Change the test user's plan to BEGINNER in the database | 1,000 credits a month: the node runs again |
+
+**Credit packs (Polar sandbox).** Create a one-time product in the Polar sandbox, set `POLAR_CREDIT_PACKS=<its id>:5000` and restart. The Polar webhook has to deliver `order.paid` to this app.
+
+| # | Do | Expect |
+|---|----|--------|
+| 20 | **Billing** → **Buy 5,000 credits** | Polar's checkout opens for that product |
+| 21 | Pay with a sandbox card | within a minute Billing shows "... and 5,000 bought"; with the month's credits used up, the node of step 15 runs again |
+| 22 | In Polar, send the `order.paid` event again | the balance does not change |
+| 23 | Use more than the month's credits | "bought" goes down by what the plan credits did not cover; it never goes below 0 |
+| 24 | Ask the checkout for a product that is not a pack: `fetch("/api/subscription/checkout", {method:"POST", headers:{"Content-Type":"application/json"}, body: JSON.stringify({creditPack:"prod_other"})})` | 400 "Invalid plan selection or product configuration missing" |
+| 25 | Remove `POLAR_CREDIT_PACKS` and restart | no buy buttons, only the link to the plans |
+
+**Key rotation.** `npm run rotate-encryption-key -- --dry-run` counts the platform's provider keys with the credentials.
 
 ## T14. Text Classifier and Information Extractor
 

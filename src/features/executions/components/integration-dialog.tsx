@@ -41,6 +41,11 @@ import { ChatModelField, type ChatModelNodeType } from "./chat-model-field";
 import { FallbackModelsField, cleanFallbackModels } from "./fallback-models-field";
 import { FormFieldsField } from "./form-fields-field";
 import { cleanFormFields, parseFormFields } from "@/lib/form-fields";
+import {
+  INCLUDED_CREDENTIAL_ID,
+  INCLUDED_CREDENTIAL_NAME,
+  isIncludedCredential,
+} from "@/config/ai-credits";
 
 export type IntegrationField = {
   name: string;
@@ -116,6 +121,10 @@ export type IntegrationConfig = {
   // dialog does not insist on one. `credentialHelp` says what it is for.
   credentialOptional?: boolean;
   credentialHelp?: string;
+  // The credential list also offers "RXJ AI (included)": the platform's
+  // key, paid with the user's AI credits (see src/config/ai-credits.ts).
+  // For a node with "provider" and "model" fields.
+  includedAi?: boolean;
   // Omit for nodes that produce no result
   defaultVariableName?: string;
   // Omit for nodes that do a single thing
@@ -294,6 +303,18 @@ export const IntegrationDialog = ({
   const watchVariableName =
     form.watch("variableName") || config.defaultVariableName || "";
 
+  // "RXJ AI (included)": what the platform offers, when this node can use it
+  const trpc = useTRPC();
+  const { data: included } = useQuery({
+    ...trpc.aiCredits.getIncluded.queryOptions(),
+    enabled: open && config.includedAi === true,
+  });
+  const includedProviders = config.includedAi ? (included?.providers ?? []) : [];
+  const usesIncluded = isIncludedCredential(form.watch("credentialId"));
+  const includedSummary = includedProviders
+    .map((entry) => `${entry.label} (${entry.models.join(", ")})`)
+    .join("; ");
+
   const params = useParams();
   const webhookUrl = config.webhookPath
     ? `${process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000"}/api/webhooks/${config.webhookPath}/${params.workflowId}`
@@ -333,6 +354,20 @@ export const IntegrationDialog = ({
     if (credentialType && !config.credentialOptional && !values.credentialId) {
       form.setError("credentialId", {
         message: `${config.credentialLabel || "Credential"} is required`,
+      });
+      valid = false;
+    }
+
+    // The platform's key only works for the models the platform offers
+    if (
+      isIncludedCredential(values.credentialId) &&
+      !includedProviders.some(
+        (entry) =>
+          entry.provider === values.provider && entry.models.includes(values.model?.trim())
+      )
+    ) {
+      form.setError("model", {
+        message: `Not part of ${INCLUDED_CREDENTIAL_NAME}. Included: ${includedSummary || "nothing at the moment"}.`,
       });
       valid = false;
     }
@@ -466,9 +501,28 @@ export const IntegrationDialog = ({
                     {config.credentialOptional && " (Optional)"}
                   </FormLabel>
                   <Select
-                    onValueChange={field.onChange}
+                    onValueChange={(value) => {
+                      field.onChange(value);
+
+                      // Start from a provider and model that are included
+                      const offered = includedProviders[0];
+                      if (
+                        isIncludedCredential(value) &&
+                        offered &&
+                        !includedProviders.some(
+                          (entry) => entry.provider === form.getValues("provider")
+                        )
+                      ) {
+                        form.setValue("provider", offered.provider);
+                        form.setValue("baseUrl", "");
+                        form.setValue("model", offered.models[0] ?? "");
+                      }
+                    }}
                     value={field.value}
-                    disabled={isLoadingCredentials || !credentials?.length}
+                    disabled={
+                      isLoadingCredentials ||
+                      (!credentials?.length && includedProviders.length === 0)
+                    }
                   >
                     <FormControl>
                       <SelectTrigger className="w-full">
@@ -476,7 +530,7 @@ export const IntegrationDialog = ({
                           placeholder={
                             isLoadingCredentials
                               ? "Loading credentials..."
-                              : credentials?.length
+                              : credentials?.length || includedProviders.length
                                 ? "Select a credential"
                                 : `No ${config.label} credentials yet`
                           }
@@ -484,6 +538,11 @@ export const IntegrationDialog = ({
                       </SelectTrigger>
                     </FormControl>
                     <SelectContent>
+                      {includedProviders.length > 0 && (
+                        <SelectItem value={INCLUDED_CREDENTIAL_ID}>
+                          {INCLUDED_CREDENTIAL_NAME}
+                        </SelectItem>
+                      )}
                       {credentials?.map((credential) => (
                         <SelectItem key={credential.id} value={credential.id}>
                           <div className="flex items-center gap-2">
@@ -503,6 +562,12 @@ export const IntegrationDialog = ({
                     </SelectContent>
                   </Select>
                   <FormDescription>
+                    {usesIncluded && (
+                      <>
+                        No API key of your own: the calls are paid with your AI
+                        credits (see Billing). Included: {includedSummary}.{" "}
+                      </>
+                    )}
                     {config.credentialHelp ? `${config.credentialHelp} ` : ""}
                     Add one under Credentials if the list is empty.
                     {config.credentialOptional && field.value && (

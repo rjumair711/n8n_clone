@@ -1001,6 +1001,26 @@ Every call to a language or embedding model is written down with the tokens the 
 
 The amounts are estimates for keeping an eye on spend. You pay your providers directly and their invoice is what counts: tokens written to a provider's cache are priced as normal input, and a model without a price does not count towards a budget.
 
+## Built-in AI credits: RXJ AI (included)
+
+A user can run cheap models without an API key of their own. The platform's provider keys do the calling and the user pays with **AI credits**.
+
+* **Credits.** One credit is a tenth of a US cent of model cost: 1,000 credits are one dollar. A call's cost comes from the price table above ("AI token usage and cost"), at the price set when the call is made.
+* **Monthly credits per plan** (calendar month, UTC; they do not carry over; a free trial does not change the number):
+
+  | Free | Beginner | Intermediate | Pro |
+  | ---- | -------- | ------------ | --- |
+  | 100 | 1,000 | 5,000 | 20,000 |
+
+  The numbers are in one file, `src/config/ai-credits.ts`.
+* **Setting it up (admins).** Under **Settings → RXJ AI (included)** an admin with two-factor on adds a provider (one of the Chat Model presets that has its own address, for example Zhipu GLM or DeepSeek), its API key and the model IDs users may pick. The key is stored encrypted, is never shown again, and is covered by the key rotation script. A provider can be switched off without removing it. **Every included model needs a row in the price table**: without one it cannot be used, because it would cost no credits; the card says which models are missing a price. Saving and removing a provider is in the audit log. Until a provider is added, users do not see any of this.
+* **Using it.** On a **Chat Model** node the credential list has **RXJ AI (included)**. With it, Provider and Model have to be one of the included ones (the dialog says which, and "Load models" lists them). It works wherever a Chat Model node works: as a step, as the model of an AI Agent, Text Classifier, Information Extractor, Analyze Image / Document or Guardrails, as a fallback model and behind a Model Router. **Build with AI** offers it in its credential list too. The platform's key is only ever sent to the provider's own address, never to a Base URL typed into the node.
+* **What is charged.** Each included call is written down like any other (the execution's AI usage table, the Billing page) and its cost is taken from the month's plan credits first, then from bought credits.
+* **Hard stop.** With no plan credits and no bought credits left, a node that uses RXJ AI (included) fails before it calls anything, with: "RXJ AI (included) credits are used up: the Free plan includes 100 credits a month and you have no bought credits left. Upgrade your plan or buy credits at `<app>/billing`, or pick your own API key credential on the node. The monthly credits start again on the 1st (UTC)." Build with AI shows the same message. The check is made before a node runs, not during it, so the last node (an agent with many steps, for example) can use more than was left; bought credits never go below zero.
+* **Billing page.** The **AI credits** card shows what is left of the month's credits and of bought credits, and has the buttons to buy more and the link to the plans.
+* **Buying credits (Polar credit packs).** A pack is a one-time product in Polar. `POLAR_CREDIT_PACKS` lists the packs on sale as `<product id>:<credits>`, comma-separated, for example `prod_abc:5000,prod_def:25000`; the price is whatever the product costs in Polar. "Buy 5,000 credits" opens Polar's checkout. When Polar reports the order as paid (`order.paid` on the Polar webhook), the credits are added. Each order is counted once, however often Polar sends the event. Bought credits do not expire and are used after the month's plan credits. Without `POLAR_CREDIT_PACKS` there are no buy buttons, only the link to the plans.
+* **AI budgets** still apply: an included call has a cost, so it counts towards the account's and the workflow's monthly AI budget and appears in "AI spend this month" (where the note about paying your provider does not apply to it).
+
 ---
 
 # 🎯 Onboarding System
@@ -1172,6 +1192,7 @@ The live app on Vercel and local development use the **same** database, so the s
 | `EMAIL_FROM` | Sender of those emails; must be on a domain verified in Resend |
 | `REQUIRE_EMAIL_VERIFICATION` | Set to `false` to switch verification off |
 | `POLAR_*` | Billing (access token, product IDs, webhook secret, success URL). `POLAR_WEBHOOK_SECRET` is what Polar's webhooks are verified with |
+| `POLAR_CREDIT_PACKS` | AI credit packs on sale: `<Polar product id>:<credits>`, comma-separated (one-time products). Not set: no packs are sold. See "Built-in AI credits" |
 | `INNGEST_SIGNING_KEY` | Proves that calls to `/api/inngest` come from Inngest. **Required in production**: the server does not start without it |
 | `PRIVATE_NETWORK_ALLOWLIST` | The private addresses workflows may reach, comma-separated: hosts, `host:port` or CIDR ranges, e.g. `127.0.0.1:11434,10.0.0.0/24` (self-hosting only) |
 | `ALLOW_PRIVATE_NETWORK_REQUESTS` | `true` lets workflows reach every private address. Still works, but logs a warning: prefer `PRIVATE_NETWORK_ALLOWLIST` |

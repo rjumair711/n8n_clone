@@ -14,6 +14,8 @@ import {
   type ChatModelData,
 } from "../components/chat-model/model";
 import { withDedicatedProvider } from "./chat-model-providers";
+import { isIncludedCredential } from "@/config/ai-credits";
+import { loadIncludedKeys } from "@/lib/ai-credits";
 import {
   CHEAP_TIER,
   DEFAULT_ROUTER_TIMEOUT_SECONDS,
@@ -268,25 +270,59 @@ export const loadModelCandidates = async ({
     }
   }
 
+  // "RXJ AI (included)": the platform's key instead of one of the user's
+  const isIncluded = (spec: ModelSpec) => isIncludedCredential(spec.credentialId);
+
+  for (const spec of specs) {
+    if (isIncluded(spec) && spec.provider !== "COMPATIBLE") {
+      throw new NonRetriableError(
+        `${label}: RXJ AI (included) can only be used on a Chat Model node`
+      );
+    }
+  }
+
   const [primary, ...others] = specs;
   const primaryId = primary.credentialId as string;
 
-  const credential = await step.run(stepId, async () => {
-    // Scoped to the workflow owner: never use another user's credential
-    return prisma.credential.findUnique({
-      where: { id: primaryId, userId },
-    });
-  });
+  // Still encrypted, by credential id
+  const values = new Map<string, string>();
 
-  if (!credential) {
-    throw new NonRetriableError(`${label}: Credential not found`);
+  if (!isIncluded(primary)) {
+    const credential = await step.run(stepId, async () => {
+      // Scoped to the workflow owner: never use another user's credential
+      return prisma.credential.findUnique({
+        where: { id: primaryId, userId },
+      });
+    });
+
+    if (!credential) {
+      throw new NonRetriableError(`${label}: Credential not found`);
+    }
+
+    values.set(primaryId, credential.value);
   }
 
-  // Still encrypted, by credential id
-  const values = new Map<string, string>([[primaryId, credential.value]]);
+  // Still encrypted, by provider. The step also refuses a model that is
+  // not offered and a user without credits, before anything is called.
+  const includedSpecs = specs.filter(isIncluded);
+  const includedKeys =
+    includedSpecs.length === 0
+      ? {}
+      : await step.run(`${stepId}-included`, () =>
+          loadIncludedKeys({
+            label,
+            userId,
+            models: includedSpecs.map((spec) => ({
+              provider: spec.usageProvider,
+              model: spec.modelName,
+            })),
+          })
+        );
 
   const otherIds = [
-    ...new Set(others.map((spec) => spec.credentialId as string)),
+    ...new Set(
+      others.filter((spec) => !isIncluded(spec)).map((spec) => spec.credentialId as string)
+    ),
   ].filter((id) => id !== primaryId);
 
   if (otherIds.length > 0) {
@@ -311,13 +347,23 @@ export const loadModelCandidates = async ({
     model: spec.modelName,
     tier: spec.tier,
     timeoutMs: spec.timeoutMs,
+    ...(isIncluded(spec) ? { included: true } : {}),
     create: () =>
-      buildLanguageModel(
-        spec.provider,
-        decrypt(values.get(spec.credentialId as string) as string).trim(),
-        spec.modelName,
-        spec.modelData
-      ) as LanguageModelV3,
+      isIncluded(spec)
+        ? (buildLanguageModel(
+            spec.provider,
+            decrypt(includedKeys[spec.usageProvider]).trim(),
+            spec.modelName,
+            // The platform's key only ever goes to the provider's own
+            // address, never to a base URL typed into the node
+            { provider: spec.usageProvider, model: spec.modelName, baseUrl: "" }
+          ) as LanguageModelV3)
+        : (buildLanguageModel(
+            spec.provider,
+            decrypt(values.get(spec.credentialId as string) as string).trim(),
+            spec.modelName,
+            spec.modelData
+          ) as LanguageModelV3),
   }));
 };
 

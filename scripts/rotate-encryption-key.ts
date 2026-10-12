@@ -65,6 +65,35 @@ const main = async () => {
       onBatch: (progress) => console.log(`  ${progress.total} checked...`),
     });
 
+    // The platform's provider keys ("RXJ AI (included)") are encrypted
+    // with the same key
+    const platform = await rotateEncryptedRows({
+      batchSize: BATCH_SIZE,
+      dryRun,
+      store: {
+        readBatch: async (afterId, take) =>
+          (
+            await prisma.platformAiProvider.findMany({
+              where: afterId ? { id: { gt: afterId } } : {},
+              orderBy: { id: "asc" },
+              take,
+              select: { id: true, apiKey: true },
+            })
+          ).map((row) => ({ id: row.id, value: row.apiKey })),
+        replaceValue: async (id, oldValue, newValue) =>
+          (await prisma.$executeRaw`
+            UPDATE "platform_ai_provider" SET "apiKey" = ${newValue}
+            WHERE "id" = ${id} AND "apiKey" = ${oldValue}
+          `) === 1,
+      },
+    });
+
+    result.total += platform.total;
+    result.reencrypted += platform.reencrypted;
+    result.alreadyCurrent += platform.alreadyCurrent;
+    result.skipped += platform.skipped;
+    result.failedIds.push(...platform.failedIds);
+
     console.log(`\nCredentials checked:   ${result.total}`);
     console.log(
       `${dryRun ? "Would be re-encrypted:" : "Re-encrypted:         "} ${result.reencrypted}`

@@ -801,6 +801,7 @@ export const chatModelConfig: IntegrationConfig = {
   logo: "/logos/chat-model.svg",
   credentialType: CredentialType.OPENAI_COMPATIBLE,
   credentialLabel: "API Key Credential",
+  includedAi: true,
   defaultVariableName: "chatModel",
   hint: "The answer is at {{<name>.text}}. The prompts are only used when the node runs as a step; an AI Agent brings its own.",
   fields: [

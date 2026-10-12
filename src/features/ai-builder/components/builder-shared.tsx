@@ -18,6 +18,7 @@ import {
 } from "@/components/ui/select";
 import { CHAT_MODEL_PROVIDERS } from "@/features/executions/lib/chat-model-providers";
 import { useTRPC } from "@/trpc/client";
+import { INCLUDED_CREDENTIAL_ID } from "@/config/ai-credits";
 import {
     getBuilderDefaultModel,
     isBuilderCredentialType,
@@ -91,15 +92,21 @@ export const useModelChoice = (open: boolean) => {
     const type =
         credential && isBuilderCredentialType(credential.type) ? credential.type : null;
     const isCompatible = type === "OPENAI_COMPATIBLE";
-    const defaultModel = type
-        ? getBuilderDefaultModel(type, isCompatible ? choice.provider : undefined)
-        : "";
+    // "RXJ AI (included)": the platform's key, paid with AI credits. Its
+    // first model is the default.
+    const isIncluded = credential?.type === INCLUDED_CREDENTIAL_ID;
+    const defaultModel = isIncluded
+        ? (credential?.models[0] ?? "")
+        : type
+            ? getBuilderDefaultModel(type, isCompatible ? choice.provider : undefined)
+            : "";
 
     return {
         credentials: credentials ?? [],
         isLoading,
         credential,
         isCompatible,
+        isIncluded,
         defaultModel,
         choice,
         update,
@@ -119,13 +126,14 @@ export const useModelChoice = (open: boolean) => {
 };
 
 export const ModelPicker = ({ state }: { state: ReturnType<typeof useModelChoice> }) => {
-    const { credentials, isLoading, credential, isCompatible, defaultModel, choice, update } = state;
+    const { credentials, isLoading, credential, isCompatible, isIncluded, defaultModel, choice, update } = state;
 
     if (!isLoading && credentials.length === 0) {
         return (
             <p className="rounded-md border border-dashed p-3 text-sm text-muted-foreground">
                 Build with AI uses one of your own model credentials (OpenAI, Anthropic,
-                Gemini, DeepSeek, Kimi, Qwen or any OpenAI-compatible provider).{" "}
+                Gemini, DeepSeek, Kimi, Qwen or any OpenAI-compatible provider), or RXJ AI
+                (included) when it is available.{" "}
                 <Link href="/credentials/new" className="underline">
                     Add a credential
                 </Link>{" "}
@@ -198,8 +206,11 @@ export const ModelPicker = ({ state }: { state: ReturnType<typeof useModelChoice
                 </>
             )}
             <p className="text-xs text-muted-foreground sm:col-span-2">
-                The description and the list of node types are sent to this model, with
-                your credential. Stored credentials and secrets of your nodes are never sent.
+                The description and the list of node types are sent to this model,{" "}
+                {isIncluded
+                    ? `paid with your AI credits (see Billing). Included models: ${credential?.models.join(", ")}.`
+                    : "with your credential."}{" "}
+                Stored credentials and secrets of your nodes are never sent.
                 {defaultModel ? ` Leave Model empty for ${defaultModel}.` : ""}
             </p>
         </div>
