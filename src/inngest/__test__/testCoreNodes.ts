@@ -14546,6 +14546,122 @@ pour()</code></pre>
     assert.equal(/\b(DROP|DELETE FROM|TRUNCATE|UPDATE "|RENAME)\b/.test(sql), false);
   });
 
+  await test("airtable: Return All follows the pages up to Max Records and says when it was cut", async () => {
+    const {
+      listAllAirtableRecords,
+      resolveReturnAllLimit,
+      describeAirtableList,
+      AIRTABLE_RETURN_ALL_DEFAULT,
+      AIRTABLE_RETURN_ALL_MAX,
+    } = await import("@/features/executions/components/airtable/executor");
+
+    // A table of `total` records, served 100 at a time like Airtable does
+    const pagedTable = (total: number) => {
+      const offsets: (string | undefined)[] = [];
+
+      const fetchPage = async (offset: string | undefined) => {
+        offsets.push(offset);
+        const start = offset ? Number(offset.replace("itr", "")) : 0;
+        const end = Math.min(start + 100, total);
+
+        return {
+          records: Array.from({ length: end - start }, (_, index) => ({
+            id: `rec${start + index}`,
+            fields: { n: start + index },
+          })),
+          ...(end < total ? { offset: `itr${end}` } : {}),
+        };
+      };
+
+      return { fetchPage, offsets };
+    };
+
+    // Every page is followed, in order, each with the offset of the one before
+    const all = pagedTable(250);
+    const complete = await listAllAirtableRecords<{ id: string }>(all.fetchPage, { limit: 1000 });
+    assert.equal(complete.records.length, 250);
+    assert.equal(complete.truncated, false);
+    assert.deepEqual(all.offsets, [undefined, "itr100", "itr200"]);
+    assert.deepEqual(
+      complete.records.map((record) => record.id),
+      Array.from({ length: 250 }, (_, index) => `rec${index}`)
+    );
+
+    // Max Records in the middle of a page: cut there, and it says so
+    const cut = pagedTable(250);
+    const partial = await listAllAirtableRecords(cut.fetchPage, { limit: 230 });
+    assert.equal(partial.records.length, 230);
+    assert.deepEqual([partial.truncated, partial.reason], [true, "maxRecords"]);
+    assert.equal(cut.offsets.length, 3);
+
+    // Max Records at the end of a page, with more behind it: no extra request
+    const edge = pagedTable(250);
+    const atEdge = await listAllAirtableRecords(edge.fetchPage, { limit: 200 });
+    assert.equal(atEdge.records.length, 200);
+    assert.equal(atEdge.truncated, true);
+    assert.equal(edge.offsets.length, 2);
+
+    // Exactly as many as the table has is the whole table
+    const exact = await listAllAirtableRecords(pagedTable(200).fetchPage, { limit: 200 });
+    assert.deepEqual([exact.records.length, exact.truncated], [200, false]);
+    const empty = await listAllAirtableRecords(pagedTable(0).fetchPage, { limit: 1000 });
+    assert.deepEqual([empty.records.length, empty.truncated], [0, false]);
+
+    // A server that always says there is more cannot keep the run going
+    let calls = 0;
+    const endless = await listAllAirtableRecords(
+      async () => {
+        calls++;
+        return { records: [], offset: "again" };
+      },
+      { limit: 300 }
+    );
+    assert.equal(endless.truncated, true);
+    assert.equal(calls, 4);
+
+    // A list too large to store stops early, for that reason
+    const big = await listAllAirtableRecords(pagedTable(250).fetchPage, { limit: 1000, maxBytes: 2000 });
+    assert.ok(big.records.length > 0 && big.records.length < 250);
+    assert.deepEqual([big.truncated, big.reason], [true, "size"]);
+
+    assert.equal(AIRTABLE_RETURN_ALL_DEFAULT, 1000);
+    assert.equal(resolveReturnAllLimit(""), 1000);
+    assert.equal(resolveReturnAllLimit(undefined), 1000);
+    assert.equal(resolveReturnAllLimit("abc"), 1000);
+    assert.equal(resolveReturnAllLimit("0"), 1000);
+    assert.equal(resolveReturnAllLimit("250"), 250);
+    assert.equal(resolveReturnAllLimit("999999"), AIRTABLE_RETURN_ALL_MAX);
+
+    // What the output says about the list
+    assert.deepEqual(describeAirtableList({ count: 40, limit: 1000, truncated: false, itemLimit: 100 }), {
+      returnAll: true,
+      maxRecords: 1000,
+      truncated: false,
+    });
+    const cutNote = describeAirtableList({ count: 230, limit: 230, truncated: true, reason: "maxRecords", itemLimit: 100 });
+    assert.equal(cutNote.truncated, true);
+    assert.match(cutNote.warning ?? "", /Only the first 230 records were returned: the table has more than Max Records \(230\)/);
+    assert.match(cutNote.warning ?? "", /230 records are more than the 100 items a node after Split Out handles/);
+    assert.match(
+      describeAirtableList({ count: 90, limit: 1000, truncated: true, reason: "size", itemLimit: 100 }).warning ?? "",
+      /too large to store/
+    );
+    // Complete, but longer than the per-node item limit: a warning, not a cut
+    const long = describeAirtableList({ count: 250, limit: 1000, truncated: false, itemLimit: 100 });
+    assert.equal(long.truncated, false);
+    assert.match(long.warning ?? "", /^250 records are more than the 100 items/);
+
+    // Without Return All the request is the one it always was
+    const { readFileSync } = await import("node:fs");
+    const { join } = await import("node:path");
+    const executor = readFileSync(
+      join(process.cwd(), "src/features/executions/components/airtable/executor.ts"),
+      "utf8"
+    );
+    assert.ok(executor.includes("Number(renderTemplate(data.maxRecords, context)) || 50,"));
+    assert.ok(executor.includes('data.returnAll === true || data.returnAll === "yes" || data.returnAll === "true"'));
+  });
+
   console.log(`\n${passed} checks passed`);
 };
 

@@ -56,10 +56,24 @@ export const airtableConfig: IntegrationConfig = {
       operations: ["list_records"],
     },
     {
+      name: "returnAll",
+      label: "Return All",
+      type: "select",
+      defaultValue: "no",
+      options: [
+        { value: "no", label: "No: one page, up to 100 records" },
+        { value: "yes", label: "Yes: every page, up to Max Records" },
+      ],
+      description:
+        "Yes reads the table page by page. The output then has truncated (true when the table had more than Max Records) and, when something was cut or the list is long, a warning that says so.",
+      operations: ["list_records"],
+    },
+    {
       name: "maxRecords",
       label: "Max Records",
       placeholder: "50",
-      description: "How many records to return (up to 100).",
+      description:
+        "How many records to return. Without Return All: 50 when empty, 100 at most. With Return All: 1000 when empty, 10,000 at most.",
       operations: ["list_records"],
     },
   ],
