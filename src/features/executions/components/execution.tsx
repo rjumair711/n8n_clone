@@ -126,6 +126,18 @@ export const ExecutionView = ({
                     </div>
                     <div>
                         <p className="text-sm font-medium
+                        text-muted-foreground">Workflow version</p>
+                        <p
+                            className="text-sm"
+                            title="The saved version of the workflow this execution ran. See History in the editor."
+                        >
+                            {execution.workflowVersionNumber
+                                ? `Version ${execution.workflowVersionNumber}`
+                                : "Not recorded"}
+                        </p>
+                    </div>
+                    <div>
+                        <p className="text-sm font-medium
                         text-muted-foreground">Trigger</p>
                         <p className="text-sm">{formatTriggerSource(execution.triggerSource) ?? "Unknown"}</p>
                     </div>

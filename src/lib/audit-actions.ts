@@ -8,6 +8,7 @@ export const AUDIT_ACTIONS = {
   "workflow.activated": "Workflow activated",
   "workflow.deactivated": "Workflow deactivated",
   "workflow.deleted": "Workflow deleted",
+  "workflow.version_restored": "Workflow version restored",
   "api_key.created": "API key created",
   "api_key.revoked": "API key revoked",
   "template.published": "Template published",

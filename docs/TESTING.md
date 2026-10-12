@@ -20,7 +20,7 @@ the instruction "build this workflow in the editor".
 ```bash
 npx prisma migrate deploy
 npm run dev:all
-npx tsx --conditions=react-server src/inngest/__test__/testCoreNodes.ts   # expect "255 checks passed"
+npx tsx --conditions=react-server src/inngest/__test__/testCoreNodes.ts   # expect "260 checks passed"
 ```
 
 Make a second account with a different email. Several checks need it.
@@ -375,6 +375,32 @@ Needs the `pinned_data` migration applied. Build and save: Manual Trigger → HT
 | 21 | **Executions** → open a partial run → **Retry** | refused with a message (a partial run has no starting data of its own) |
 
 **Lists.** Manual Trigger → Code (returns `[{n:1},{n:2},{n:3}]`, variable `list`) → Split Out (`list`, variable `rows`) → IF (`item.n` greater than `1`) → true: Edit Fields (variable `kept`, `value` = `{{item.n}}`). Run once, then **Run this node only** on Edit Fields: Code and Split Out are "Not run", IF ran, and Edit Fields ran for the two items that pass (`kept.count` is 2).
+
+## T6d. Workflow version history
+
+Needs the `workflow_versions` migration applied. Use a new workflow: Manual Trigger → HTTP Request (`https://httpbin.org/uuid`, variable `first`).
+
+| # | Do | Expect |
+|---|----|--------|
+| 1 | Save, then open **History** in the editor's header | "Version 1", Current, "First version: 2 nodes" |
+| 2 | Press **Save** again without changing anything, reopen History | still one version |
+| 3 | Add an Edit Fields node (variable `last`) after the HTTP Request, save | Version 2, Current: "Added: Edit Fields (last)" and "Connections: 1 added" |
+| 4 | Change the HTTP Request's URL, save | Version 3: "Changed: HTTP Request (first)". The URL itself is not shown anywhere in History |
+| 5 | Drag a node to another place, save | Version 4: "Layout only: 1 node moved" |
+| 6 | Delete the Edit Fields node, save | Version 5: "Removed: Edit Fields (last)" and "Connections: 1 removed" |
+| 7 | **Execute workflow**, then open the run under **Executions** | "Workflow version: Version 5" |
+| 8 | In History press **Restore** on Version 3 | a confirmation that explains what changes; **Cancel** changes nothing |
+| 9 | Restore Version 3 for real | "Version 3 restored as version 6", the editor reloads with the Edit Fields node back; History shows Version 6, Current, "restored from version 3" |
+| 10 | Execute workflow again and open the run | "Workflow version: Version 6"; the earlier run still says Version 5 |
+| 11 | Restore Version 5 | the Edit Fields node is gone again: a restore can be undone |
+| 12 | Pin the HTTP Request (T6c), then restore a version from before that node existed (or delete it, save, and look) | the pin is gone with the node |
+| 13 | On a node pick a credential, save, delete that credential under Credentials, then restore that version | restored; the node has no credential ("Not Configured") |
+| 14 | **Settings → Audit log** | "Workflow version restored" lines with the workflow's name and the version number |
+| 15 | Use a template (Templates → Use template), do not save, run it once, open History | Version 1 was made by the run |
+| 15b | On a chatbot's workflow that has at least two versions, add the WhatsApp side from the chatbot's page (a change without Save), then restore an older version | two new versions: the workflow as it was just before the restore, then the restored one |
+| 16 | As the second account call `workflows.getVersions` / `restoreVersion` with the first account's workflow id (or open its editor URL) | "Workflow not found." |
+| 17 | An execution from before this feature | "Workflow version: Not recorded" |
+| 18 | Set `WORKFLOW_VERSION_LIMIT=3`, restart, save three more changes | History keeps only the newest 3; older runs still show their version number |
 
 ## T7. Sub-workflows
 
