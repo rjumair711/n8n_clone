@@ -48,7 +48,8 @@ const MIN_ATTEMPT_MS = 8_000;
 
 const NODE_TYPES = new Set<string>(Object.values(NodeType));
 
-const modelInput = z.object({
+// Also the model of an evaluation's LLM judge (src/features/evaluations)
+export const modelInput = z.object({
     credentialId: z.string().min(1, "Pick a credential"),
     // Empty: the default model of the credential's provider
     model: z.string().trim().max(200).optional(),
@@ -108,9 +109,11 @@ const PROVIDERS: Record<BuilderCredentialType, ModelProvider> = {
  * way the model nodes use it. Returns the API key too, so an error message
  * that repeats it can be cleaned.
  */
-const loadBuilderModel = async (
+export const loadBuilderModel = async (
     userId: string,
-    input: z.infer<typeof modelInput>
+    input: z.infer<typeof modelInput>,
+    // What the call is for, in the message when included AI cannot be used
+    label = "Build with AI"
 ) => {
     // "RXJ AI (included)": the platform's key, paid with the user's AI
     // credits. The dialog sends "rxj-ai:<provider>".
@@ -125,7 +128,7 @@ const loadBuilderModel = async (
         try {
             // Refuses a model that is not offered, and a user without credits
             keys = await loadIncludedKeys({
-                label: "Build with AI",
+                label,
                 userId,
                 models: [{ provider, model: modelName }],
             });

@@ -159,6 +159,18 @@ Every workflow keeps its earlier versions, so a change can be looked at and undo
 * **Executions record their version.** Each execution's page shows "Workflow version: Version 12": the saved workflow that run used. The number stays on the execution after the version itself was removed. Executions from before this feature say "Not recorded".
 * **What a version holds.** A copy of the nodes and connections as they are stored, including anything typed into a node's fields. It is only readable by the workflow's owner, like the workflow itself, and the list of versions does not carry the nodes.
 
+## Agent evaluations
+
+Test a workflow over a set of inputs, score what it answers, and compare runs. Open it with the **Evaluations** button in the editor's header (`/workflows/<id>/evaluations`).
+
+* **Datasets.** A workflow has up to 20 datasets, each with up to 100 rows. A row is an **input** and what is **expected** for it: the expected output, a JSON schema, or grading criteria, depending on how the dataset is scored. Rows are added one at a time or pasted as JSON (`[{ "input": "...", "expected": "..." }]`).
+* **How a row runs.** Each row is a real execution of the saved workflow, started from the trigger the dataset names: a **Chat Trigger** gets the input as the message (with a session of its own, so memory does not carry from row to row), a **Webhook** gets it as the request body, a **Manual Trigger** and **When Executed by Another Workflow** get the input's fields as starting data (a plain text is `input`). Pinned data is not used.
+* **Output to score** names the part of the run's data that is scored, written like a variable: `agent.text`. Empty means all of the run's data.
+* **Scorers.** *Exact match* (the same text, or the same JSON whatever the order of its keys), *Contains* (ignoring case and white space), *JSON schema match* (the output is JSON that fits the schema; a ```` ```json ```` block is unwrapped), and *LLM judge*: a model you pick grades each answer from 0 to 1 against the row's expected answer and the dataset's grading criteria, and 0.7 or more passes. The judge uses one of your model credentials or RXJ AI (included), like Build with AI.
+* **Runs and the comparison.** Name a run ("gpt-4o-mini"), run it, change the model or the prompt in the editor, save, and run again. Each run shows its **score** (the average of its rows, a failed row counts as 0), rows passed, **cost** (the workflow's own model calls; the judge's cost is listed apart), **average time per row**, the models that answered and the workflow version. Tick up to four runs to see them side by side, row by row, with the best score, lowest cost and shortest time marked, each row's output and the reason for its score, and a link to its execution.
+* **What a run costs and does.** Rows are executions: they count towards the plan's monthly executions (a run that would go over is refused), their model calls are paid for and count towards AI budgets, and their nodes do what they do, so a workflow that sends a message sends it for every row. One evaluation runs per workflow at a time, rows one after the other, each with 10 minutes to finish; a run can be cancelled. In the executions list these runs have the source "Evaluation".
+* **Limits.** A workflow set to "Don't save node input/output" cannot be evaluated: there is no saved result to score. A row that reaches a Wait, Form or approval node does not finish on its own and counts as failed. Datasets, runs and results are only readable by the workflow's owner and are deleted with the workflow.
+
 ## Execution Tracking
 
 Every workflow execution stores:

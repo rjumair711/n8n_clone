@@ -125,7 +125,14 @@ export const useModelChoice = (open: boolean) => {
     };
 };
 
-export const ModelPicker = ({ state }: { state: ReturnType<typeof useModelChoice> }) => {
+export const ModelPicker = ({
+    state,
+    // What is sent to the model, when it is not Build with AI that asks
+    sends = "The description and the list of node types are sent to this model,",
+}: {
+    state: ReturnType<typeof useModelChoice>;
+    sends?: string;
+}) => {
     const { credentials, isLoading, credential, isCompatible, isIncluded, defaultModel, choice, update } = state;
 
     if (!isLoading && credentials.length === 0) {
@@ -206,7 +213,7 @@ export const ModelPicker = ({ state }: { state: ReturnType<typeof useModelChoice
                 </>
             )}
             <p className="text-xs text-muted-foreground sm:col-span-2">
-                The description and the list of node types are sent to this model,{" "}
+                {sends}{" "}
                 {isIncluded
                     ? `paid with your AI credits (see Billing). Included models: ${credential?.models.join(", ")}.`
                     : "with your credential."}{" "}

@@ -318,6 +318,7 @@ model Workflow {
   triggerStates TriggerState[]
   pinnedData  PinnedData[]
   versions    WorkflowVersion[]
+  evalDatasets EvalDataset[]
 }
 
 // The workflow as it was after a save. One is added whenever the saved
@@ -344,6 +345,112 @@ model WorkflowVersion {
   @@unique([workflowId, number])
   @@index([workflowId, createdAt])
   @@map("workflow_version")
+}
+
+// AGENT EVALUATIONS (see src/features/evaluations)
+// A set of test cases for one workflow, and how their results are scored.
+model EvalDataset {
+  id         String   @id @default(cuid())
+  workflowId String
+  workflow   Workflow @relation(fields: [workflowId], references: [id], onDelete: Cascade)
+  name       String
+  // The trigger every row's run starts from: a NodeType such as CHAT_TRIGGER
+  trigger    String
+  // "exact", "contains", "json_schema" or "llm_judge"
+  scorer     String
+  // Which part of the run's result is scored, e.g. "agent.text". Empty: all of it
+  outputPath String   @default("")
+  // For rows without an expected value of their own: the JSON schema, or
+  // the grading criteria of the LLM judge
+  criteria   String?  @db.Text
+  // The LLM judge's model: { credentialId, model, provider, baseUrl }
+  judgeModel Json?
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  rows EvalRow[]
+  runs EvalRun[]
+
+  @@index([workflowId])
+  @@map("eval_dataset")
+}
+
+model EvalRow {
+  id        String      @id @default(cuid())
+  datasetId String
+  dataset   EvalDataset @relation(fields: [datasetId], references: [id], onDelete: Cascade)
+  position  Int
+  // Text, or JSON for a trigger that takes fields
+  input     String      @db.Text
+  // The expected output, a JSON schema, or grading criteria, by scorer
+  expected  String?     @db.Text
+  createdAt DateTime    @default(now())
+
+  @@index([datasetId, position])
+  @@map("eval_row")
+}
+
+// One pass of the workflow over a dataset
+model EvalRun {
+  id         String      @id @default(cuid())
+  datasetId  String
+  dataset    EvalDataset @relation(fields: [datasetId], references: [id], onDelete: Cascade)
+  // What the user called it: "gpt-4o-mini", "new prompt"
+  label      String
+  // RUNNING, SUCCESS, FAILED or CANCELLED
+  status     String      @default("RUNNING")
+  scorer     String
+  // The workflow version the rows ran, and the models that answered
+  // ("openai/gpt-4o-mini"), so two runs can be told apart
+  workflowVersionNumber Int?
+  models     Json?
+  rowsTotal  Int         @default(0)
+  rowsDone   Int         @default(0)
+  rowsPassed Int         @default(0)
+  // The average of the rows' scores, 0 to 1
+  score      Float?
+  // US dollars: what the workflow's own model calls cost, and the judge's
+  costUsd      Decimal?  @db.Decimal(18, 10)
+  judgeCostUsd Decimal?  @db.Decimal(18, 10)
+  avgDurationMs Int?
+  error      String?     @db.Text
+  startedAt   DateTime   @default(now())
+  completedAt DateTime?
+
+  results EvalResult[]
+
+  @@index([datasetId, startedAt])
+  @@map("eval_run")
+}
+
+// One row of a run. The row's input and expected value are copied, so a
+// run stays readable after its dataset was edited.
+model EvalResult {
+  id       String  @id @default(cuid())
+  runId    String
+  run      EvalRun @relation(fields: [runId], references: [id], onDelete: Cascade)
+  rowId    String?
+  position Int
+  input    String  @db.Text
+  expected String? @db.Text
+  // PENDING, SUCCESS (ran and was scored) or FAILED (the run or the judge failed)
+  status   String  @default("PENDING")
+  // What was scored, cut to a limit
+  output   String? @db.Text
+  // 0 to 1
+  score    Float?
+  passed   Boolean?
+  // Why: what did not match, or the judge's words
+  reason   String? @db.Text
+  error    String? @db.Text
+  executionId String?
+  durationMs  Int?
+  costUsd      Decimal? @db.Decimal(18, 10)
+  judgeCostUsd Decimal? @db.Decimal(18, 10)
+  createdAt DateTime @default(now())
+
+  @@unique([runId, position])
+  @@map("eval_result")
 }
 
 // A node's output kept from an earlier run. In test runs from the editor
