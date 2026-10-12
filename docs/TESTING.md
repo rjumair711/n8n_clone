@@ -122,6 +122,8 @@ Variations, one at a time:
 | URL `https://httpbin.org/status/500` | fails with status 500 |
 | Same, with **Never Error** on | succeeds; `echo.httpResponse.status` is 500 |
 | Create a credential of type **HTTP Header Auth** with value `X-Api-Key: secret123`; set Authentication `Header Auth` and pick it; URL back to `/anything` | `headers.X-Api-Key` is `secret123` |
+| Create a credential of type **HTTP Query Auth (key in the URL)** with value `api_key: secret-key-123`; set Authentication `Query Auth (key in the URL)` and pick it; URL `https://httpbin.org/anything?page=2` | the run succeeds. In the execution's stored output, `args.page` is `2` and `args.api_key` and `url` show `[REDACTED]` in place of the key. The node's URL field still reads `https://httpbin.org/anything?page=2` |
+| Same credential saved as `secret-key-123` (no `name:`) | fails: `the Query Auth credential must look like "api_key: your-key"` |
 | URL `https://httpbin.org/image/png`, Response Format `File (download)` | `echo.httpResponse.file` has `fileName`, `mimeType` `image/png`, `size`, `url` |
 
 ## T4b. Private network allowlist
@@ -1824,6 +1826,28 @@ Workflow: Trigger manually → Set Variable (name `email`, value `x' OR '1'='1`)
 Postgres and MySQL nodes (and template nodes) that already had a `{{ }}` expression in their query got the option switched on by a backfill in the old migration history. That history was squashed into `20261010000000_baseline`, which holds no backfills: the existing database had none left to run at the squash, and a new database has no older nodes. `npx prisma migrate deploy` no longer switches the option on for any node.
 
 ---
+
+## T21. AI Backlink Outreach agent (automated, against mock services)
+
+**The script.** It builds the agent's four workflows (prospecting, sending, replies and follow-ups, link checker) from existing nodes and runs them through the execution engine. Web Search (Tavily), the prospects' web pages, Hunter, ZeroBounce, Airtable, Gmail and the AI model are a mock server inside the script; no request leaves the machine. The app and Inngest do not have to be running.
+
+It needs a **development** database with all migrations applied. It does not read `.env` and refuses to start when `DATABASE_URL` is missing, is the database of `.env`, is a hosted one, or is not on this machine (a development database on another host has to be named with `--dev-db-host=<host>`).
+
+```bash
+DATABASE_URL=postgresql://user:pass@localhost:5432/rxj_test npx tsx --conditions=react-server scripts/test-backlink-agent.ts
+```
+
+It creates one temporary user (email ending in `@backlink-test.invalid`) and deletes it and everything it owns when it finishes, also when a check fails.
+
+**Expect:** a table with `PASS` or `FAIL` per check and the reason under every `FAIL`; exit code 0 when everything passed. The checks: (a) exactly the 3 relevant prospects are saved as `pending`, a known domain and a suppressed one are skipped; (b) only `approved` rows are emailed, the row gets the message id, thread id and `sent_at`, and there is a pause between emails; (c) a reply found by the Gmail Trigger updates the row of its thread, a row sent 6 days ago without a reply gets exactly one follow-up in the same thread, a row that replied gets none, and 12 emails arriving within one minute all start a run over the next polls, oldest first (the Gmail Trigger starts at most 10 per poll); (d) a page with our link, also one only in the footer, is marked `linked`.
+
+The ZeroBounce step uses an **HTTP Query Auth** credential, and check `z2` reads back the saved nodes and everything stored about the runs: the key must be in none of it, although the mock repeats the address it was called with.
+
+Checks `e1` and `e2` list a 250-row Airtable table (the mock serves 100 rows per request with an `offset`, like Airtable): **Return All** must read all 250, 120 with a filter, stop at **Max Records** 230 with `truncated: true` and a `warning`, and still return 50 without Return All.
+
+**By hand, with a real base** that has more than 100 rows: Airtable node, List Records, **Return All** `Yes`, Max Records empty. **Expect** `count` to be the table's row count and `truncated` to be `false`. Set Max Records to `120`: `count` is 120, `truncated` is `true` and `warning` says only the first 120 records were returned. A Split Out after it followed by any other node fails with "120 items reached this node but the limit is 100" unless a Limit node comes first (or `MAX_ITEMS_PER_NODE` is raised).
+
+Known failure on 2026-10-13: `b5` (a Delay after a Split Out pauses once for the whole list, so use a Loop).
 
 # When something fails
 
