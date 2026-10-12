@@ -9,7 +9,7 @@ import { useSetSaveExecutionData, useSetWorkflowActive, useSuspenseWorkflow, use
 import { DropdownMenu, DropdownMenuCheckboxItem, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
 import { WorkflowBudgetDialog } from '@/features/ai-usage/components/workflow-budget-dialog'
 import { useAtomValue } from 'jotai'
-import { SaveIcon, SettingsIcon, Workflow } from 'lucide-react'
+import { FlaskConicalIcon, SaveIcon, SettingsIcon, Workflow } from 'lucide-react'
 import Link from 'next/link'
 import { useEffect, useRef, useState } from 'react'
 import { editorAtom } from '../store/atoms'
@@ -229,6 +229,12 @@ export const EditorHeader = ({ workflowId }: { workflowId: string }) => {
                 <EditorSettingsMenu workflowId={workflowId} />
                 <EditorActiveToggle workflowId={workflowId} />
                 <VersionHistory workflowId={workflowId} />
+                <Button size="sm" variant="outline" asChild title="Evaluations: test this workflow over a dataset">
+                    <Link href={`/workflows/${workflowId}/evaluations`}>
+                        <FlaskConicalIcon className="size-4" />
+                        Evaluations
+                    </Link>
+                </Button>
                 <EditorSaveButton workflowId={workflowId} />
             </div>
         </header>

@@ -26,6 +26,8 @@ export const TRIGGER_SOURCES = {
     ERROR: "error",
     // Started by an Execute Workflow node
     WORKFLOW: "workflow",
+    // One row of an evaluation dataset
+    EVALUATION: "evaluation",
 } as const;
 
 const LABELS: Record<string, string> = {
@@ -50,6 +52,7 @@ const LABELS: Record<string, string> = {
     [TRIGGER_SOURCES.API]: "API",
     [TRIGGER_SOURCES.ERROR]: "Error Trigger",
     [TRIGGER_SOURCES.WORKFLOW]: "Another workflow",
+    [TRIGGER_SOURCES.EVALUATION]: "Evaluation",
 };
 
 // Executions created before the column existed have no source

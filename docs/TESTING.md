@@ -20,7 +20,7 @@ the instruction "build this workflow in the editor".
 ```bash
 npx prisma migrate deploy
 npm run dev:all
-npx tsx --conditions=react-server src/inngest/__test__/testCoreNodes.ts   # expect "260 checks passed"
+npx tsx --conditions=react-server src/inngest/__test__/testCoreNodes.ts   # expect "265 checks passed"
 ```
 
 Make a second account with a different email. Several checks need it.
@@ -401,6 +401,33 @@ Needs the `workflow_versions` migration applied. Use a new workflow: Manual Trig
 | 16 | As the second account call `workflows.getVersions` / `restoreVersion` with the first account's workflow id (or open its editor URL) | "Workflow not found." |
 | 17 | An execution from before this feature | "Workflow version: Not recorded" |
 | 18 | Set `WORKFLOW_VERSION_LIMIT=3`, restart, save three more changes | History keeps only the newest 3; older runs still show their version number |
+
+## T6e. Agent evaluations
+
+Needs the `agent_evaluations` migration applied and `npm run dev:all` (the rows run through Inngest). Build and save: Chat Trigger → AI Agent (variable `agent`, a model with a credential, system prompt "Answer in one short sentence."). Open **Evaluations** in the editor's header.
+
+| # | Do | Expect |
+|---|----|--------|
+| 1 | **New dataset**: name `Capitals`, start from Chat Trigger, output `agent.text`, score by **Contains**. Save | the dataset's card, "0 of 100 rows" |
+| 2 | **Add rows**: input `What is the capital of France?`, expected `Paris`. Then **Paste many rows as JSON**: `[{"input":"Capital of Japan?","expected":"Tokyo"},{"input":"Capital of Pakistan?","expected":"Karachi"}]` | three rows |
+| 3 | Name the run `model A`, press **Run 3 rows** | "Running 0/3" counts up without reloading; the run is ticked and its rows fill in below |
+| 4 | When it has finished | score 67%, 2/3 passed (Islamabad is not Karachi), a cost, an average time, the model's name and the workflow version. Each row: Pass/Fail, the answer, the reason, **Open execution** |
+| 5 | Open one of those executions; look at **Executions** | a normal execution, source "Evaluation"; the sidebar's executions count went up by 3 |
+| 6 | In the editor pick another model on the agent, save, run again as `model B`, tick both runs | **Comparison**: two columns, the better score, lower cost and shorter time in green, each row's two answers side by side |
+| 7 | Edit row 3's expected to `Islamabad`, run again | 3/3 for the new run; the earlier runs keep the score they got |
+| 8 | New dataset scored by **Exact match**, Manual Trigger → Edit Fields (variable `out`, `value` = `{{name}}`), output `out.value`, row input `{"name":"Ali"}`, expected `Ali` | pass. Expected `ali`: fail, "The output is not the expected text." |
+| 9 | Dataset scored by **JSON schema match** with the schema `{"type":"object","required":["category"]}` for all rows, on an agent told to answer with JSON | rows whose answer is JSON with `category` pass (also inside a ```` ```json ```` block); others say what does not fit |
+| 10 | Save a dataset with the schema `{"type":"wat"}` | refused: "The JSON schema cannot be used..." |
+| 11 | Dataset scored by **LLM judge**: pick the judge's model, criteria "The answer names the right city and nothing false." Run | each row has a score from 0 to 1 and the judge's reason; the run's cost shows "+ $… judge"; the execution's AI usage has an "Evaluation judge" line |
+| 12 | LLM judge without a model picked | Save is disabled |
+| 13 | Start a run and press **Cancel** while it is going | "Cancelled"; the rows not reached say "Not run"; the row that was running may still finish as an execution |
+| 14 | Press Run while another run of the same workflow is going | refused: "An evaluation of this workflow is still running." |
+| 15 | Set the dataset's output to `nothing.here`, run | every row fails with 'The run has nothing at "nothing.here"...' |
+| 16 | Make the workflow fail on a row (an HTTP Request to a bad address), run | that row is "Fail" with the node's error and scores 0; the other rows still run |
+| 17 | In the workflow's settings turn on "Don't save node input/output" | the Run button is disabled, with the reason |
+| 18 | On the FREE plan with fewer executions left than the dataset has rows | refused, with how many are left |
+| 19 | Delete a row, a run, then the dataset | gone; deleting the dataset removes its runs |
+| 20 | As the second account open `/workflows/<first account's id>/evaluations`, or call `evaluations.getRuns` / `startRun` with its dataset id | "Workflow not found." / "Dataset not found." |
 
 ## T7. Sub-workflows
 

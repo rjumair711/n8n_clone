@@ -6,6 +6,7 @@ import { gmailTriggerPoll } from "@/inngest/gmail-trigger";
 import { rssTriggerPoll } from "@/inngest/rss-trigger";
 import { workflowFilesCleanup } from "@/inngest/files-cleanup";
 import { executionDataCleanup } from "@/inngest/execution-cleanup";
+import { runEvaluation } from "@/inngest/evaluations";
 import { getStartupErrors } from "@/lib/startup-checks";
 
 export const runtime = "nodejs";
@@ -23,6 +24,7 @@ const inngestHandler = serve({
     rssTriggerPoll,
     workflowFilesCleanup,
     executionDataCleanup,
+    runEvaluation,
   ],
 });
 
