@@ -1,8 +1,8 @@
+import { readCredentialValue } from "@/lib/external-secrets";
 import { google } from "googleapis";
 import { NonRetriableError } from "inngest";
 import type { Prisma } from "@prisma/client";
 import prisma from "@/lib/db";
-import { decrypt } from "@/lib/encryption";
 import { getGoogleAuthFromCredential } from "@/lib/google-oauth";
 import { getAiUsageScope } from "@/lib/ai-usage";
 import { removeMissingDocuments, findStoredDocument } from "@/lib/vector-search";
@@ -218,13 +218,14 @@ export const documentLoaderExecutor: NodeExecutor<DocumentLoaderData> = async ({
       version: "v3",
       auth: getGoogleAuthFromCredential(LABEL, sourceCredential.value),
     });
-  const notionToken = () => decrypt(sourceCredential.value).trim();
+  const notionToken = async () =>
+    (await readCredentialValue(sourceCredential.value, userId)).trim();
 
   try {
     const listing: SourceListing = await step.run(`document-loader-${nodeId}-list`, async () =>
       location.source === "google_drive_folder"
         ? listDriveFolder({ drive: openDrive(), folderId: location.containerId, limit: maxDocuments })
-        : listNotionDatabase({ token: notionToken(), databaseId: location.containerId, limit: maxDocuments })
+        : listNotionDatabase({ token: await notionToken(), databaseId: location.containerId, limit: maxDocuments })
     );
 
     const reports: DocumentReport[] = [];
@@ -251,7 +252,7 @@ export const documentLoaderExecutor: NodeExecutor<DocumentLoaderData> = async ({
             const content: DocumentText =
               location.source === "google_drive_folder"
                 ? await readDriveDocument(openDrive(), document)
-                : await readNotionDocument(notionToken(), document);
+                : await readNotionDocument(await notionToken(), document);
 
             if ("skip" in content) {
               return { ...base, status: "skipped", chunks: 0, reason: content.skip };

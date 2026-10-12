@@ -61,6 +61,31 @@ export function LoginForm() {
         })
     }
 
+    // Single sign-on: the email's domain says which identity provider, and
+    // the browser is sent there. No password is asked for here.
+    const signInSso = async () => {
+        const email = form.getValues("email").trim()
+
+        if (!email.includes("@")) {
+            toast.error("Enter your work email first, then press Sign in with SSO")
+            return
+        }
+
+        await authClient.signIn.sso({
+            email,
+            callbackURL: "/workflows",
+            errorCallbackURL: "/login",
+        }, {
+            onError: (ctx) => {
+                toast.error(
+                    ctx.error.status === 404
+                        ? "Single sign-on is not set up for this email's domain"
+                        : ctx.error.message || "Single sign-on could not be started"
+                )
+            }
+        })
+    }
+
     const onSubmit = async (values: LoginFormValues) => {
         await authClient.signIn.email({
             email: values.email,
@@ -123,6 +148,15 @@ export function LoginForm() {
                                             height={20}
                                         />
                                         Continue with Google
+                                    </Button>
+                                    <Button
+                                        onClick={signInSso}
+                                        variant="outline"
+                                        className="w-full"
+                                        type="button"
+                                        disabled={isPending}
+                                        title="Sign in through your company's identity provider. Enter your work email below first.">
+                                        Sign in with SSO
                                     </Button>
                                 </div>
                                 <div className="grid gap-6">

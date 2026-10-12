@@ -1,7 +1,7 @@
+import { readCredentialValue } from "@/lib/external-secrets";
 import { CredentialType } from "@prisma/client";
 import z from "zod";
 import prisma from "@/lib/db";
-import { decrypt } from "@/lib/encryption";
 import { assertOwnership } from "@/lib/ownership";
 import { redactString } from "@/lib/redaction";
 import { safeFetch } from "@/lib/ssrf";
@@ -102,7 +102,7 @@ export const chatModelsRouter = createTRPCRouter({
             let apiKey = "";
 
             try {
-                apiKey = decrypt(credential.value).trim();
+                apiKey = (await readCredentialValue(credential.value, ctx.workspace.ownerId)).trim();
 
                 // The base URL can be typed in, so it goes through the same
                 // guard as the node itself when it runs

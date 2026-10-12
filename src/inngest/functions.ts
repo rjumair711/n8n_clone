@@ -74,6 +74,7 @@ import { telegramChannel } from "./channels/telegram";
 import { dateTimeChannel } from "./channels/datetime";
 import { textFormatterChannel } from "./channels/textformatter";
 import { createRunRedactor } from "@/lib/execution-redaction";
+import { primeExternalSecrets } from "@/lib/external-secrets";
 import { redactString } from "@/lib/redaction";
 import { getAppUrl } from "@/lib/app-url";
 import {
@@ -333,6 +334,11 @@ export const executeWorkflow =
       // the logs say where the URL went, not what it is
       const resumeLink = getResumeLink(getAppUrl(), execution.id);
       const formLink = getFormLink(getAppUrl(), execution.id);
+      // Credentials that read their value from an external secret store:
+      // read now, so this process knows the values it has to keep out of
+      // what is stored. Not a step: a secret is never a step's result.
+      await primeExternalSecrets(userId, credentialValues ?? []);
+
       const redactor = createRunRedactor(
         credentialValues ?? [],
         [resumeLink?.token, formLink?.token].filter(

@@ -1,10 +1,10 @@
+import { readCredentialValue } from "@/lib/external-secrets";
 import "server-only";
 
 import { createHmac } from "crypto";
 import { NodeType } from "@prisma/client";
 import { fetch, ProxyAgent } from "undici";
 import prisma from "./db";
-import { decrypt } from "./encryption";
 import { getAppUrl } from "./app-url";
 
 type TelegramResponse<T> = {
@@ -127,7 +127,7 @@ export const syncTelegramWebhooks = async ({
     }
 
     try {
-      const botToken = decrypt(credential.value).trim();
+      const botToken = (await readCredentialValue(credential.value, userId)).trim();
 
       if (active) {
         await callTelegram(botToken, "setWebhook", {

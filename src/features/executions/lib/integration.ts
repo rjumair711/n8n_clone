@@ -1,6 +1,6 @@
+import { readCredentialValue } from "@/lib/external-secrets";
 import { NonRetriableError } from "inngest";
 import prisma from "@/lib/db";
-import { decrypt } from "@/lib/encryption";
 import type { StepTools } from "../types";
 
 /**
@@ -38,7 +38,8 @@ export const loadCredentialSecret = async ({
     throw new NonRetriableError(`${label} node: Credential not found`);
   }
 
-  return decrypt(credential.value).trim();
+  // With what it reads from an external secret store read
+  return (await readCredentialValue(credential.value, userId)).trim();
 };
 
 export const parseJsonField = <T = unknown>(

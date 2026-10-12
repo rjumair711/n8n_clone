@@ -1,3 +1,4 @@
+import { readCredentialValue } from "@/lib/external-secrets";
 import type { NodeExecutor } from "@/features/executions/types";
 import { renderEscapedTemplate } from "@/features/executions/lib/templates";
 import { NonRetriableError } from "inngest";
@@ -5,7 +6,6 @@ import { createGoogleGenerativeAI } from "@ai-sdk/google";
 import Handlebars from "handlebars";
 import { generateText } from "ai";
 import prisma from "@/lib/db";
-import { decrypt } from "@/lib/encryption";
 import { normalizeUsage } from "@/lib/ai-cost";
 import { getAiUsageScope, recordAiUsage } from "@/lib/ai-usage";
 
@@ -72,7 +72,7 @@ export const geminiExecutor: NodeExecutor<GeminiData> = async ({
   // 4. INFERENCE EXECUTION LAYER
   // ==========================================
   try {
-    const apiKey = decrypt(credential.value);
+    const apiKey = await readCredentialValue(credential.value, userId);
     const targetModel = data.model || "gemini-2.5-flash";
 
     // Run execution inside a safe functional step block

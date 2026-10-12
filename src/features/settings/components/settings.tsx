@@ -3,6 +3,11 @@
 import { ModelPricesCard } from "@/features/ai-usage/components/model-prices-card";
 import { IncludedAiCard } from "@/features/ai-credits/components/included-ai-card";
 import { WorkspaceCard } from "@/features/workspaces/components/workspace-card";
+import {
+    GitSyncCard,
+    SecretStoresCard,
+    SsoCard,
+} from "@/features/enterprise/components/enterprise-cards";
 import { AuditLogCard } from "./audit-log-card";
 import { SessionsCard } from "./sessions-card";
 import { TwoFactorCard } from "./two-factor-card";
@@ -18,6 +23,9 @@ export const Settings = () => (
         </div>
 
         <WorkspaceCard />
+        <GitSyncCard />
+        <SecretStoresCard />
+        <SsoCard />
         <TwoFactorCard />
         <SessionsCard />
         <AuditLogCard />

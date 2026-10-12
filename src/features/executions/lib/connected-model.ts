@@ -1,3 +1,4 @@
+import { readCredentialValue } from "@/lib/external-secrets";
 import { createAnthropic } from "@ai-sdk/anthropic";
 import { createGoogleGenerativeAI } from "@ai-sdk/google";
 import { createOpenAI } from "@ai-sdk/openai";
@@ -342,6 +343,13 @@ export const loadModelCandidates = async ({
     }
   }
 
+  // The users' own keys, with what they read from an external secret store
+  // read. Held here only: nothing decrypted is a step's result.
+  const plainValues = new Map<string, string>();
+  for (const [id, value] of values) {
+    plainValues.set(id, (await readCredentialValue(value, userId)).trim());
+  }
+
   return specs.map((spec) => ({
     provider: spec.usageProvider,
     model: spec.modelName,
@@ -360,7 +368,7 @@ export const loadModelCandidates = async ({
           ) as LanguageModelV3)
         : (buildLanguageModel(
             spec.provider,
-            decrypt(values.get(spec.credentialId as string) as string).trim(),
+            plainValues.get(spec.credentialId as string) as string,
             spec.modelName,
             spec.modelData
           ) as LanguageModelV3),

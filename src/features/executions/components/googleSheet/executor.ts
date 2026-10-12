@@ -89,7 +89,7 @@ export const googleSheetsExecutor: NodeExecutor<
       async () => {
 
         // A Google account (OAuth) or a service account
-        const auth = getGoogleAuth("Google Sheets", credential, [
+        const auth = await getGoogleAuth("Google Sheets", credential, [
           "https://www.googleapis.com/auth/spreadsheets",
         ]);
 

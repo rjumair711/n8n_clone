@@ -1,3 +1,4 @@
+import { readCredentialValue } from "@/lib/external-secrets";
 import type { NodeExecutor } from "@/features/executions/types";
 import { renderEscapedTemplate } from "@/features/executions/lib/templates";
 import { NonRetriableError } from "inngest";
@@ -5,7 +6,6 @@ import { createOpenAI } from "@ai-sdk/openai";
 import Handlebars from "handlebars";
 import { generateText } from "ai";
 import prisma from "@/lib/db";
-import { decrypt } from "@/lib/encryption";
 import { normalizeUsage } from "@/lib/ai-cost";
 import { getAiUsageScope, recordAiUsage } from "@/lib/ai-usage";
 
@@ -89,7 +89,7 @@ export const OpenAIExecutor: NodeExecutor<
 
   // Create OpenAI client
   const openai = createOpenAI({
-    apiKey: decrypt(credential.value),
+    apiKey: await readCredentialValue(credential.value, userId),
   });
 
   try {

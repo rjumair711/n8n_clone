@@ -3,7 +3,7 @@ import { CredentialType, NodeType, type Prisma } from "@prisma/client";
 import { TRPCError } from "@trpc/server";
 import z from "zod";
 import prisma from "@/lib/db";
-import { createTRPCRouter, editorProcedure, viewerProcedure } from "@/trpc/init";
+import { createTRPCRouter, editorProcedure, viewerProcedure, builderProcedure } from "@/trpc/init";
 import { PLAN_LIMITS, getRequiredPlanForNode } from "@/config/plans";
 import { INCLUDED_CREDENTIAL_ID } from "@/config/ai-credits";
 import { getAppUrl } from "@/lib/app-url";
@@ -234,7 +234,7 @@ export const chatbotsRouter = createTRPCRouter({
      * share link only work for an active workflow. Documents and pages are
      * added afterwards, one request each.
      */
-    create: editorProcedure
+    create: builderProcedure
         .input(
             z.object({
                 name: z.string().trim().min(1).max(CHATBOT_MAX_NAME_LENGTH),
@@ -461,7 +461,7 @@ export const chatbotsRouter = createTRPCRouter({
      * Adds the WhatsApp side to a chatbot that does not have it: a WhatsApp
      * Trigger into the same agent, and the reply after it.
      */
-    connectWhatsapp: editorProcedure
+    connectWhatsapp: builderProcedure
         .input(whatsappInput.extend({ id: z.string().min(1).max(100) }))
         .mutation(async ({ ctx, input }) => {
             const userId = ctx.workspace.ownerId;

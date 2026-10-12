@@ -64,6 +64,7 @@ model User {
   // The user's own workspace, and the workspaces the user is a member of
   workspace              Workspace?
   workspaceMemberships   WorkspaceMember[]
+  ssoProviders           SsoProvider[]
 
   @@unique([email])
   @@map("user")
@@ -326,6 +327,9 @@ model Workflow {
   // Null only for a row made by code from before workspaces
   workspaceId String?
   workspace   Workspace?   @relation(fields: [workspaceId], references: [id], onDelete: SetNull)
+  // Git sync: the id this workflow has in the repository's file, when it
+  // came from (or was pushed to) one. A pull finds the workflow by it.
+  gitSourceId String?
   nodes       Node[]
   connections Connection[]
   triggerStates TriggerState[]
@@ -345,9 +349,14 @@ model Workspace {
   name      String
   ownerId   String   @unique
   owner     User     @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+  // "development" or "production". In production, workflows are not
+  // edited by hand: they change by pulling from Git.
+  environment String @default("development")
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
+  gitSync      WorkspaceGit?
+  secretStores SecretStore[]
   members     WorkspaceMember[]
   invites     WorkspaceInvite[]
   workflows   Workflow[]
@@ -519,6 +528,72 @@ model EvalResult {
 
   @@unique([runId, position])
   @@map("eval_result")
+}
+
+// ENTERPRISE (see src/features/enterprise)
+// Git sync: the repository a workspace's workflows are pushed to and
+// pulled from, as one JSON file per workflow.
+model WorkspaceGit {
+  id          String    @id @default(cuid())
+  workspaceId String    @unique
+  workspace   Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  // "owner/name" on GitHub
+  repo        String
+  branch      String
+  // The folder in the repository the files are in
+  folder      String    @default("workflows")
+  // A GitHub credential of the workspace
+  credentialId String
+  lastSyncAt     DateTime?
+  // "push" or "pull"
+  lastSyncAction String?
+  lastCommit     String?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  @@map("workspace_git")
+}
+
+// External secrets: a HashiCorp Vault or AWS Secrets Manager that
+// credentials of the workspace can read their values from, with
+// {{$secrets.<name>.<secret>#<field>}}.
+model SecretStore {
+  id          String    @id @default(cuid())
+  workspaceId String
+  workspace   Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  // The workspace's owner: credentials are read by that user id when a node runs
+  userId      String
+  // The name used in a reference: lower case letters, digits, - and _
+  name        String
+  // "vault" or "aws"
+  type        String
+  // Encrypted JSON: the address and token, or the region and keys
+  config      String
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  @@unique([userId, name])
+  @@index([workspaceId])
+  @@map("secret_store")
+}
+
+// SSO: an OIDC or SAML identity provider, kept by Better Auth's sso plugin
+// (the columns are the plugin's)
+model SsoProvider {
+  id             String   @id
+  issuer         String
+  oidcConfig     String?
+  samlConfig     String?
+  // Who registered it. The provider goes with the account.
+  userId         String?
+  user           User?    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  providerId     String   @unique
+  organizationId String?
+  domain         String
+  domainVerified Boolean?
+
+  @@index([domain])
+  @@map("sso_provider")
 }
 
 // A node's output kept from an earlier run. In test runs from the editor

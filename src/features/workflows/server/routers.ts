@@ -1,6 +1,6 @@
 import { PAGINATION } from "@/config/constants";
 import prisma from "@/lib/db";
-import { createTRPCRouter, editorProcedure, viewerProcedure } from "@/trpc/init";
+import { createTRPCRouter, editorProcedure, viewerProcedure, builderProcedure } from "@/trpc/init";
 import { generateSlug } from "random-word-slugs"
 import z from "zod";
 import type { Node, Edge } from "@xyflow/react"
@@ -215,7 +215,7 @@ export const workflowsRouter = createTRPCRouter({
 
 
     // CREATE WORKFLOW
-    create: editorProcedure.mutation(async ({ ctx }) => {
+    create: builderProcedure.mutation(async ({ ctx }) => {
         const user = await prisma.user.findUniqueOrThrow({
             where: {
                 id: ctx.workspace.ownerId,
@@ -331,7 +331,7 @@ export const workflowsRouter = createTRPCRouter({
         }),
 
     // DELETE WORKFLOW
-    remove: editorProcedure
+    remove: builderProcedure
         .input(z.object({ id: z.string() }))
         .mutation(async ({ ctx, input }) => {
             await getOwnedWorkflow(input.id, ctx.workspace.ownerId);
@@ -354,7 +354,7 @@ export const workflowsRouter = createTRPCRouter({
         }),
 
     // UPDATE WORKFLOW NAME
-    updateName: editorProcedure
+    updateName: builderProcedure
         .input(z.object({ id: z.string(), name: z.string().min(1) }))
         .mutation(async ({ ctx, input }) => {
             await getOwnedWorkflow(input.id, ctx.workspace.ownerId);
@@ -426,7 +426,7 @@ export const workflowsRouter = createTRPCRouter({
         }),
 
     // UPDATE WORKFLOW
-    update: editorProcedure
+    update: builderProcedure
         .input(z.object({
             id: z.string(),
             nodes: z.array(
@@ -622,7 +622,7 @@ export const workflowsRouter = createTRPCRouter({
 
     // Puts the workflow back to one of its versions. That makes a new
     // version, so restoring can itself be undone.
-    restoreVersion: editorProcedure
+    restoreVersion: builderProcedure
         .input(z.object({ id: z.string(), versionId: z.string().min(1).max(100) }))
         .mutation(async ({ ctx, input }) => {
             const userId = ctx.workspace.ownerId;

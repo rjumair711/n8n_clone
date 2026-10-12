@@ -1,3 +1,4 @@
+import { getResolvedExternalValues } from "./external-secrets";
 import { createHash } from "crypto";
 import { decrypt } from "./encryption";
 import {
@@ -65,15 +66,19 @@ export const createRunRedactor = (
   encryptedCredentialValues: readonly string[] = [],
   otherSecrets: readonly string[] = []
 ): RunRedactor => {
-  const secrets = [
+  const stored = [
     ...getSecrets(encryptedCredentialValues),
     ...otherSecrets.filter(Boolean),
   ];
 
+  // Read each time: a secret a credential reads from an external store is
+  // only known once it was read (see primeExternalSecrets)
+  const all = () => [...stored, ...getResolvedExternalValues()];
+
   return {
-    data: (value) => redactValue(value, { secrets }),
+    data: (value) => redactValue(value, { secrets: all() }),
     text: (value) =>
-      (typeof value === "string" ? redactString(value, { secrets }) : value) as typeof value,
-    result: (value) => redactValue(value, { secrets, patterns: false }),
+      (typeof value === "string" ? redactString(value, { secrets: all() }) : value) as typeof value,
+    result: (value) => redactValue(value, { secrets: all(), patterns: false }),
   };
 };
