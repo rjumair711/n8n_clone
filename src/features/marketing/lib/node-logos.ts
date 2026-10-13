@@ -1,0 +1,46 @@
+import type { NodeType } from "@prisma/client";
+
+// The logo files of app nodes, for the template cards of the landing page.
+// The editor's own list is in src/components/node-selector.tsx, which the
+// landing page must not import: it would bring React Flow along. A node
+// that is not here is shown by its name only.
+export const NODE_LOGOS: Partial<Record<NodeType, string>> = {
+  WHATSAPP: "/logos/whatsapp.svg",
+  WHATSAPP_TRIGGER: "/logos/whatsapp.svg",
+  TELEGRAM: "/logos/telegram.jfif",
+  TELEGRAM_TRIGGER: "/logos/telegram.jfif",
+  MESSENGER: "/logos/messenger.svg",
+  MESSENGER_TRIGGER: "/logos/messenger.svg",
+  INSTAGRAM: "/logos/instagram.svg",
+  INSTAGRAM_TRIGGER: "/logos/instagram.svg",
+  GMAIL: "/logos/gmail.svg",
+  GMAIL_TRIGGER: "/logos/gmail.svg",
+  EMAIL_SEND: "/logos/email.jfif",
+  SLACK: "/logos/slack.svg",
+  DISCORD: "/logos/discord.svg",
+  GOOGLE_SHEETS: "/logos/googleSheet.png",
+  GOOGLE_DRIVE: "/logos/google-drive.svg",
+  GOOGLE_CALENDAR: "/logos/calender.png",
+  GOOGLE_FORM_TRIGGER: "/logos/googleform.svg",
+  NOTION: "/logos/notion.png",
+  AIRTABLE: "/logos/airtable.svg",
+  GITHUB: "/logos/github.svg",
+  JIRA: "/logos/jira.svg",
+  HUBSPOT: "/logos/hubspot.svg",
+  SHOPIFY: "/logos/shopify.svg",
+  SHOPIFY_TRIGGER: "/logos/shopify.svg",
+  WOOCOMMERCE: "/logos/woocommerce.svg",
+  WOOCOMMERCE_TRIGGER: "/logos/woocommerce.svg",
+  STRIPE_TRIGGER: "/logos/stripe.svg",
+  TYPEFORM_TRIGGER: "/logos/typeform.svg",
+  POSTGRES: "/logos/postgres.svg",
+  MYSQL: "/logos/mysql.svg",
+  OPENAI: "/logos/openai.svg",
+  ANTHROPIC: "/logos/anthropic.svg",
+  GEMINI: "/logos/gemini.svg",
+  DEEPSEEK: "/logos/deepseek.svg",
+  KIMI: "/logos/kimi.svg",
+  QWEN: "/logos/qwen.svg",
+  CHAT_MODEL: "/logos/chat-model.svg",
+  SCHEDULE_TRIGGER: "/logos/schedule-trigger.png",
+};
