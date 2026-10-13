@@ -5,6 +5,7 @@ import "./globals.css";
 import { TRPCReactProvider } from "@/trpc/client";
 import { Toaster } from "@/components/ui/sonner";
 import { Provider } from 'jotai';
+import { getAppUrl } from "@/lib/app-url";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -17,6 +18,8 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
+  // Makes the canonical URL and the Open Graph image addresses absolute
+  metadataBase: new URL(getAppUrl()),
   title: "RXJ",
   description: "Affordable AI workflow automation platform",
 };

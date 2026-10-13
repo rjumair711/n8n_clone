@@ -1849,6 +1849,26 @@ Checks `e1` and `e2` list a 250-row Airtable table (the mock serves 100 rows per
 
 Known failure on 2026-10-13: `b5` (a Delay after a Split Out pauses once for the whole list, so use a Loop).
 
+## T22. Landing page and brand
+
+Signed out, open `/`.
+
+1. **Navbar.** The RXJ logo links to `/`. Features, Use cases, Templates and Pricing scroll to their sections. Scroll down: the bar gets a dark, blurred background. At phone width the links are in a menu that opens from the right and closes when a link is picked.
+2. **Hero.** "Start free trial — 7 days" opens `/signup`; "See it in action" scrolls to the workflow canvas. The canvas nodes light up one after the other (WhatsApp Trigger, Guardrails, AI Agent with its model, memory and tools, WhatsApp), the log fills line by line and the status goes from Running to Success, then it starts again.
+3. **Reduced motion.** Switch on "reduce motion" in the operating system (or DevTools → Rendering → Emulate `prefers-reduced-motion`). **Expect** nothing to move: the canvas shows every node done and every log line, and sections do not fade in.
+4. **Light and dark.** Switch the system theme (or DevTools → Rendering → `prefers-color-scheme`). **Expect** the sections between the hero and the final call to action to change; the navbar, hero, security band, call to action and footer stay dark.
+5. **Templates.** The cards are the published templates of the gallery, six at most. Hide one as an admin (Templates → edit → unpublish): within an hour, or after a new deployment, it is gone from the landing page. "Use template" opens `/signup` when signed out and `/templates` when signed in.
+6. **Pricing.** The three plans and prices are the same as on `/pricing`.
+7. **Signed in**, open `/` again: the navbar and the hero button say "Go to dashboard" and open `/workflows`.
+8. **Width.** At 375, 768, 1280 and 1536 pixels there is no horizontal scroll bar.
+9. **Logo elsewhere.** `/login` and `/signup` show the logo on a dark tile above the card. The browser tab shows the RXJ icon. `/opengraph-image` shows the 1200 × 630 sharing image.
+10. **No editor code.** DevTools → Network on `/`: no request for a chunk that contains React Flow (search the loaded scripts for `react-flow`: nothing).
+11. **Footer.** Four columns: Product, Resources, Company and Account. Every link opens a page or scrolls to a section; there are no Terms, Privacy, Contact or social links. At phone width the columns stack without a horizontal scroll bar.
+12. **Docs.** Click Docs in the navbar (and in the phone menu, and in the footer): `/docs` opens with nine numbered sections. A link under "On this page" scrolls to its section, and the title is not hidden behind the navbar. The expressions table scrolls sideways inside its card at 375 pixels; the page itself does not. "See the plans and prices" opens `/pricing`.
+13. **About.** Footer → About opens `/about` with four cards. "getting-started guide" opens `/docs`.
+14. **From another page.** On `/docs`, click Features in the navbar: the landing page opens at that section.
+15. **Signed in**, open `/docs` and `/about`: the navbar and the button at the end say "Go to dashboard".
+
 # When something fails
 
 Note the node, the exact values you entered, and the error text from the

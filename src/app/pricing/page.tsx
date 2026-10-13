@@ -7,52 +7,9 @@ import { useHasActiveSubscription } from "@/features/subscription/hook/use-subsc
 import { getUserPlan } from "@/lib/subscription/get-user-plan";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
+import { PRICING_PLANS } from "@/config/pricing-plans";
 
-const plans = [
-  {
-    name: "Beginner",
-    slug: "beginner",
-    price: "$4.99",
-    description: "Perfect for beginners and students.",
-    features: [
-      "5 active workflows",
-      "1,000 executions/month",
-      "AI nodes",
-      "Discord & Slack",
-      "Webhook support",
-      "Basic execution logs",
-    ],
-  },
-  {
-    name: "Intermediate",
-    slug: "intermediate",
-    price: "$9.99",
-    popular: true,
-    description: "Best for freelancers and growing businesses.",
-    features: [
-      "20 active workflows",
-      "15k executions/month",
-      "Scheduling",
-      "Google Sheets",
-      "Gmail integration",
-      "Advanced execution logs",
-      "Priority support",
-    ],
-  },
-  {
-    name: "Pro",
-    slug: "pro",
-    price: "$14.99",
-    description: "For advanced AI automation and scaling.",
-    features: [
-      "Unlimited workflows",
-      "100k+ executions",
-      "WhatsApp integration",
-      "AI Agents",
-      "API access",
-    ],
-  },
-];
+const plans = PRICING_PLANS;
 
 export default function PricingPage() {
   const router = useRouter();

@@ -1123,6 +1123,24 @@ A user can run cheap models without an API key of their own. The platform's prov
 
 ---
 
+# 🏠 Landing page and brand
+
+The page at `/` is the public marketing page. It is built once and rebuilt at most every hour, and it does not load the workflow editor.
+
+* **Where it is.** The route is `src/app/page.tsx`; the sections, the navbar and the hero's workflow canvas are in `src/features/marketing/components/`, and the words (features, use cases, security, FAQ) in `src/features/marketing/lib/content.ts`. A claim there is changed together with the feature it describes.
+* **What comes from the code, not from the page.** The number of nodes is counted from the schema's `NodeType`. The plans and prices are `src/config/pricing-plans.ts`, which the Pricing page uses too. The limits and AI credits in the FAQ come from `src/config/plans.ts` and `src/config/ai-credits.ts`.
+* **Templates.** Up to six **published** templates of the gallery, most used first, English ones before the others. Hidden templates are never read. A use case links to a template when a published English one matches its name. Without templates (or without a database at build time) the section shows a link to the gallery instead.
+* **Integrations strip.** `src/features/marketing/lib/integrations.ts`, with glyphs from the `simple-icons` package. Add an integration only when its node exists.
+* **Colours and fonts.** `src/app/marketing.css`: the colours are sampled from the logo (violet `#9829FD`, indigo `#401EFB`, blue `#1568FD`, sky `#0099FE`, ink `#03031A`), scoped to `.mkt`, and follow the system light/dark preference. The navbar, hero, security band, final call to action and footer are always dark, because the logo is drawn for a dark background. Headings are Bricolage Grotesque, body text Geist. The app itself keeps its own theme.
+* **Motion** is CSS only (no animation library) and is switched off for `prefers-reduced-motion`; the hero canvas then shows the finished run.
+* **Logo.** The source is `public/logos/RXJ.png` and is never edited. `node scripts/generate-brand-assets.mjs` makes the cropped wordmark (`public/brand/rxj-wordmark.png`), `src/app/favicon.ico`, `src/app/icon.png` and `src/app/apple-icon.png` from it; run it again when the logo changes. `RxjLogo` (`src/features/marketing/components/rxj-logo.tsx`) shows it: plain on a dark surface, with `tile` on a light one (the sign-in pages).
+* **Sharing image.** `src/app/opengraph-image.tsx` draws the 1200 × 630 image with the logo and the headline; `twitter-image.tsx` uses the same one. Their addresses and the canonical URL are built from `NEXT_PUBLIC_APP_URL`.
+* **Docs and About.** `/docs` is a getting-started guide and `/about` says what RXJ is; both are static pages inside `MarketingShell` (`src/features/marketing/components/marketing-shell.tsx`: the navbar, a dark header, the footer). Their words are in `src/features/marketing/lib/docs-content.ts` and `about-content.ts`, and follow the same rule as `content.ts`. The navbar links to Docs.
+* **Footer.** `src/features/marketing/components/site-footer.tsx`, shared by every public page: Product, Resources (with Docs), Company (About) and Account. It links only to pages that exist.
+* **Not there yet:** Terms and Privacy pages, a Contact page and social links. The footer has no links for them; add them to `COLUMNS` in `site-footer.tsx` when they exist.
+
+---
+
 # 🎯 Onboarding System
 
 RXJ includes onboarding UX to improve activation and retention.
