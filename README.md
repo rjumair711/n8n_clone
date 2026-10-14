@@ -1293,12 +1293,13 @@ Step-by-step workflows for testing every node by hand are in [`docs/TESTING.md`]
 
 ## Continuous integration
 
-`.github/workflows/ci.yml` runs on every pull request and on every push to `main`. It has four jobs, each of which fails the run on its own:
+`.github/workflows/ci.yml` runs on every pull request and on every push to `main`. It has five jobs, each of which fails the run on its own:
 
 | Job | What it runs |
 | --- | ------------ |
 | Type check | `npx tsc --noEmit` (with the 8 GB heap the project needs) |
 | Core node tests | `npx tsx --conditions=react-server src/inngest/__test__/testCoreNodes.ts` |
+| Build | `npx prisma generate` then `npx next build`, with placeholder env values. Catches what tsc does not, such as a server package (sharp, `fs`) pulled into the browser bundle by a `"use client"` import. It runs `next build` directly, not `npm run build`, so `scripts/migrate-on-deploy.mjs` never runs |
 | npm audit | `npm audit --audit-level=high`: fails on a known vulnerability of high or critical severity in any dependency |
 | Secret scan | [gitleaks](https://github.com/gitleaks/gitleaks) over the commits of the push or pull request, with `.gitleaks.toml` |
 

@@ -35,7 +35,11 @@ const nextConfig: NextConfig = {
 
   // The Code node sandbox loads a .wasm file at runtime; keep it out of the bundle
   // ssh2 loads optional native add-ons at runtime
-  serverExternalPackages: ["quickjs-emscripten", "ssh2"],
+  // sharp (images for the vision nodes) and pg (Postgres node, optional
+  // pg-native) are native too; Next lists both by default, named here so
+  // the list is complete. They must never reach the browser bundle: the
+  // files that load them are marked "server-only".
+  serverExternalPackages: ["quickjs-emscripten", "ssh2", "sharp", "pg"],
   outputFileTracingIncludes: {
     "/api/inngest": [
       "./node_modules/@jitl/quickjs-*/**/*",
