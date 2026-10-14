@@ -1,3 +1,5 @@
+import "server-only";
+
 // Readers and writers for document formats (PDF, Word, Excel). Their
 // libraries are large, so each is loaded only when a workflow needs it.
 

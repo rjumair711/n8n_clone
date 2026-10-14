@@ -30,7 +30,7 @@ import {
 // compares them); that file is not imported here to keep it off the page
 const MCP_MIN_TOKEN_LENGTH = 16;
 import { OTHER_CATEGORY_ID, parseAttributes, parseCategories } from "../../lib/ai-fields";
-import { ANALYZE_MODES } from "../../lib/vision";
+import { ANALYZE_MODES } from "../../lib/vision-config";
 
 const MODEL_PORT = [{ id: "sub-model", label: "Model" }];
 

@@ -1,3 +1,5 @@
+import "server-only";
+
 import { FileLimitError, PDF_TIME_LIMIT_MS } from "./file-limits";
 
 // Turning a file into what a vision model can read: an image as a JPEG of
@@ -280,13 +282,5 @@ export const prepareDocument = async (
   };
 };
 
-export type AnalyzeMode = "extract_text" | "extract_fields" | "describe";
-
-export const ANALYZE_MODES: { value: AnalyzeMode; label: string }[] = [
-  { value: "extract_text", label: "Extract All Text" },
-  { value: "extract_fields", label: "Extract Fields" },
-  { value: "describe", label: "Describe" },
-];
-
-export const isAnalyzeMode = (value: unknown): value is AnalyzeMode =>
-  ANALYZE_MODES.some((mode) => mode.value === value);
+// Kept in vision-config.ts so the node editor can import them without sharp
+export { ANALYZE_MODES, isAnalyzeMode, type AnalyzeMode } from "./vision-config";

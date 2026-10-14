@@ -1713,10 +1713,12 @@ Seen on GitHub, after the branch is pushed.
 
 | # | Do | Expect |
 |---|----|--------|
-| 1 | Open a pull request | four checks start: **Type check**, **Core node tests**, **npm audit**, **Secret scan (gitleaks)** |
-| 2 | Look at **npm audit** | it fails for as long as `npm audit --audit-level=high` reports high or critical vulnerabilities; the log lists them. The other three do not depend on it |
+| 1 | Open a pull request | five checks start: **Type check**, **Core node tests**, **Build**, **npm audit**, **Secret scan (gitleaks)** |
+| 2 | Look at **npm audit** | it fails for as long as `npm audit --audit-level=high` reports high or critical vulnerabilities; the log lists them. The other checks do not depend on it |
 | 3 | In a throwaway branch add a line like `const key = "AKIAIOSFODNN7EXAMPLE2";` with a made-up AWS-style key to a file under `src/lib`, push | **Secret scan** fails and names the file and line. Delete the branch |
 | 4 | Break a type in a throwaway branch, push | **Type check** fails |
+| 4b | In a throwaway branch add `import { prepareImage } from "@/features/executions/lib/vision";` (and a use of it) to a `"use client"` component, push | **Build** fails: `server-only` cannot be imported from a Client Component. **Type check** passes. Delete the branch |
+| 4c | Look at the **Build** log | `next build` ran without `scripts/migrate-on-deploy.mjs`: no "[migrate-on-deploy]" line and no Prisma migrate output |
 | 5 | The Monday after merging | Dependabot opens its pull requests (repository → Insights → Dependency graph → Dependabot shows its last run) |
 
 ## T19f. Shopify and WooCommerce

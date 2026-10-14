@@ -53,6 +53,44 @@ jobs:
       - name: testCoreNodes
         run: npx tsx --conditions=react-server src/inngest/__test__/testCoreNodes.ts
 
+  # `next build` catches what tsc does not: a server-only package (sharp,
+  # fs, ...) pulled into the browser bundle by a "use client" import. Runs
+  # `prisma generate` and `next build` directly, NOT `npm run build`, so
+  # scripts/migrate-on-deploy.mjs never runs here. The env values are
+  # placeholders; nothing connects to a database or any service.
+  build:
+    name: Build
+    runs-on: ubuntu-latest
+    env:
+      NODE_OPTIONS: --max-old-space-size=8192
+      NEXT_TELEMETRY_DISABLED: "1"
+      BETTER_AUTH_SECRET: ci-placeholder-secret-not-used-anywhere
+      BETTER_AUTH_URL: http://localhost:3000
+      NEXT_PUBLIC_APP_URL: http://localhost:3000
+      ENCRYPTION_KEY: ci-placeholder-encryption-key
+      POLAR_ACCESS_TOKEN: ci-placeholder
+      POLAR_SERVER: sandbox
+      POLAR_SUCCESS_URL: http://localhost:3000
+      POLAR_BEGINNER_PRODUCT_ID: ci-placeholder
+      POLAR_INTERMEDIATE_PRODUCT_ID: ci-placeholder
+      POLAR_PRO_PRODUCT_ID: ci-placeholder
+      GITHUB_CLIENT_ID: ci-placeholder
+      GITHUB_CLIENT_SECRET: ci-placeholder
+      GOOGLE_CLIENT_ID: ci-placeholder
+      GOOGLE_CLIENT_SECRET: ci-placeholder
+      # No SENTRY_AUTH_TOKEN: source maps are not uploaded from CI
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+      - run: npm ci
+      - name: prisma generate
+        run: npx prisma generate
+      - name: next build
+        run: npx next build
+
   audit:
     name: npm audit
     runs-on: ubuntu-latest
