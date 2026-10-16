@@ -6,6 +6,7 @@ import { useTRPC } from "@/trpc/client"
 import { useMutation, useQueryClient, useSuspenseQuery } from "@tanstack/react-query"
 import { toast } from "sonner";
 import { useWorkflowsParams } from "./use-workflows-params";
+import { useInvalidateUsage } from "@/features/subscription/hook/use-current-plan";
 
 export const useSuspenseWorkflows = () => {
     const trpc = useTRPC()
@@ -23,10 +24,12 @@ export const useCreateWorkflow = () => {
 
     const queryClient = useQueryClient()
     const trpc = useTRPC()
+    const invalidateUsage = useInvalidateUsage()
 
     return useMutation(trpc.workflows.create.mutationOptions({
         onSuccess: (data) => {
             toast.success(`Workflow "${data.name}" created`)
+            invalidateUsage()
             queryClient.invalidateQueries(
                 trpc.workflows.getMany.queryOptions({})
             )
@@ -45,12 +48,14 @@ export const useCreateWorkflow = () => {
 export const useRemoveWorkflow = () => {
     const trpc = useTRPC()
     const queryClient = useQueryClient()
+    const invalidateUsage = useInvalidateUsage()
 
 
     return useMutation(
         trpc.workflows.remove.mutationOptions({
             onSuccess: (data) => {
                 toast.success(`Workflow "${data.name}" removed`)
+                invalidateUsage()
                 queryClient.invalidateQueries(trpc.workflows.getMany.queryOptions({}))
                 queryClient.invalidateQueries(trpc.workflows.getOne.queryFilter({ id: data.id }))
             }

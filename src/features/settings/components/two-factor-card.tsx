@@ -2,8 +2,8 @@
 
 import { useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { QRCodeSVG } from "qrcode.react";
 import { toast } from "sonner";
+import dynamic from "next/dynamic";
 import { useTRPC } from "@/trpc/client";
 import { authClient } from "@/lib/auth-client";
 import { Badge } from "@/components/ui/badge";
@@ -17,6 +17,12 @@ import {
 } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+
+// Only needed while two-factor is being set up
+const QRCodeSVG = dynamic(() => import("qrcode.react").then((module) => module.QRCodeSVG), {
+    ssr: false,
+    loading: () => <div className="size-[176px] animate-pulse rounded-md bg-accent" />,
+});
 
 // What the card is asking for at the moment
 type Step =

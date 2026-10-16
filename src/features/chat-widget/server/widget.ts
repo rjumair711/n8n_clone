@@ -135,11 +135,6 @@ export const startChatExecution = async ({
     },
   });
 
-  await prisma.user.update({
-    where: { id: widget.userId },
-    data: { executionsUsed: { increment: 1 } },
-  });
-
   return execution.id;
 };
 

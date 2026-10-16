@@ -13722,7 +13722,8 @@ pour()</code></pre>
     assert.ok(fn.indexOf("startEvalRow({") < fn.indexOf("await step.invoke(") && fn.indexOf("await step.invoke(") < fn.indexOf("scoreEvalRow({"));
     assert.match(read("src/app/api/inngest/route.ts"), /runEvaluation,/);
     assert.match(server, /triggerSource: TRIGGER_SOURCES\.EVALUATION,/);
-    assert.match(server, /data: \{ executionsUsed: \{ increment: 1 \} \},/);
+    // Counted by the engine like every run (step.invoke runs execute-workflow)
+    assert.equal(/executionsUsed/.test(server), false);
 
     // The judge: the account's budget first, the user's own model, its
     // cost written down, and the provider's error never with the key
@@ -14660,6 +14661,94 @@ pour()</code></pre>
     );
     assert.ok(executor.includes("Number(renderTemplate(data.maxRecords, context)) || 50,"));
     assert.ok(executor.includes('data.returnAll === true || data.returnAll === "yes" || data.returnAll === "true"'));
+  });
+
+  await test("usage is counted from real rows, executions only go up, one session and workspace per request", async () => {
+    const { readFileSync, readdirSync, statSync } = await import("node:fs");
+    const { join } = await import("node:path");
+    const read = (path: string) => readFileSync(join(process.cwd(), path), "utf8").replace(/\r\n/g, "\n");
+    const usage = await import("@/lib/subscription/usage-counts");
+
+    // "This month" is the UTC month
+    assert.equal(usage.monthStartUtc(new Date("2026-10-31T23:59:59Z")).toISOString(), "2026-10-01T00:00:00.000Z");
+    assert.equal(usage.monthStartUtc(new Date("2026-11-01T00:00:00Z")).toISOString(), "2026-11-01T00:00:00.000Z");
+
+    // No stored workflow or execution counter is written any more
+    const walk = (dir: string): string[] =>
+      readdirSync(join(process.cwd(), dir)).flatMap((name) => {
+        const path = `${dir}/${name}`;
+        if (statSync(join(process.cwd(), path)).isDirectory()) return name === "__test__" || name === "generated" ? [] : walk(path);
+        return /\.(ts|tsx)$/.test(name) ? [path] : [];
+      });
+    for (const path of walk("src")) {
+      assert.equal(/(workflowCount|executionsUsed): \{\s*increment/.test(read(path)), false, path);
+    }
+
+    // Every "new workflow" path and the usage API count the same rows
+    for (const path of [
+      "src/features/workflows/server/routers.ts",
+      "src/features/templates/server/routers.ts",
+      "src/features/ai-builder/server/routers.ts",
+      "src/features/chatbots/server/routers.ts",
+    ]) {
+      assert.match(read(path), /await countWorkflows\(/, path);
+    }
+    // The plan check of a new workflow (the list's own count is for its pages)
+    const create = read("src/features/workflows/server/routers.ts");
+    const createProcedure = create.slice(create.indexOf("create: builderProcedure"), create.indexOf("// PINNED DATA"));
+    assert.match(createProcedure, /await countWorkflows\(ctx\.workspace\.ownerId\)/);
+    assert.equal(/prisma\.workflow\.count\(/.test(createProcedure), false);
+    assert.match(read("src/lib/subscription/usage-counts.ts"), /prisma\.workflow\.count\(\{ where: \{ userId: ownerId \} \}\)/);
+    assert.match(read("src/app/api/subscription/current/route.ts"), /const usage = await getUsage\(workspace\.ownerId\);/);
+
+    // Runs are counted in one place, the engine, and only checked elsewhere
+    const engine = read("src/inngest/functions.ts");
+    const step = engine.slice(engine.indexOf('"check-monthly-execution-limit"'), engine.indexOf("// BUILD GRAPH"));
+    assert.match(step, /await claimExecution\(\{\s+ownerId: userId,\s+executionId: execution\.id,/);
+    assert.match(step, /if \(!allowed\) \{\s+throw new NonRetriableError\(/);
+    for (const path of [
+      "src/features/workflows/server/routers.ts",
+      "src/features/executions/server/retry.ts",
+      "src/features/evaluations/server/routers.ts",
+      "src/app/api/v1/workflows/[workflowId]/execute/route.ts",
+    ]) {
+      assert.match(read(path), /const executionsThisMonth = await getExecutionsThisMonth\(/, path);
+      assert.equal(/prisma\.execution\.count\(/.test(read(path)), false, path);
+    }
+    // Only goes up, decided in one statement, and safe before the migration
+    const counts = read("src/lib/subscription/usage-counts.ts");
+    assert.match(counts, /SET "count" = "count" \+ 1, "updatedAt" = now\(\)\s+WHERE "userId" = \$\{ownerId\} AND "month" = \$\{month\}::date AND "count" < \$\{limit\}/);
+    assert.match(counts, /ON CONFLICT \("userId", "month"\) DO NOTHING/);
+    assert.equal(/"count" - |decrement/.test(counts), false);
+    assert.match(counts, /if \(!isMissingUsageTable\(error\)\) throw error;/);
+
+    // Deleting a workflow removes its Telegram webhook and agent memory
+    const workflows = read("src/features/workflows/server/routers.ts");
+    const remove = workflows.slice(workflows.indexOf("remove: builderProcedure"), workflows.indexOf("// UPDATE WORKFLOW NAME"));
+    assert.ok(remove.indexOf("syncTelegramWebhooks({") > 0);
+    assert.ok(remove.indexOf("syncTelegramWebhooks({") < remove.indexOf("prisma.workflow.delete({"));
+    assert.match(remove, /prisma\.agentMemory\.deleteMany\(\{ where: \{ nodeId: \{ in: nodeIds \} \} \}\)/);
+    assert.match(remove, /prisma\.agentMemorySummary\.deleteMany\(\{ where: \{ nodeId: \{ in: nodeIds \} \} \}\)/);
+
+    // One session read and one workspace lookup per request
+    const init = read("src/trpc/init.ts");
+    assert.match(init, /getSession: once\(\(\) => getRequestSession\(\)\),/);
+    assert.match(init, /ctx\.memo \? \(ctx\.memo\.workspace \?\?= resolve\(\)\) : resolve\(\)/);
+    assert.match(read("src/lib/request-session.ts"), /export const getRequestSession = cache\(/);
+    assert.match(read("src/lib/auth-utils.ts"), /const session = await getRequestSession\(\)/);
+    assert.match(read("src/app/(dashboard)/layout.tsx"), /const session = await getRequestSession\(\);/);
+
+    // The pooled address is optional; migrations keep DATABASE_URL
+    assert.match(read("src/lib/db.ts"), /const datasourceUrl = process\.env\.DATABASE_POOLED_URL \|\| undefined/);
+
+    // The migration only adds
+    const dir = readdirSync(join(process.cwd(), "prisma/migrations")).find((name) => name.endsWith("_usage_counts_and_indexes"));
+    assert.ok(dir);
+    const sql = read(`prisma/migrations/${dir}/migration.sql`);
+    // No statement that removes, renames or changes rows ("ON DELETE CASCADE" is a foreign key)
+    assert.equal(/^\s*(DROP|DELETE|UPDATE|TRUNCATE|INSERT)\b|ALTER TABLE[^;]*\b(DROP|RENAME)\b/im.test(sql), false);
+    assert.match(sql, /CREATE TABLE "execution_usage"/);
+    assert.match(sql, /CREATE INDEX "Execution_workflowId_startedAt_idx"/);
   });
 
   console.log(`\n${passed} checks passed`);

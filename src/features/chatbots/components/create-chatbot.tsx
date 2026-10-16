@@ -42,6 +42,7 @@ import {
     parseUrlList,
 } from "../lib/chatbot";
 import { SourceProgressList, getFileProblem, useAddSources } from "./use-add-sources";
+import { useInvalidateUsage } from "@/features/subscription/hook/use-current-plan";
 
 /**
  * "Create a chatbot": documents and web pages, a model, and one button. It
@@ -59,7 +60,10 @@ export const CreateChatbot = () => {
     );
     const { data: chatbots } = useQuery(trpc.chatbots.list.queryOptions());
 
-    const create = useMutation(trpc.chatbots.create.mutationOptions());
+    const invalidateUsage = useInvalidateUsage();
+    const create = useMutation(
+        trpc.chatbots.create.mutationOptions({ onSuccess: () => invalidateUsage() })
+    );
     const sources = useAddSources();
 
     const [name, setName] = useState("");

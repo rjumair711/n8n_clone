@@ -21,6 +21,7 @@ import { useUpgradeModal } from "@/hooks/use-upgrade-modal";
 import { useTRPC } from "@/trpc/client";
 import { MAX_DESCRIPTION_LENGTH } from "../lib/prompt";
 import { ModelPicker, Problems, loadCatalogue, useModelChoice } from "./builder-shared";
+import { useInvalidateUsage } from "@/features/subscription/hook/use-current-plan";
 
 export const BuildWithAiButton = () => {
     const trpc = useTRPC();
@@ -33,7 +34,10 @@ export const BuildWithAiButton = () => {
     const [errors, setErrors] = useState<string[]>([]);
 
     const model = useModelChoice(open);
-    const createWorkflow = useMutation(trpc.aiBuilder.createWorkflow.mutationOptions());
+    const invalidateUsage = useInvalidateUsage();
+    const createWorkflow = useMutation(
+        trpc.aiBuilder.createWorkflow.mutationOptions({ onSuccess: () => invalidateUsage() })
+    );
 
     const handleBuild = async () => {
         setErrors([]);

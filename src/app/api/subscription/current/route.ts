@@ -1,12 +1,17 @@
 import { resolveWorkspace } from "@/lib/workspaces";
 import { auth } from "@/lib/auth";
-import prisma from "@/lib/db";
+import { getUsage } from "@/lib/subscription/usage-counts";
 import { headers } from "next/headers";
 import { NextResponse } from "next/server";
+import { perf } from "@/lib/perf";
 
 // `?own=1` (the billing page): the signed-in user's own plan, whatever
 // workspace the browser is in
 export async function GET(request: Request) {
+  return perf("api /subscription/current total", () => getCurrent(request));
+}
+
+async function getCurrent(request: Request) {
   const session = await auth.api.getSession({
     headers: await headers(),
   });
@@ -24,26 +29,22 @@ export async function GET(request: Request) {
     new URL(request.url).searchParams.get("own") ? null : undefined
   );
 
-  const user = await prisma.user.findUnique({
-    where: {
-      id: workspace.ownerId,
-    },
-  });
+  // Counted from the rows, like the plan's limits are: the Workflows list's
+  // workflows, and the executions the engine counted this month
+  const usage = await getUsage(workspace.ownerId);
 
-  if (!user) {
+  if (!usage) {
     return NextResponse.json(
       { error: "User not found" },
       { status: 404 }
     );
   }
 
-  // 💡 Trust your database! Your webhook already successfully sets this to "PRO".
-  // This drops your API response time from 45 seconds down to single-digit milliseconds.
   return NextResponse.json({
-    plan: user.plan || "FREE",
-    workflowCount: user.workflowCount,
-    executionsUsed: user.executionsUsed,
-    trialEndsAt: user.trialEndsAt,
+    plan: usage.plan || "FREE",
+    workflowCount: usage.workflowCount,
+    executionsUsed: usage.executionsUsed,
+    trialEndsAt: usage.trialEndsAt,
     workspace: {
       id: workspace.id,
       name: workspace.name,

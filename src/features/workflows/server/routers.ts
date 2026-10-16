@@ -23,6 +23,8 @@ import {
     removeStalePins,
     unpinNodeData,
 } from "@/features/executions/server/test-data";
+import { getExecutionsThisMonth } from "@/lib/subscription/usage-counts";
+import { countWorkflows } from "@/lib/subscription/usage-counts";
 
 // Every procedure that takes a workflow id starts here: a workflow that does
 // not exist and one that belongs to someone else are the same "not found"
@@ -114,20 +116,8 @@ export const workflowsRouter = createTRPCRouter({
                 });
             }
 
-            const startOfMonth = new Date();
-            startOfMonth.setDate(1);
-            startOfMonth.setHours(0, 0, 0, 0);
-
-            const executionsThisMonth = await prisma.execution.count({
-                where: {
-                    workflow: {
-                        userId: ctx.workspace.ownerId,
-                    },
-                    startedAt: {
-                        gte: startOfMonth,
-                    },
-                },
-            });
+            // Counted by the engine, once per run; it never goes down
+            const executionsThisMonth = await getExecutionsThisMonth(ctx.workspace.ownerId);
 
 
             const executionLimit =
@@ -193,18 +183,6 @@ export const workflowsRouter = createTRPCRouter({
                     }),
             });
 
-            await prisma.user.update({
-                where: {
-                    id: ctx.workspace.ownerId,
-                },
-
-                data: {
-                    executionsUsed: {
-                        increment: 1,
-                    },
-                },
-            });
-
             return {
                 ...workflow,
 
@@ -223,11 +201,7 @@ export const workflowsRouter = createTRPCRouter({
         });
 
         const workflowCount =
-            await prisma.workflow.count({
-                where: {
-                    userId: ctx.workspace.ownerId,
-                },
-            });
+            await countWorkflows(ctx.workspace.ownerId);
 
         const workflowLimit =
             PLAN_LIMITS[user.plan]
@@ -266,18 +240,6 @@ export const workflowsRouter = createTRPCRouter({
                     },
                 },
             });
-
-        await prisma.user.update({
-            where: {
-                id: ctx.workspace.ownerId,
-            },
-
-            data: {
-                workflowCount: {
-                    increment: 1,
-                },
-            },
-        });
 
         return workflow;
     }),
@@ -334,14 +296,38 @@ export const workflowsRouter = createTRPCRouter({
     remove: builderProcedure
         .input(z.object({ id: z.string() }))
         .mutation(async ({ ctx, input }) => {
-            await getOwnedWorkflow(input.id, ctx.workspace.ownerId);
+            const owned = await getOwnedWorkflow(input.id, ctx.workspace.ownerId);
 
-            const deleted = await prisma.workflow.delete({
-                where: {
-                    id: input.id,
-                    userId: ctx.workspace.ownerId
-                }
-            })
+            // An active Telegram Trigger's bot would keep sending updates
+            // here: removed the way deactivating does (never fails)
+            if (owned.active) {
+                await syncTelegramWebhooks({
+                    workflowId: input.id,
+                    userId: ctx.workspace.ownerId,
+                    active: false,
+                })
+            }
+
+            // Agent memory is kept by node id, with no foreign key: it goes
+            // with the workflow's nodes. Nodes, connections, executions and
+            // the rest go by ON DELETE CASCADE.
+            const nodeIds = (
+                await prisma.node.findMany({
+                    where: { workflowId: input.id },
+                    select: { id: true },
+                })
+            ).map((node) => node.id)
+
+            const [, , deleted] = await prisma.$transaction([
+                prisma.agentMemory.deleteMany({ where: { nodeId: { in: nodeIds } } }),
+                prisma.agentMemorySummary.deleteMany({ where: { nodeId: { in: nodeIds } } }),
+                prisma.workflow.delete({
+                    where: {
+                        id: input.id,
+                        userId: ctx.workspace.ownerId
+                    }
+                }),
+            ])
 
             await recordAudit({
                 userId: ctx.workspace.ownerId,

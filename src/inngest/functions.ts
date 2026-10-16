@@ -58,6 +58,7 @@ import { slackChannel } from "./channels/slack";
 import prisma from "@/lib/db";
 
 import { PLAN_LIMITS, getRequiredPlanForNode } from "@/config/plans";
+import { claimExecution } from "@/lib/subscription/usage-counts";
 
 import { webhookChannel } from "./channels/webhookResponse";
 import { filterChannel } from "./channels/filter";
@@ -351,31 +352,25 @@ export const executeWorkflow =
       // DYNAMIC PLAN LIMIT CHECK
       // =========================================
 
+      // Every run passes here once, whatever started it (the step's result
+      // is kept when the function replays), so this is where a run is
+      // counted. The count only goes up: deleting executions or workflows
+      // gives none back. A run over the limit is not counted.
       await step.run(
         "check-monthly-execution-limit",
         async () => {
-          const startOfMonth = new Date();
-          startOfMonth.setDate(1);
-          startOfMonth.setHours(0, 0, 0, 0);
-
-          const executionsThisMonth = await prisma.execution.count({
-            where: {
-              workflow: {
-                userId,
-              },
-              startedAt: {
-                gte: startOfMonth,
-              },
-            },
-          });
-
           // Get exact limit for this user's current tier
           const allowedExecutions =
             PLAN_LIMITS[userPlan]?.monthlyExecutions ??
             PLAN_LIMITS.FREE.monthlyExecutions;
 
-          // The count already includes this execution
-          if (executionsThisMonth > allowedExecutions) {
+          const { allowed } = await claimExecution({
+            ownerId: userId,
+            executionId: execution.id,
+            limit: allowedExecutions,
+          });
+
+          if (!allowed) {
             throw new NonRetriableError(
               `Monthly execution limit reached. Your ${userPlan} plan includes ${allowedExecutions} executions per month.`
             );

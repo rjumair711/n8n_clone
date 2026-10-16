@@ -5,56 +5,50 @@ import {
     SidebarProvider,
 } from "@/components/ui/sidebar";
 import prisma from "@/lib/db";
-import { auth } from "@/lib/auth";
-import { headers } from "next/headers";
+import { getRequestSession } from "@/lib/request-session";
+import { perf } from "@/lib/perf";
 
 const Layout = async ({
     children,
 }: {
     children: React.ReactNode;
 }) => {
+    // The page reads the same cached session: one lookup per request
+    const session = await getRequestSession();
 
-    console.log("👉 DASHBOARD LAYOUT IS RUNNING ON PATHNAME!");
-    
-    const session =
-        await auth.api.getSession({
-            headers: await headers(),
-        });
-        
     if (!session) {
         redirect("/login");
     }
 
     const user =
-        await prisma.user.findUniqueOrThrow({
+        await perf("layout user", () => prisma.user.findUniqueOrThrow({
             where: {
                 id: session.user.id,
             },
-        });
+            select: { id: true, hasCompletedOnboarding: true },
+        }));
 
-    const workflowCount =
-        await prisma.workflow.count({
-            where: {
-                userId: session.user.id,
-            },
-        });
+    // Workflows only need counting until onboarding is done
+    if (!user.hasCompletedOnboarding) {
+        const workflowCount =
+            await perf("layout workflowCount", () => prisma.workflow.count({
+                where: {
+                    userId: session.user.id,
+                },
+            }));
 
-    if (
-        workflowCount > 0 &&
-        !user.hasCompletedOnboarding
-    ) {
-        await prisma.user.update({
-            where: {
-                id: user.id,
-            },
+        if (workflowCount > 0) {
+            await prisma.user.update({
+                where: {
+                    id: user.id,
+                },
 
-            data: {
-                hasCompletedOnboarding: true,
-            },
-        });
+                data: {
+                    hasCompletedOnboarding: true,
+                },
+            });
+        }
     }
-
-
 
     return (
         <SidebarProvider>

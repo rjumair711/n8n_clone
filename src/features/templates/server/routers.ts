@@ -27,6 +27,7 @@ import {
 import { buildStarterTemplates } from "../lib/starter-templates";
 import { describeAuditTarget } from "@/lib/audit-actions";
 import { recordAudit } from "@/lib/audit-log";
+import { countWorkflows } from "@/lib/subscription/usage-counts";
 
 // Publishing, editing and deleting templates is for admins: a verified
 // account whose email is in ADMIN_EMAILS
@@ -76,28 +77,30 @@ export const templatesRouter = createTRPCRouter({
     getMany: viewerProcedure.query(async ({ ctx }) => {
         const isAdmin = isAdminUser(ctx.auth.user);
 
-        const user = await prisma.user.findUniqueOrThrow({
-            where: { id: ctx.workspace.ownerId },
-            select: { plan: true, trialEndsAt: true },
-        });
-
-        const templates = await prisma.workflowTemplate.findMany({
-            where: isAdmin ? {} : { published: true },
-            orderBy: [{ category: "asc" }, { createdAt: "desc" }],
-            // The workflow itself is only loaded when a template is used
-            select: {
-                id: true,
-                name: true,
-                description: true,
-                category: true,
-                language: true,
-                minPlan: true,
-                published: true,
-                nodeTypes: true,
-                useCount: true,
-                updatedAt: true,
-            },
-        });
+        // Independent: both at once
+        const [user, templates] = await Promise.all([
+            prisma.user.findUniqueOrThrow({
+                where: { id: ctx.workspace.ownerId },
+                select: { plan: true, trialEndsAt: true },
+            }),
+            prisma.workflowTemplate.findMany({
+                where: isAdmin ? {} : { published: true },
+                orderBy: [{ category: "asc" }, { createdAt: "desc" }],
+                // The workflow itself is only loaded when a template is used
+                select: {
+                    id: true,
+                    name: true,
+                    description: true,
+                    category: true,
+                    language: true,
+                    minPlan: true,
+                    published: true,
+                    nodeTypes: true,
+                    useCount: true,
+                    updatedAt: true,
+                },
+            }),
+        ]);
 
         return {
             isAdmin,
@@ -137,9 +140,7 @@ export const templatesRouter = createTRPCRouter({
                 });
             }
 
-            const workflowCount = await prisma.workflow.count({
-                where: { userId: user.id },
-            });
+            const workflowCount = await countWorkflows(user.id);
 
             const workflowLimit = PLAN_LIMITS[user.plan].activeWorkflows;
 
@@ -196,11 +197,6 @@ export const templatesRouter = createTRPCRouter({
                             .map((conn) => ({ ...conn, workflowId: created.id })),
                     });
                 }
-
-                await tx.user.update({
-                    where: { id: user.id },
-                    data: { workflowCount: { increment: 1 } },
-                });
 
                 await tx.workflowTemplate.update({
                     where: { id: template.id },

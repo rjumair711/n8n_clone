@@ -383,13 +383,6 @@ export const pullWorkflows = async ({
     localId.set(file.id, row.id);
   }
 
-  if (created.size > 0) {
-    await prisma.user.update({
-      where: { id: ownerId },
-      data: { workflowCount: { increment: created.size } },
-    });
-  }
-
   // The first credential of a type and name, when two have the same
   const credentialIds = new Map<string, string>();
   for (const credential of credentials) {

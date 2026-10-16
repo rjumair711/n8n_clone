@@ -38,6 +38,7 @@ import {
     readUrlSource,
     removeSource,
 } from "./knowledge";
+import { countWorkflows } from "@/lib/subscription/usage-counts";
 
 // "Create a chatbot": makes an ordinary workflow (Chat Trigger, AI Agent,
 // Chat Model, Memory, Vector Store) and fills its knowledge base. The page
@@ -185,7 +186,7 @@ export const chatbotsRouter = createTRPCRouter({
                 orderBy: { updatedAt: "desc" },
                 select: { id: true, name: true, type: true },
             }),
-            prisma.workflow.count({ where: { userId } }),
+            countWorkflows(userId),
         ]);
 
         const workflowLimit = PLAN_LIMITS[user.plan].activeWorkflows;
@@ -267,7 +268,7 @@ export const chatbotsRouter = createTRPCRouter({
 
             const workflowLimit = PLAN_LIMITS[user.plan].activeWorkflows;
 
-            if ((await prisma.workflow.count({ where: { userId } })) >= workflowLimit) {
+            if ((await countWorkflows(userId)) >= workflowLimit) {
                 return refuse(
                     `Workflow limit reached. Your current plan allows up to ${workflowLimit} workflows.`,
                     "FORBIDDEN"
@@ -333,10 +334,6 @@ export const chatbotsRouter = createTRPCRouter({
                 await tx.node.createMany({ data: toNodeRows(created.id, graph.nodes) });
                 await tx.connection.createMany({
                     data: toConnectionRows(created.id, graph.connections),
-                });
-                await tx.user.update({
-                    where: { id: userId },
-                    data: { workflowCount: { increment: 1 } },
                 });
 
                 return created;

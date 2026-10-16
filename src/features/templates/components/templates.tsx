@@ -58,6 +58,7 @@ import {
     type TemplateLanguage,
 } from "../lib/template-languages";
 import type { TemplateSecretFinding } from "../lib/template-secrets";
+import { useInvalidateUsage } from "@/features/subscription/hook/use-current-plan";
 
 // Triggers and plumbing say little about what a template does
 const HIDDEN_BADGE_TYPES = new Set(["MANUAL_TRIGGER", "INITIAL", "SET_VARIABLE", "MERGE"]);
@@ -89,7 +90,13 @@ export const Templates = () => {
     const queryClient = useQueryClient();
     const router = useRouter();
 
-    const { data, isLoading } = useQuery(trpc.templates.getMany.queryOptions());
+    const invalidateUsage = useInvalidateUsage();
+
+    const { data, isLoading } = useQuery({
+        ...trpc.templates.getMany.queryOptions(),
+        // Templates rarely change: going back to the page does not refetch
+        staleTime: 5 * 60 * 1000,
+    });
     // An admin without two-factor gets a note instead of the admin buttons:
     // the server refuses those actions until it is turned on
     const needsTwoFactor = !!data?.needsTwoFactor;
@@ -154,6 +161,7 @@ export const Templates = () => {
         trpc.templates.use.mutationOptions({
             onSuccess: (workflow) => {
                 toast.success(`"${workflow.name}" added to your workflows`);
+                invalidateUsage();
                 queryClient.invalidateQueries(trpc.workflows.getMany.queryOptions({}));
                 router.push(`/workflows/${workflow.id}`);
             },
