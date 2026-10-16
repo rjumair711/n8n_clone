@@ -23,6 +23,7 @@ import {
     EVAL_RUN_EVENT,
     EVAL_RUN_STATUS,
 } from "./run";
+import { getExecutionsThisMonth } from "@/lib/subscription/usage-counts";
 
 // Everything here belongs to a workflow, and is only ever read or changed
 // by that workflow's owner. A dataset, a run or a row of someone else is
@@ -378,13 +379,8 @@ export const evaluationsRouter = createTRPCRouter({
                 });
             }
 
-            const startOfMonth = new Date();
-            startOfMonth.setDate(1);
-            startOfMonth.setHours(0, 0, 0, 0);
-
-            const executionsThisMonth = await prisma.execution.count({
-                where: { workflow: { userId }, startedAt: { gte: startOfMonth } },
-            });
+            // Counted by the engine, once per run; it never goes down
+            const executionsThisMonth = await getExecutionsThisMonth(userId);
             const executionLimit = PLAN_LIMITS[user.plan].monthlyExecutions;
 
             if (executionsThisMonth + rows.length > executionLimit) {

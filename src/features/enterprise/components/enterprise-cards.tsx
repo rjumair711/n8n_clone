@@ -36,6 +36,7 @@ import {
     type SsoForm,
 } from "@/lib/sso-config";
 import { useTRPC } from "@/trpc/client";
+import { useInvalidateUsage } from "@/features/subscription/hook/use-current-plan";
 import {
     ENVIRONMENT_LABELS,
     WORKSPACE_ENVIRONMENTS,
@@ -92,6 +93,7 @@ const Field = ({
 export const GitSyncCard = () => {
     const trpc = useTRPC();
     const queryClient = useQueryClient();
+    const invalidateUsage = useInvalidateUsage();
     const query = trpc.enterprise.getGit.queryOptions();
     const { data } = useQuery(query);
 
@@ -152,6 +154,7 @@ export const GitSyncCard = () => {
         trpc.enterprise.pullGit.mutationOptions({
             onSuccess: (result) => {
                 toast.success(`Pulled: ${result.created} new, ${result.updated} updated`);
+                invalidateUsage();
                 setReport([
                     ...result.skipped.map((line) => `Not applied: ${line}`),
                     ...result.warnings,

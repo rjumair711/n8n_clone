@@ -40,6 +40,7 @@ import {
     toEditorGraph,
     type EditorNode,
 } from "../lib/workflow";
+import { countWorkflows } from "@/lib/subscription/usage-counts";
 
 // The request has to finish inside the serverless function's time limit
 // (see maxDuration in src/app/api/trpc/[trpc]/route.ts), and the second
@@ -445,7 +446,7 @@ export const aiBuilderRouter = createTRPCRouter({
 
             // Checked before the model is called, which costs the user money
             const workflowLimit = PLAN_LIMITS[user.plan].activeWorkflows;
-            const workflowCount = await prisma.workflow.count({ where: { userId } });
+            const workflowCount = await countWorkflows(userId);
 
             if (workflowCount >= workflowLimit) {
                 throw new TRPCError({
@@ -485,11 +486,6 @@ export const aiBuilderRouter = createTRPCRouter({
                         fromOutput: edge.sourceHandle,
                         toInput: edge.targetHandle,
                     })),
-                });
-
-                await tx.user.update({
-                    where: { id: userId },
-                    data: { workflowCount: { increment: 1 } },
                 });
 
                 return created;

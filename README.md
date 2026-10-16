@@ -1089,6 +1089,17 @@ Users can view:
 * current plan
 * remaining trial days
 
+**How the numbers are counted** (`src/lib/subscription/usage-counts.ts`). Usage belongs to the workspace, so it is the workspace owner's.
+
+* **Workflows** are counted from the workflow rows: the same rows the Workflows list shows. Creating a workflow, using a template, Build with AI, creating a chatbot and a Git pull all check the plan's limit against that count, and the sidebar shows it. Nothing is stored, so a workflow deleted in the app or straight in the database is gone from the number at once.
+* **Executions this month** (UTC) are counted by the engine, once per run, whatever started it: manual runs, webhooks and other triggers, schedules, the API, the chat widget, retries, evaluation rows and sub-workflows. The count is in the `execution_usage` table and **only goes up**: deleting executions or workflows does not give any back. A run that would go over the limit is refused and not counted. Before the first run of a month the month's existing executions are the count, so the switch to this counter gave none back.
+* The old `user.workflowCount` and `user.executionsUsed` columns are no longer read or written. They are dropped in a later change.
+* `scripts/reconcile-usage.ts` recomputes the numbers from the rows: `npx tsx scripts/reconcile-usage.ts --dry-run` prints what it would change, without the flag it changes it. It never lowers an execution count.
+
+**Deleting a workflow** removes, besides the workflow (whose nodes, connections, executions, versions, pinned data and evaluation datasets go with it by `ON DELETE CASCADE`), its agent memory, and the webhook of an active Telegram Trigger. For workflows that were deleted straight in the database, `scripts/cleanup-orphans.ts` finds what was left behind (agent memory, chat widget messages, chatbot documents, duplicate-delivery keys) and Telegram bots whose webhook points at a workflow that no longer exists: `npx tsx --conditions=react-server scripts/cleanup-orphans.ts --dry-run` reports, without the flag it deletes and removes the webhooks. AI usage rows are kept on purpose: the month's AI spend stays complete.
+
+**Page speed.** A request reads its session once (`src/lib/request-session.ts`, shared by the dashboard layout, the page and its tRPC prefetches), and a tRPC batch reads the session and looks up the workspace once for all its procedures. `PERF_LOG=1` logs, with `[perf]` in front, how long each tRPC procedure, session read and database query takes; it is off unless set.
+
 ## AI token usage and cost
 
 Every call to a language or embedding model is written down with the tokens the provider reported: input, output and cached input. This covers the AI Agent, the model nodes (OpenAI, Anthropic, Gemini, Chat Model, DeepSeek, Kimi, Qwen), the Text Classifier, the Information Extractor, the Vector Store's embeddings and chat-model reranking, and the Document Loader's embeddings, also when one of them runs as an AI Agent tool. Only counts are stored, never prompts or answers, and they are kept after an execution's data is deleted so the month stays complete.
@@ -1318,13 +1329,16 @@ The live app on Vercel and local development use the **same** database, so the s
 * **Migrations reach production by merging to `main`, and no other way.** A pull request that adds a folder under `prisma/migrations` changes the production database the moment it is merged, so read its SQL as part of the review.
 * **Migrations have to work with the code that is already live.** The database is migrated a few minutes before the new code replaces the old, and if the build fails after the migration the old code stays. So migrations only add: new tables, and new columns that are nullable or have a default. Removing or renaming something is done in a later change, once no deployed code uses it.
 * `DATABASE_URL` must be available to the build on Vercel (it already is for `prisma generate`), and should be a direct connection, not a pooled one: `prisma migrate deploy` takes a lock that connection poolers can break.
+* `DATABASE_POOLED_URL` (optional) is what the app's own queries use when it is set: Neon's pooled address, the same as `DATABASE_URL` with `-pooler` after the endpoint id in the host, and `&pgbouncer=true` at the end. Serverless functions then share the pooler's connections instead of each opening its own. Migrations keep using `DATABASE_URL`.
 * `INNGEST_SIGNING_KEY` has to be set in the production environment, or the server does not start (see "Security").
 
 ## Environment variables
 
 | Variable | Purpose |
 | -------- | ------- |
-| `DATABASE_URL` | PostgreSQL connection string |
+| `DATABASE_URL` | PostgreSQL connection string (direct; migrations use it) |
+| `DATABASE_POOLED_URL` | Optional. The pooled connection string the app's queries use instead. See "Deploying (Vercel)" |
+| `PERF_LOG` | Optional. `1` logs timings of tRPC procedures, session reads and database queries, each line starting with `[perf]` |
 | `ENCRYPTION_KEY` | Encrypts stored credentials and OAuth tokens. A long random value |
 | `ENCRYPTION_KEY_PREVIOUS` | Only while changing `ENCRYPTION_KEY`: the old key, so values written with it can still be read. See "Credential encryption and key rotation" |
 | `NEXT_PUBLIC_APP_URL` | Public address of the app; used for webhook URLs, OAuth redirects and trusted origins |

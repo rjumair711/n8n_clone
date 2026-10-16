@@ -6,6 +6,7 @@ import { NotFoundError, assertOwnership } from "@/lib/ownership";
 import { sendWorkflowExecution } from "@/inngest/utils";
 import { PLAN_LIMITS } from "@/config/plans";
 import { TRIGGER_SOURCES } from "@/config/trigger-sources";
+import { getExecutionsThisMonth } from "@/lib/subscription/usage-counts";
 
 /**
  * POST /api/v1/workflows/:id/execute
@@ -67,16 +68,8 @@ export async function POST(
         }
     }
 
-    const startOfMonth = new Date();
-    startOfMonth.setDate(1);
-    startOfMonth.setHours(0, 0, 0, 0);
-
-    const executionsThisMonth = await prisma.execution.count({
-        where: {
-            workflow: { userId: auth.user.id },
-            startedAt: { gte: startOfMonth },
-        },
-    });
+    // Counted by the engine, once per run; it never goes down
+    const executionsThisMonth = await getExecutionsThisMonth(auth.user.id);
 
     const executionLimit = PLAN_LIMITS[auth.user.plan].monthlyExecutions;
 
@@ -100,11 +93,6 @@ export async function POST(
         executionId: execution.id,
         trigger: NodeType.MANUAL_TRIGGER,
         InitialData: data,
-    });
-
-    await prisma.user.update({
-        where: { id: auth.user.id },
-        data: { executionsUsed: { increment: 1 } },
     });
 
     return NextResponse.json(

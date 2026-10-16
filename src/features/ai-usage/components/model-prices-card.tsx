@@ -63,6 +63,8 @@ export const ModelPricesCard = () => {
     const { data, isLoading, isError } = useQuery({
         ...trpc.aiUsage.getPrices.queryOptions(),
         enabled: canEdit,
+        // Prices rarely change: going back to Settings does not refetch them
+        staleTime: 5 * 60 * 1000,
     });
 
     const [form, setForm] = useState<PriceForm>(EMPTY_FORM);

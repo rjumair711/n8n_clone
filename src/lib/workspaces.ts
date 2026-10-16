@@ -138,18 +138,20 @@ export const resolveWorkspace = async (
  * The workspaces a user can switch between: their own first.
  */
 export const listWorkspaces = async (user: SessionUser) => {
-  const own = await ensurePersonalWorkspace(user);
-
-  const memberships = await prisma.workspaceMember.findMany({
-    where: { userId: user.id, workspace: { ownerId: { not: user.id } } },
-    orderBy: { createdAt: "asc" },
-    select: {
-      role: true,
-      workspace: {
-        select: { id: true, name: true, owner: { select: { name: true, email: true } } },
+  // Independent: both at once
+  const [own, memberships] = await Promise.all([
+    ensurePersonalWorkspace(user),
+    prisma.workspaceMember.findMany({
+      where: { userId: user.id, workspace: { ownerId: { not: user.id } } },
+      orderBy: { createdAt: "asc" },
+      select: {
+        role: true,
+        workspace: {
+          select: { id: true, name: true, owner: { select: { name: true, email: true } } },
+        },
       },
-    },
-  });
+    }),
+  ]);
 
   return [
     { id: own.id, name: own.name, role: "OWNER" as WorkspaceRole, personal: true, owner: null },

@@ -3,6 +3,7 @@ import prisma from "@/lib/db";
 import { sendWorkflowExecution } from "@/inngest/utils";
 import { PLAN_LIMITS } from "@/config/plans";
 import { NotFoundError, assertOwnership } from "@/lib/ownership";
+import { getExecutionsThisMonth } from "@/lib/subscription/usage-counts";
 
 export class RetryError extends Error {
     constructor(
@@ -83,13 +84,8 @@ export const retryExecution = async (executionId: string, userId: string) => {
         );
     }
 
-    const startOfMonth = new Date();
-    startOfMonth.setDate(1);
-    startOfMonth.setHours(0, 0, 0, 0);
-
-    const executionsThisMonth = await prisma.execution.count({
-        where: { workflow: { userId }, startedAt: { gte: startOfMonth } },
-    });
+    // Counted by the engine, once per run; it never goes down
+    const executionsThisMonth = await getExecutionsThisMonth(userId);
 
     const limit = PLAN_LIMITS[execution.workflow.user.plan].monthlyExecutions;
 
@@ -114,11 +110,6 @@ export const retryExecution = async (executionId: string, userId: string) => {
         trigger: execution.trigger,
         InitialData: (execution.inputData ?? {}) as Prisma.JsonObject,
         retryOf: execution.id,
-    });
-
-    await prisma.user.update({
-        where: { id: userId },
-        data: { executionsUsed: { increment: 1 } },
     });
 
     return { id: retried.id, workflowId: execution.workflowId, retryOf: execution.id };

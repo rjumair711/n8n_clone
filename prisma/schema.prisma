@@ -41,8 +41,11 @@ model User {
   workflowFiles          WorkflowFile[]
   plan                   SubscriptionPlan @default(FREE)
   trialEndsAt            DateTime?
+  // No longer read or written: the workflows are counted, and executions
+  // are in ExecutionUsage. Kept until the code that used them is gone.
   workflowCount          Int              @default(0)
   executionsUsed         Int              @default(0)
+  executionUsage         ExecutionUsage[]
   hasCompletedOnboarding Boolean          @default(false)
   // "Execution data retention": 7, 30 or 90 days
   executionRetentionDays Int              @default(30)
@@ -268,6 +271,7 @@ model Credential {
   Node      Node[]
 
   @@index([workspaceId])
+  @@index([userId])
 }
 
 enum CredentialType {
@@ -339,6 +343,23 @@ model Workflow {
   evalDatasets EvalDataset[]
 
   @@index([workspaceId])
+  // The Workflows list and every count of a workspace's workflows
+  @@index([userId, updatedAt])
+}
+
+// Executions counted against the plan, per workspace owner and month (UTC).
+// It only goes up: deleting executions or workflows does not give any
+// back. See src/lib/subscription/usage-counts.ts
+model ExecutionUsage {
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  // The first day of the month
+  month     DateTime @db.Date
+  count     Int      @default(0)
+  updatedAt DateTime @default(now()) @updatedAt
+
+  @@id([userId, month])
+  @@map("execution_usage")
 }
 
 // TEAMS (see src/lib/workspaces.ts)
@@ -747,6 +768,8 @@ model Node {
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+
+  @@index([workflowId])
 }
 
 model Connection {
@@ -767,6 +790,7 @@ model Connection {
   updatedAt DateTime @updatedAt
 
   @@unique([fromNodeId, toNodeId, fromOutput, toInput])
+  @@index([workflowId])
 }
 
 enum ExecutionStatus {
@@ -822,6 +846,9 @@ model Execution {
 
   nodes     ExecutionNode[]
   approvals ApprovalRequest[]
+
+  // This month's executions of a workspace, and a workflow's executions
+  @@index([workflowId, startedAt])
 }
 
 // A question put to a person while an execution waits: may this AI Agent

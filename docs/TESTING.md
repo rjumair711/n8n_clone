@@ -20,7 +20,7 @@ the instruction "build this workflow in the editor".
 ```bash
 npx prisma migrate deploy
 npm run dev:all
-npx tsx --conditions=react-server src/inngest/__test__/testCoreNodes.ts   # expect "273 checks passed"
+npx tsx --conditions=react-server src/inngest/__test__/testCoreNodes.ts   # expect "278 checks passed"
 ```
 
 Make a second account with a different email. Several checks need it.
@@ -1794,6 +1794,24 @@ Then add Split Out (Input List `shopify`) → Set Variable `{{item.name}}` after
 |----------|----|--------|
 | Shopify order paid: WhatsApp confirmation | Use it; the trigger and the WhatsApp node show "Not Configured". Fill in the signing secret, the WhatsApp credential and Phone Number ID; create and get approved a WhatsApp template `order_confirmation` with four variables; pay a test order whose phone number is your own | the WhatsApp template message arrives with name, order number, amount and currency. An order without a phone number ends at the IF node with no error |
 | Shopify abandoned cart: email reminder | Use it; fill in the Shopify credential and Shop Domain and the SMTP credential. Start a checkout with your own email address and leave it. Set Abandoned At Least to `0` and At Most empty, then Execute | the email arrives with a link that reopens the cart. Set the limits back to 60 and 120 before activating |
+
+## T19g. Usage counts and page speed
+
+Needs the `usage_counts_and_indexes` migration in the database (rows 4 to 6). Before it is there, executions are counted the old way (this month's execution rows) and nothing breaks.
+
+| # | Do | Expect |
+|---|----|--------|
+| 1 | Note "Workflows x / y" in the sidebar, create a workflow | the number goes up by one without reloading |
+| 2 | Delete that workflow on the Workflows page | the number goes back down at once, and matches the number of rows in the list |
+| 3 | Switch to another workspace | the sidebar shows that workspace's numbers (its owner's plan) |
+| 4 | Run a workflow, then reload | "Executions x / y" went up by one |
+| 5 | Delete the workflow that ran (or its executions), reload | "Executions" stays where it was: the count never goes down |
+| 6 | On a Free account, run workflows until the month's limit | the run over the limit fails with "Monthly execution limit reached", and the count stays at the limit |
+| 7 | Make a workflow with an active Telegram Trigger, delete it | the bot no longer delivers to the app (Telegram's `getWebhookInfo` shows no URL) |
+| 8 | `npx tsx scripts/reconcile-usage.ts --dry-run` | lists the accounts whose stored numbers differ; says "Dry run finished." and changes nothing |
+| 9 | `npx tsx --conditions=react-server scripts/cleanup-orphans.ts --dry-run` | counts per table and a line per Telegram bot; changes nothing |
+| 10 | Open /templates | the gallery is in the page as it arrives (no "loading" after the page shows); a skeleton shows while the page is on its way |
+| 11 | `PERF_LOG=1 npm run dev`, open /settings | the terminal shows `[perf] trpc query ...` lines and `[perf] getSession` **once** per request, not once per procedure |
 
 ## T20. Apps (one simple call each)
 

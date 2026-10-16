@@ -120,12 +120,6 @@ export const startEvalRow = async ({
     data: { executionId: execution.id },
   });
 
-  // A row is an execution like any other, and counts as one
-  await prisma.user.update({
-    where: { id: userId },
-    data: { executionsUsed: { increment: 1 } },
-  });
-
   return execution.id;
 };
 
