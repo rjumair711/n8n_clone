@@ -336,7 +336,9 @@ export const EntityItem = ({
     }
 
     return (
-        <Link href={href} prefetch>
+        // Default prefetch: only the page's shell. A full prefetch here fetched
+        // every row's page, data included, as soon as the list was on screen
+        <Link href={href}>
             <Card className={cn(
                 "p-4 shadow-none hover:shadow cursor-pointer",
                 isRemoving && "opacity-50 cursor-not-allowed",

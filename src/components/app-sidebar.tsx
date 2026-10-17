@@ -85,7 +85,7 @@ export const AppSidebar = () => {
             <SidebarHeader className="bg-transparent">
                 <SidebarMenuItem>
                     <SidebarMenuButton asChild className="flex justify-center items-center h-10 px-4">
-                        <Link href="/" prefetch>
+                        <Link href="/">
                             <Image src="/logos/RXJ.png" alt="RXJ" width={145} height={145} />
                         </Link>
                     </SidebarMenuButton>
@@ -132,7 +132,8 @@ export const AppSidebar = () => {
                                             asChild
                                             className="gap-x-4 h-10 px-4"
                                         >
-                                            <Link href={item.url} prefetch>
+                                            {/* Default prefetch: the page's shell, not its data */}
+                                            <Link href={item.url}>
                                                 <item.icon className="size-4" />
                                                 <span>{item.title}</span>
                                             </Link>

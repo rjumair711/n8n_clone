@@ -227,46 +227,61 @@ export const redactString = (text: string, options: RedactOptions = {}): string 
 
 const MAX_DEPTH = 40;
 
-const redactInner = (
-  value: unknown,
-  options: RedactOptions,
-  depth: number,
-  seen: WeakSet<object>
-): unknown => {
-  if (typeof value === "string") return redactString(value, options);
+// The most values one call walks. Past it everything is redacted: a value
+// that big is not worth keeping, and the walk must always end quickly.
+export const MAX_REDACT_VALUES = 100_000;
+
+type Walk = {
+  options: RedactOptions;
+  // The parents of the value being walked: pointing back at one is a loop
+  parents: WeakSet<object>;
+  // Each object is copied once. Data used in two places shares one copy,
+  // so the walk grows with the objects, not with the paths to them.
+  copies: WeakMap<object, unknown>;
+  visited: number;
+};
+
+const redactInner = (value: unknown, walk: Walk, depth: number): unknown => {
+  if (++walk.visited > MAX_REDACT_VALUES) {
+    return value === null || value === undefined ? value : REDACTED;
+  }
+
+  if (typeof value === "string") return redactString(value, walk.options);
 
   if (value === null || typeof value !== "object") return value;
 
   if (value instanceof Date) return value;
 
-  // Far too deep, or pointing back at one of its own parents: not something
-  // to walk. "seen" holds the parents only, so data that is merely used in
-  // two places is still copied in both.
-  if (depth >= MAX_DEPTH || seen.has(value)) return REDACTED;
-  seen.add(value);
+  // Far too deep, or pointing back at one of its own parents
+  if (depth >= MAX_DEPTH || walk.parents.has(value)) return REDACTED;
+
+  if (walk.copies.has(value)) return walk.copies.get(value);
+
+  walk.parents.add(value);
 
   let output: unknown;
 
   if (Array.isArray(value)) {
-    output = value.map((item) => redactInner(item, options, depth + 1, seen));
+    output = value.map((item) => redactInner(item, walk, depth + 1));
   } else {
     const copy: Record<string, unknown> = {};
 
     for (const [key, inner] of Object.entries(value)) {
       copy[key] =
-        options.patterns !== false &&
+        walk.options.patterns !== false &&
         isSecretHeaderName(key) &&
         inner !== null &&
         inner !== undefined &&
         inner !== ""
           ? REDACTED
-          : redactInner(inner, options, depth + 1, seen);
+          : redactInner(inner, walk, depth + 1);
     }
 
     output = copy;
   }
 
-  seen.delete(value);
+  walk.parents.delete(value);
+  walk.copies.set(value, output);
 
   return output;
 };
@@ -277,16 +292,33 @@ const redactInner = (
  * real data, only the stored copy is redacted.
  */
 export const redactValue = <T>(value: T, options: RedactOptions = {}): T =>
-  redactInner(value, options, 0, new WeakSet()) as T;
+  redactInner(value, { options, parents: new WeakSet(), copies: new WeakMap(), visited: 0 }, 0) as T;
 
 /**
  * For Sentry's beforeSend, beforeSendTransaction and beforeSendLog: the same
  * redaction, on whatever is about to leave the app. Never throws, so a
  * problem here cannot stop an error from being reported.
+ *
+ * `sdkProcessingMetadata` is left out of the walk and kept as it is: it is
+ * Sentry's own bookkeeping (its live scopes and client), Sentry still reads
+ * it after this hook, and it is removed before the event is sent. Walking
+ * it froze the browser on every client-side navigation: the client's
+ * options and integrations are a huge web of shared objects.
  */
 export const redactForSentry = <T>(event: T): T => {
   try {
-    return redactValue(event);
+    if (event === null || typeof event !== "object" || Array.isArray(event)) {
+      return redactValue(event);
+    }
+
+    const { sdkProcessingMetadata, ...rest } = event as Record<string, unknown>;
+    const redacted = redactValue(rest);
+
+    return (
+      sdkProcessingMetadata === undefined
+        ? redacted
+        : { ...redacted, sdkProcessingMetadata }
+    ) as T;
   } catch {
     return event;
   }

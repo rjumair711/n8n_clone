@@ -5138,7 +5138,8 @@ const main = async () => {
     assert.equal(output.list[0].headers["set-cookie"], R);
     assert.equal(output.empty.authorization, "");
 
-    // Data used in two places is copied in both; a loop does not hang
+    // Data used in two places is redacted in both (one shared copy); a loop
+    // does not hang
     const shared = { token: "sk-abcdefghijklmnopqrstuvwx" };
     const twice = redaction.redactValue({ a: shared, b: shared });
     assert.deepEqual(twice, { a: { token: R }, b: { token: R } });
@@ -5208,6 +5209,57 @@ const main = async () => {
     assert.equal(sent.spans[0].data["gen_ai.prompt"], `use ${R} please`);
     assert.deepEqual(sent.extra, { n: 1 });
     assert.equal(sent.exception.values[0].type, "Error");
+  });
+
+  await test("redaction ends quickly on shared data, Sentry's metadata and huge values", () => {
+    // 40 levels, each pointing twice at the next: 2^40 paths, 41 objects.
+    // Walked path by path this never ends (the browser froze on it).
+    let node: Record<string, unknown> = { key: "sk-abcdefghijklmnopqrstuvwx" };
+    for (let level = 0; level < 39; level++) node = { left: node, right: node };
+    const started = Date.now();
+    const copy = redaction.redactValue(node) as Record<string, any>;
+    assert.ok(Date.now() - started < 1000, "a web of shared objects is walked once per object");
+    let leaf = copy;
+    for (let level = 0; level < 39; level++) leaf = level % 2 ? leaf.left : leaf.right;
+    assert.equal(leaf.key, R);
+
+    // Sentry's own bookkeeping (live scopes and client) is not walked and
+    // comes back as it was, the same object
+    const scope = { _client: { _options: { dsn: "kept as is", graph: node } } };
+    const metadata = { capturedSpanScope: scope, capturedSpanIsolationScope: scope };
+    const event = { message: "Bearer abcdef1234567890", sdkProcessingMetadata: metadata };
+    const sent = redaction.redactForSentry(event);
+    assert.equal(sent.sdkProcessingMetadata, metadata);
+    assert.equal(sent.message, `Bearer ${R}`);
+    assert.equal(event.message, "Bearer abcdef1234567890", "the event itself is not changed");
+    assert.equal("sdkProcessingMetadata" in redaction.redactForSentry({ a: 1 }), false);
+
+    // Past MAX_REDACT_VALUES the rest is redacted instead of walked
+    const many = Array.from({ length: redaction.MAX_REDACT_VALUES + 10 }, (_, i) => `v${i}`);
+    const out = redaction.redactValue(many) as string[];
+    assert.equal(out[0], "v0");
+    assert.equal(out[out.length - 1], R);
+  });
+
+  await test("the editor stops asking for a run's node logs once the run has settled", async () => {
+    const { getExecutionNodesInterval: interval, SETTLE_AFTER_MS, GIVE_UP_AFTER_MS } =
+      await import("@/features/executions/lib/execution-nodes-polling");
+    const now = 1_000_000;
+    const running = [{ status: "SUCCESS" }, { status: "RUNNING" }];
+    const waiting = [{ status: "SUCCESS" }, { status: "WAITING" }];
+    const done = [{ status: "SUCCESS" }, { status: "ERROR" }];
+
+    assert.equal(interval(running, now - 60_000, now), 500);
+    assert.equal(interval(waiting, now - 60_000, now), 5_000);
+    // Between two nodes nothing runs: still asked, a little slower
+    assert.equal(interval(done, now - 1_000, now), 2_000);
+    // Unchanged for longer than SETTLE_AFTER_MS: over
+    assert.equal(interval(done, now - SETTLE_AFTER_MS - 1, now), false);
+    // Started, no node logged yet
+    assert.equal(interval([], now, now), 500);
+    assert.equal(interval(undefined, now - SETTLE_AFTER_MS - 1, now), false);
+    // Even a run that never changes again stops being asked about
+    assert.equal(interval(running, now - GIVE_UP_AFTER_MS - 1, now), false);
   });
 
   await test("execution data is kept for 7, 30 or 90 days, 30 by default", () => {

@@ -39,6 +39,15 @@ import { usePinNode } from "@/features/executions/components/node-test-actions";
 
 // 1. Import your AI Agent Dialog component
 
+// Outside the component: React Flow re-registers the edge types whenever it
+// gets a new object
+const edgeTypes = {
+    execution: ExecutionEdge,
+};
+
+// The same empty list on every render while no run is shown
+const NO_EXECUTION_NODES: unknown[] = [];
+
 export const EditorLoading = () => <LoadingView message="Loading editor..." />;
 export const EditorError = () => <ErrorView message="Error loading editor" />;
 
@@ -67,7 +76,7 @@ export const Editor = ({ workflowId }: { workflowId: string }) => {
     // =====================================
     // LIVE EXECUTION NODES
     // =====================================
-    const { data: executionNodes = [] } = useExecutionNodes(activeExecutionId ?? undefined);
+    const { data: executionNodes = NO_EXECUTION_NODES } = useExecutionNodes(activeExecutionId ?? undefined);
 
     // "Pin this output" in the logs: the output of the run that is shown
     const pinNode = usePinNode(workflowId);
@@ -93,6 +102,20 @@ export const Editor = ({ workflowId }: { workflowId: string }) => {
         });
         return Array.from(map.values());
     }, [executionNodes]);
+
+    // A node's output as text for the logs. Made once per answer from the
+    // server, not on every render: outputs can be large, and the editor
+    // renders on every drag
+    const outputTexts = useMemo(
+        () =>
+            new Map(
+                deduplicatedNodes.map((node: any) => [
+                    node,
+                    node.output ? JSON.stringify(node.output, null, 2) : undefined,
+                ])
+            ),
+        [deduplicatedNodes]
+    );
 
     // =====================================
     // SIDEBAR LOGS
@@ -123,7 +146,7 @@ export const Editor = ({ workflowId }: { workflowId: string }) => {
                 )
                 : undefined,
         error: node.error,
-        output: node.output ? JSON.stringify(node.output, null, 2) : undefined,
+        output: outputTexts.get(node),
         dataSource:
             node.dataSource === "pinned" || node.dataSource === "saved"
                 ? node.dataSource
@@ -214,12 +237,10 @@ export const Editor = ({ workflowId }: { workflowId: string }) => {
         return nodes.some((node) => node.type === NodeType.CHAT_TRIGGER);
     }, [nodes]);
 
-    // =====================================
-    // EDGE TYPES
-    // =====================================
-    const edgeTypes = {
-        execution: ExecutionEdge,
-    };
+    const executionEdges = useMemo(
+        () => edges.map((edge) => ({ ...edge, type: "execution" })),
+        [edges]
+    );
 
     const setNodeStatus = useExecutionStore((state) => state.setNodeStatus);
 
@@ -251,10 +272,7 @@ export const Editor = ({ workflowId }: { workflowId: string }) => {
             <div className="relative h-full min-w-0 flex-1 overflow-hidden">
                 <ReactFlow
                     nodes={nodes}
-                    edges={edges.map((edge) => ({
-                        ...edge,
-                        type: "execution",
-                    }))}
+                    edges={executionEdges}
                     edgeTypes={edgeTypes}
                     onNodesChange={onNodesChange}
                     onEdgesChange={onEdgesChange}
