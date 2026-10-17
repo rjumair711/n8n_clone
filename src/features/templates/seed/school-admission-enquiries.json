@@ -1,0 +1,122 @@
+{
+  "key": "school_admission_enquiries",
+  "category": "Education",
+  "minPlan": "INTERMEDIATE",
+  "nodes": [
+    {
+      "id": "form",
+      "type": "FORM_TRIGGER",
+      "position": {
+        "x": 0,
+        "y": 0
+      },
+      "data": {
+        "formTitle": "@text:formTitle",
+        "formDescription": "@text:formDescription",
+        "formFields": "@text:formFields",
+        "submitLabel": "@text:submitLabel",
+        "afterSubmit": "message",
+        "thankYouMessage": "@text:thankYouMessage",
+        "captcha": "true"
+      }
+    },
+    {
+      "id": "save",
+      "type": "GOOGLE_SHEETS",
+      "position": {
+        "x": 320,
+        "y": 0
+      },
+      "data": {
+        "variableName": "savedEnquiry",
+        "sheetId": "",
+        "sheetName": "Sheet1",
+        "rowData": "{{formMeta.submittedAt}}, {{form.parent_name}}, {{form.student_name}}, {{form.class}}, {{form.phone}}, {{form.email}}"
+      }
+    },
+    {
+      "id": "answer",
+      "type": "GEMINI",
+      "position": {
+        "x": 640,
+        "y": 0
+      },
+      "data": {
+        "variableName": "answer",
+        "systemPrompt": "@text:systemPrompt",
+        "userPrompt": "Parent: {{form.parent_name}}\nStudent: {{form.student_name}}\nClass: {{form.class}}\nQuestion: {{form.question}}"
+      }
+    },
+    {
+      "id": "send",
+      "type": "GMAIL",
+      "position": {
+        "x": 960,
+        "y": 0
+      },
+      "data": {
+        "variableName": "reply",
+        "operation": "send_email",
+        "to": "{{form.email}}",
+        "subject": "@text:emailSubject",
+        "emailType": "text",
+        "message": "{{answer.text}}"
+      }
+    }
+  ],
+  "connections": [
+    {
+      "fromNodeId": "form",
+      "toNodeId": "save",
+      "fromOutput": "source-1",
+      "toInput": "target-1"
+    },
+    {
+      "fromNodeId": "save",
+      "toNodeId": "answer",
+      "fromOutput": "source-1",
+      "toInput": "target-1"
+    },
+    {
+      "fromNodeId": "answer",
+      "toNodeId": "send",
+      "fromOutput": "source-1",
+      "toInput": "target-1"
+    }
+  ],
+  "text": {
+    "en": {
+      "name": "School admission enquiries",
+      "description": "Parents fill in an admission form; the enquiry is saved to a Google Sheet and the parent gets an email straight away with the fee for that class and the next step. Set up: create a sheet with the columns Received, Parent, Student, Class, Phone, Email; pick credentials on Google Sheets (and Spreadsheet ID), Gemini and Gmail; replace the school's fees and details in Gemini's System Prompt; share the Form URL.",
+      "formTitle": "Admission enquiry",
+      "formDescription": "Tell us about your child and we will email you the fee and the next steps.",
+      "formFields": "[{\"label\":\"Parent name\",\"type\":\"text\",\"required\":true,\"options\":\"\"},{\"label\":\"Student name\",\"type\":\"text\",\"required\":true,\"options\":\"\"},{\"label\":\"Class\",\"type\":\"dropdown\",\"required\":true,\"options\":\"Playgroup, Nursery, Prep, Class 1, Class 2, Class 3, Class 4, Class 5, Class 6, Class 7, Class 8, Class 9, Matric\"},{\"label\":\"Phone\",\"type\":\"text\",\"required\":true,\"options\":\"\"},{\"label\":\"Email\",\"type\":\"email\",\"required\":true,\"options\":\"\"},{\"label\":\"Question\",\"type\":\"text\",\"required\":false,\"options\":\"\"}]",
+      "submitLabel": "Send enquiry",
+      "thankYouMessage": "Thank you! Please check your email for the fee and the next steps.",
+      "systemPrompt": "You answer admission enquiries for a school. Write a short, warm email reply to the parent in English. Use only these facts (replace with your own): classes from Playgroup to Matric; admission fee 10,000; monthly fee from 6,000 (Playgroup) to 9,000 (Matric); admission test for Class 1 and above; office hours Monday to Saturday 8:00 to 14:00; phone 0300-0000000. Give the fee for the class asked about, the next step (visit the office or book a test), and nothing you are not sure of.",
+      "emailSubject": "Admission enquiry for {{form.student_name}}"
+    },
+    "ur": {
+      "name": "اسکول میں داخلے کی معلومات",
+      "description": "والدین داخلہ فارم بھرتے ہیں؛ سوال گوگل شیٹ میں محفوظ ہوتا ہے اور والدین کو فوراً اس کلاس کی فیس اور اگلے قدم کی ای میل مل جاتی ہے۔ سیٹ اپ: Received, Parent, Student, Class, Phone, Email کالموں والی شیٹ بنائیں؛ Google Sheets (اور Spreadsheet ID)، Gemini اور Gmail پر credentials چنیں؛ Gemini کے System Prompt میں اپنے اسکول کی فیس اور تفصیل لکھیں؛ Form URL شیئر کریں۔",
+      "formTitle": "داخلے کے بارے میں معلومات",
+      "formDescription": "اپنے بچے کے بارے میں بتائیں، ہم آپ کو فیس اور اگلے مراحل ای میل کر دیں گے۔",
+      "formFields": "[{\"label\":\"والد یا والدہ کا نام (Parent name)\",\"type\":\"text\",\"required\":true,\"options\":\"\"},{\"label\":\"طالب علم کا نام (Student name)\",\"type\":\"text\",\"required\":true,\"options\":\"\"},{\"label\":\"جماعت (Class)\",\"type\":\"dropdown\",\"required\":true,\"options\":\"پلے گروپ, نرسری, پریپ, جماعت اول, جماعت دوم, جماعت سوم, جماعت چہارم, جماعت پنجم, جماعت ششم, جماعت ہفتم, جماعت ہشتم, جماعت نہم, میٹرک\"},{\"label\":\"فون (Phone)\",\"type\":\"text\",\"required\":true,\"options\":\"\"},{\"label\":\"ای میل (Email)\",\"type\":\"email\",\"required\":true,\"options\":\"\"},{\"label\":\"سوال (Question)\",\"type\":\"text\",\"required\":false,\"options\":\"\"}]",
+      "submitLabel": "بھیجیں",
+      "thankYouMessage": "شکریہ! فیس اور اگلے مراحل کے لیے اپنی ای میل دیکھیں۔",
+      "systemPrompt": "آپ ایک اسکول کے داخلے کے سوالوں کا جواب دیتے ہیں۔ والدین کو اردو میں مختصر اور خوش اخلاق ای میل جواب لکھیں۔ صرف یہ معلومات استعمال کریں (اپنی معلومات سے بدلیں): پلے گروپ سے میٹرک تک کلاسیں؛ داخلہ فیس 10,000 روپے؛ ماہانہ فیس 6,000 (پلے گروپ) سے 9,000 (میٹرک) تک؛ پہلی جماعت اور اس سے اوپر داخلہ ٹیسٹ؛ دفتر کے اوقات پیر تا ہفتہ صبح 8 سے دوپہر 2 بجے؛ فون 0300-0000000۔ پوچھی گئی کلاس کی فیس اور اگلا قدم (دفتر آئیں یا ٹیسٹ بک کریں) بتائیں، اور کوئی ایسی بات نہ لکھیں جس کا یقین نہ ہو۔",
+      "emailSubject": "{{form.student_name}} کے داخلے کے بارے میں"
+    },
+    "ar": {
+      "name": "استفسارات القبول في المدرسة",
+      "description": "يملأ أولياء الأمور نموذج القبول؛ يُحفظ الاستفسار في Google Sheets ويتلقى ولي الأمر بريداً فورياً برسوم الصف والخطوة التالية. الإعداد: أنشئ جدولاً بالأعمدة Received, Parent, Student, Class, Phone, Email؛ اختر credentials في Google Sheets (مع Spreadsheet ID) وGemini وGmail؛ استبدل رسوم المدرسة وبياناتها في System Prompt لـ Gemini؛ شارك Form URL.",
+      "formTitle": "استفسار عن القبول",
+      "formDescription": "أخبرنا عن طفلك وسنرسل إليك الرسوم والخطوات التالية بالبريد.",
+      "formFields": "[{\"label\":\"اسم ولي الأمر (Parent name)\",\"type\":\"text\",\"required\":true,\"options\":\"\"},{\"label\":\"اسم الطالب (Student name)\",\"type\":\"text\",\"required\":true,\"options\":\"\"},{\"label\":\"الصف (Class)\",\"type\":\"dropdown\",\"required\":true,\"options\":\"الروضة, التمهيدي, الأول, الثاني, الثالث, الرابع, الخامس, السادس, السابع, الثامن, التاسع, العاشر, الحادي عشر, الثاني عشر\"},{\"label\":\"الهاتف (Phone)\",\"type\":\"text\",\"required\":true,\"options\":\"\"},{\"label\":\"البريد الإلكتروني (Email)\",\"type\":\"email\",\"required\":true,\"options\":\"\"},{\"label\":\"السؤال (Question)\",\"type\":\"text\",\"required\":false,\"options\":\"\"}]",
+      "submitLabel": "إرسال",
+      "thankYouMessage": "شكراً لك! راجع بريدك لمعرفة الرسوم والخطوات التالية.",
+      "systemPrompt": "تجيب عن استفسارات القبول في مدرسة. اكتب رداً قصيراً ودوداً بالبريد لولي الأمر بالعربية. استخدم هذه المعلومات فقط (استبدلها بمعلوماتك): الصفوف من الروضة إلى الثاني عشر؛ رسوم التسجيل 1,000؛ الرسوم الشهرية من 600 (الروضة) إلى 900 (الثاني عشر)؛ اختبار قبول من الصف الأول فما فوق؛ ساعات المكتب من الأحد إلى الخميس من 7:30 إلى 13:30؛ الهاتف 0500-000000. اذكر رسوم الصف المسؤول عنه والخطوة التالية (زيارة المكتب أو حجز الاختبار)، ولا تذكر شيئاً لست متأكداً منه.",
+      "emailSubject": "استفسار القبول للطالب {{form.student_name}}"
+    }
+  }
+}

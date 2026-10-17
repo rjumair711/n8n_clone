@@ -635,10 +635,10 @@ Repeat with Title `رسید نمبر 42` and Content `محترم علی خان،
 | # | Do | Expect |
 |---|----|--------|
 | 1 | As admin open **Templates** | a **Starter templates** button next to **New template** |
-| 2 | **Starter templates** | 15 lines: five templates, each in English, Urdu and Arabic, with its language and plan. Urdu and Arabic names read right to left |
-| 3 | **Select all**, leave "Publish right away" off, **Add 15 to the gallery** | "15 starter templates added". They are in the gallery marked Hidden; the language filter appeared |
+| 2 | **Starter templates** | 120 lines: 40 templates, each in English, Urdu and Arabic, with its language and plan. Urdu and Arabic names read right to left |
+| 3 | **Select all**, leave "Publish right away" off, **Add 120 to the gallery** | "120 starter templates added". They are in the gallery marked Hidden |
 | 4 | Open **Starter templates** again | every line is ticked, disabled and says "In the gallery" |
-| 5 | Pick **اردو (Urdu)** in the language filter | only the five Urdu templates, right to left, each with an "Urdu" badge. **All languages** shows everything again |
+| 5 | Pick **اردو (Urdu)** in the language filter | only the 40 Urdu templates, right to left, each with an "Urdu" badge. **All languages** shows everything again |
 | 6 | Combine the filter with a category (WhatsApp bots) and with the search | the three work together |
 | 7 | Edit an Urdu template | Language shows اردو (Urdu). Switch **Published** on and save: "Template saved" |
 | 8 | Delete one starter template, then add it again from **Starter templates** | it can be ticked again and comes back as shipped |
@@ -659,12 +659,29 @@ Repeat with Title `رسید نمبر 42` and Content `محترم علی خان،
 | 4 | Click a card (not its button) | the **Details** panel opens on the right: plan, language, category, name, the summary, **Setup** as a numbered list, **Nodes used** with every node, and the button. Esc or × closes it |
 | 5 | Open an Urdu template's details | the text and the step list read right to left |
 | 6 | Search "sheets"; pick a category; pick plan **Pro**; pick a language; switch the sort between **Most used** and **Newest** | each narrows or reorders the grid; together they combine. "No templates match your search." when nothing does |
-| 7 | With more than 24 templates (add all 15 starters) | 24 cards and "Showing 24 of N" with **Load more**; it adds the rest and disappears. Changing a filter starts at 24 again |
+| 7 | With more than 24 templates (add the starters) | 24 cards and "Showing 24 of N" with **Load more**; it adds the rest and disappears. Changing a filter starts at 24 again |
 | 8 | As an account on **Free** with no active trial (set `trialEndsAt` in the past on a test account) | the WhatsApp and Intermediate templates are still listed, with a lock on the badge and **Upgrade** instead of **Use template**, on the card and in the panel. **Upgrade** opens the upgrade dialog |
 | 9 | Same account: call "Use template" for the WhatsApp template anyway (for example from the browser console with the tRPC request copied from an unlocked template, changing the id) | refused: "This template requires the Pro plan." |
 | 10 | Same account on a trial | every template is open, except one that has an SSH node |
 | 11 | As admin, **New template** from a workflow with a Gmail node, plan **Free** | saved; the gallery shows it as **Intermediate** |
 | 12 | DevTools → Network on the Templates page, wait a minute | no repeating requests; hovering cards and the Security link fetches nothing |
+
+**The 35 starter templates added with the gallery.** No migration. First run `npx tsx scripts/check-starter-templates.ts`: **Expect** "120 starter templates checked ... All valid." Then, as admin, add them (step 3 above) and use a test account for the runs; nothing here touches real customers.
+
+| # | Do | Expect |
+|---|----|--------|
+| 1 | Filter by plan **Pro** | only WhatsApp templates (10), each with an amber Pro badge. **Intermediate**: 13. **Free**: 17. No WhatsApp template is Free |
+| 2 | Open the details of any new template in each language | a summary, **Setup** with 2 or more numbered steps, and **Nodes used**; Urdu and Arabic right to left |
+| 3 | **Use template** on "Contact form to Google Sheets with confirmation email" (Urdu) | the workflow opens: Form Trigger → Google Sheets → Gmail. The form's labels are Urdu with the English word in brackets; Google Sheets and Gmail are marked Not Configured |
+| 4 | Set it up with a test sheet and your own Gmail, activate it, open the Form URL and submit | a row with the time, name, email, phone and message; a confirmation email in Urdu to the address you typed |
+| 5 | **Use template** on "Simple AI bot on Telegram", pick a test bot's credential and Gemini, activate, message the bot in Urdu | it answers in Urdu |
+| 6 | **Use template** on "Telegram expense logger", set it up with a test sheet, send "petrol 2500" | a row with the date, item, 2500 and a category; the bot replies "Saved: ..." . Send "hello": the bot replies with the help text and no row is added |
+| 7 | **Use template** on "Booking form to Google Calendar" (English), set it up with a test calendar, book tomorrow at 10:00 | an event tomorrow 10:00 to 10:30 Pakistan time, and the confirmation email |
+| 8 | **Use template** on "PDF summary by email", upload a text PDF | a summary email a minute later. A scanned PDF without text fails at Extract from File with a clear message |
+| 9 | **Use template** on "Leave and expense requests with Telegram approval", submit the form with your test email | a Telegram message with Approve and Reject to the Chat ID you typed; **Approve** sends the approved email, **Reject** the other one |
+| 10 | **Use template** on "Cash-on-delivery order confirmation on WhatsApp" with a test WooCommerce store and test WhatsApp number; place a COD order with that number | the customer gets the cod_confirmation template. Reply "ji": the order gets the note "Customer confirmed..." and a thank-you reply. Place another and reply "cancel": the order is cancelled |
+| 11 | **Use template** on "Order status on WhatsApp"; send an order number from the number that placed it, then from another number | the first gets the status in their language; the second gets "could not find that order for this WhatsApp number" |
+| 12 | As an account on Free with no trial | Pro and Intermediate starters show the lock and **Upgrade**; "Use template" is refused with "This template requires the ... plan." |
 
 ## T11. API keys
 

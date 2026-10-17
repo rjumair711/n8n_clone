@@ -12,6 +12,42 @@ import realEstateLeadBot from "../seed/real-estate-lead-bot.json";
 import schoolFeeReminder from "../seed/school-fee-reminder.json";
 import shopOrderBot from "../seed/shop-order-bot.json";
 import supportFaqBot from "../seed/support-faq-bot.json";
+// Added with the template gallery: Pro, Intermediate, then Free
+import codOrderConfirmation from "../seed/cod-order-confirmation.json";
+import whatsappOrderStatus from "../seed/whatsapp-order-status.json";
+import whatsappVoiceHelper from "../seed/whatsapp-voice-helper.json";
+import whatsappCatalogueAssistant from "../seed/whatsapp-catalogue-assistant.json";
+import appointmentReminders from "../seed/appointment-reminders.json";
+import afterSaleReviewRequest from "../seed/after-sale-review-request.json";
+import telegramExpenseLogger from "../seed/telegram-expense-logger.json";
+import overdueInvoiceReminder from "../seed/overdue-invoice-reminder.json";
+import formToSheetWithEmail from "../seed/form-to-sheet-with-email.json";
+import marketplaceOrderEmailsToSheet from "../seed/marketplace-order-emails-to-sheet.json";
+import emailReplyWithApproval from "../seed/email-reply-with-approval.json";
+import dailySalesEmail from "../seed/daily-sales-email.json";
+import weeklyPdfReport from "../seed/weekly-pdf-report.json";
+import schoolAdmissionEnquiries from "../seed/school-admission-enquiries.json";
+import shopifyOrdersLedger from "../seed/shopify-orders-ledger.json";
+import websiteOrderHelpChat from "../seed/website-order-help-chat.json";
+import websiteChatFromDocuments from "../seed/website-chat-from-documents.json";
+import staffCheckinTelegram from "../seed/staff-checkin-telegram.json";
+import newOrderAlertTelegram from "../seed/new-order-alert-telegram.json";
+import telegramAiBot from "../seed/telegram-ai-bot.json";
+import staffKnowledgeBotTelegram from "../seed/staff-knowledge-bot-telegram.json";
+import feedbackNegativeAlert from "../seed/feedback-negative-alert.json";
+import messengerFaqBot from "../seed/messenger-faq-bot.json";
+import voiceNotesToNotion from "../seed/voice-notes-to-notion.json";
+import schoolAnnouncementsTelegram from "../seed/school-announcements-telegram.json";
+import leaveAndExpenseApproval from "../seed/leave-and-expense-approval.json";
+import bookingFormToCalendar from "../seed/booking-form-to-calendar.json";
+import eventRegistrationPdfTicket from "../seed/event-registration-pdf-ticket.json";
+import quoteRequestWithApproval from "../seed/quote-request-with-approval.json";
+import lowStockAlert from "../seed/low-stock-alert.json";
+import shippingEmailWithTracking from "../seed/shipping-email-with-tracking.json";
+import productDescriptionsThreeLanguages from "../seed/product-descriptions-three-languages.json";
+import cancelledOrderAlert from "../seed/cancelled-order-alert.json";
+import documentSummaryByEmail from "../seed/document-summary-by-email.json";
+import invoiceGenerator from "../seed/invoice-generator.json";
 import {
   TEMPLATE_LANGUAGES,
   type TemplateLanguage,
@@ -40,6 +76,41 @@ export const STARTER_SEEDS: StarterSeed[] = [
   shopOrderBot,
   realEstateLeadBot,
   supportFaqBot,
+  codOrderConfirmation,
+  whatsappOrderStatus,
+  whatsappVoiceHelper,
+  whatsappCatalogueAssistant,
+  appointmentReminders,
+  afterSaleReviewRequest,
+  telegramExpenseLogger,
+  overdueInvoiceReminder,
+  formToSheetWithEmail,
+  marketplaceOrderEmailsToSheet,
+  emailReplyWithApproval,
+  dailySalesEmail,
+  weeklyPdfReport,
+  schoolAdmissionEnquiries,
+  shopifyOrdersLedger,
+  websiteOrderHelpChat,
+  websiteChatFromDocuments,
+  staffCheckinTelegram,
+  newOrderAlertTelegram,
+  telegramAiBot,
+  staffKnowledgeBotTelegram,
+  feedbackNegativeAlert,
+  messengerFaqBot,
+  voiceNotesToNotion,
+  schoolAnnouncementsTelegram,
+  leaveAndExpenseApproval,
+  bookingFormToCalendar,
+  eventRegistrationPdfTicket,
+  quoteRequestWithApproval,
+  lowStockAlert,
+  shippingEmailWithTracking,
+  productDescriptionsThreeLanguages,
+  cancelledOrderAlert,
+  documentSummaryByEmail,
+  invoiceGenerator,
 ];
 
 const TEXT_MARKER = "@text:";

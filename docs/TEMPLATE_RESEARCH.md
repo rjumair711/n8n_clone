@@ -345,3 +345,28 @@ Plans in total: 8 Pro, 23 Intermediate, 29 Free.
 * **Not planned (155)**: reading and writing files on the server's disk,
   running shell commands, n8n's own API. RXJ's SSH node runs commands on a
   server the user owns, which is the safe form of the same need.
+
+## 5. Built (35, on 2026-10-17)
+
+These ideas are now starter templates in `src/features/templates/seed/`,
+each in English, Urdu and Arabic, with the plan their nodes need:
+
+* **Pro (6):** 1, 2, 3, 5, 7, 8.
+* **Intermediate (12):** 14, 15, 17, 18, 20, 21, 22, 23, 32, 37, 38, 56.
+* **Free (17):** 9, 10, 11, 13, 16, 25, 26, 27, 28, 31, 33, 34, 35, 42, 48, 53,
+  and 57 in place of 40. The public chat shows the answer of an AI Agent,
+  so a translator chat needs one and would be Intermediate.
+
+Choices made while building them:
+
+* #2 (order status) uses WooCommerce, and only answers the WhatsApp number
+  that placed the order.
+* #1 (cash on delivery) finds the customer's open order by the last ten
+  digits of their WhatsApp number, which matches 0300..., 92300... and
+  +92300... in WooCommerce's search.
+* #15 (overdue invoices) relies on a `days_overdue` formula column in the
+  sheet: comparing dates inside the workflow is not reliable for every
+  date format people type.
+* #7, #15 and #22 read the sheet through Google Drive (download as CSV and
+  Extract from File). They move to Google Sheets "Get Rows" when that
+  operation exists.

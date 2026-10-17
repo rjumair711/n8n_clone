@@ -1,0 +1,228 @@
+{
+  "key": "after_sale_review_request",
+  "category": "E-commerce",
+  "minPlan": "PRO",
+  "nodes": [
+    {
+      "id": "fulfilled",
+      "type": "SHOPIFY_TRIGGER",
+      "position": {
+        "x": 0,
+        "y": 0
+      },
+      "data": {
+        "event": "orders/fulfilled"
+      }
+    },
+    {
+      "id": "hasPhone",
+      "type": "FILTER",
+      "position": {
+        "x": 320,
+        "y": 0
+      },
+      "data": {
+        "inputKey": "shopify.phone",
+        "operator": "exists",
+        "value": ""
+      }
+    },
+    {
+      "id": "wait",
+      "type": "WAIT",
+      "position": {
+        "x": 640,
+        "y": 0
+      },
+      "data": {
+        "variableName": "wait",
+        "operation": "interval",
+        "amount": "3",
+        "unit": "days"
+      }
+    },
+    {
+      "id": "ask",
+      "type": "WHATSAPP",
+      "position": {
+        "x": 960,
+        "y": 0
+      },
+      "data": {
+        "variableName": "reviewRequest",
+        "operation": "send_template",
+        "phoneNumberId": "",
+        "to": "{{shopify.phone}}",
+        "templateName": "review_request",
+        "languageCode": "@text:languageCode",
+        "templateParamsJson": "[{{json shopify.customerName}}, {{json shopify.order.name}}]"
+      }
+    },
+    {
+      "id": "reply",
+      "type": "WHATSAPP_TRIGGER",
+      "position": {
+        "x": 0,
+        "y": 320
+      },
+      "data": {}
+    },
+    {
+      "id": "rating",
+      "type": "TEXT_FORMATTER",
+      "position": {
+        "x": 320,
+        "y": 320
+      },
+      "data": {
+        "variableName": "rating",
+        "operation": "extract",
+        "inputText": "{{whatsapp.text}}",
+        "regexPattern": "[1-5]"
+      }
+    },
+    {
+      "id": "low",
+      "type": "IF",
+      "position": {
+        "x": 640,
+        "y": 320
+      },
+      "data": {
+        "combinator": "and",
+        "conditions": [
+          {
+            "inputKey": "rating.result",
+            "operator": "exists",
+            "value": ""
+          },
+          {
+            "inputKey": "rating.result",
+            "operator": "less_than",
+            "value": "4"
+          }
+        ]
+      }
+    },
+    {
+      "id": "alert",
+      "type": "TELEGRAM",
+      "position": {
+        "x": 960,
+        "y": 220
+      },
+      "data": {
+        "variableName": "ownerAlert",
+        "chatId": "",
+        "text": "@text:ownerAlert",
+        "parseMode": "None"
+      }
+    },
+    {
+      "id": "sorry",
+      "type": "WHATSAPP",
+      "position": {
+        "x": 1280,
+        "y": 220
+      },
+      "data": {
+        "variableName": "sorryReply",
+        "operation": "send_text",
+        "phoneNumberId": "{{whatsapp.phoneNumberId}}",
+        "to": "{{whatsapp.from}}",
+        "message": "@text:sorryMessage"
+      }
+    },
+    {
+      "id": "thanks",
+      "type": "WHATSAPP",
+      "position": {
+        "x": 960,
+        "y": 440
+      },
+      "data": {
+        "variableName": "thanksReply",
+        "operation": "send_text",
+        "phoneNumberId": "{{whatsapp.phoneNumberId}}",
+        "to": "{{whatsapp.from}}",
+        "message": "@text:thanksMessage"
+      }
+    }
+  ],
+  "connections": [
+    {
+      "fromNodeId": "fulfilled",
+      "toNodeId": "hasPhone",
+      "fromOutput": "source-1",
+      "toInput": "target-1"
+    },
+    {
+      "fromNodeId": "hasPhone",
+      "toNodeId": "wait",
+      "fromOutput": "source-1",
+      "toInput": "target-1"
+    },
+    {
+      "fromNodeId": "wait",
+      "toNodeId": "ask",
+      "fromOutput": "source-1",
+      "toInput": "target-1"
+    },
+    {
+      "fromNodeId": "reply",
+      "toNodeId": "rating",
+      "fromOutput": "source-1",
+      "toInput": "target-1"
+    },
+    {
+      "fromNodeId": "rating",
+      "toNodeId": "low",
+      "fromOutput": "source-1",
+      "toInput": "target-1"
+    },
+    {
+      "fromNodeId": "low",
+      "toNodeId": "alert",
+      "fromOutput": "true",
+      "toInput": "target-1"
+    },
+    {
+      "fromNodeId": "alert",
+      "toNodeId": "sorry",
+      "fromOutput": "source-1",
+      "toInput": "target-1"
+    },
+    {
+      "fromNodeId": "low",
+      "toNodeId": "thanks",
+      "fromOutput": "false",
+      "toInput": "target-1"
+    }
+  ],
+  "text": {
+    "en": {
+      "name": "After-sale review request on WhatsApp",
+      "description": "Three days after a Shopify order is fulfilled, asks the customer on WhatsApp to rate it from 1 to 5. A rating of 3 or lower alerts you on Telegram at once; a good rating gets a thank-you with your review link. Set up: create an approved WhatsApp template review_request with 2 variables (name, order); put your signing secret on the Shopify Trigger; pick credentials on WhatsApp (and your Phone Number ID) and Telegram (and your Chat ID); add your review link to the thank-you message.",
+      "languageCode": "en_US",
+      "ownerAlert": "Low rating ({{rating.result}}/5) from WhatsApp {{whatsapp.from}} ({{whatsapp.name}}): {{whatsapp.text}}",
+      "sorryMessage": "We are sorry it was not better. Someone from our team will contact you today to make it right.",
+      "thanksMessage": "Thank you for your feedback! If you have a minute, a review here helps us a lot: https://example.com/review"
+    },
+    "ur": {
+      "name": "خریداری کے بعد واٹس ایپ پر ریویو کی درخواست",
+      "description": "Shopify آرڈر روانہ ہونے کے تین دن بعد گاہک سے واٹس ایپ پر 1 سے 5 تک ریٹنگ مانگتا ہے۔ 3 یا کم ریٹنگ پر آپ کو فوراً ٹیلیگرام پر اطلاع ملتی ہے؛ اچھی ریٹنگ پر شکریہ اور ریویو لنک جاتا ہے۔ سیٹ اپ: review_request نام کا منظور شدہ واٹس ایپ ٹیمپلیٹ بنائیں جس میں 2 متغیر ہوں (نام، آرڈر)؛ Shopify Trigger پر signing secret لکھیں؛ WhatsApp (اور Phone Number ID) اور Telegram (اور Chat ID) پر credentials چنیں؛ شکریہ کے پیغام میں اپنا ریویو لنک لکھیں۔",
+      "languageCode": "ur",
+      "ownerAlert": "کم ریٹنگ ({{rating.result}}/5)، واٹس ایپ {{whatsapp.from}} ({{whatsapp.name}}): {{whatsapp.text}}",
+      "sorryMessage": "ہمیں افسوس ہے کہ تجربہ بہتر نہیں رہا۔ ہماری ٹیم کا کوئی فرد آج ہی آپ سے رابطہ کر کے معاملہ ٹھیک کرے گا۔",
+      "thanksMessage": "آپ کی رائے کا شکریہ! اگر ایک منٹ ہو تو یہاں ریویو لکھ دیں، ہماری بہت مدد ہو گی: https://example.com/review"
+    },
+    "ar": {
+      "name": "طلب تقييم بعد البيع عبر واتساب",
+      "description": "بعد ثلاثة أيام من شحن طلب Shopify يطلب من العميل على واتساب تقييماً من 1 إلى 5. التقييم 3 أو أقل ينبهك فوراً على تيليجرام، والتقييم الجيد يتلقى شكراً مع رابط المراجعة. الإعداد: أنشئ قالب واتساب معتمداً باسم review_request بمتغيرين (الاسم، الطلب)؛ أدخل signing secret في Shopify Trigger؛ اختر credentials في WhatsApp (مع Phone Number ID) وTelegram (مع Chat ID)؛ أضف رابط المراجعة إلى رسالة الشكر.",
+      "languageCode": "ar",
+      "ownerAlert": "تقييم منخفض ({{rating.result}}/5) من واتساب {{whatsapp.from}} ({{whatsapp.name}}): {{whatsapp.text}}",
+      "sorryMessage": "نأسف لأن تجربتك لم تكن أفضل. سيتواصل معك أحد أفراد فريقنا اليوم لإصلاح الأمر.",
+      "thanksMessage": "شكراً على رأيك! إذا كان لديك دقيقة، فمراجعتك هنا تساعدنا كثيراً: https://example.com/review"
+    }
+  }
+}

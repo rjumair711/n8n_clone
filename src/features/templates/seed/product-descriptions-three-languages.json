@@ -1,0 +1,77 @@
+{
+  "key": "product_descriptions_three_languages",
+  "category": "E-commerce",
+  "minPlan": "FREE",
+  "nodes": [
+    {
+      "id": "created",
+      "type": "SHOPIFY_TRIGGER",
+      "position": {
+        "x": 0,
+        "y": 0
+      },
+      "data": {
+        "event": "products/create"
+      }
+    },
+    {
+      "id": "write",
+      "type": "GEMINI",
+      "position": {
+        "x": 320,
+        "y": 0
+      },
+      "data": {
+        "variableName": "description",
+        "systemPrompt": "@text:systemPrompt",
+        "userPrompt": "Product: {{shopify.product.title}}\nType: {{shopify.product.product_type}}\nVendor: {{shopify.product.vendor}}\nTags: {{shopify.product.tags}}\nCurrent description: {{shopify.product.body_html}}"
+      }
+    },
+    {
+      "id": "update",
+      "type": "SHOPIFY",
+      "position": {
+        "x": 640,
+        "y": 0
+      },
+      "data": {
+        "variableName": "updatedProduct",
+        "operation": "update_product",
+        "shopDomain": "",
+        "productId": "{{shopify.product.id}}",
+        "description": "{{description.text}}"
+      }
+    }
+  ],
+  "connections": [
+    {
+      "fromNodeId": "created",
+      "toNodeId": "write",
+      "fromOutput": "source-1",
+      "toInput": "target-1"
+    },
+    {
+      "fromNodeId": "write",
+      "toNodeId": "update",
+      "fromOutput": "source-1",
+      "toInput": "target-1"
+    }
+  ],
+  "text": {
+    "en": {
+      "name": "Product descriptions in English, Urdu and Arabic",
+      "description": "When you add a product to Shopify, Gemini writes a short description in English, Urdu and Arabic from its title, type and tags and saves it on the product. Read it once before you sell. Set up: put your signing secret on the Shopify Trigger and create the Product creation webhook in Shopify; pick a credential on Gemini; pick your Shopify credential and type your Shop Domain on the Shopify node.",
+      "systemPrompt": "You write product descriptions for an online shop that sells in Pakistan and the Gulf. Write a short description in three parts, English first, then Urdu, then Arabic, each 2 or 3 sentences, as simple HTML: <p> for each part, with <h4>English</h4>, <h4>اردو</h4> and <h4>العربية</h4> before them. Use only the facts given; do not invent sizes, materials or claims."
+    },
+    "ur": {
+      "name": "اردو، انگریزی اور عربی میں مصنوعات کی تفصیل",
+      "description": "جب آپ Shopify میں نئی پروڈکٹ ڈالتے ہیں تو Gemini اس کے نام، قسم اور ٹیگز سے اردو، انگریزی اور عربی میں مختصر تفصیل لکھ کر پروڈکٹ پر محفوظ کر دیتا ہے۔ بیچنے سے پہلے ایک بار پڑھ لیں۔ سیٹ اپ: Shopify Trigger پر signing secret لکھیں اور Shopify میں Product creation ویب ہک بنائیں؛ Gemini پر credential چنیں؛ Shopify نوڈ پر credential چنیں اور Shop Domain لکھیں۔",
+      "systemPrompt": "آپ ایک آن لائن دکان کے لیے مصنوعات کی تفصیل لکھتے ہیں جو پاکستان اور خلیجی ممالک میں بیچتی ہے۔ تین حصوں میں مختصر تفصیل لکھیں، پہلے اردو، پھر انگریزی، پھر عربی، ہر حصہ 2 یا 3 جملے، سادہ HTML میں: ہر حصے کے لیے <p>، اور ان سے پہلے <h4>اردو</h4>، <h4>English</h4> اور <h4>العربية</h4>۔ صرف دی گئی معلومات استعمال کریں؛ سائز، کپڑا یا دعوے اپنی طرف سے نہ بنائیں۔"
+    },
+    "ar": {
+      "name": "أوصاف المنتجات بالعربية والإنجليزية والأردية",
+      "description": "عند إضافة منتج إلى Shopify يكتب Gemini وصفاً قصيراً بالعربية والإنجليزية والأردية من اسمه ونوعه ووسومه ويحفظه في المنتج. راجعه مرة قبل البيع. الإعداد: أدخل signing secret في Shopify Trigger وأنشئ webhook لحدث Product creation في Shopify؛ اختر credential في Gemini؛ اختر credential لـ Shopify واكتب Shop Domain في عقدة Shopify.",
+      "systemPrompt": "تكتب أوصاف المنتجات لمتجر إلكتروني يبيع في الخليج وباكستان. اكتب وصفاً قصيراً من ثلاثة أجزاء، العربية أولاً ثم الإنجليزية ثم الأردية، كل جزء جملتان أو ثلاث، بصيغة HTML بسيطة: <p> لكل جزء، وقبلها <h4>العربية</h4> و<h4>English</h4> و<h4>اردو</h4>. استخدم المعلومات المعطاة فقط؛ لا تخترع مقاسات أو خامات أو ادعاءات."
+    }
+  }
+}

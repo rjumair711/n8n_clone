@@ -1,0 +1,108 @@
+{
+  "key": "event_registration_pdf_ticket",
+  "category": "Forms",
+  "minPlan": "FREE",
+  "nodes": [
+    {
+      "id": "form",
+      "type": "FORM_TRIGGER",
+      "position": {
+        "x": 0,
+        "y": 0
+      },
+      "data": {
+        "formTitle": "@text:formTitle",
+        "formDescription": "@text:formDescription",
+        "formFields": "@text:formFields",
+        "submitLabel": "@text:submitLabel",
+        "afterSubmit": "message",
+        "thankYouMessage": "@text:thankYouMessage",
+        "captcha": "true"
+      }
+    },
+    {
+      "id": "ticket",
+      "type": "PDF_GENERATOR",
+      "position": {
+        "x": 320,
+        "y": 0
+      },
+      "data": {
+        "variableName": "pdf",
+        "title": "@text:ticketTitle",
+        "content": "@text:ticketContent",
+        "fileName": "ticket.pdf",
+        "pageSize": "A4"
+      }
+    },
+    {
+      "id": "send",
+      "type": "EMAIL_SEND",
+      "position": {
+        "x": 640,
+        "y": 0
+      },
+      "data": {
+        "recipient": "{{form.email}}",
+        "subject": "@text:emailSubject",
+        "body": "@text:emailBody",
+        "attachments": "pdf.file"
+      }
+    }
+  ],
+  "connections": [
+    {
+      "fromNodeId": "form",
+      "toNodeId": "ticket",
+      "fromOutput": "source-1",
+      "toInput": "target-1"
+    },
+    {
+      "fromNodeId": "ticket",
+      "toNodeId": "send",
+      "fromOutput": "source-1",
+      "toInput": "target-1"
+    }
+  ],
+  "text": {
+    "en": {
+      "name": "Event registration with a PDF ticket",
+      "description": "People register for your event, class or seminar on a form and get their own PDF ticket by email at once. The ticket can be in English, Urdu or Arabic. Set up: change the event name, date and place in the PDF Generator and the email; pick an SMTP credential on Email; activate the workflow and share the Form URL.",
+      "formTitle": "Register for the event",
+      "formDescription": "Fill in your details to get your ticket by email.",
+      "formFields": "[{\"label\":\"Name\",\"type\":\"text\",\"required\":true,\"options\":\"\"},{\"label\":\"Email\",\"type\":\"email\",\"required\":true,\"options\":\"\"},{\"label\":\"Phone\",\"type\":\"text\",\"required\":true,\"options\":\"\"},{\"label\":\"City\",\"type\":\"text\",\"required\":false,\"options\":\"\"}]",
+      "submitLabel": "Register",
+      "thankYouMessage": "You are registered! Your ticket is on its way to your email.",
+      "ticketTitle": "Ticket: {{form.name}}",
+      "ticketContent": "# Event ticket\n\n## Community Business Meetup\n- Date: Saturday 15 November, 10:00\n- Place: City Hall, Main Boulevard\n\n---\n\nName: {{form.name}}\nPhone: {{form.phone}}\nRegistered: {{formMeta.submittedAt}}\n\nPlease show this ticket at the entrance.",
+      "emailSubject": "Your ticket for the Community Business Meetup",
+      "emailBody": "Hi {{form.name}},\n\nThank you for registering. Your ticket is attached.\n\nSee you there!"
+    },
+    "ur": {
+      "name": "تقریب میں رجسٹریشن اور PDF ٹکٹ",
+      "description": "لوگ فارم پر آپ کی تقریب، کلاس یا سیمینار کے لیے رجسٹر ہوتے ہیں اور انہیں فوراً اپنا PDF ٹکٹ ای میل پر مل جاتا ہے۔ ٹکٹ اردو، انگریزی یا عربی میں ہو سکتا ہے۔ سیٹ اپ: PDF Generator اور ای میل میں تقریب کا نام، تاریخ اور جگہ بدلیں؛ Email پر SMTP credential چنیں؛ ورک فلو فعال کریں اور Form URL شیئر کریں۔",
+      "formTitle": "تقریب کے لیے رجسٹریشن",
+      "formDescription": "اپنی تفصیل لکھیں، ٹکٹ آپ کو ای میل پر ملے گا۔",
+      "formFields": "[{\"label\":\"نام (Name)\",\"type\":\"text\",\"required\":true,\"options\":\"\"},{\"label\":\"ای میل (Email)\",\"type\":\"email\",\"required\":true,\"options\":\"\"},{\"label\":\"فون (Phone)\",\"type\":\"text\",\"required\":true,\"options\":\"\"},{\"label\":\"شہر (City)\",\"type\":\"text\",\"required\":false,\"options\":\"\"}]",
+      "submitLabel": "رجسٹر کریں",
+      "thankYouMessage": "آپ رجسٹر ہو گئے! ٹکٹ آپ کی ای میل پر بھیجا جا رہا ہے۔",
+      "ticketTitle": "ٹکٹ: {{form.name}}",
+      "ticketContent": "# تقریب کا ٹکٹ\n\n## کاروباری ملاقات\n- تاریخ: ہفتہ 15 نومبر، صبح 10 بجے\n- جگہ: سٹی ہال، مین بلیوارڈ\n\n---\n\nنام: {{form.name}}\nفون: {{form.phone}}\nرجسٹریشن: {{formMeta.submittedAt}}\n\nبراہِ کرم داخلے پر یہ ٹکٹ دکھائیں۔",
+      "emailSubject": "کاروباری ملاقات کے لیے آپ کا ٹکٹ",
+      "emailBody": "محترم {{form.name}}،\n\nرجسٹریشن کا شکریہ۔ آپ کا ٹکٹ ساتھ منسلک ہے۔\n\nوہاں ملاقات ہو گی!"
+    },
+    "ar": {
+      "name": "التسجيل في فعالية مع تذكرة PDF",
+      "description": "يسجل الناس في فعاليتك أو دورتك أو ندوتك عبر نموذج ويصلهم فوراً بالبريد تذكرة PDF خاصة بهم. يمكن أن تكون التذكرة بالعربية أو الإنجليزية أو الأردية. الإعداد: غيّر اسم الفعالية وتاريخها ومكانها في PDF Generator والبريد؛ اختر credential لـ SMTP في Email؛ فعّل سير العمل وشارك Form URL.",
+      "formTitle": "سجّل في الفعالية",
+      "formDescription": "اكتب بياناتك لتصلك التذكرة بالبريد.",
+      "formFields": "[{\"label\":\"الاسم (Name)\",\"type\":\"text\",\"required\":true,\"options\":\"\"},{\"label\":\"البريد الإلكتروني (Email)\",\"type\":\"email\",\"required\":true,\"options\":\"\"},{\"label\":\"الهاتف (Phone)\",\"type\":\"text\",\"required\":true,\"options\":\"\"},{\"label\":\"المدينة (City)\",\"type\":\"text\",\"required\":false,\"options\":\"\"}]",
+      "submitLabel": "تسجيل",
+      "thankYouMessage": "تم تسجيلك! التذكرة في طريقها إلى بريدك.",
+      "ticketTitle": "تذكرة: {{form.name}}",
+      "ticketContent": "# تذكرة الفعالية\n\n## لقاء رواد الأعمال\n- التاريخ: السبت 15 نوفمبر، 10:00\n- المكان: قاعة المدينة، الشارع الرئيسي\n\n---\n\nالاسم: {{form.name}}\nالهاتف: {{form.phone}}\nالتسجيل: {{formMeta.submittedAt}}\n\nيرجى إبراز هذه التذكرة عند الدخول.",
+      "emailSubject": "تذكرتك للقاء رواد الأعمال",
+      "emailBody": "مرحباً {{form.name}}،\n\nشكراً لتسجيلك. التذكرة مرفقة.\n\nنراك هناك!"
+    }
+  }
+}

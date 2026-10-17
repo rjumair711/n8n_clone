@@ -1191,7 +1191,7 @@ The **Templates** page is a gallery of ready-made workflows. "Use template" copi
 * **Plans:** a template needs the cheapest plan that can run every one of its nodes (`getMinPlanForNodes` in `src/config/plans.ts`: WhatsApp and SSH are Pro; Gmail, Google Sheets, the Schedule Trigger and the AI Agent are Intermediate), or the plan its admin picked if that is higher. The gallery shows that plan, **Use template** checks it on the server (from the nodes that will be copied), and saving a template never stores a lower one. A template saved earlier as Free with a WhatsApp node shows and is locked as Pro without any change to its row. Locked templates stay in the gallery with a lock and **Upgrade**. An active free trial opens every template, the same way it opens plan-locked nodes, except one with an SSH node (the trial does not unlock SSH).
 * Using a template counts toward the plan's workflow limit, and workflows already made from a template do not change when the template is edited or deleted.
 * **Languages.** Every template has a language: English, Urdu or Arabic (templates made before the field existed are English). The gallery has a language filter next to the search; Urdu and Arabic names and descriptions are shown right to left. An admin picks the language under **New template** and in the edit dialog.
-* **Starter templates** ship with the app as JSON seed data in `src/features/templates/seed/`, each in English, Urdu and Arabic (15 in all). They are not in the gallery until an admin adds them: **Templates → Starter templates**, tick the ones wanted, and add them hidden (to read them first) or published. Adding them again changes nothing: one that is already there, also one edited since, is left alone.
+* **Starter templates** ship with the app as JSON seed data in `src/features/templates/seed/`, each in English, Urdu and Arabic: 40 templates, 120 in all. They are not in the gallery until an admin adds them: **Templates → Starter templates**, tick the ones wanted, and add them hidden (to read them first) or published. Adding them again changes nothing: one that is already there, also one edited since, is left alone.
 
   | Starter template | What it does | Plan |
   | ---------------- | ------------ | ---- |
@@ -1200,8 +1200,51 @@ The **Templates** page is a gallery of ready-made workflows. "Use template" copi
   | WhatsApp shop order bot | Shows the menu, takes the order, adds up the total and saves it in a Google Sheet | Pro |
   | WhatsApp real estate lead bot | Asks what the person wants (buy, rent or sell, type, area, budget, timeline) and saves the lead in a Google Sheet | Pro |
   | Support FAQ bot | A website chat that answers from a list of questions and answers written into the agent's instructions | Intermediate |
+  | Cash-on-delivery order confirmation on WhatsApp | Each new cash-on-delivery order gets a WhatsApp message asking the customer to confirm. | Pro |
+  | Order status on WhatsApp | Customers send their order number on WhatsApp and get the status back in their own language. | Pro |
+  | WhatsApp helper that understands voice notes | Answers customers' WhatsApp questions about your business, including voice notes in Urdu, Arabic or English, which are turned into text first. | Pro |
+  | WhatsApp product catalogue assistant | Answers product questions on WhatsApp from your own catalogue files and hands the chat to your team on Telegram when a customer wants to order or needs a person. | Pro |
+  | Appointment reminders on WhatsApp | Every evening at 18:00 (Pakistan time), reads your bookings sheet and sends a WhatsApp reminder to everyone booked for tomorrow. | Pro |
+  | After-sale review request on WhatsApp | Three days after a Shopify order is fulfilled, asks the customer on WhatsApp to rate it from 1 to 5. | Pro |
+  | Expense logger on Telegram | Send your bot a message like "fuel 2500" or "bought stock for 12000" and it adds a dated row to a Google Sheet with the item, amount and category. | Intermediate |
+  | Overdue invoice reminder on Telegram | Every morning at 09:00 (Pakistan time), sends you one Telegram message for each unpaid invoice in your sheet that is past its due date. | Intermediate |
+  | Contact form to Google Sheets with confirmation email | A hosted contact form: every submission becomes a row in your Google Sheet and the person gets a confirmation email from your Gmail. | Intermediate |
+  | Marketplace order emails to Google Sheets | Reads the new-order emails your marketplace or website sends you (Daraz, Noon, Amazon or your own shop) and writes each order as a row: number, customer, items, total and city. | Intermediate |
+  | AI email replies you approve first | For each new customer email, Gemini drafts a reply from your business facts; you approve or reject it in RXJ (Approvals), and only approved replies are sent, in the same thread. | Intermediate |
+  | Daily Shopify sales email | Every morning at 08:00 (Pakistan time), emails you yesterday's paid Shopify orders: how many, the total and the list. | Intermediate |
+  | Weekly PDF report from a Google Sheet | Every Monday at 09:00 (Pakistan time), reads a Google Sheet (sales, expenses or donations), totals the amount per category and emails you a PDF report. | Intermediate |
+  | School admission enquiries | Parents fill in an admission form; the enquiry is saved to a Google Sheet and the parent gets an email straight away with the fee for that class and the next step. | Intermediate |
+  | Shopify paid orders ledger in Google Sheets | Every paid Shopify order becomes a row in a Google Sheet for your accounts: date, order, customer, phone, total, currency and payment method. | Intermediate |
+  | Website chat that answers order questions | A chat for your WooCommerce website: it looks up a visitor's orders by the email they ordered with and tells them the status, and answers delivery and return questions. | Intermediate |
+  | Website chat that answers from your documents | A chat widget for your website that answers only from your own documents: brochures, price lists, FAQs and policies in a Google Drive folder. | Intermediate |
+  | Staff check-in on Telegram | Staff send "in" or "out" (or a short note) to your Telegram bot and it is logged with the time and their name in a Google Sheet, so you have a simple attendance record. | Intermediate |
+  | New Shopify order alert on Telegram | Every new Shopify order posts a short summary to your team's Telegram group: order number, customer, phone, city and total, so packing can start at once. | Free |
+  | Simple AI bot on Telegram | A Telegram bot that answers any question with Gemini, in the language it is asked in. | Free |
+  | Staff knowledge bot on Telegram | Your staff ask the Telegram bot questions (prices, procedures, policies) and get answers from the documents in a Google Drive folder. | Free |
+  | Customer feedback form with unhappy-customer alert | A feedback form for your shop, clinic or restaurant. | Free |
+  | Facebook Page FAQ bot on Messenger | Answers the common questions people send to your Facebook Page (hours, delivery, payment) on Messenger, in their language, from facts you write. | Free |
+  | Telegram voice notes to Notion | Send a voice note to your Telegram bot (in Urdu, Arabic or English) and it is written out as text and saved as a page in a Notion database: ideas, to-dos and meeting notes on the go. | Free |
+  | School announcements with principal approval | Teachers submit an announcement on a form; the principal approves or rejects it on Telegram, and approved announcements are posted to the parents' Telegram channel. | Free |
+  | Leave and expense requests with Telegram approval | Staff request leave or an expense on a form; the manager approves or rejects it with one tap on Telegram, and the person gets the answer by email. | Free |
+  | Booking form to Google Calendar | Customers pick a date and a time slot on a booking form; a 30-minute event goes into your Google Calendar and they get a confirmation email. | Free |
+  | Event registration with a PDF ticket | People register for your event, class or seminar on a form and get their own PDF ticket by email at once. | Free |
+  | Quote requests drafted by AI, sent after your approval | Customers ask for a price on a form; Gemini drafts a quote from your price list, you check it in RXJ (Approvals), and only approved quotes are emailed to the customer. | Free |
+  | Low stock alert on Telegram | When a Shopify product is updated and one of its variants has fewer than 5 in stock, you get a Telegram message with the product, variant and quantity, so you can reorder in time. | Free |
+  | Shipping email with tracking link | When a Shopify order is fulfilled, the customer gets an email in your own words with the courier and the tracking link. | Free |
+  | Product descriptions in English, Urdu and Arabic | When you add a product to Shopify, Gemini writes a short description in English, Urdu and Arabic from its title, type and tags and saves it on the product. | Free |
+  | Cancelled order alert from WooCommerce | When an order in your WooCommerce store is cancelled, your team gets a Telegram message with the order, customer, phone and total, so someone can call and save the sale or stop the parcel. | Free |
+  | PDF summary by email | Upload a PDF (a contract, a report, a tender, a circular) on a form and get a short summary with the key points by email a minute later. | Free |
+  | Invoice generator: PDF by email and to Google Drive | Fill in a short form and get a numbered PDF invoice: it is emailed to your customer and a copy is saved to a Google Drive folder. | Free |
 
   The plan is the cheapest one that can run every node of the template (WhatsApp is Pro, the AI Agent is Intermediate); an admin can raise it, not lower it. The agent's instructions and example details (clinic, menu, FAQ) are written in the template's language and are meant to be replaced. A seed file holds the workflow once and its texts per language; a setting written `@text:<key>` takes that text. To add a template or a translation, edit the JSON: the tests check that every language has every text.
+
+  More about the seeds:
+  * **Plans.** 17 of the 40 starters run on Free, 13 need Intermediate (Google Sheets, Gmail, schedules or the AI Agent) and 10 need Pro (WhatsApp). The tests check that each seed declares exactly the plan its nodes need. Beginner unlocks no node Free lacks, so no template needs it.
+  * **Description.** Each one is a summary for the card, then `Set up:` (`سیٹ اپ:`, `الإعداد:`) and the steps separated by semicolons; the details panel shows them as a numbered list. At most 600 characters.
+  * **Forms.** A form field's name (`{{form.<name>}}`) is made from the Latin letters of its label, so Urdu and Arabic labels end with the English word in brackets, for example `نام (Name)`. The tests check that a template's fields have the same names in all three languages and that every `{{form.x}}` it reads is one of its fields.
+  * **Times.** Schedules run in UTC. A starter that runs at a local time has its cron per language: 18:00 is `0 13 * * *` in the English and Urdu versions (Pakistan) and `0 15 * * *` in the Arabic one (Saudi Arabia). Booking times carry the offset (`+05:00` / `+03:00`).
+  * **Left for the user.** Settings only the user can give (Phone Number ID, Chat ID, a Drive file or folder, Store URL, Shop Domain) are saved empty, and the workflow opens with those nodes marked Not Configured.
+  * **Check against the editor.** `npx tsx scripts/check-starter-templates.ts` runs every starter in every language through the same check "Build with AI" uses before a workflow goes into the editor (node types, operations, required settings, ports and connections) against the real node registry, builds the editor's nodes and edges, and checks the declared plan. No database or network.
 
 ## Build with AI
 

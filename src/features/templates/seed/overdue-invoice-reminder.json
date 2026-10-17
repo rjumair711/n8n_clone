@@ -1,0 +1,130 @@
+{
+  "key": "overdue_invoice_reminder",
+  "category": "Reminders",
+  "minPlan": "INTERMEDIATE",
+  "nodes": [
+    {
+      "id": "schedule",
+      "type": "SCHEDULE_TRIGGER",
+      "position": {
+        "x": 0,
+        "y": 0
+      },
+      "data": {
+        "variableName": "scheduleTrigger",
+        "cronExpression": "@text:cronExpression"
+      }
+    },
+    {
+      "id": "sheet",
+      "type": "GOOGLE_DRIVE",
+      "position": {
+        "x": 320,
+        "y": 0
+      },
+      "data": {
+        "variableName": "invoiceSheet",
+        "operation": "download_file",
+        "fileId": ""
+      }
+    },
+    {
+      "id": "rows",
+      "type": "EXTRACT_FROM_FILE",
+      "position": {
+        "x": 640,
+        "y": 0
+      },
+      "data": {
+        "variableName": "invoices",
+        "operation": "csv",
+        "file": "invoiceSheet.file",
+        "header": "yes",
+        "delimiter": "comma"
+      }
+    },
+    {
+      "id": "overdue",
+      "type": "IF",
+      "position": {
+        "x": 960,
+        "y": 0
+      },
+      "data": {
+        "combinator": "and",
+        "conditions": [
+          {
+            "inputKey": "item.status",
+            "operator": "not_equals",
+            "value": "paid"
+          },
+          {
+            "inputKey": "item.days_overdue",
+            "operator": "greater_than",
+            "value": "0"
+          }
+        ]
+      }
+    },
+    {
+      "id": "tell",
+      "type": "TELEGRAM",
+      "position": {
+        "x": 1280,
+        "y": 0
+      },
+      "data": {
+        "variableName": "overdueAlert",
+        "chatId": "",
+        "text": "@text:alert",
+        "parseMode": "None"
+      }
+    }
+  ],
+  "connections": [
+    {
+      "fromNodeId": "schedule",
+      "toNodeId": "sheet",
+      "fromOutput": "source-1",
+      "toInput": "target-1"
+    },
+    {
+      "fromNodeId": "sheet",
+      "toNodeId": "rows",
+      "fromOutput": "source-1",
+      "toInput": "target-1"
+    },
+    {
+      "fromNodeId": "rows",
+      "toNodeId": "overdue",
+      "fromOutput": "source-1",
+      "toInput": "target-1"
+    },
+    {
+      "fromNodeId": "overdue",
+      "toNodeId": "tell",
+      "fromOutput": "true",
+      "toInput": "target-1"
+    }
+  ],
+  "text": {
+    "en": {
+      "name": "Overdue invoice reminder on Telegram",
+      "description": "Every morning at 09:00 (Pakistan time), sends you one Telegram message for each unpaid invoice in your sheet that is past its due date. Sheet columns (first row): client, invoice, amount, due, status, days_overdue, where days_overdue is the formula =TODAY()-D2. Set up: pick your Google credential and the sheet on Google Drive; pick your Telegram credential and your Chat ID on the Telegram node; write paid in status when an invoice is paid.",
+      "cronExpression": "0 4 * * *",
+      "alert": "Overdue: {{item.client}}, invoice {{item.invoice}}, {{item.amount}}, due {{item.due}} ({{item.days_overdue}} days late)"
+    },
+    "ur": {
+      "name": "ٹیلیگرام پر واجب الادا بلوں کی یاد دہانی",
+      "description": "ہر صبح 9 بجے (پاکستانی وقت) آپ کی شیٹ میں ہر اس غیر ادا شدہ بل کے لیے ٹیلیگرام پیغام بھیجتا ہے جس کی آخری تاریخ گزر چکی ہو۔ شیٹ کے کالم (پہلی سطر): client, invoice, amount, due, status, days_overdue، جہاں days_overdue میں فارمولا ‎=TODAY()-D2‎ ہو۔ سیٹ اپ: Google Drive نوڈ پر گوگل credential اور شیٹ چنیں؛ Telegram نوڈ پر credential اور اپنا Chat ID دیں؛ بل ادا ہونے پر status میں paid لکھیں۔",
+      "cronExpression": "0 4 * * *",
+      "alert": "واجب الادا: {{item.client}}، بل {{item.invoice}}، رقم {{item.amount}}، آخری تاریخ {{item.due}} ({{item.days_overdue}} دن تاخیر)"
+    },
+    "ar": {
+      "name": "تذكير بالفواتير المتأخرة عبر تيليجرام",
+      "description": "كل صباح الساعة 09:00 (بتوقيت السعودية) يرسل إليك رسالة تيليجرام لكل فاتورة غير مدفوعة في جدولك تجاوزت تاريخ استحقاقها. أعمدة الجدول (الصف الأول): client, invoice, amount, due, status, days_overdue، حيث days_overdue هي المعادلة ‎=TODAY()-D2‎. الإعداد: اختر حساب Google والجدول في Google Drive؛ اختر credential تيليجرام وChat ID في عقدة Telegram؛ اكتب paid في status عند سداد الفاتورة.",
+      "cronExpression": "0 6 * * *",
+      "alert": "متأخرة: {{item.client}}، الفاتورة {{item.invoice}}، المبلغ {{item.amount}}، الاستحقاق {{item.due}} (متأخرة {{item.days_overdue}} يوماً)"
+    }
+  }
+}
