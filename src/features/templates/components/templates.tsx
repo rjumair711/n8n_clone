@@ -1,13 +1,11 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useCallback, useDeferredValue, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { SubscriptionPlan } from "@prisma/client";
 import {
-    EyeOffIcon,
     LanguagesIcon,
     LayoutTemplateIcon,
-    LockIcon,
     PencilIcon,
     PlusIcon,
     SearchIcon,
@@ -18,17 +16,9 @@ import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { useTRPC } from "@/trpc/client";
 import { getNodeLabel } from "@/config/node-labels";
+import { PLAN_ORDER } from "@/config/plans";
 import { UpgradeModal } from "@/components/upgrade-modal";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import {
-    Card,
-    CardContent,
-    CardDescription,
-    CardFooter,
-    CardHeader,
-    CardTitle,
-} from "@/components/ui/card";
 import {
     Dialog,
     DialogContent,
@@ -59,10 +49,12 @@ import {
 } from "../lib/template-languages";
 import type { TemplateSecretFinding } from "../lib/template-secrets";
 import { useInvalidateUsage } from "@/features/subscription/hook/use-current-plan";
+import { TemplateCard, TemplateDetailsSheet } from "./template-card";
 
-// Triggers and plumbing say little about what a template does
-const HIDDEN_BADGE_TYPES = new Set(["MANUAL_TRIGGER", "INITIAL", "SET_VARIABLE", "MERGE"]);
-const MAX_BADGES = 5;
+// Cards shown at first, and added by each "Load more"
+const PAGE_SIZE = 24;
+
+type SortOrder = "popular" | "newest";
 
 type TemplateForm = {
     id?: string;
@@ -103,9 +95,19 @@ export const Templates = () => {
     const isAdmin = !!data?.isAdmin && !needsTwoFactor;
 
     const [search, setSearch] = useState("");
+    // Typing stays quick: the grid follows a moment later
+    const deferredSearch = useDeferredValue(search);
     const [category, setCategory] = useState("All");
     // "all", or the language of the templates shown
     const [language, setLanguage] = useState("all");
+    // "all", or the plan the templates shown need
+    const [plan, setPlan] = useState("all");
+    const [sort, setSort] = useState<SortOrder>("popular");
+    const [shown, setShown] = useState(PAGE_SIZE);
+    // The details panel: which template, and whether it is open (the
+    // template is kept while the panel slides out)
+    const [detailsId, setDetailsId] = useState<string | null>(null);
+    const [detailsOpen, setDetailsOpen] = useState(false);
     // ADMIN: the starter templates dialog, what is ticked in it, and whether
     // they are added published
     const [startersOpen, setStartersOpen] = useState(false);
@@ -200,30 +202,69 @@ export const Templates = () => {
         })
     );
 
-    const items = data?.items ?? [];
+    // Stable while the query data is: the lists below are only worked out
+    // again when it, or a filter, changes
+    const items = useMemo(() => data?.items ?? [], [data]);
 
     const categories = useMemo(
-        () => ["All", ...new Set(items.map((item) => item.category))],
+        () => ["All", ...[...new Set(items.map((item) => item.category))].sort()],
         [items]
     );
 
-    // Only the languages the gallery has templates in
-    const languages = TEMPLATE_LANGUAGES.filter((entry) =>
-        items.some((item) => getTemplateLanguage(item.language).value === entry.value)
+    // Only the languages and plans the gallery has templates in
+    const languages = useMemo(
+        () =>
+            TEMPLATE_LANGUAGES.filter((entry) =>
+                items.some((item) => getTemplateLanguage(item.language).value === entry.value)
+            ),
+        [items]
+    );
+    const plans = useMemo(
+        () => PLAN_ORDER.filter((name) => items.some((item) => item.minPlan === name)),
+        [items]
     );
 
-    const visible = items.filter((item) => {
-        const query = search.trim().toLowerCase();
+    const matching = useMemo(() => {
+        const query = deferredSearch.trim().toLowerCase();
 
-        return (
-            (category === "All" || item.category === category) &&
-            (language === "all" || getTemplateLanguage(item.language).value === language) &&
-            (!query ||
-                item.name.toLowerCase().includes(query) ||
-                item.description.toLowerCase().includes(query) ||
-                item.nodeTypes.some((type) => getNodeLabel(type).toLowerCase().includes(query)))
+        const found = items.filter(
+            (item) =>
+                (category === "All" || item.category === category) &&
+                (language === "all" || getTemplateLanguage(item.language).value === language) &&
+                (plan === "all" || item.minPlan === plan) &&
+                (!query ||
+                    item.name.toLowerCase().includes(query) ||
+                    item.description.toLowerCase().includes(query) ||
+                    item.nodeTypes.some((type) => getNodeLabel(type).toLowerCase().includes(query)))
         );
-    });
+
+        return found.sort((a, b) =>
+            sort === "popular" && b.useCount !== a.useCount
+                ? b.useCount - a.useCount
+                : new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+        );
+    }, [items, deferredSearch, category, language, plan, sort]);
+
+    const visible = matching.slice(0, shown);
+
+    // A new filter starts again at the first page
+    const filterBy =
+        <T,>(set: (value: T) => void) =>
+        (value: T) => {
+            set(value);
+            setShown(PAGE_SIZE);
+        };
+
+    const details = items.find((item) => item.id === detailsId) ?? null;
+
+    // Stable, so a card only renders again when its template changes
+    const applyMutate = applyTemplate.mutate;
+    const onUse = useCallback((id: string) => applyMutate({ id }), [applyMutate]);
+    const onUpgrade = useCallback(() => setUpgradeOpen(true), []);
+    const onOpenDetails = useCallback((id: string) => {
+        setDetailsId(id);
+        setDetailsOpen(true);
+    }, []);
 
     const submitForm = () => {
         if (!form) return;
@@ -258,7 +299,9 @@ export const Templates = () => {
         (!!form.id || !!form.workflowId);
 
     return (
-        <div className="mx-auto w-full max-w-6xl space-y-6 p-4 md:p-8">
+        // A container: the grid's columns follow the width the page gets
+        // next to the sidebar, not the window's
+        <div className="@container mx-auto w-full max-w-[1600px] space-y-6 p-4 md:p-8">
             <UpgradeModal open={upgradeOpen} onOpenChange={setUpgradeOpen} />
 
             <div className="flex flex-wrap items-start justify-between gap-4">
@@ -285,54 +328,75 @@ export const Templates = () => {
             {needsTwoFactor && (
                 <div className="rounded-md border border-amber-500/50 bg-amber-500/5 p-3 text-sm">
                     Turn on two-factor authentication to publish, edit and delete templates.{" "}
-                    <Link href="/settings/security" className="underline underline-offset-4">
+                    <Link href="/settings/security" prefetch={false} className="underline underline-offset-4">
                         Open Security settings
                     </Link>
                 </div>
             )}
 
-            <div className="flex flex-wrap items-center gap-3">
-                <div className="relative w-full max-w-xs">
+            <div className="flex flex-wrap items-center gap-2">
+                <div className="relative w-full sm:w-64">
                     <SearchIcon className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
                     <Input
                         className="pl-9"
                         placeholder="Search templates"
+                        aria-label="Search templates"
                         value={search}
-                        onChange={(event) => setSearch(event.target.value)}
+                        onChange={(event) => filterBy(setSearch)(event.target.value)}
                     />
                 </div>
-                {languages.length > 1 && (
-                    <Select value={language} onValueChange={setLanguage}>
-                        <SelectTrigger className="w-44" aria-label="Language">
-                            <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                            <SelectItem value="all">All languages</SelectItem>
-                            {languages.map((entry) => (
-                                <SelectItem key={entry.value} value={entry.value}>
-                                    {entry.label}
-                                </SelectItem>
-                            ))}
-                        </SelectContent>
-                    </Select>
-                )}
-                <div className="flex flex-wrap gap-2">
-                    {categories.map((name) => (
-                        <Button
-                            key={name}
-                            size="sm"
-                            variant={category === name ? "default" : "outline"}
-                            onClick={() => setCategory(name)}
-                        >
-                            {name}
-                        </Button>
-                    ))}
-                </div>
+                <Select value={category} onValueChange={filterBy(setCategory)}>
+                    <SelectTrigger className="w-full sm:w-44" aria-label="Category">
+                        <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                        {categories.map((name) => (
+                            <SelectItem key={name} value={name}>
+                                {name === "All" ? "All categories" : name}
+                            </SelectItem>
+                        ))}
+                    </SelectContent>
+                </Select>
+                <Select value={plan} onValueChange={filterBy(setPlan)}>
+                    <SelectTrigger className="w-full sm:w-40" aria-label="Plan">
+                        <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                        <SelectItem value="all">All plans</SelectItem>
+                        {plans.map((name) => (
+                            <SelectItem key={name} value={name}>
+                                {PLAN_NAMES[name]}
+                            </SelectItem>
+                        ))}
+                    </SelectContent>
+                </Select>
+                <Select value={language} onValueChange={filterBy(setLanguage)}>
+                    <SelectTrigger className="w-full sm:w-44" aria-label="Language">
+                        <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                        <SelectItem value="all">All languages</SelectItem>
+                        {languages.map((entry) => (
+                            <SelectItem key={entry.value} value={entry.value}>
+                                {entry.label}
+                            </SelectItem>
+                        ))}
+                    </SelectContent>
+                </Select>
+                <Select value={sort} onValueChange={(value) => filterBy(setSort)(value as SortOrder)}>
+                    <SelectTrigger className="w-full sm:ms-auto sm:w-40" aria-label="Sort">
+                        <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                        <SelectItem value="popular">Most used</SelectItem>
+                        <SelectItem value="newest">Newest</SelectItem>
+                    </SelectContent>
+                </Select>
             </div>
 
             {isLoading ? (
                 <p className="text-sm text-muted-foreground">Loading templates...</p>
-            ) : visible.length === 0 ? (
+            ) : matching.length === 0 ? (
                 <div className="flex flex-col items-center gap-2 rounded-lg border border-dashed py-16 text-center">
                     <LayoutTemplateIcon className="size-8 text-muted-foreground/40" />
                     <p className="text-sm text-muted-foreground">
@@ -344,89 +408,29 @@ export const Templates = () => {
                     </p>
                 </div>
             ) : (
-                <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-                    {visible.map((template) => {
-                        const badges = template.nodeTypes.filter(
-                            (type) => !HIDDEN_BADGE_TYPES.has(type)
-                        );
-                        // Urdu and Arabic read right to left
-                        const written = getTemplateLanguage(template.language);
-
-                        return (
-                            <Card key={template.id} className="flex flex-col shadow-none">
-                                <CardHeader>
-                                    <div className="flex items-start justify-between gap-2">
-                                        <CardTitle className="text-base" lang={written.value} dir={written.dir}>
-                                            {template.name}
-                                        </CardTitle>
-                                        <Badge variant={template.minPlan === "FREE" ? "secondary" : "default"}>
-                                            {template.locked && <LockIcon className="size-3" />}
-                                            {PLAN_NAMES[template.minPlan]}
-                                        </Badge>
-                                    </div>
-                                    <CardDescription>
-                                        {template.category}
-                                        {written.value !== DEFAULT_TEMPLATE_LANGUAGE && ` · ${written.label}`}
-                                    </CardDescription>
-                                </CardHeader>
-                                <CardContent className="flex-1 space-y-3">
-                                    <p
-                                        className="text-sm text-muted-foreground"
-                                        lang={written.value}
-                                        dir={written.dir}
-                                    >
-                                        {template.description}
-                                    </p>
-                                    <div className="flex flex-wrap gap-1.5">
-                                        {badges.slice(0, MAX_BADGES).map((type) => (
-                                            <Badge key={type} variant="outline" className="font-normal">
-                                                {getNodeLabel(type)}
-                                            </Badge>
-                                        ))}
-                                        {badges.length > MAX_BADGES && (
-                                            <Badge variant="outline" className="font-normal">
-                                                +{badges.length - MAX_BADGES}
-                                            </Badge>
-                                        )}
-                                    </div>
-                                    {isAdmin && (
-                                        <p className="flex items-center gap-1.5 text-xs text-muted-foreground">
-                                            {!template.published && (
-                                                <>
-                                                    <EyeOffIcon className="size-3" /> Hidden &bull;{" "}
-                                                </>
-                                            )}
-                                            Used {template.useCount} time{template.useCount === 1 ? "" : "s"}
-                                        </p>
-                                    )}
-                                </CardContent>
-                                <CardFooter className="gap-2">
-                                    <Button
-                                        className="flex-1"
-                                        variant={template.locked ? "outline" : "default"}
-                                        disabled={applyTemplate.isPending}
-                                        onClick={() =>
-                                            template.locked
-                                                ? setUpgradeOpen(true)
-                                                : applyTemplate.mutate({ id: template.id })
-                                        }
-                                    >
-                                        {template.locked ? (
-                                            <>
-                                                <LockIcon className="size-4" />
-                                                Upgrade to use
-                                            </>
-                                        ) : (
-                                            "Use template"
-                                        )}
-                                    </Button>
-                                    {isAdmin && (
+                <>
+                    {/* 1 column on a phone, 3 next to the sidebar at 1366px, 4 on wide screens */}
+                    <div className="grid grid-cols-1 gap-4 @xl:grid-cols-2 @4xl:grid-cols-3 @7xl:grid-cols-4">
+                        {visible.map((template) => (
+                            <TemplateCard
+                                key={template.id}
+                                template={template}
+                                pending={applyTemplate.isPending}
+                                onUse={onUse}
+                                onUpgrade={onUpgrade}
+                                onOpen={onOpenDetails}
+                                adminActions={
+                                    isAdmin && (
                                         <>
+                                            <span className="text-xs text-muted-foreground" title="Times used">
+                                                {template.useCount}×
+                                            </span>
                                             <Button
                                                 size="icon"
                                                 variant="ghost"
                                                 title="Edit template"
-                                                onClick={() =>
+                                                onClick={(event) => {
+                                                    event.stopPropagation();
                                                     openForm({
                                                         id: template.id,
                                                         workflowId: "",
@@ -436,8 +440,8 @@ export const Templates = () => {
                                                         language: getTemplateLanguage(template.language).value,
                                                         minPlan: template.minPlan,
                                                         published: template.published,
-                                                    })
-                                                }
+                                                    });
+                                                }}
                                             >
                                                 <PencilIcon className="size-4" />
                                             </Button>
@@ -446,18 +450,41 @@ export const Templates = () => {
                                                 variant="ghost"
                                                 title="Delete template"
                                                 disabled={removeTemplate.isPending}
-                                                onClick={() => removeTemplate.mutate({ id: template.id })}
+                                                onClick={(event) => {
+                                                    event.stopPropagation();
+                                                    removeTemplate.mutate({ id: template.id });
+                                                }}
                                             >
                                                 <TrashIcon className="size-4" />
                                             </Button>
                                         </>
-                                    )}
-                                </CardFooter>
-                            </Card>
-                        );
-                    })}
-                </div>
+                                    )
+                                }
+                            />
+                        ))}
+                    </div>
+
+                    <div className="flex flex-col items-center gap-2">
+                        <p className="text-xs text-muted-foreground">
+                            Showing {visible.length} of {matching.length}
+                        </p>
+                        {visible.length < matching.length && (
+                            <Button variant="outline" onClick={() => setShown((count) => count + PAGE_SIZE)}>
+                                Load more
+                            </Button>
+                        )}
+                    </div>
+                </>
             )}
+
+            <TemplateDetailsSheet
+                template={details}
+                open={detailsOpen}
+                onOpenChange={setDetailsOpen}
+                pending={applyTemplate.isPending}
+                onUse={onUse}
+                onUpgrade={onUpgrade}
+            />
 
             <Dialog open={!!form} onOpenChange={(open) => !open && openForm(null)}>
                 <DialogContent className="max-h-[90vh] overflow-y-auto">
@@ -591,6 +618,10 @@ export const Templates = () => {
                                     </Select>
                                 </div>
                             </div>
+                            <p className="-mt-2 text-xs text-muted-foreground">
+                                If the template&apos;s nodes need a higher plan (WhatsApp, Gmail,
+                                Google Sheets, schedules, AI Agent, SSH), it is saved with that plan.
+                            </p>
 
                             <div className="flex items-center justify-between gap-4 rounded-md border p-3">
                                 <div>

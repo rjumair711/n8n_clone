@@ -634,11 +634,11 @@ Repeat with Title `رسید نمبر 42` and Content `محترم علی خان،
 
 | # | Do | Expect |
 |---|----|--------|
-| 1 | As admin open **Templates** | a **Starter templates** button next to **New template**. With only English templates in the gallery there is no language filter |
+| 1 | As admin open **Templates** | a **Starter templates** button next to **New template** |
 | 2 | **Starter templates** | 15 lines: five templates, each in English, Urdu and Arabic, with its language and plan. Urdu and Arabic names read right to left |
 | 3 | **Select all**, leave "Publish right away" off, **Add 15 to the gallery** | "15 starter templates added". They are in the gallery marked Hidden; the language filter appeared |
 | 4 | Open **Starter templates** again | every line is ticked, disabled and says "In the gallery" |
-| 5 | Pick **اردو (Urdu)** in the language filter | only the five Urdu templates, right to left, each with "· اردو (Urdu)" after its category. **All languages** shows everything again |
+| 5 | Pick **اردو (Urdu)** in the language filter | only the five Urdu templates, right to left, each with an "Urdu" badge. **All languages** shows everything again |
 | 6 | Combine the filter with a category (WhatsApp bots) and with the search | the three work together |
 | 7 | Edit an Urdu template | Language shows اردو (Urdu). Switch **Published** on and save: "Template saved" |
 | 8 | Delete one starter template, then add it again from **Starter templates** | it can be ticked again and comes back as shipped |
@@ -648,6 +648,23 @@ Repeat with Title `رسید نمبر 42` and Content `محترم علی خان،
 | 12 | **Use template** on the English "School fee reminder on WhatsApp" | Schedule Trigger → Google Drive → Extract from File → IF → WhatsApp (Send Template, `fee_reminder`, `en_US`). The Arabic copy has language code `ar`, the Urdu one `ur` |
 | 13 | **New template** from one of your workflows, Language العربية (Arabic) | it is saved as Arabic and found by the Arabic filter |
 | 14 | A template made before this task | English; nothing about it changed |
+
+**Gallery and plan levels.** No migration. Use a window of 1366 × 768 with the sidebar open unless a step says otherwise.
+
+| # | Do | Expect |
+|---|----|--------|
+| 1 | Open **Templates** | cards of equal height in 3 columns: plan badge and language at the top, name, category, a summary of at most two lines, up to 4 node chips then "+N", and a button at the bottom |
+| 2 | Plan badges of the four built-in templates | CV screening **Free** (green), Invoice to Google Sheets **Intermediate** (violet), Shopify abandoned cart **Intermediate**, Shopify order paid: WhatsApp **Pro** (amber). None says Free unless all its nodes run on Free |
+| 3 | Widen the window to 1920 px; then make it phone-sized | 4 columns; then 1 column, with the filters stacked |
+| 4 | Click a card (not its button) | the **Details** panel opens on the right: plan, language, category, name, the summary, **Setup** as a numbered list, **Nodes used** with every node, and the button. Esc or × closes it |
+| 5 | Open an Urdu template's details | the text and the step list read right to left |
+| 6 | Search "sheets"; pick a category; pick plan **Pro**; pick a language; switch the sort between **Most used** and **Newest** | each narrows or reorders the grid; together they combine. "No templates match your search." when nothing does |
+| 7 | With more than 24 templates (add all 15 starters) | 24 cards and "Showing 24 of N" with **Load more**; it adds the rest and disappears. Changing a filter starts at 24 again |
+| 8 | As an account on **Free** with no active trial (set `trialEndsAt` in the past on a test account) | the WhatsApp and Intermediate templates are still listed, with a lock on the badge and **Upgrade** instead of **Use template**, on the card and in the panel. **Upgrade** opens the upgrade dialog |
+| 9 | Same account: call "Use template" for the WhatsApp template anyway (for example from the browser console with the tRPC request copied from an unlocked template, changing the id) | refused: "This template requires the Pro plan." |
+| 10 | Same account on a trial | every template is open, except one that has an SSH node |
+| 11 | As admin, **New template** from a workflow with a Gmail node, plan **Free** | saved; the gallery shows it as **Intermediate** |
+| 12 | DevTools → Network on the Templates page, wait a minute | no repeating requests; hovering cards and the Security link fetches nothing |
 
 ## T11. API keys
 
