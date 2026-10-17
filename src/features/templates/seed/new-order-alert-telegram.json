@@ -1,0 +1,57 @@
+{
+  "key": "new_order_alert_telegram",
+  "category": "E-commerce",
+  "minPlan": "FREE",
+  "nodes": [
+    {
+      "id": "order",
+      "type": "SHOPIFY_TRIGGER",
+      "position": {
+        "x": 0,
+        "y": 0
+      },
+      "data": {
+        "event": "orders/create"
+      }
+    },
+    {
+      "id": "alert",
+      "type": "TELEGRAM",
+      "position": {
+        "x": 320,
+        "y": 0
+      },
+      "data": {
+        "variableName": "orderAlert",
+        "chatId": "",
+        "text": "@text:alert",
+        "parseMode": "None"
+      }
+    }
+  ],
+  "connections": [
+    {
+      "fromNodeId": "order",
+      "toNodeId": "alert",
+      "fromOutput": "source-1",
+      "toInput": "target-1"
+    }
+  ],
+  "text": {
+    "en": {
+      "name": "New Shopify order alert on Telegram",
+      "description": "Every new Shopify order posts a short summary to your team's Telegram group: order number, customer, phone, city and total, so packing can start at once. Set up: put your signing secret on the Shopify Trigger and create the Order creation webhook in Shopify with its Webhook URL; add your bot to the group, then pick your Telegram credential and type the group's Chat ID on the Telegram node.",
+      "alert": "New order {{shopify.order.name}}\nCustomer: {{shopify.customerName}} {{shopify.phone}}\nCity: {{shopify.order.shipping_address.city}}\nTotal: {{shopify.order.total_price}} {{shopify.order.currency}}"
+    },
+    "ur": {
+      "name": "ٹیلیگرام پر نئے Shopify آرڈر کی اطلاع",
+      "description": "ہر نیا Shopify آرڈر آپ کی ٹیم کے ٹیلیگرام گروپ میں مختصر خلاصہ بھیجتا ہے: آرڈر نمبر، گاہک، فون، شہر اور رقم، تاکہ پیکنگ فوراً شروع ہو سکے۔ سیٹ اپ: Shopify Trigger پر signing secret لکھیں اور Shopify میں اس کے Webhook URL سے Order creation ویب ہک بنائیں؛ بوٹ کو گروپ میں شامل کریں، پھر Telegram نوڈ پر credential چنیں اور گروپ کا Chat ID لکھیں۔",
+      "alert": "نیا آرڈر {{shopify.order.name}}\nگاہک: {{shopify.customerName}} {{shopify.phone}}\nشہر: {{shopify.order.shipping_address.city}}\nرقم: {{shopify.order.total_price}} {{shopify.order.currency}}"
+    },
+    "ar": {
+      "name": "تنبيه طلب Shopify جديد على تيليجرام",
+      "description": "كل طلب Shopify جديد يرسل ملخصاً قصيراً إلى مجموعة فريقك على تيليجرام: رقم الطلب والعميل والهاتف والمدينة والإجمالي، ليبدأ التغليف فوراً. الإعداد: أدخل signing secret في Shopify Trigger وأنشئ webhook لحدث Order creation في Shopify بعنوان Webhook URL؛ أضف البوت إلى المجموعة ثم اختر credential تيليجرام واكتب Chat ID للمجموعة في عقدة Telegram.",
+      "alert": "طلب جديد {{shopify.order.name}}\nالعميل: {{shopify.customerName}} {{shopify.phone}}\nالمدينة: {{shopify.order.shipping_address.city}}\nالإجمالي: {{shopify.order.total_price}} {{shopify.order.currency}}"
+    }
+  }
+}

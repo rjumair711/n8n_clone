@@ -1,0 +1,159 @@
+{
+  "key": "appointment_reminders",
+  "category": "Reminders",
+  "minPlan": "PRO",
+  "nodes": [
+    {
+      "id": "schedule",
+      "type": "SCHEDULE_TRIGGER",
+      "position": {
+        "x": 0,
+        "y": 0
+      },
+      "data": {
+        "variableName": "scheduleTrigger",
+        "cronExpression": "@text:cronExpression"
+      }
+    },
+    {
+      "id": "tomorrow",
+      "type": "DATE_TIME",
+      "position": {
+        "x": 320,
+        "y": 0
+      },
+      "data": {
+        "variableName": "tomorrow",
+        "operation": "manipulate",
+        "timezone": "@text:timezone",
+        "formatString": "YYYY-MM-DD",
+        "action": "add",
+        "amount": 1,
+        "unit": "days"
+      }
+    },
+    {
+      "id": "sheet",
+      "type": "GOOGLE_DRIVE",
+      "position": {
+        "x": 640,
+        "y": 0
+      },
+      "data": {
+        "variableName": "bookings",
+        "operation": "download_file",
+        "fileId": ""
+      }
+    },
+    {
+      "id": "rows",
+      "type": "EXTRACT_FROM_FILE",
+      "position": {
+        "x": 960,
+        "y": 0
+      },
+      "data": {
+        "variableName": "appointments",
+        "operation": "csv",
+        "file": "bookings.file",
+        "header": "yes",
+        "delimiter": "comma"
+      }
+    },
+    {
+      "id": "due",
+      "type": "IF",
+      "position": {
+        "x": 1280,
+        "y": 0
+      },
+      "data": {
+        "combinator": "and",
+        "conditions": [
+          {
+            "inputKey": "item.date",
+            "operator": "equals",
+            "value": "{{tomorrow.result}}"
+          },
+          {
+            "inputKey": "item.phone",
+            "operator": "exists",
+            "value": ""
+          }
+        ]
+      }
+    },
+    {
+      "id": "remind",
+      "type": "WHATSAPP",
+      "position": {
+        "x": 1600,
+        "y": 0
+      },
+      "data": {
+        "variableName": "reminder",
+        "operation": "send_template",
+        "phoneNumberId": "",
+        "to": "{{item.phone}}",
+        "templateName": "appointment_reminder",
+        "languageCode": "@text:languageCode",
+        "templateParamsJson": "[{{json item.name}}, {{json item.date}}, {{json item.time}}]"
+      }
+    }
+  ],
+  "connections": [
+    {
+      "fromNodeId": "schedule",
+      "toNodeId": "tomorrow",
+      "fromOutput": "source-1",
+      "toInput": "target-1"
+    },
+    {
+      "fromNodeId": "tomorrow",
+      "toNodeId": "sheet",
+      "fromOutput": "source-1",
+      "toInput": "target-1"
+    },
+    {
+      "fromNodeId": "sheet",
+      "toNodeId": "rows",
+      "fromOutput": "source-1",
+      "toInput": "target-1"
+    },
+    {
+      "fromNodeId": "rows",
+      "toNodeId": "due",
+      "fromOutput": "source-1",
+      "toInput": "target-1"
+    },
+    {
+      "fromNodeId": "due",
+      "toNodeId": "remind",
+      "fromOutput": "true",
+      "toInput": "target-1"
+    }
+  ],
+  "text": {
+    "en": {
+      "name": "Appointment reminders on WhatsApp",
+      "description": "Every evening at 18:00 (Pakistan time), reads your bookings sheet and sends a WhatsApp reminder to everyone booked for tomorrow. Sheet columns (first row): name, phone, date (YYYY-MM-DD), time. Set up: create an approved WhatsApp template appointment_reminder with 3 variables (name, date, time); pick your Google credential and the sheet on Google Drive; pick your WhatsApp credential and type your Phone Number ID on the WhatsApp node.",
+      "cronExpression": "0 13 * * *",
+      "timezone": "Asia/Karachi",
+      "languageCode": "en_US"
+    },
+    "ur": {
+      "name": "واٹس ایپ پر اپائنٹمنٹ کی یاد دہانی",
+      "description": "ہر شام 6 بجے (پاکستانی وقت) آپ کی بکنگ شیٹ پڑھتا ہے اور کل کی بکنگ والے ہر شخص کو واٹس ایپ پر یاد دہانی بھیجتا ہے۔ شیٹ کے کالم (پہلی سطر): name, phone, date (YYYY-MM-DD), time۔ سیٹ اپ: appointment_reminder نام کا منظور شدہ واٹس ایپ ٹیمپلیٹ بنائیں جس میں 3 متغیر ہوں (نام، تاریخ، وقت)؛ Google Drive نوڈ پر گوگل credential اور شیٹ چنیں؛ WhatsApp نوڈ پر واٹس ایپ credential اور Phone Number ID دیں۔",
+      "cronExpression": "0 13 * * *",
+      "timezone": "Asia/Karachi",
+      "languageCode": "ur"
+    },
+    "ar": {
+      "name": "تذكير بالمواعيد عبر واتساب",
+      "description": "كل مساء الساعة 18:00 (بتوقيت السعودية) يقرأ جدول الحجوزات ويرسل تذكيراً على واتساب لكل من لديه موعد غداً. أعمدة الجدول (الصف الأول): name, phone, date (YYYY-MM-DD), time. الإعداد: أنشئ قالب واتساب معتمداً باسم appointment_reminder بثلاثة متغيرات (الاسم، التاريخ، الوقت)؛ اختر حساب Google والجدول في Google Drive؛ اختر credential واتساب واكتب Phone Number ID في عقدة WhatsApp.",
+      "cronExpression": "0 15 * * *",
+      "timezone": "Asia/Riyadh",
+      "languageCode": "ar"
+    }
+  }
+}

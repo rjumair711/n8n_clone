@@ -1,0 +1,145 @@
+{
+  "key": "invoice_generator",
+  "category": "Forms",
+  "minPlan": "FREE",
+  "nodes": [
+    {
+      "id": "form",
+      "type": "FORM_TRIGGER",
+      "position": {
+        "x": 0,
+        "y": 0
+      },
+      "data": {
+        "formTitle": "@text:formTitle",
+        "formDescription": "@text:formDescription",
+        "formFields": "@text:formFields",
+        "submitLabel": "@text:submitLabel",
+        "afterSubmit": "message",
+        "thankYouMessage": "@text:thankYouMessage",
+        "captcha": "true"
+      }
+    },
+    {
+      "id": "totals",
+      "type": "CODE",
+      "position": {
+        "x": 320,
+        "y": 0
+      },
+      "data": {
+        "variableName": "invoice",
+        "code": "// Invoice number and totals\nconst quantity = Number(context.form.quantity || 0);\nconst price = Number(context.form.unit_price || 0);\nconst total = quantity * price;\nreturn {\n  number: \"INV-\" + String(Date.now()).slice(-8),\n  quantity: String(quantity),\n  price: price.toFixed(2),\n  total: total.toFixed(2),\n};",
+        "timeoutSeconds": 10
+      }
+    },
+    {
+      "id": "pdf",
+      "type": "PDF_GENERATOR",
+      "position": {
+        "x": 640,
+        "y": 0
+      },
+      "data": {
+        "variableName": "pdf",
+        "title": "@text:pdfTitle",
+        "content": "@text:pdfContent",
+        "fileName": "{{invoice.number}}.pdf",
+        "pageSize": "A4"
+      }
+    },
+    {
+      "id": "send",
+      "type": "EMAIL_SEND",
+      "position": {
+        "x": 960,
+        "y": 0
+      },
+      "data": {
+        "recipient": "{{form.customer_email}}",
+        "subject": "@text:pdfTitle",
+        "body": "@text:emailBody",
+        "attachments": "pdf.file"
+      }
+    },
+    {
+      "id": "store",
+      "type": "GOOGLE_DRIVE",
+      "position": {
+        "x": 1280,
+        "y": 0
+      },
+      "data": {
+        "variableName": "storedInvoice",
+        "operation": "upload_file",
+        "file": "pdf.file",
+        "fileName": "{{invoice.number}}.pdf",
+        "folderId": ""
+      }
+    }
+  ],
+  "connections": [
+    {
+      "fromNodeId": "form",
+      "toNodeId": "totals",
+      "fromOutput": "source-1",
+      "toInput": "target-1"
+    },
+    {
+      "fromNodeId": "totals",
+      "toNodeId": "pdf",
+      "fromOutput": "source-1",
+      "toInput": "target-1"
+    },
+    {
+      "fromNodeId": "pdf",
+      "toNodeId": "send",
+      "fromOutput": "source-1",
+      "toInput": "target-1"
+    },
+    {
+      "fromNodeId": "send",
+      "toNodeId": "store",
+      "fromOutput": "source-1",
+      "toInput": "target-1"
+    }
+  ],
+  "text": {
+    "en": {
+      "name": "Invoice generator: PDF by email and to Google Drive",
+      "description": "Fill in a short form and get a numbered PDF invoice: it is emailed to your customer and a copy is saved to a Google Drive folder. Works in English, Urdu or Arabic. Set up: put your business name, address and bank details in the PDF Generator; pick an SMTP credential on Email; pick your Google credential and a folder on Google Drive; keep the Form URL private.",
+      "formTitle": "New invoice",
+      "formDescription": "For your own use: fill this in to send an invoice.",
+      "formFields": "[{\"label\":\"Customer name\",\"type\":\"text\",\"required\":true,\"options\":\"\"},{\"label\":\"Customer email\",\"type\":\"email\",\"required\":true,\"options\":\"\"},{\"label\":\"Description\",\"type\":\"text\",\"required\":true,\"options\":\"\"},{\"label\":\"Quantity\",\"type\":\"number\",\"required\":true,\"options\":\"\"},{\"label\":\"Unit price\",\"type\":\"number\",\"required\":true,\"options\":\"\"}]",
+      "submitLabel": "Create invoice",
+      "thankYouMessage": "Invoice created and emailed.",
+      "pdfTitle": "Invoice {{invoice.number}}",
+      "pdfContent": "# Invoice {{invoice.number}}\n\nYour Business Name\nShop 1, Main Market, Lahore\n\n---\n\n## Bill to\n{{form.customer_name}}\n{{form.customer_email}}\n\n## Items\n- {{form.description}}: {{invoice.quantity}} x {{invoice.price}} = {{invoice.total}}\n\n---\n\nTotal: {{invoice.total}}\n\nBank: Example Bank, IBAN PK00 XXXX 0000 0000 0000 0000",
+      "emailBody": "Dear {{form.customer_name}},\n\nPlease find invoice {{invoice.number}} attached. Total: {{invoice.total}}.\n\nThank you for your business."
+    },
+    "ur": {
+      "name": "انوائس بنائیں: ای میل پر PDF اور گوگل ڈرائیو میں نقل",
+      "description": "ایک مختصر فارم بھریں اور نمبر والی PDF انوائس پائیں: یہ گاہک کو ای میل ہوتی ہے اور اس کی نقل گوگل ڈرائیو فولڈر میں محفوظ ہوتی ہے۔ اردو، انگریزی یا عربی میں۔ سیٹ اپ: PDF Generator میں اپنے کاروبار کا نام، پتہ اور بینک کی تفصیل لکھیں؛ Email پر SMTP credential چنیں؛ Google Drive پر گوگل credential اور فولڈر چنیں؛ Form URL صرف اپنے پاس رکھیں۔",
+      "formTitle": "نئی انوائس",
+      "formDescription": "اپنے استعمال کے لیے: انوائس بھیجنے کے لیے یہ فارم بھریں۔",
+      "formFields": "[{\"label\":\"گاہک کا نام (Customer name)\",\"type\":\"text\",\"required\":true,\"options\":\"\"},{\"label\":\"گاہک کا ای میل (Customer email)\",\"type\":\"email\",\"required\":true,\"options\":\"\"},{\"label\":\"تفصیل (Description)\",\"type\":\"text\",\"required\":true,\"options\":\"\"},{\"label\":\"تعداد (Quantity)\",\"type\":\"number\",\"required\":true,\"options\":\"\"},{\"label\":\"فی یونٹ قیمت (Unit price)\",\"type\":\"number\",\"required\":true,\"options\":\"\"}]",
+      "submitLabel": "انوائس بنائیں",
+      "thankYouMessage": "انوائس بن گئی اور ای میل ہو گئی۔",
+      "pdfTitle": "انوائس {{invoice.number}}",
+      "pdfContent": "# انوائس {{invoice.number}}\n\nآپ کے کاروبار کا نام\nدکان 1، مین مارکیٹ، لاہور\n\n---\n\n## بنام\n{{form.customer_name}}\n{{form.customer_email}}\n\n## اشیاء\n- {{form.description}}: {{invoice.quantity}} x {{invoice.price}} = {{invoice.total}}\n\n---\n\nکل رقم: {{invoice.total}}\n\nبینک: Example Bank، IBAN PK00 XXXX 0000 0000 0000 0000",
+      "emailBody": "محترم {{form.customer_name}}،\n\nانوائس {{invoice.number}} ساتھ منسلک ہے۔ کل رقم: {{invoice.total}}۔\n\nکاروبار کا شکریہ۔"
+    },
+    "ar": {
+      "name": "منشئ الفواتير: PDF بالبريد ونسخة في Google Drive",
+      "description": "املأ نموذجاً قصيراً واحصل على فاتورة PDF مرقمة: تُرسل إلى عميلك بالبريد وتُحفظ نسخة في مجلد Google Drive. بالعربية أو الإنجليزية أو الأردية. الإعداد: اكتب اسم نشاطك وعنوانه وبياناتك البنكية في PDF Generator؛ اختر credential لـ SMTP في Email؛ اختر حساب Google ومجلداً في Google Drive؛ احتفظ بـ Form URL لنفسك.",
+      "formTitle": "فاتورة جديدة",
+      "formDescription": "لاستخدامك الخاص: املأ هذا لإرسال فاتورة.",
+      "formFields": "[{\"label\":\"اسم العميل (Customer name)\",\"type\":\"text\",\"required\":true,\"options\":\"\"},{\"label\":\"بريد العميل (Customer email)\",\"type\":\"email\",\"required\":true,\"options\":\"\"},{\"label\":\"الوصف (Description)\",\"type\":\"text\",\"required\":true,\"options\":\"\"},{\"label\":\"الكمية (Quantity)\",\"type\":\"number\",\"required\":true,\"options\":\"\"},{\"label\":\"سعر الوحدة (Unit price)\",\"type\":\"number\",\"required\":true,\"options\":\"\"}]",
+      "submitLabel": "إنشاء الفاتورة",
+      "thankYouMessage": "تم إنشاء الفاتورة وإرسالها.",
+      "pdfTitle": "فاتورة {{invoice.number}}",
+      "pdfContent": "# فاتورة {{invoice.number}}\n\nاسم نشاطك التجاري\nمحل 1، السوق الرئيسي، الرياض\n\n---\n\n## إلى\n{{form.customer_name}}\n{{form.customer_email}}\n\n## البنود\n- {{form.description}}: {{invoice.quantity}} x {{invoice.price}} = {{invoice.total}}\n\n---\n\nالإجمالي: {{invoice.total}}\n\nالبنك: Example Bank، IBAN SA00 0000 0000 0000 0000 0000",
+      "emailBody": "عزيزي {{form.customer_name}}،\n\nمرفق الفاتورة {{invoice.number}}. الإجمالي: {{invoice.total}}.\n\nشكراً لتعاملك معنا."
+    }
+  }
+}

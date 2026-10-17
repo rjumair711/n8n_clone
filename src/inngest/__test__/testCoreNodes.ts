@@ -12782,20 +12782,24 @@ pour()</code></pre>
   });
 
   await test("every starter template is there in English, Urdu and Arabic", () => {
+    // The first five, then the 35 added with the template gallery
     assert.deepEqual(
-      starterTemplates.STARTER_SEEDS.map((seed) => seed.key),
+      starterTemplates.STARTER_SEEDS.slice(0, 5).map((seed) => seed.key),
       ["clinic_appointment_bot", "school_fee_reminder", "shop_order_bot", "real_estate_lead_bot", "support_faq_bot"]
     );
-    assert.equal(allStarters.length, 15);
-    assert.equal(new Set(allStarters.map((starter) => starter.id)).size, 15);
+    assert.equal(starterTemplates.STARTER_SEEDS.length, 40);
+    assert.equal(new Set(starterTemplates.STARTER_SEEDS.map((seed) => seed.key)).size, 40);
+    assert.equal(allStarters.length, 120);
+    assert.equal(new Set(allStarters.map((starter) => starter.id)).size, 120);
 
     for (const seed of starterTemplates.STARTER_SEEDS) {
       assert.match(seed.key, /^[a-z_]+$/);
       assert.deepEqual(Object.keys(seed.text).sort(), ["ar", "en", "ur"], seed.key);
 
       // Each language has the same texts, and the nodes use every one
+      // (a template that only moves data, like the orders ledger, has
+      // only its name and description to translate)
       const used = [...starterTemplates.findTextKeys(seed.nodes)].sort();
-      assert.ok(used.length > 0, seed.key);
 
       for (const language of ["en", "ur", "ar"]) {
         assert.deepEqual(
@@ -12859,6 +12863,63 @@ pour()</code></pre>
         ),
       /the text "systemMessage" is missing/
     );
+  });
+
+  await test("starter templates: the plan their nodes need, the same form in every language, setup steps", async () => {
+    const { getTemplateMinPlan, splitTemplateDescription } = await import("@/features/templates/lib/template-data");
+    const { parseFormFields } = await import("@/lib/form-fields");
+
+    // The plan a seed declares is the cheapest one that runs all its nodes
+    for (const starter of allStarters) {
+      assert.equal(getTemplateMinPlan("FREE", starter.nodeTypes), starter.minPlan, `${starter.key}: plan`);
+    }
+
+    // The 35 added with the gallery: 17 Free, 12 Intermediate, 6 Pro
+    const added = starterTemplates.STARTER_SEEDS.slice(5);
+    const plans = (plan: string) => added.filter((seed) => seed.minPlan === plan).length;
+    assert.deepEqual([plans("FREE"), plans("BEGINNER"), plans("INTERMEDIATE"), plans("PRO")], [17, 0, 12, 6]);
+    // A WhatsApp template is never shown as Free
+    for (const starter of allStarters) {
+      if (starter.nodeTypes.some((type) => type.startsWith("WHATSAPP"))) assert.equal(starter.minPlan, "PRO", starter.key);
+    }
+
+    for (const seed of starterTemplates.STARTER_SEEDS) {
+      const versions = allStarters.filter((starter) => starter.key === seed.key);
+
+      for (const starter of versions) {
+        const label = `${starter.key} (${starter.language})`;
+
+        // The card's summary and the panel's numbered steps
+        const { summary, steps } = splitTemplateDescription(starter.description);
+        assert.ok(summary.length > 20, `${label}: summary`);
+        assert.ok(steps.length >= 2, `${label}: ${steps.length} setup steps`);
+
+        // Every {{form.x}} the workflow reads is a field of its form
+        const formNode = starter.nodes.find((node) => node.type === "FORM_TRIGGER");
+        if (formNode) {
+          const names = new Set(parseFormFields(formNode.data.formFields).map((field) => field.name));
+          assert.ok(names.size > 0, label);
+          for (const match of JSON.stringify(starter.nodes).matchAll(/\{\{form\.([a-z0-9_]+)/g)) {
+            assert.ok(names.has(match[1]), `${label}: {{form.${match[1]}}} is not a field`);
+          }
+        }
+      }
+
+      // Urdu and Arabic labels keep the English word in brackets, so a
+      // field has the same name in every language
+      const fieldNames = versions.map((starter) => {
+        const formNode = starter.nodes.find((node) => node.type === "FORM_TRIGGER");
+        return formNode ? parseFormFields(formNode.data.formFields).map((field) => field.name).join(",") : "";
+      });
+      assert.equal(new Set(fieldNames).size, 1, `${seed.key}: ${fieldNames.join(" | ")}`);
+    }
+
+    // The check against the real node registry is a script of its own (the
+    // registry is browser code): npx tsx scripts/check-starter-templates.ts
+    const { readFileSync } = await import("node:fs");
+    const check = readFileSync("scripts/check-starter-templates.ts", "utf8");
+    assert.match(check, /checkGeneratedWorkflow\(raw, catalogue\)/);
+    assert.match(check, /toEditorGraph\(/);
   });
 
   await test("starter templates are valid workflows: no secrets, a model for every agent, a plan that can run them", async () => {
@@ -12936,29 +12997,46 @@ pour()</code></pre>
           assert.match(settings[tool.id].name, /^[a-z_]+$/);
           assert.ok(settings[tool.id].description.length > 20);
           assert.ok(String(agent.data.systemMessage).includes(settings[tool.id].name), `${label}: the prompt names the tool`);
-          assert.ok(getToolParameters(tool.type, tool.data).length >= 4, label);
-          assert.equal(getToolRisk(tool.type, tool.data), "write");
+          // Every tool fills in at least one value itself
+          assert.ok(getToolParameters(tool.type, tool.data).length >= 1, `${label}: ${tool.type} has no AI-filled value`);
           assert.equal(
             toolRequiresApproval({
               saved: settings[tool.id].requireApproval,
-              risk: "write",
+              risk: getToolRisk(tool.type, tool.data),
               defaultByRisk: agent.data.toolApprovalDefault === "risk",
             }),
             false,
             label
           );
-          // Who wrote is taken from WhatsApp, not asked from the model
-          assert.match(String(tool.data.rowData), /\{\{whatsapp\.from\}\}/);
+
+          // A booking or lead saved to a sheet: who wrote is taken from
+          // WhatsApp, not asked from the model
+          if (tool.type === "GOOGLE_SHEETS") {
+            assert.ok(getToolParameters(tool.type, tool.data).length >= 4, label);
+            assert.equal(getToolRisk(tool.type, tool.data), "write");
+            assert.match(String(tool.data.rowData), /\{\{whatsapp\.from\}\}/);
+          }
         }
       }
 
-      // A WhatsApp bot answers the person who wrote, from the number they wrote to
-      if (trigger.type === "WHATSAPP_TRIGGER") {
-        const reply = starter.nodes.find((node) => node.type === "WHATSAPP")!;
-        assert.equal(reply.data.to, "{{whatsapp.from}}");
-        assert.equal(reply.data.phoneNumberId, "{{whatsapp.phoneNumberId}}");
-        assert.equal(reply.data.message, "{{aiAgentOutput.output}}");
-        assert.deepEqual(trigger.data, {});
+      // A WhatsApp bot answers the person who wrote, from the number they
+      // wrote to; an agent's answer is what it sends
+      if (starter.nodes.some((node) => node.type === "WHATSAPP_TRIGGER")) {
+        for (const whatsappTrigger of starter.nodes.filter((node) => node.type === "WHATSAPP_TRIGGER")) {
+          assert.deepEqual(whatsappTrigger.data, {}, label);
+        }
+
+        const replies = starter.nodes.filter(
+          (node) => node.type === "WHATSAPP" && node.data.operation === "send_text"
+        );
+        assert.ok(replies.length > 0, `${label}: no reply`);
+        for (const reply of replies) {
+          assert.equal(reply.data.to, "{{whatsapp.from}}", label);
+          assert.equal(reply.data.phoneNumberId, "{{whatsapp.phoneNumberId}}", label);
+        }
+        if (agent) {
+          assert.ok(replies.some((reply) => reply.data.message === "{{aiAgentOutput.output}}"), label);
+        }
       }
 
       // Using it gives the user nodes of their own, tools still named

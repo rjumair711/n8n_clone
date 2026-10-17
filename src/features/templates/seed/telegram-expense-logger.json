@@ -1,0 +1,185 @@
+{
+  "key": "telegram_expense_logger",
+  "category": "Telegram",
+  "minPlan": "INTERMEDIATE",
+  "nodes": [
+    {
+      "id": "trigger",
+      "type": "TELEGRAM_TRIGGER",
+      "position": {
+        "x": 0,
+        "y": 0
+      },
+      "data": {}
+    },
+    {
+      "id": "extract",
+      "type": "INFORMATION_EXTRACTOR",
+      "position": {
+        "x": 320,
+        "y": 0
+      },
+      "data": {
+        "variableName": "expense",
+        "inputText": "{{telegram.message.text}}",
+        "attributes": "item: what the money was spent on, a few words without commas\namount (number): the amount spent\ncategory: one of food, transport, rent, bills, stock, salary, other",
+        "systemPrompt": "@text:extractPrompt"
+      }
+    },
+    {
+      "id": "model",
+      "type": "GEMINI",
+      "position": {
+        "x": 320,
+        "y": 260
+      },
+      "data": {
+        "variableName": "chatModel"
+      }
+    },
+    {
+      "id": "hasAmount",
+      "type": "IF",
+      "position": {
+        "x": 640,
+        "y": 0
+      },
+      "data": {
+        "combinator": "and",
+        "conditions": [
+          {
+            "inputKey": "expense.output.amount",
+            "operator": "exists",
+            "value": ""
+          }
+        ]
+      }
+    },
+    {
+      "id": "now",
+      "type": "DATE_TIME",
+      "position": {
+        "x": 960,
+        "y": -120
+      },
+      "data": {
+        "variableName": "now",
+        "operation": "current",
+        "timezone": "@text:timezone",
+        "formatString": "YYYY-MM-DD HH:mm"
+      }
+    },
+    {
+      "id": "save",
+      "type": "GOOGLE_SHEETS",
+      "position": {
+        "x": 1280,
+        "y": -120
+      },
+      "data": {
+        "variableName": "savedExpense",
+        "sheetId": "",
+        "sheetName": "Sheet1",
+        "rowData": "{{now.result}}, {{expense.output.item}}, {{expense.output.amount}}, {{expense.output.category}}, {{telegram.message.from.first_name}}"
+      }
+    },
+    {
+      "id": "done",
+      "type": "TELEGRAM",
+      "position": {
+        "x": 1600,
+        "y": -120
+      },
+      "data": {
+        "variableName": "savedReply",
+        "chatId": "{{telegram.message.chat.id}}",
+        "text": "@text:savedMessage",
+        "parseMode": "None"
+      }
+    },
+    {
+      "id": "help",
+      "type": "TELEGRAM",
+      "position": {
+        "x": 960,
+        "y": 160
+      },
+      "data": {
+        "variableName": "helpReply",
+        "chatId": "{{telegram.message.chat.id}}",
+        "text": "@text:helpMessage",
+        "parseMode": "None"
+      }
+    }
+  ],
+  "connections": [
+    {
+      "fromNodeId": "trigger",
+      "toNodeId": "extract",
+      "fromOutput": "source-1",
+      "toInput": "target-1"
+    },
+    {
+      "fromNodeId": "model",
+      "toNodeId": "extract",
+      "fromOutput": "source-1",
+      "toInput": "sub-model"
+    },
+    {
+      "fromNodeId": "extract",
+      "toNodeId": "hasAmount",
+      "fromOutput": "source-1",
+      "toInput": "target-1"
+    },
+    {
+      "fromNodeId": "hasAmount",
+      "toNodeId": "now",
+      "fromOutput": "true",
+      "toInput": "target-1"
+    },
+    {
+      "fromNodeId": "now",
+      "toNodeId": "save",
+      "fromOutput": "source-1",
+      "toInput": "target-1"
+    },
+    {
+      "fromNodeId": "save",
+      "toNodeId": "done",
+      "fromOutput": "source-1",
+      "toInput": "target-1"
+    },
+    {
+      "fromNodeId": "hasAmount",
+      "toNodeId": "help",
+      "fromOutput": "false",
+      "toInput": "target-1"
+    }
+  ],
+  "text": {
+    "en": {
+      "name": "Expense logger on Telegram",
+      "description": "Send your bot a message like \"fuel 2500\" or \"bought stock for 12000\" and it adds a dated row to a Google Sheet with the item, amount and category. Set up: create a sheet with the columns Date, Item, Amount, Category, By; pick credentials on the Telegram Trigger, Gemini, Google Sheets (and the Spreadsheet ID) and both Telegram nodes; share the bot only with the people who may log expenses.",
+      "extractPrompt": "You read short expense messages from a small business owner, in English, Urdu, Roman Urdu or Arabic.",
+      "timezone": "Asia/Karachi",
+      "savedMessage": "Saved: {{expense.output.item}}, {{expense.output.amount}} ({{expense.output.category}}).",
+      "helpMessage": "Send what you spent and how much, for example: fuel 2500"
+    },
+    "ur": {
+      "name": "ٹیلیگرام پر اخراجات کا حساب",
+      "description": "اپنے بوٹ کو \"پیٹرول 2500\" یا \"مال خریدا 12000\" جیسا پیغام بھیجیں اور وہ گوگل شیٹ میں تاریخ کے ساتھ چیز، رقم اور قسم کی نئی سطر لکھ دیتا ہے۔ سیٹ اپ: Date, Item, Amount, Category, By کالموں والی شیٹ بنائیں؛ Telegram Trigger، Gemini، Google Sheets (اور Spreadsheet ID) اور دونوں Telegram نوڈز پر credentials چنیں؛ بوٹ صرف انہی لوگوں کو دیں جو اخراجات لکھ سکتے ہیں۔",
+      "extractPrompt": "آپ ایک چھوٹے کاروبار کے مالک کے مختصر اخراجات کے پیغامات پڑھتے ہیں، اردو، رومن اردو، انگریزی یا عربی میں۔",
+      "timezone": "Asia/Karachi",
+      "savedMessage": "محفوظ ہو گیا: {{expense.output.item}}، {{expense.output.amount}} ({{expense.output.category}})۔",
+      "helpMessage": "لکھیں کہ کس چیز پر کتنا خرچ ہوا، مثلاً: پیٹرول 2500"
+    },
+    "ar": {
+      "name": "تسجيل المصروفات عبر تيليجرام",
+      "description": "أرسل إلى البوت رسالة مثل \"وقود 150\" أو \"شراء بضاعة 900\" فيضيف صفاً مؤرخاً إلى جدول Google Sheets بالبند والمبلغ والفئة. الإعداد: أنشئ جدولاً بالأعمدة Date, Item, Amount, Category, By؛ اختر credentials في Telegram Trigger وGemini وGoogle Sheets (مع Spreadsheet ID) وعقدتي Telegram؛ شارك البوت فقط مع من يحق لهم تسجيل المصروفات.",
+      "extractPrompt": "تقرأ رسائل مصروفات قصيرة من صاحب نشاط تجاري صغير، بالعربية أو الإنجليزية أو الأردية.",
+      "timezone": "Asia/Riyadh",
+      "savedMessage": "تم الحفظ: {{expense.output.item}}، {{expense.output.amount}} ({{expense.output.category}}).",
+      "helpMessage": "اكتب ما صرفت عليه وكم، مثلاً: وقود 150"
+    }
+  }
+}

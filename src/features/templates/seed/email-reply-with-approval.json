@@ -1,0 +1,105 @@
+{
+  "key": "email_reply_with_approval",
+  "category": "Email & Sheets",
+  "minPlan": "INTERMEDIATE",
+  "nodes": [
+    {
+      "id": "mail",
+      "type": "GMAIL_TRIGGER",
+      "position": {
+        "x": 0,
+        "y": 0
+      },
+      "data": {
+        "query": "is:unread category:primary -from:me",
+        "pollMinutes": "5"
+      }
+    },
+    {
+      "id": "draft",
+      "type": "GEMINI",
+      "position": {
+        "x": 320,
+        "y": 0
+      },
+      "data": {
+        "variableName": "draft",
+        "systemPrompt": "@text:systemPrompt",
+        "userPrompt": "From: {{gmail.from}}\nSubject: {{gmail.subject}}\n\n{{gmail.text}}"
+      }
+    },
+    {
+      "id": "approve",
+      "type": "APPROVAL",
+      "position": {
+        "x": 640,
+        "y": 0
+      },
+      "data": {
+        "variableName": "approval",
+        "operation": "in_app",
+        "title": "@text:approvalTitle",
+        "message": "{{draft.text}}",
+        "timeoutAmount": "24",
+        "timeoutUnit": "hours",
+        "onTimeout": "reject"
+      }
+    },
+    {
+      "id": "send",
+      "type": "GMAIL",
+      "position": {
+        "x": 960,
+        "y": 0
+      },
+      "data": {
+        "variableName": "sentReply",
+        "operation": "reply",
+        "messageId": "{{gmail.id}}",
+        "emailType": "text",
+        "message": "{{draft.text}}",
+        "replyCc": "none"
+      }
+    }
+  ],
+  "connections": [
+    {
+      "fromNodeId": "mail",
+      "toNodeId": "draft",
+      "fromOutput": "source-1",
+      "toInput": "target-1"
+    },
+    {
+      "fromNodeId": "draft",
+      "toNodeId": "approve",
+      "fromOutput": "source-1",
+      "toInput": "target-1"
+    },
+    {
+      "fromNodeId": "approve",
+      "toNodeId": "send",
+      "fromOutput": "approved",
+      "toInput": "target-1"
+    }
+  ],
+  "text": {
+    "en": {
+      "name": "AI email replies you approve first",
+      "description": "For each new customer email, Gemini drafts a reply from your business facts; you approve or reject it in RXJ (Approvals), and only approved replies are sent, in the same thread. Set up: pick credentials on the Gmail Trigger, Gemini and Gmail; replace the facts in Gemini's System Prompt with your own; adjust the Gmail Trigger's search so it skips newsletters.",
+      "systemPrompt": "You write email replies for a small business. Write a short, polite reply to the customer's email in the language they wrote in. Use only these facts (replace with your own): opening hours Monday to Saturday 10:00 to 19:00; delivery in 2 to 4 working days; returns within 7 days; phone 0300-0000000. If the email needs a decision (a refund, a discount, a complaint), say that the team will look into it and reply within one working day. Never promise anything else. Write only the reply, without a subject line.",
+      "approvalTitle": "Send this reply to {{gmail.from}}?"
+    },
+    "ur": {
+      "name": "AI ای میل جواب جو پہلے آپ منظور کریں",
+      "description": "ہر نئی گاہک ای میل پر Gemini آپ کے کاروبار کی معلومات سے جواب کا مسودہ لکھتا ہے؛ آپ RXJ (Approvals) میں اسے منظور یا مسترد کرتے ہیں، اور صرف منظور شدہ جواب اسی تھریڈ میں بھیجا جاتا ہے۔ سیٹ اپ: Gmail Trigger، Gemini اور Gmail پر credentials چنیں؛ Gemini کے System Prompt میں اپنی معلومات لکھیں؛ Gmail Trigger کی تلاش ایسی رکھیں کہ نیوز لیٹر شامل نہ ہوں۔",
+      "systemPrompt": "آپ ایک چھوٹے کاروبار کے لیے ای میل جواب لکھتے ہیں۔ گاہک کی ای میل کا مختصر اور شائستہ جواب اسی زبان میں لکھیں جس میں اس نے لکھا۔ صرف یہ معلومات استعمال کریں (اپنی معلومات سے بدلیں): اوقات پیر تا ہفتہ صبح 10 سے شام 7 بجے؛ ڈیلیوری 2 سے 4 کاروباری دن؛ واپسی 7 دن کے اندر؛ فون 0300-0000000۔ اگر ای میل میں کسی فیصلے کی ضرورت ہو (رقم واپسی، رعایت، شکایت) تو لکھیں کہ ٹیم دیکھ کر ایک کاروباری دن میں جواب دے گی۔ اس کے علاوہ کوئی وعدہ نہ کریں۔ صرف جواب لکھیں، عنوان کے بغیر۔",
+      "approvalTitle": "یہ جواب {{gmail.from}} کو بھیجیں؟"
+    },
+    "ar": {
+      "name": "ردود بريد بالذكاء الاصطناعي توافق عليها أولاً",
+      "description": "لكل بريد جديد من عميل يكتب Gemini مسودة رد من معلومات نشاطك؛ توافق عليها أو ترفضها في RXJ (Approvals)، ولا يُرسل إلا الرد الموافق عليه في نفس المحادثة. الإعداد: اختر credentials في Gmail Trigger وGemini وGmail؛ استبدل المعلومات في System Prompt لـ Gemini بمعلوماتك؛ عدّل بحث Gmail Trigger ليتجاهل النشرات.",
+      "systemPrompt": "تكتب ردود البريد لنشاط تجاري صغير. اكتب رداً قصيراً ومهذباً على بريد العميل باللغة التي كتب بها. استخدم هذه المعلومات فقط (استبدلها بمعلوماتك): أوقات العمل من السبت إلى الخميس من 10:00 إلى 19:00؛ التوصيل خلال 2 إلى 4 أيام عمل؛ الإرجاع خلال 7 أيام؛ الهاتف 0500-000000. إذا احتاج البريد إلى قرار (استرداد أو خصم أو شكوى) فاذكر أن الفريق سيراجعه ويرد خلال يوم عمل. لا تعد بأي شيء آخر. اكتب الرد فقط دون عنوان.",
+      "approvalTitle": "إرسال هذا الرد إلى {{gmail.from}}؟"
+    }
+  }
+}

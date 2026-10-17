@@ -1,0 +1,78 @@
+{
+  "key": "shipping_email_with_tracking",
+  "category": "E-commerce",
+  "minPlan": "FREE",
+  "nodes": [
+    {
+      "id": "fulfilled",
+      "type": "SHOPIFY_TRIGGER",
+      "position": {
+        "x": 0,
+        "y": 0
+      },
+      "data": {
+        "event": "orders/fulfilled"
+      }
+    },
+    {
+      "id": "hasEmail",
+      "type": "FILTER",
+      "position": {
+        "x": 320,
+        "y": 0
+      },
+      "data": {
+        "inputKey": "shopify.email",
+        "operator": "exists",
+        "value": ""
+      }
+    },
+    {
+      "id": "send",
+      "type": "EMAIL_SEND",
+      "position": {
+        "x": 640,
+        "y": 0
+      },
+      "data": {
+        "recipient": "{{shopify.email}}",
+        "subject": "@text:emailSubject",
+        "body": "@text:emailBody"
+      }
+    }
+  ],
+  "connections": [
+    {
+      "fromNodeId": "fulfilled",
+      "toNodeId": "hasEmail",
+      "fromOutput": "source-1",
+      "toInput": "target-1"
+    },
+    {
+      "fromNodeId": "hasEmail",
+      "toNodeId": "send",
+      "fromOutput": "source-1",
+      "toInput": "target-1"
+    }
+  ],
+  "text": {
+    "en": {
+      "name": "Shipping email with tracking link",
+      "description": "When a Shopify order is fulfilled, the customer gets an email in your own words with the courier and the tracking link. Useful when Shopify's own notifications are switched off or you want a local-language message. Set up: put your signing secret on the Shopify Trigger and create the Order fulfillment webhook in Shopify; pick an SMTP credential on Email and rewrite the message.",
+      "emailSubject": "Your order {{shopify.order.name}} is on its way",
+      "emailBody": "Hi {{shopify.customerName}},\n\nGood news: your order {{shopify.order.name}} has been shipped with {{shopify.order.fulfillments.0.tracking_company}}.\n\nTrack it here: {{shopify.order.fulfillments.0.tracking_url}}\n\nThank you for shopping with us!"
+    },
+    "ur": {
+      "name": "ٹریکنگ لنک کے ساتھ ترسیل کی ای میل",
+      "description": "جب Shopify آرڈر روانہ ہو تو گاہک کو آپ کے اپنے الفاظ میں کوریئر اور ٹریکنگ لنک والی ای میل جاتی ہے۔ مفید جب Shopify کی اپنی اطلاعات بند ہوں یا آپ مقامی زبان میں پیغام چاہیں۔ سیٹ اپ: Shopify Trigger پر signing secret لکھیں اور Shopify میں Order fulfillment ویب ہک بنائیں؛ Email پر SMTP credential چنیں اور پیغام اپنے انداز میں لکھیں۔",
+      "emailSubject": "آپ کا آرڈر {{shopify.order.name}} روانہ ہو گیا",
+      "emailBody": "محترم {{shopify.customerName}}،\n\nخوشخبری: آپ کا آرڈر {{shopify.order.name}} کوریئر {{shopify.order.fulfillments.0.tracking_company}} سے روانہ کر دیا گیا ہے۔\n\nیہاں ٹریک کریں: {{shopify.order.fulfillments.0.tracking_url}}\n\nخریداری کا شکریہ!"
+    },
+    "ar": {
+      "name": "بريد الشحن مع رابط التتبع",
+      "description": "عند شحن طلب Shopify يصل العميل بريد بكلماتك يتضمن شركة الشحن ورابط التتبع. مفيد عندما تكون إشعارات Shopify متوقفة أو تريد رسالة بلغتك. الإعداد: أدخل signing secret في Shopify Trigger وأنشئ webhook لحدث Order fulfillment في Shopify؛ اختر credential لـ SMTP في Email وأعد كتابة الرسالة.",
+      "emailSubject": "طلبك {{shopify.order.name}} في الطريق",
+      "emailBody": "مرحباً {{shopify.customerName}}،\n\nخبر سار: تم شحن طلبك {{shopify.order.name}} مع {{shopify.order.fulfillments.0.tracking_company}}.\n\nتتبعه من هنا: {{shopify.order.fulfillments.0.tracking_url}}\n\nشكراً لتسوقك معنا!"
+    }
+  }
+}

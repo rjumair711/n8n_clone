@@ -1,0 +1,118 @@
+{
+  "key": "feedback_negative_alert",
+  "category": "Forms",
+  "minPlan": "FREE",
+  "nodes": [
+    {
+      "id": "form",
+      "type": "FORM_TRIGGER",
+      "position": {
+        "x": 0,
+        "y": 0
+      },
+      "data": {
+        "formTitle": "@text:formTitle",
+        "formDescription": "@text:formDescription",
+        "formFields": "@text:formFields",
+        "submitLabel": "@text:submitLabel",
+        "afterSubmit": "message",
+        "thankYouMessage": "@text:thankYouMessage",
+        "captcha": "true"
+      }
+    },
+    {
+      "id": "classify",
+      "type": "TEXT_CLASSIFIER",
+      "position": {
+        "x": 320,
+        "y": 0
+      },
+      "data": {
+        "variableName": "sentiment",
+        "inputText": "Rating: {{form.rating}}/5\n{{form.comments}}",
+        "categories": "negative: the customer is unhappy, complains or rates 1 or 2\npositive: the customer is happy or neutral",
+        "systemPrompt": "@text:classifierPrompt"
+      }
+    },
+    {
+      "id": "model",
+      "type": "GEMINI",
+      "position": {
+        "x": 320,
+        "y": 260
+      },
+      "data": {
+        "variableName": "chatModel"
+      }
+    },
+    {
+      "id": "alert",
+      "type": "TELEGRAM",
+      "position": {
+        "x": 640,
+        "y": 0
+      },
+      "data": {
+        "variableName": "negativeAlert",
+        "chatId": "",
+        "text": "@text:alert",
+        "parseMode": "None"
+      }
+    }
+  ],
+  "connections": [
+    {
+      "fromNodeId": "form",
+      "toNodeId": "classify",
+      "fromOutput": "source-1",
+      "toInput": "target-1"
+    },
+    {
+      "fromNodeId": "model",
+      "toNodeId": "classify",
+      "fromOutput": "source-1",
+      "toInput": "sub-model"
+    },
+    {
+      "fromNodeId": "classify",
+      "toNodeId": "alert",
+      "fromOutput": "category-negative",
+      "toInput": "target-1"
+    }
+  ],
+  "text": {
+    "en": {
+      "name": "Customer feedback form with unhappy-customer alert",
+      "description": "A feedback form for your shop, clinic or restaurant. When a customer is unhappy, you get a Telegram message straight away with their comment and phone number, so you can call them back the same day. Set up: pick a credential on Gemini; pick your Telegram credential and your Chat ID on the Telegram node; activate the workflow and share the Form URL (or print it as a QR code at the counter).",
+      "formTitle": "How did we do?",
+      "formDescription": "Your feedback helps us improve. It takes 30 seconds.",
+      "formFields": "[{\"label\":\"Name\",\"type\":\"text\",\"required\":false,\"options\":\"\"},{\"label\":\"Phone\",\"type\":\"text\",\"required\":false,\"options\":\"\"},{\"label\":\"Rating\",\"type\":\"dropdown\",\"required\":true,\"options\":\"5, 4, 3, 2, 1\"},{\"label\":\"Comments\",\"type\":\"text\",\"required\":false,\"options\":\"\"}]",
+      "submitLabel": "Send feedback",
+      "thankYouMessage": "Thank you for your feedback!",
+      "classifierPrompt": "You read customer feedback for a small business.",
+      "alert": "Unhappy customer ({{form.rating}}/5): {{form.name}} {{form.phone}}\n{{form.comments}}"
+    },
+    "ur": {
+      "name": "گاہکوں کی رائے کا فارم اور ناخوش گاہک کی اطلاع",
+      "description": "آپ کی دکان، کلینک یا ریسٹورنٹ کے لیے رائے کا فارم۔ جب کوئی گاہک ناخوش ہو تو آپ کو فوراً ٹیلیگرام پر اس کا تبصرہ اور فون نمبر مل جاتا ہے تاکہ اسی دن رابطہ کر سکیں۔ سیٹ اپ: Gemini پر credential چنیں؛ Telegram نوڈ پر credential اور اپنا Chat ID دیں؛ ورک فلو فعال کریں اور Form URL شیئر کریں (یا کاؤنٹر پر QR کوڈ لگائیں)۔",
+      "formTitle": "ہماری سروس کیسی رہی؟",
+      "formDescription": "آپ کی رائے ہمیں بہتر بناتی ہے۔ صرف 30 سیکنڈ لگیں گے۔",
+      "formFields": "[{\"label\":\"نام (Name)\",\"type\":\"text\",\"required\":false,\"options\":\"\"},{\"label\":\"فون (Phone)\",\"type\":\"text\",\"required\":false,\"options\":\"\"},{\"label\":\"ریٹنگ (Rating)\",\"type\":\"dropdown\",\"required\":true,\"options\":\"5, 4, 3, 2, 1\"},{\"label\":\"تبصرہ (Comments)\",\"type\":\"text\",\"required\":false,\"options\":\"\"}]",
+      "submitLabel": "رائے بھیجیں",
+      "thankYouMessage": "آپ کی رائے کا شکریہ!",
+      "classifierPrompt": "آپ ایک چھوٹے کاروبار کے گاہکوں کی رائے پڑھتے ہیں۔",
+      "alert": "ناخوش گاہک ({{form.rating}}/5): {{form.name}} {{form.phone}}\n{{form.comments}}"
+    },
+    "ar": {
+      "name": "نموذج آراء العملاء مع تنبيه للعميل غير الراضي",
+      "description": "نموذج آراء لمتجرك أو عيادتك أو مطعمك. عندما يكون العميل غير راضٍ تصلك رسالة تيليجرام فوراً بتعليقه ورقم هاتفه لتتصل به في اليوم نفسه. الإعداد: اختر credential في Gemini؛ اختر credential تيليجرام وChat ID في عقدة Telegram؛ فعّل سير العمل وشارك Form URL (أو اطبعه رمز QR عند الكاشير).",
+      "formTitle": "كيف كانت تجربتك؟",
+      "formDescription": "رأيك يساعدنا على التحسن. يستغرق 30 ثانية.",
+      "formFields": "[{\"label\":\"الاسم (Name)\",\"type\":\"text\",\"required\":false,\"options\":\"\"},{\"label\":\"الهاتف (Phone)\",\"type\":\"text\",\"required\":false,\"options\":\"\"},{\"label\":\"التقييم (Rating)\",\"type\":\"dropdown\",\"required\":true,\"options\":\"5, 4, 3, 2, 1\"},{\"label\":\"التعليق (Comments)\",\"type\":\"text\",\"required\":false,\"options\":\"\"}]",
+      "submitLabel": "إرسال الرأي",
+      "thankYouMessage": "شكراً على رأيك!",
+      "classifierPrompt": "تقرأ آراء العملاء لنشاط تجاري صغير.",
+      "alert": "عميل غير راضٍ ({{form.rating}}/5): {{form.name}} {{form.phone}}\n{{form.comments}}"
+    }
+  }
+}

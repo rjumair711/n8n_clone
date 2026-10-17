@@ -1,0 +1,102 @@
+{
+  "key": "school_announcements_telegram",
+  "category": "Education",
+  "minPlan": "FREE",
+  "nodes": [
+    {
+      "id": "form",
+      "type": "FORM_TRIGGER",
+      "position": {
+        "x": 0,
+        "y": 0
+      },
+      "data": {
+        "formTitle": "@text:formTitle",
+        "formDescription": "@text:formDescription",
+        "formFields": "@text:formFields",
+        "submitLabel": "@text:submitLabel",
+        "afterSubmit": "message",
+        "thankYouMessage": "@text:thankYouMessage",
+        "captcha": "true"
+      }
+    },
+    {
+      "id": "approve",
+      "type": "APPROVAL",
+      "position": {
+        "x": 320,
+        "y": 0
+      },
+      "data": {
+        "variableName": "approval",
+        "operation": "telegram",
+        "title": "@text:approvalTitle",
+        "message": "{{form.announcement}}",
+        "recipient": "",
+        "timeoutAmount": "2",
+        "timeoutUnit": "days",
+        "onTimeout": "reject"
+      }
+    },
+    {
+      "id": "post",
+      "type": "TELEGRAM",
+      "position": {
+        "x": 640,
+        "y": 0
+      },
+      "data": {
+        "variableName": "announcement",
+        "chatId": "",
+        "text": "{{form.title}}\n\n{{form.announcement}}",
+        "parseMode": "None"
+      }
+    }
+  ],
+  "connections": [
+    {
+      "fromNodeId": "form",
+      "toNodeId": "approve",
+      "fromOutput": "source-1",
+      "toInput": "target-1"
+    },
+    {
+      "fromNodeId": "approve",
+      "toNodeId": "post",
+      "fromOutput": "approved",
+      "toInput": "target-1"
+    }
+  ],
+  "text": {
+    "en": {
+      "name": "School announcements with principal approval",
+      "description": "Teachers submit an announcement on a form; the principal approves or rejects it on Telegram, and approved announcements are posted to the parents' Telegram channel. Set up: create the parents' channel and add your bot as an admin; pick your Telegram credential on both nodes; type the principal's Chat ID in the approval node and the channel's @name in the Telegram node; share the Form URL with teachers only.",
+      "formTitle": "New announcement",
+      "formDescription": "Write the announcement for parents. The principal approves it before it is posted.",
+      "formFields": "[{\"label\":\"Teacher\",\"type\":\"text\",\"required\":true,\"options\":\"\"},{\"label\":\"Title\",\"type\":\"text\",\"required\":true,\"options\":\"\"},{\"label\":\"Announcement\",\"type\":\"text\",\"required\":true,\"options\":\"\"}]",
+      "submitLabel": "Send for approval",
+      "thankYouMessage": "Sent to the principal for approval.",
+      "approvalTitle": "Post this announcement from {{form.teacher}}: {{form.title}}?"
+    },
+    "ur": {
+      "name": "پرنسپل کی منظوری کے ساتھ اسکول کے اعلانات",
+      "description": "اساتذہ فارم پر اعلان لکھتے ہیں؛ پرنسپل اسے ٹیلیگرام پر منظور یا مسترد کرتے ہیں، اور منظور شدہ اعلان والدین کے ٹیلیگرام چینل پر لگ جاتا ہے۔ سیٹ اپ: والدین کا چینل بنائیں اور بوٹ کو ایڈمن بنائیں؛ دونوں نوڈز پر Telegram credential چنیں؛ منظوری والے نوڈ میں پرنسپل کا Chat ID اور Telegram نوڈ میں چینل کا ‎@name‎ لکھیں؛ Form URL صرف اساتذہ کو دیں۔",
+      "formTitle": "نیا اعلان",
+      "formDescription": "والدین کے لیے اعلان لکھیں۔ لگنے سے پہلے پرنسپل اسے منظور کریں گے۔",
+      "formFields": "[{\"label\":\"استاد (Teacher)\",\"type\":\"text\",\"required\":true,\"options\":\"\"},{\"label\":\"عنوان (Title)\",\"type\":\"text\",\"required\":true,\"options\":\"\"},{\"label\":\"اعلان (Announcement)\",\"type\":\"text\",\"required\":true,\"options\":\"\"}]",
+      "submitLabel": "منظوری کے لیے بھیجیں",
+      "thankYouMessage": "منظوری کے لیے پرنسپل کو بھیج دیا گیا۔",
+      "approvalTitle": "{{form.teacher}} کا یہ اعلان لگائیں: {{form.title}}؟"
+    },
+    "ar": {
+      "name": "إعلانات المدرسة بموافقة المدير",
+      "description": "يكتب المعلمون الإعلان في نموذج؛ يوافق المدير عليه أو يرفضه عبر تيليجرام، وتُنشر الإعلانات الموافق عليها في قناة أولياء الأمور على تيليجرام. الإعداد: أنشئ قناة أولياء الأمور وأضف البوت مشرفاً؛ اختر credential تيليجرام في العقدتين؛ اكتب Chat ID للمدير في عقدة الموافقة و‎@name‎ للقناة في عقدة Telegram؛ شارك Form URL مع المعلمين فقط.",
+      "formTitle": "إعلان جديد",
+      "formDescription": "اكتب الإعلان لأولياء الأمور. يوافق عليه المدير قبل نشره.",
+      "formFields": "[{\"label\":\"المعلم (Teacher)\",\"type\":\"text\",\"required\":true,\"options\":\"\"},{\"label\":\"العنوان (Title)\",\"type\":\"text\",\"required\":true,\"options\":\"\"},{\"label\":\"الإعلان (Announcement)\",\"type\":\"text\",\"required\":true,\"options\":\"\"}]",
+      "submitLabel": "إرسال للموافقة",
+      "thankYouMessage": "أُرسل إلى المدير للموافقة.",
+      "approvalTitle": "نشر إعلان {{form.teacher}}: {{form.title}}؟"
+    }
+  }
+}

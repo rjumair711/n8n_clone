@@ -1,0 +1,119 @@
+{
+  "key": "voice_notes_to_notion",
+  "category": "Telegram",
+  "minPlan": "FREE",
+  "nodes": [
+    {
+      "id": "trigger",
+      "type": "TELEGRAM_TRIGGER",
+      "position": {
+        "x": 0,
+        "y": 0
+      },
+      "data": {}
+    },
+    {
+      "id": "isVoice",
+      "type": "IF",
+      "position": {
+        "x": 320,
+        "y": 0
+      },
+      "data": {
+        "combinator": "and",
+        "conditions": [
+          {
+            "inputKey": "telegram.voice",
+            "operator": "exists",
+            "value": ""
+          }
+        ]
+      }
+    },
+    {
+      "id": "transcribe",
+      "type": "TRANSCRIBE_AUDIO",
+      "position": {
+        "x": 640,
+        "y": 0
+      },
+      "data": {
+        "variableName": "transcript",
+        "operation": "openai",
+        "file": "telegram.voice",
+        "model": "whisper-1"
+      }
+    },
+    {
+      "id": "save",
+      "type": "NOTION",
+      "position": {
+        "x": 960,
+        "y": 0
+      },
+      "data": {
+        "variableName": "notionPage",
+        "operation": "create_page",
+        "databaseId": "",
+        "propertiesJson": "{\"Name\": {\"title\": [{\"text\": {\"content\": {{json transcript.text}}}}]}}"
+      }
+    },
+    {
+      "id": "done",
+      "type": "TELEGRAM",
+      "position": {
+        "x": 1280,
+        "y": 0
+      },
+      "data": {
+        "variableName": "savedReply",
+        "chatId": "{{telegram.message.chat.id}}",
+        "text": "@text:savedMessage",
+        "parseMode": "None"
+      }
+    }
+  ],
+  "connections": [
+    {
+      "fromNodeId": "trigger",
+      "toNodeId": "isVoice",
+      "fromOutput": "source-1",
+      "toInput": "target-1"
+    },
+    {
+      "fromNodeId": "isVoice",
+      "toNodeId": "transcribe",
+      "fromOutput": "true",
+      "toInput": "target-1"
+    },
+    {
+      "fromNodeId": "transcribe",
+      "toNodeId": "save",
+      "fromOutput": "source-1",
+      "toInput": "target-1"
+    },
+    {
+      "fromNodeId": "save",
+      "toNodeId": "done",
+      "fromOutput": "source-1",
+      "toInput": "target-1"
+    }
+  ],
+  "text": {
+    "en": {
+      "name": "Telegram voice notes to Notion",
+      "description": "Send a voice note to your Telegram bot (in Urdu, Arabic or English) and it is written out as text and saved as a page in a Notion database: ideas, to-dos and meeting notes on the go. Set up: create a Notion database with a title column called Name and share it with your Notion integration; pick credentials on the Telegram Trigger, Transcribe Audio (OpenAI), Notion (and the Database ID) and Telegram.",
+      "savedMessage": "Saved to Notion: {{transcript.text}}"
+    },
+    "ur": {
+      "name": "ٹیلیگرام وائس نوٹ سے Notion",
+      "description": "اپنے ٹیلیگرام بوٹ کو وائس نوٹ بھیجیں (اردو، عربی یا انگریزی) اور وہ تحریر بن کر Notion ڈیٹا بیس میں صفحے کے طور پر محفوظ ہو جاتا ہے: چلتے پھرتے خیالات، کام اور میٹنگ نوٹس۔ سیٹ اپ: Name نامی عنوان کالم والا Notion ڈیٹا بیس بنائیں اور اپنی Notion integration سے شیئر کریں؛ Telegram Trigger، Transcribe Audio (OpenAI)، Notion (اور Database ID) اور Telegram پر credentials چنیں۔",
+      "savedMessage": "Notion میں محفوظ ہو گیا: {{transcript.text}}"
+    },
+    "ar": {
+      "name": "رسائل تيليجرام الصوتية إلى Notion",
+      "description": "أرسل رسالة صوتية إلى بوت تيليجرام (بالعربية أو الأردية أو الإنجليزية) فتُكتب نصاً وتُحفظ صفحة في قاعدة بيانات Notion: أفكار ومهام وملاحظات اجتماعات أثناء التنقل. الإعداد: أنشئ قاعدة بيانات Notion بعمود عنوان اسمه Name وشاركها مع تكامل Notion؛ اختر credentials في Telegram Trigger وTranscribe Audio (OpenAI) وNotion (مع Database ID) وTelegram.",
+      "savedMessage": "تم الحفظ في Notion: {{transcript.text}}"
+    }
+  }
+}

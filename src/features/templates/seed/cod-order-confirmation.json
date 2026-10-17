@@ -1,0 +1,290 @@
+{
+  "key": "cod_order_confirmation",
+  "category": "E-commerce",
+  "minPlan": "PRO",
+  "nodes": [
+    {
+      "id": "order",
+      "type": "WOOCOMMERCE_TRIGGER",
+      "position": {
+        "x": 0,
+        "y": 0
+      },
+      "data": {
+        "event": "order.created",
+        "orderStatus": ""
+      }
+    },
+    {
+      "id": "isCod",
+      "type": "FILTER",
+      "position": {
+        "x": 320,
+        "y": 0
+      },
+      "data": {
+        "inputKey": "woocommerce.order.payment_method",
+        "operator": "equals",
+        "value": "cod"
+      }
+    },
+    {
+      "id": "ask",
+      "type": "WHATSAPP",
+      "position": {
+        "x": 640,
+        "y": 0
+      },
+      "data": {
+        "variableName": "confirmRequest",
+        "operation": "send_template",
+        "phoneNumberId": "",
+        "to": "{{woocommerce.phone}}",
+        "templateName": "cod_confirmation",
+        "languageCode": "@text:languageCode",
+        "templateParamsJson": "[{{json woocommerce.customerName}}, {{json woocommerce.order.number}}, {{json woocommerce.order.total}}]"
+      }
+    },
+    {
+      "id": "reply",
+      "type": "WHATSAPP_TRIGGER",
+      "position": {
+        "x": 0,
+        "y": 320
+      },
+      "data": {}
+    },
+    {
+      "id": "digits",
+      "type": "TEXT_FORMATTER",
+      "position": {
+        "x": 320,
+        "y": 320
+      },
+      "data": {
+        "variableName": "phoneDigits",
+        "operation": "extract",
+        "inputText": "{{whatsapp.from}}",
+        "regexPattern": "\\d{10}$"
+      }
+    },
+    {
+      "id": "find",
+      "type": "WOOCOMMERCE",
+      "position": {
+        "x": 640,
+        "y": 320
+      },
+      "data": {
+        "variableName": "openOrder",
+        "operation": "list_orders",
+        "storeUrl": "",
+        "search": "{{phoneDigits.result}}",
+        "status": "processing",
+        "limit": "1",
+        "fields": "id, number, status, total, billing"
+      }
+    },
+    {
+      "id": "hasOrder",
+      "type": "IF",
+      "position": {
+        "x": 960,
+        "y": 320
+      },
+      "data": {
+        "combinator": "and",
+        "conditions": [
+          {
+            "inputKey": "openOrder.count",
+            "operator": "greater_than",
+            "value": "0"
+          }
+        ]
+      }
+    },
+    {
+      "id": "classify",
+      "type": "TEXT_CLASSIFIER",
+      "position": {
+        "x": 1280,
+        "y": 320
+      },
+      "data": {
+        "variableName": "answer",
+        "inputText": "{{whatsapp.text}}",
+        "categories": "confirm: the customer wants the order (yes, ok, confirm, haan, ji, ہاں, جی, نعم, أكد)\ncancel: the customer does not want the order (no, cancel, nahi, نہیں, لا, ألغ)",
+        "systemPrompt": "@text:classifierPrompt"
+      }
+    },
+    {
+      "id": "model",
+      "type": "GEMINI",
+      "position": {
+        "x": 1280,
+        "y": 580
+      },
+      "data": {
+        "variableName": "chatModel"
+      }
+    },
+    {
+      "id": "note",
+      "type": "WOOCOMMERCE",
+      "position": {
+        "x": 1600,
+        "y": 220
+      },
+      "data": {
+        "variableName": "confirmedNote",
+        "operation": "add_order_note",
+        "storeUrl": "",
+        "orderId": "{{openOrder.items.0.id}}",
+        "note": "@text:confirmedNote",
+        "noteForCustomer": "false"
+      }
+    },
+    {
+      "id": "thanks",
+      "type": "WHATSAPP",
+      "position": {
+        "x": 1920,
+        "y": 220
+      },
+      "data": {
+        "variableName": "thanksReply",
+        "operation": "send_text",
+        "phoneNumberId": "{{whatsapp.phoneNumberId}}",
+        "to": "{{whatsapp.from}}",
+        "message": "@text:thanksMessage"
+      }
+    },
+    {
+      "id": "cancel",
+      "type": "WOOCOMMERCE",
+      "position": {
+        "x": 1600,
+        "y": 440
+      },
+      "data": {
+        "variableName": "cancelledOrder",
+        "operation": "update_order",
+        "storeUrl": "",
+        "orderId": "{{openOrder.items.0.id}}",
+        "status": "cancelled"
+      }
+    },
+    {
+      "id": "cancelReply",
+      "type": "WHATSAPP",
+      "position": {
+        "x": 1920,
+        "y": 440
+      },
+      "data": {
+        "variableName": "cancelReply",
+        "operation": "send_text",
+        "phoneNumberId": "{{whatsapp.phoneNumberId}}",
+        "to": "{{whatsapp.from}}",
+        "message": "@text:cancelMessage"
+      }
+    }
+  ],
+  "connections": [
+    {
+      "fromNodeId": "order",
+      "toNodeId": "isCod",
+      "fromOutput": "source-1",
+      "toInput": "target-1"
+    },
+    {
+      "fromNodeId": "isCod",
+      "toNodeId": "ask",
+      "fromOutput": "source-1",
+      "toInput": "target-1"
+    },
+    {
+      "fromNodeId": "reply",
+      "toNodeId": "digits",
+      "fromOutput": "source-1",
+      "toInput": "target-1"
+    },
+    {
+      "fromNodeId": "digits",
+      "toNodeId": "find",
+      "fromOutput": "source-1",
+      "toInput": "target-1"
+    },
+    {
+      "fromNodeId": "find",
+      "toNodeId": "hasOrder",
+      "fromOutput": "source-1",
+      "toInput": "target-1"
+    },
+    {
+      "fromNodeId": "hasOrder",
+      "toNodeId": "classify",
+      "fromOutput": "true",
+      "toInput": "target-1"
+    },
+    {
+      "fromNodeId": "model",
+      "toNodeId": "classify",
+      "fromOutput": "source-1",
+      "toInput": "sub-model"
+    },
+    {
+      "fromNodeId": "classify",
+      "toNodeId": "note",
+      "fromOutput": "category-confirm",
+      "toInput": "target-1"
+    },
+    {
+      "fromNodeId": "note",
+      "toNodeId": "thanks",
+      "fromOutput": "source-1",
+      "toInput": "target-1"
+    },
+    {
+      "fromNodeId": "classify",
+      "toNodeId": "cancel",
+      "fromOutput": "category-cancel",
+      "toInput": "target-1"
+    },
+    {
+      "fromNodeId": "cancel",
+      "toNodeId": "cancelReply",
+      "fromOutput": "source-1",
+      "toInput": "target-1"
+    }
+  ],
+  "text": {
+    "en": {
+      "name": "Cash-on-delivery order confirmation on WhatsApp",
+      "description": "Each new cash-on-delivery order gets a WhatsApp message asking the customer to confirm. Yes adds a note to the order, no cancels it, so fewer parcels come back. Set up: create an approved WhatsApp template cod_confirmation with 3 variables (name, order number, total); fill in Store URL and pick credentials on the WooCommerce, WhatsApp and Gemini nodes; type your Phone Number ID on the first WhatsApp node; put the Verify Token and App Secret on the WhatsApp Trigger. Phone numbers need the country code.",
+      "languageCode": "en_US",
+      "classifierPrompt": "You read a customer's reply to the question: do you confirm your cash-on-delivery order?",
+      "confirmedNote": "Customer confirmed the order on WhatsApp.",
+      "thanksMessage": "Thank you! Order {{openOrder.items.0.number}} is confirmed and will be dispatched soon.",
+      "cancelMessage": "Order {{openOrder.items.0.number}} has been cancelled. Message us any time if you change your mind."
+    },
+    "ur": {
+      "name": "واٹس ایپ پر کیش آن ڈیلیوری آرڈر کی تصدیق",
+      "description": "ہر نئے کیش آن ڈیلیوری آرڈر پر گاہک کو واٹس ایپ پیغام جاتا ہے کہ آرڈر کی تصدیق کریں۔ ہاں پر آرڈر میں نوٹ لگ جاتا ہے، نہیں پر آرڈر منسوخ ہو جاتا ہے، یوں کم پارسل واپس آتے ہیں۔ سیٹ اپ: cod_confirmation نام کا منظور شدہ واٹس ایپ ٹیمپلیٹ بنائیں جس میں 3 متغیر ہوں (نام، آرڈر نمبر، رقم)؛ WooCommerce، WhatsApp اور Gemini نوڈز پر Store URL اور credentials دیں؛ پہلے WhatsApp نوڈ پر Phone Number ID لکھیں؛ WhatsApp Trigger پر Verify Token اور App Secret لکھیں۔ فون نمبر ملک کے کوڈ کے ساتھ ہوں۔",
+      "languageCode": "ur",
+      "classifierPrompt": "آپ گاہک کا وہ جواب پڑھتے ہیں جو اس سوال پر آیا: کیا آپ اپنے کیش آن ڈیلیوری آرڈر کی تصدیق کرتے ہیں؟",
+      "confirmedNote": "گاہک نے واٹس ایپ پر آرڈر کی تصدیق کر دی۔",
+      "thanksMessage": "شکریہ! آرڈر {{openOrder.items.0.number}} کی تصدیق ہو گئی ہے اور جلد روانہ کر دیا جائے گا۔",
+      "cancelMessage": "آرڈر {{openOrder.items.0.number}} منسوخ کر دیا گیا ہے۔ ارادہ بدلے تو کسی بھی وقت پیغام کریں۔"
+    },
+    "ar": {
+      "name": "تأكيد طلبات الدفع عند الاستلام عبر واتساب",
+      "description": "كل طلب جديد بالدفع عند الاستلام يرسل للعميل رسالة واتساب يطلب فيها تأكيد الطلب. الرد بنعم يضيف ملاحظة إلى الطلب، والرد بلا يلغيه، فتقل الشحنات المرتجعة. الإعداد: أنشئ قالب واتساب معتمداً باسم cod_confirmation بثلاثة متغيرات (الاسم، رقم الطلب، الإجمالي)؛ أدخل Store URL واختر credentials في عقد WooCommerce وWhatsApp وGemini؛ اكتب Phone Number ID في أول عقدة WhatsApp؛ أدخل Verify Token وApp Secret في WhatsApp Trigger. يجب أن تتضمن أرقام الهواتف رمز الدولة.",
+      "languageCode": "ar",
+      "classifierPrompt": "تقرأ رد العميل على السؤال: هل تؤكد طلبك بالدفع عند الاستلام؟",
+      "confirmedNote": "أكد العميل الطلب عبر واتساب.",
+      "thanksMessage": "شكراً لك! تم تأكيد الطلب {{openOrder.items.0.number}} وسيتم شحنه قريباً.",
+      "cancelMessage": "تم إلغاء الطلب {{openOrder.items.0.number}}. راسلنا في أي وقت إذا غيرت رأيك."
+    }
+  }
+}

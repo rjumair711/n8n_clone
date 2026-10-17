@@ -1,0 +1,54 @@
+{
+  "key": "shopify_orders_ledger",
+  "category": "E-commerce",
+  "minPlan": "INTERMEDIATE",
+  "nodes": [
+    {
+      "id": "paid",
+      "type": "SHOPIFY_TRIGGER",
+      "position": {
+        "x": 0,
+        "y": 0
+      },
+      "data": {
+        "event": "orders/paid"
+      }
+    },
+    {
+      "id": "save",
+      "type": "GOOGLE_SHEETS",
+      "position": {
+        "x": 320,
+        "y": 0
+      },
+      "data": {
+        "variableName": "ledgerRow",
+        "sheetId": "",
+        "sheetName": "Sheet1",
+        "rowData": "{{shopify.order.created_at}}, {{shopify.order.name}}, {{shopify.customerName}}, {{shopify.phone}}, {{shopify.order.total_price}}, {{shopify.order.currency}}, {{shopify.order.gateway}}"
+      }
+    }
+  ],
+  "connections": [
+    {
+      "fromNodeId": "paid",
+      "toNodeId": "save",
+      "fromOutput": "source-1",
+      "toInput": "target-1"
+    }
+  ],
+  "text": {
+    "en": {
+      "name": "Shopify paid orders ledger in Google Sheets",
+      "description": "Every paid Shopify order becomes a row in a Google Sheet for your accounts: date, order, customer, phone, total, currency and payment method. Set up: create a sheet with the columns Date, Order, Customer, Phone, Total, Currency, Payment; put your signing secret on the Shopify Trigger and create the Order payment webhook in Shopify with its Webhook URL; pick your Google credential and Spreadsheet ID on Google Sheets."
+    },
+    "ur": {
+      "name": "Shopify ادا شدہ آرڈرز کا گوگل شیٹ کھاتہ",
+      "description": "ہر ادا شدہ Shopify آرڈر آپ کے حساب کتاب کے لیے گوگل شیٹ میں سطر بن جاتا ہے: تاریخ، آرڈر، گاہک، فون، کل رقم، کرنسی اور ادائیگی کا طریقہ۔ سیٹ اپ: Date, Order, Customer, Phone, Total, Currency, Payment کالموں والی شیٹ بنائیں؛ Shopify Trigger پر signing secret لکھیں اور Shopify میں اس کے Webhook URL سے Order payment ویب ہک بنائیں؛ Google Sheets پر گوگل credential اور Spreadsheet ID دیں۔"
+    },
+    "ar": {
+      "name": "سجل طلبات Shopify المدفوعة في Google Sheets",
+      "description": "كل طلب Shopify مدفوع يصبح صفاً في جدول Google Sheets لحساباتك: التاريخ والطلب والعميل والهاتف والإجمالي والعملة وطريقة الدفع. الإعداد: أنشئ جدولاً بالأعمدة Date, Order, Customer, Phone, Total, Currency, Payment؛ أدخل signing secret في Shopify Trigger وأنشئ webhook لحدث Order payment في Shopify بعنوان Webhook URL؛ اختر حساب Google وSpreadsheet ID في Google Sheets."
+    }
+  }
+}

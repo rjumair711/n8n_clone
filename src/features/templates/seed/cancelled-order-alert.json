@@ -1,0 +1,58 @@
+{
+  "key": "cancelled_order_alert",
+  "category": "E-commerce",
+  "minPlan": "FREE",
+  "nodes": [
+    {
+      "id": "updated",
+      "type": "WOOCOMMERCE_TRIGGER",
+      "position": {
+        "x": 0,
+        "y": 0
+      },
+      "data": {
+        "event": "order.updated",
+        "orderStatus": "cancelled"
+      }
+    },
+    {
+      "id": "alert",
+      "type": "TELEGRAM",
+      "position": {
+        "x": 320,
+        "y": 0
+      },
+      "data": {
+        "variableName": "cancelAlert",
+        "chatId": "",
+        "text": "@text:alert",
+        "parseMode": "None"
+      }
+    }
+  ],
+  "connections": [
+    {
+      "fromNodeId": "updated",
+      "toNodeId": "alert",
+      "fromOutput": "source-1",
+      "toInput": "target-1"
+    }
+  ],
+  "text": {
+    "en": {
+      "name": "Cancelled order alert from WooCommerce",
+      "description": "When an order in your WooCommerce store is cancelled, your team gets a Telegram message with the order, customer, phone and total, so someone can call and save the sale or stop the parcel. Set up: in WooCommerce create a webhook for Order updated with the trigger's Webhook URL and Secret (type the same Secret on the trigger); pick your Telegram credential and your Chat ID.",
+      "alert": "Order cancelled: #{{woocommerce.order.number}}\n{{woocommerce.customerName}} {{woocommerce.phone}}\nTotal: {{woocommerce.order.total}} {{woocommerce.order.currency}}"
+    },
+    "ur": {
+      "name": "WooCommerce پر منسوخ آرڈر کی اطلاع",
+      "description": "جب آپ کے WooCommerce اسٹور میں کوئی آرڈر منسوخ ہو تو آپ کی ٹیم کو ٹیلیگرام پر آرڈر، گاہک، فون اور رقم کا پیغام ملتا ہے تاکہ کوئی کال کر کے فروخت بچا لے یا پارسل روک لے۔ سیٹ اپ: WooCommerce میں Order updated کا ویب ہک ٹرگر کے Webhook URL اور Secret سے بنائیں (وہی Secret ٹرگر پر لکھیں)؛ Telegram credential اور اپنا Chat ID دیں۔",
+      "alert": "آرڈر منسوخ: #{{woocommerce.order.number}}\n{{woocommerce.customerName}} {{woocommerce.phone}}\nرقم: {{woocommerce.order.total}} {{woocommerce.order.currency}}"
+    },
+    "ar": {
+      "name": "تنبيه الطلبات الملغاة من WooCommerce",
+      "description": "عند إلغاء طلب في متجر WooCommerce تصل فريقك رسالة تيليجرام بالطلب والعميل والهاتف والإجمالي، ليتصل أحدهم وينقذ البيع أو يوقف الشحنة. الإعداد: أنشئ في WooCommerce webhook لحدث Order updated بعنوان Webhook URL وSecret الخاصين بالمشغل (واكتب نفس Secret في المشغل)؛ اختر credential تيليجرام وChat ID.",
+      "alert": "تم إلغاء الطلب: #{{woocommerce.order.number}}\n{{woocommerce.customerName}} {{woocommerce.phone}}\nالإجمالي: {{woocommerce.order.total}} {{woocommerce.order.currency}}"
+    }
+  }
+}
