@@ -21,6 +21,7 @@ import {
     SelectTrigger,
     SelectValue,
 } from "@/components/ui/select";
+import { SectionNote, SectionSkeleton } from "@/features/settings/components/settings-section";
 import {
     ASSIGNABLE_ROLES,
     ROLE_DESCRIPTIONS,
@@ -33,11 +34,16 @@ import {
 import { useTRPC } from "@/trpc/client";
 import { switchWorkspace } from "./workspace-switcher";
 
+const onError = (error: { message: string }) => {
+    toast.error(error.message);
+};
+
 /**
- * Settings: the workspace the user is working in, its members and their
- * roles, and the invitations sent to the user.
+ * The workspace the user is working in, its members and the invitations
+ * sent to the user, and everything that changes them. Shared by the two
+ * Settings sections below: the queries are the same cache entries.
  */
-export const WorkspaceCard = () => {
+const useWorkspaceTeam = () => {
     const trpc = useTRPC();
     const queryClient = useQueryClient();
 
@@ -49,22 +55,26 @@ export const WorkspaceCard = () => {
     const { data: team } = useQuery(membersQuery);
     const { data: invitations } = useQuery(invitationsQuery);
 
-    const [name, setName] = useState("");
-    const [email, setEmail] = useState("");
-    const [role, setRole] = useState<AssignableRole>("EDITOR");
-
-    useEffect(() => {
-        if (current) setName(current.current.name);
-    }, [current]);
-
     const refresh = () => {
         queryClient.invalidateQueries(currentQuery);
         queryClient.invalidateQueries(membersQuery);
         queryClient.invalidateQueries(invitationsQuery);
     };
-    const onError = (error: { message: string }) => {
-        toast.error(error.message);
-    };
+
+    return { trpc, current, team, invitations, refresh };
+};
+
+/**
+ * Settings → Workspace → General: the workspace the user works in and their
+ * role, its name, invitations to other workspaces, and leaving it.
+ */
+export const WorkspaceGeneralCard = () => {
+    const { trpc, current, team, invitations, refresh } = useWorkspaceTeam();
+    const [name, setName] = useState("");
+
+    useEffect(() => {
+        if (current) setName(current.current.name);
+    }, [current]);
 
     const rename = useMutation(
         trpc.workspaces.rename.mutationOptions({
@@ -74,25 +84,6 @@ export const WorkspaceCard = () => {
             },
             onError,
         })
-    );
-    const invite = useMutation(
-        trpc.workspaces.invite.mutationOptions({
-            onSuccess: (sent) => {
-                toast.success(`Invitation for ${sent.email} saved. They see it when they sign in.`);
-                setEmail("");
-                refresh();
-            },
-            onError,
-        })
-    );
-    const cancelInvite = useMutation(
-        trpc.workspaces.cancelInvite.mutationOptions({ onSuccess: refresh, onError })
-    );
-    const setMemberRole = useMutation(
-        trpc.workspaces.setRole.mutationOptions({ onSuccess: refresh, onError })
-    );
-    const removeMember = useMutation(
-        trpc.workspaces.removeMember.mutationOptions({ onSuccess: refresh, onError })
     );
     const leave = useMutation(
         trpc.workspaces.leave.mutationOptions({
@@ -118,14 +109,14 @@ export const WorkspaceCard = () => {
         })
     );
 
-    if (!current || !team) return null;
+    if (!current || !team) return <SectionSkeleton rows={2} />;
 
     const workspace = current.current;
 
     return (
-        <Card>
+        <Card className="shadow-none">
             <CardHeader>
-                <CardTitle>Workspace and team</CardTitle>
+                <CardTitle className="text-base">{workspace.name}</CardTitle>
                 <CardDescription>
                     You are working in <strong>{workspace.name}</strong> as{" "}
                     {ROLE_LABELS[workspace.role]}. Workflows, credentials, executions and
@@ -165,7 +156,7 @@ export const WorkspaceCard = () => {
                     </div>
                 )}
 
-                {team.canManage && (
+                {team.canManage ? (
                     <div className="flex flex-wrap items-end gap-2">
                         <div className="min-w-56 flex-1 space-y-1.5">
                             <Label htmlFor="workspace-name">Workspace name</Label>
@@ -184,19 +175,77 @@ export const WorkspaceCard = () => {
                             Rename
                         </Button>
                     </div>
+                ) : (
+                    <SectionNote title="Owners and admins only">
+                        Only the workspace&apos;s owner and admins can rename it.
+                    </SectionNote>
                 )}
 
+                {!workspace.personal && (
+                    <Button
+                        variant="outline"
+                        disabled={leave.isPending}
+                        onClick={() => {
+                            if (window.confirm(`Leave ${workspace.name}? You lose access to its workflows and credentials.`)) {
+                                leave.mutate({ workspaceId: workspace.id });
+                            }
+                        }}
+                    >
+                        Leave this workspace
+                    </Button>
+                )}
+            </CardContent>
+        </Card>
+    );
+};
+
+/**
+ * Settings → Workspace → Members & roles: who is in the workspace, their
+ * roles, and inviting people.
+ */
+export const WorkspaceMembersCard = () => {
+    const { trpc, current, team, refresh } = useWorkspaceTeam();
+    const [email, setEmail] = useState("");
+    const [role, setRole] = useState<AssignableRole>("EDITOR");
+
+    const invite = useMutation(
+        trpc.workspaces.invite.mutationOptions({
+            onSuccess: (sent) => {
+                toast.success(`Invitation for ${sent.email} saved. They see it when they sign in.`);
+                setEmail("");
+                refresh();
+            },
+            onError,
+        })
+    );
+    const cancelInvite = useMutation(
+        trpc.workspaces.cancelInvite.mutationOptions({ onSuccess: refresh, onError })
+    );
+    const setMemberRole = useMutation(
+        trpc.workspaces.setRole.mutationOptions({ onSuccess: refresh, onError })
+    );
+    const removeMember = useMutation(
+        trpc.workspaces.removeMember.mutationOptions({ onSuccess: refresh, onError })
+    );
+
+    if (!current || !team) return <SectionSkeleton rows={3} />;
+
+    const workspace = current.current;
+
+    return (
+        <Card className="shadow-none">
+            <CardContent className="space-y-6">
                 <div className="space-y-2">
                     <p className="text-sm font-medium">Members</p>
                     <ul className="divide-y rounded-md border">
                         {team.members.map((member) => (
                             <li key={member.id} className="flex flex-wrap items-center justify-between gap-2 p-3 text-sm">
-                                <div>
-                                    <div className="font-medium">
+                                <div className="min-w-0">
+                                    <div className="truncate font-medium">
                                         {member.name || member.email}
                                         {member.isYou ? " (you)" : ""}
                                     </div>
-                                    <div className="text-xs text-muted-foreground">{member.email}</div>
+                                    <div className="truncate text-xs text-muted-foreground">{member.email}</div>
                                 </div>
                                 <div className="flex items-center gap-2">
                                     {member.assignable.length > 0 && !member.isYou ? (
@@ -243,7 +292,7 @@ export const WorkspaceCard = () => {
                     </ul>
                 </div>
 
-                {team.canManage && (
+                {team.canManage ? (
                     <div className="space-y-2">
                         <p className="text-sm font-medium">Invite someone</p>
                         <div className="flex flex-wrap items-end gap-2">
@@ -280,14 +329,14 @@ export const WorkspaceCard = () => {
                         </div>
                         <p className="text-xs text-muted-foreground">
                             No email is sent. The invitation waits here, and the person sees it
-                            under Settings when they sign in to RXJ with that address, where
-                            they accept or decline it.
+                            under Settings → General when they sign in to RXJ with that address,
+                            where they accept or decline it.
                         </p>
                         {team.invites.length > 0 && (
                             <ul className="divide-y rounded-md border">
                                 {team.invites.map((pending) => (
                                     <li key={pending.id} className="flex items-center justify-between gap-2 p-3 text-sm">
-                                        <span>
+                                        <span className="min-w-0 truncate">
                                             {pending.email}{" "}
                                             <span className="text-xs text-muted-foreground">
                                                 invited as{" "}
@@ -307,6 +356,10 @@ export const WorkspaceCard = () => {
                             </ul>
                         )}
                     </div>
+                ) : (
+                    <SectionNote title="Owners and admins only">
+                        Only the workspace&apos;s owner and admins can invite people and change roles.
+                    </SectionNote>
                 )}
 
                 <div className="space-y-1 text-xs text-muted-foreground">
@@ -317,20 +370,6 @@ export const WorkspaceCard = () => {
                         </p>
                     ))}
                 </div>
-
-                {!workspace.personal && (
-                    <Button
-                        variant="outline"
-                        disabled={leave.isPending}
-                        onClick={() => {
-                            if (window.confirm(`Leave ${workspace.name}? You lose access to its workflows and credentials.`)) {
-                                leave.mutate({ workspaceId: workspace.id });
-                            }
-                        }}
-                    >
-                        Leave this workspace
-                    </Button>
-                )}
             </CardContent>
         </Card>
     );

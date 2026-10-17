@@ -1,11 +1,8 @@
-import { ApiKeys } from '@/features/api-keys/components/api-keys';
-import { requireAuth } from '@/lib/auth-utils'
+import { redirect } from "next/navigation";
 
-const Page = async () => {
+// API Keys moved into Settings; old links and bookmarks still work
+const Page = () => {
+  redirect("/settings/api-keys");
+};
 
-  await requireAuth()
-
-  return <ApiKeys />
-}
-
-export default Page
+export default Page;

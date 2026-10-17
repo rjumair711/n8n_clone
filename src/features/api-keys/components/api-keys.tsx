@@ -51,7 +51,8 @@ const copy = async (value: string, label: string) => {
     }
 };
 
-export const ApiKeys = () => {
+// `embedded`: inside Settings, which has its own page padding
+export const ApiKeys = ({ embedded = false }: { embedded?: boolean }) => {
     const trpc = useTRPC();
     const queryClient = useQueryClient();
 
@@ -116,7 +117,7 @@ export const ApiKeys = () => {
   -d '{"customer":"Ali"}'`;
 
     return (
-        <div className="mx-auto w-full max-w-5xl space-y-6 p-4 md:p-8">
+        <div className={embedded ? "space-y-6" : "mx-auto w-full max-w-5xl space-y-6 p-4 md:p-8"}>
             <Card className="shadow-none">
                 <CardHeader className="flex flex-row items-start justify-between gap-4">
                     <div className="space-y-1.5">

@@ -1899,6 +1899,20 @@ Before this fix, Chrome showed "Page Unresponsive" on almost every click from on
 4. **Editor polling stops.** Open a workflow, DevTools → Network, filter `nodes`. Run it with Execute. **Expect** requests to `/api/executions/<id>/nodes` every half second while a node runs, then every 2 seconds, and none from about 10 seconds after the last node finished. A node waiting at a Wait node is asked about every 5 seconds.
 5. **Lists prefetch only the shell.** DevTools → Network on `/workflows` with several workflows (production build or the live app; `npm run dev` does not prefetch). **Expect** the `/workflows/<id>?_rsc=...` prefetch requests to be small (a few kB, the loading screen), not each workflow's full page and data. Opening a workflow still works as before.
 
+## T24. Sidebar and Settings
+
+Use a browser window of 1366 × 768 (or DevTools → device toolbar at 1366 × 625 for the page area), signed in.
+
+1. **No scrollbar.** The sidebar shows the logo and workspace switcher, **Build** (Workflows, Templates, Chatbots), **Operate** (Executions, Approvals, Credentials) and the account button at the bottom, with no scroll bar and no usage numbers or bars. Every item is the same height with the same icon size; the open page's item is highlighted.
+2. **Account menu.** Click the account button (your initials, name and email, cut short with "…" when long). **Expect** Settings, Usage & plan, Billing, API Keys, Docs, then Sign out. Each opens its page; Sign out goes to `/login`.
+3. **Collapsed.** Click the sidebar toggle in the header (or press Ctrl+B). **Expect** icons only, a tooltip with the name on hover, the account button as initials, and the menu still opening.
+4. **Phone.** At 375 pixels wide the toggle opens the sidebar as a sheet; picking a page closes it. Settings shows its sections as tabs that scroll sideways; the open one is underlined. No horizontal scroll bar on the page.
+5. **Settings routes.** Open `/settings`: **expect** `/settings/profile`. Old links still work: `/api-keys` opens Settings → API Keys. Each menu item has its own address, and DevTools → Network shows only that section's requests (for example Usage & plan asks for the plan, credentials, AI credits and AI spend; Profile asks for nothing new).
+6. **Usage & plan.** The workspace's plan (and on Free, the trial's days left), Workflows, Executions (this month) and Credentials each as used / limit with a bar: blue, amber above 80 %, red at the limit. AI credits left and AI spend this month. **Manage billing** opens `/billing`. In someone else's workspace the text says the numbers are that workspace's, not your account's.
+7. **Notes instead of controls.** As an Editor or Viewer in someone else's workspace: General and Members & roles say "Owners and admins only" instead of the rename and invite controls, AI budgets says only owners and admins set the budget, and Git sync and External secrets say "Owners and admins only". On a plan without enterprise features they say "Requires Pro". Model prices and RXJ AI included say "Admins only" unless your email is in `ADMIN_EMAILS`.
+8. **Nothing lost.** Two-factor, sessions, API keys, the workspace name, invitations, members, roles, leaving a workspace, the audit log, model prices, RXJ AI included, the AI budget, Git sync, external secrets and SSO all work as before, each in its section.
+9. **Loading.** Switch between sections: a skeleton shows in the section area while it loads, and the menu next to it does not move.
+
 # When something fails
 
 Note the node, the exact values you entered, and the error text from the

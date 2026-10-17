@@ -5262,6 +5262,43 @@ const main = async () => {
     assert.equal(interval(running, now - GIVE_UP_AFTER_MS - 1, now), false);
   });
 
+  await test("Settings has one route per section, and the sidebar no usage numbers", async () => {
+    const fs = await import("node:fs");
+    const path = await import("node:path");
+    const { SETTINGS_GROUPS, SETTINGS_SECTIONS, FIRST_SETTINGS_SECTION } =
+      await import("@/features/settings/lib/sections");
+    const read = (file: string) => fs.readFileSync(path.join(process.cwd(), file), "utf8");
+    const settingsDir = "src/app/(dashboard)/(rest)/settings";
+
+    assert.deepEqual(SETTINGS_GROUPS.map((group) => group.title), ["Account", "Workspace", "AI", "Enterprise"]);
+    const slugs = SETTINGS_SECTIONS.map((section) => section.slug);
+    assert.equal(new Set(slugs).size, slugs.length, "section slugs are unique");
+    for (const slug of slugs) {
+      const page = read(`${settingsDir}/${slug}/page.tsx`);
+      assert.match(page, new RegExp(`<SettingsSection slug="${slug}">`), `${slug} has its page`);
+    }
+    // Old links: /settings opens the first section, /api-keys opens API Keys
+    assert.equal(FIRST_SETTINGS_SECTION.slug, "profile");
+    assert.match(read(`${settingsDir}/page.tsx`), /redirect\(settingsHref\(FIRST_SETTINGS_SECTION\.slug\)\)/);
+    assert.match(read("src/app/(dashboard)/(rest)/api-keys/page.tsx"), /redirect\("\/settings\/api-keys"\)/);
+
+    const sidebar = read("src/components/app-sidebar.tsx");
+    assert.doesNotMatch(sidebar, /UsageCard|useCurrentPlan|progress/i, "no usage in the sidebar");
+    // A prefetch prop on a link: the default prefetch only
+    const prefetchProp = /<Link\b[^>]*\sprefetch\b/;
+    assert.doesNotMatch(sidebar, prefetchProp, "default prefetch only");
+    assert.doesNotMatch(read("src/features/settings/components/settings-nav.tsx"), prefetchProp);
+    assert.match(sidebar, /title: "Build",\s+items: \[\s+\{ title: "Workflows"[^\n]+\n\s+\{ title: "Templates"[^\n]+\n\s+\{ title: "Chatbots"/);
+    assert.match(sidebar, /title: "Operate",\s+items: \[\s+\{ title: "Executions"[^\n]+\n\s+\{ title: "Approvals"[^\n]+\n\s+\{ title: "Credentials"/);
+    const account = sidebar.slice(sidebar.indexOf("const ACCOUNT_ITEMS"), sidebar.indexOf("// One size for every item"));
+    assert.deepEqual(
+      [...account.matchAll(/title: "([^"]+)"/g)].map((match) => match[1]),
+      ["Settings", "Usage & plan", "Billing", "API Keys", "Docs"]
+    );
+    // Sign out comes after them, at the end of the menu
+    assert.ok(sidebar.lastIndexOf("Sign out") > sidebar.indexOf("ACCOUNT_ITEMS.map"));
+  });
+
   await test("execution data is kept for 7, 30 or 90 days, 30 by default", () => {
     const now = new Date(2026, 9, 20, 12, 0, 0); // 20 October
     const daysAgo = (days: number) => new Date(now.getTime() - days * 86_400_000);
@@ -12152,7 +12189,9 @@ pour()</code></pre>
     assert.match(read("src/features/executions/components/core/nodes.tsx"), /credentialLabel: "API Key Credential",\s+includedAi: true,/);
     assert.match(read("src/features/executions/server/chat-models.ts"), /if \(isIncludedCredential\(input\.credentialId\)\) \{/);
     assert.match(read("src/app/billing/page.tsx"), /<AiCreditsCard \/>/);
-    assert.match(read("src/features/settings/components/settings.tsx"), /<IncludedAiCard \/>/);
+    // Settings → AI → RXJ AI included, at its own route
+    assert.match(read("src/features/settings/components/sections/rxj-ai-section.tsx"), /return <IncludedAiCard \/>;/);
+    assert.match(read("src/app/(dashboard)/(rest)/settings/rxj-ai/page.tsx"), /<RxjAiSection \/>/);
     const card = read("src/features/ai-credits/components/ai-credits-card.tsx");
     assert.match(card, /<Link href="\/pricing" className="underline">\s+Upgrade your plan/);
     assert.match(card, /body: JSON\.stringify\(\{ creditPack: productId \}\),/);

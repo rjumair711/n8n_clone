@@ -3,18 +3,23 @@
 import { useEffect } from "react"
 import { useQueryClient } from "@tanstack/react-query"
 import {
+    BookOpenIcon,
+    BotIcon,
+    ChevronsUpDownIcon,
     Code2Icon,
     CreditCardIcon,
     FolderOpenIcon,
+    GaugeIcon,
     HistoryIcon,
     KeyIcon,
-    BotIcon,
     LayoutTemplateIcon,
     LogOutIcon,
     SettingsIcon,
-    SparklesIcon,
     UserCheckIcon,
+    type LucideIcon,
 } from "lucide-react"
+import Link from "next/link"
+import { usePathname, useRouter } from "next/navigation"
 
 import {
     Sidebar,
@@ -22,119 +27,189 @@ import {
     SidebarFooter,
     SidebarGroup,
     SidebarGroupContent,
+    SidebarGroupLabel,
     SidebarHeader,
     SidebarMenu,
     SidebarMenuButton,
     SidebarMenuItem,
-    useSidebar
+    useSidebar,
 } from "./ui/sidebar"
-import Link from "next/link"
-import Image from "next/image"
-import { usePathname, useRouter } from "next/navigation"
+import { Avatar, AvatarFallback, AvatarImage } from "./ui/avatar"
+import {
+    DropdownMenu,
+    DropdownMenuContent,
+    DropdownMenuGroup,
+    DropdownMenuItem,
+    DropdownMenuLabel,
+    DropdownMenuSeparator,
+    DropdownMenuTrigger,
+} from "./ui/dropdown-menu"
 import { authClient } from "@/lib/auth-client"
-import { UsageCard } from "@/components/subscription/usage-card";
-import { getTrialDaysLeft } from "@/lib/subscription/get-trial-days-left";
-import { useCurrentPlan } from "@/features/subscription/hook/use-current-plan"
+import { getInitials } from "@/lib/initials"
+import { RxjLogo } from "@/features/marketing/components/rxj-logo"
 import { WorkspaceSwitcher } from "@/features/workspaces/components/workspace-switcher"
 
-const menuItems = [
+type NavItem = { title: string; icon: LucideIcon; url: string }
+
+const NAV_GROUPS: { title: string; items: NavItem[] }[] = [
     {
-        title: "Main",
+        title: "Build",
         items: [
-            { id: "workflows", title: "Workflows", icon: FolderOpenIcon, url: "/workflows" },
-            { id: "templates", title: "Templates", icon: LayoutTemplateIcon, url: "/templates" },
-            { id: "chatbots", title: "Chatbots", icon: BotIcon, url: "/chatbots" },
-            { id: "credentials", title: "Credentials", icon: KeyIcon, url: "/credentials" },
-            { id: "executions", title: "Executions", icon: HistoryIcon, url: "/executions" },
-            { id: "approvals", title: "Approvals", icon: UserCheckIcon, url: "/approvals" },
-            { id: "api-keys", title: "API Keys", icon: Code2Icon, url: "/api-keys" },
-            { id: "settings", title: "Settings", icon: SettingsIcon, url: "/settings" },
+            { title: "Workflows", icon: FolderOpenIcon, url: "/workflows" },
+            { title: "Templates", icon: LayoutTemplateIcon, url: "/templates" },
+            { title: "Chatbots", icon: BotIcon, url: "/chatbots" },
+        ],
+    },
+    {
+        title: "Operate",
+        items: [
+            { title: "Executions", icon: HistoryIcon, url: "/executions" },
+            { title: "Approvals", icon: UserCheckIcon, url: "/approvals" },
+            { title: "Credentials", icon: KeyIcon, url: "/credentials" },
         ],
     },
 ]
 
-export const AppSidebar = () => {
+// The account menu, in order; Sign out comes after them
+const ACCOUNT_ITEMS: NavItem[] = [
+    { title: "Settings", icon: SettingsIcon, url: "/settings" },
+    { title: "Usage & plan", icon: GaugeIcon, url: "/settings/usage" },
+    { title: "Billing", icon: CreditCardIcon, url: "/billing" },
+    { title: "API Keys", icon: Code2Icon, url: "/settings/api-keys" },
+    { title: "Docs", icon: BookOpenIcon, url: "/docs" },
+]
+
+// One size for every item: 36px high, 16px icons, the same gap and padding
+const ITEM_CLASS =
+    "h-9 gap-3 px-3 text-sm text-sidebar-foreground/85 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground data-[active=true]:bg-[var(--sidebar-active)] data-[active=true]:font-medium data-[active=true]:text-sidebar-accent-foreground [&>svg]:size-4 data-[active=true]:[&>svg]:text-blue-400"
+
+const isActivePath = (pathname: string, url: string) =>
+    pathname === url || pathname.startsWith(`${url}/`)
+
+const AccountMenu = () => {
     const router = useRouter()
+    const { isMobile, setOpenMobile } = useSidebar()
+    const { data, isPending } = authClient.useSession()
+    const user = data?.user
+    const initials = getInitials(user?.name, user?.email)
+
+    const signOut = () =>
+        authClient.signOut({
+            fetchOptions: { onSuccess: () => router.push("/login") },
+        })
+
+    return (
+        <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+                <SidebarMenuButton
+                    size="lg"
+                    tooltip={user?.name || user?.email || "Account"}
+                    className="gap-3 px-2 hover:bg-sidebar-accent data-[state=open]:bg-sidebar-accent"
+                    aria-label="Account menu"
+                >
+                    <Avatar className="size-8 rounded-lg">
+                        {user?.image && <AvatarImage src={user.image} alt="" />}
+                        <AvatarFallback className="rounded-lg bg-[var(--sidebar-active)] text-xs font-medium text-sidebar-accent-foreground">
+                            {isPending ? "" : initials}
+                        </AvatarFallback>
+                    </Avatar>
+                    <div className="grid min-w-0 flex-1 text-left leading-tight">
+                        <span className="truncate text-sm font-medium">
+                            {isPending ? " " : user?.name || user?.email}
+                        </span>
+                        <span className="truncate text-xs text-[var(--sidebar-muted)]">
+                            {isPending ? " " : user?.email}
+                        </span>
+                    </div>
+                    <ChevronsUpDownIcon className="ml-auto size-4 text-[var(--sidebar-muted)]" />
+                </SidebarMenuButton>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent
+                side={isMobile ? "top" : "right"}
+                align="end"
+                sideOffset={8}
+                className="w-60"
+            >
+                <DropdownMenuLabel className="font-normal">
+                    <p className="truncate text-sm font-medium">{user?.name || user?.email}</p>
+                    <p className="truncate text-xs text-muted-foreground">{user?.email}</p>
+                </DropdownMenuLabel>
+                <DropdownMenuSeparator />
+                <DropdownMenuGroup>
+                    {ACCOUNT_ITEMS.map((item) => (
+                        <DropdownMenuItem key={item.url} asChild>
+                            <Link href={item.url} onClick={() => setOpenMobile(false)}>
+                                <item.icon className="size-4" />
+                                {item.title}
+                            </Link>
+                        </DropdownMenuItem>
+                    ))}
+                </DropdownMenuGroup>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem onSelect={signOut} variant="destructive">
+                    <LogOutIcon className="size-4" />
+                    Sign out
+                </DropdownMenuItem>
+            </DropdownMenuContent>
+        </DropdownMenu>
+    )
+}
+
+export const AppSidebar = () => {
     const pathname = usePathname()
     const queryClient = useQueryClient()
-    const { data } = useCurrentPlan();
-    const { state } = useSidebar();
-    const isCollapsed = state === "collapsed";
+    const { state, setOpenMobile } = useSidebar()
+    const isCollapsed = state === "collapsed"
 
-    const isFreePlan = !data?.plan || data.plan === "FREE";
-    const trialDaysLeft = getTrialDaysLeft(data?.trialEndsAt ?? null);
-
+    // Back from a checkout: the plan and usage are asked again
     useEffect(() => {
-        const params = new URLSearchParams(window.location.search);
+        const params = new URLSearchParams(window.location.search)
 
         if (params.has("redirect") || params.has("customer_session_token") || params.has("session_id")) {
             const timer = setTimeout(() => {
-                queryClient.invalidateQueries({ queryKey: ["current-plan"] });
-                queryClient.invalidateQueries({ queryKey: ["subscription"] });
-            }, 500);
+                queryClient.invalidateQueries({ queryKey: ["current-plan"] })
+                queryClient.invalidateQueries({ queryKey: ["subscription"] })
+            }, 500)
 
-            const cleanUrl = window.location.pathname;
-            window.history.replaceState({}, "", cleanUrl);
+            const cleanUrl = window.location.pathname
+            window.history.replaceState({}, "", cleanUrl)
 
-            return () => clearTimeout(timer);
+            return () => clearTimeout(timer)
         }
-    }, [queryClient]);
+    }, [queryClient])
 
     return (
-        <Sidebar collapsible="icon" className="bg-gradient-to-b from-[#0a0a1a] via-[#0d1530] to-[#0a0a1a]">
-            <SidebarHeader className="bg-transparent">
-                <SidebarMenuItem>
-                    <SidebarMenuButton asChild className="flex justify-center items-center h-10 px-4">
-                        <Link href="/">
-                            <Image src="/logos/RXJ.png" alt="RXJ" width={145} height={145} />
-                        </Link>
-                    </SidebarMenuButton>
-                </SidebarMenuItem>
-                {isFreePlan && !isCollapsed && (
-                    <div className="px-4 py-4">
-                        <div className="rounded-xl border bg-card p-4 shadow-sm">
-                            <p className="text-xs font-bold uppercase tracking-wider text-muted-foreground text-blue-300/70">
-                                Free Trial
-                            </p>
-                            <p className="mt-1 text-sm font-medium">
-                                {data?.trialEndsAt
-                                    ? (trialDaysLeft > 0 ? `${trialDaysLeft} days remaining` : "Trial expired")
-                                    : "7 days remaining"
-                                }
-                            </p>
-                        </div>
-                    </div>
-                )}
-
+        <Sidebar collapsible="icon">
+            <SidebarHeader className="gap-3 px-3 pb-1 pt-4 group-data-[collapsible=icon]:px-2">
+                <Link
+                    href="/"
+                    aria-label="RXJ home"
+                    className="flex h-8 items-center px-1 group-data-[collapsible=icon]:justify-center group-data-[collapsible=icon]:px-0"
+                >
+                    <RxjLogo height={isCollapsed ? 11 : 20} />
+                </Link>
                 {!isCollapsed && <WorkspaceSwitcher />}
-
-                {!isCollapsed && (
-                    <div className="px-3 pt-3">
-                        <UsageCard
-                            plan={data?.plan ?? "FREE"}
-                            workflowsUsed={data?.workflowCount ?? 0}
-                            executionsUsed={data?.executionsUsed ?? 0}
-                        />
-                    </div>
-                )}
             </SidebarHeader>
 
-            <SidebarContent className="bg-transparent">
-                {menuItems.map((group) => (
-                    <SidebarGroup key={group.title}>
+            <SidebarContent className="gap-0">
+                {NAV_GROUPS.map((group) => (
+                    <SidebarGroup key={group.title} className="px-3 py-2 group-data-[collapsible=icon]:px-2">
+                        <SidebarGroupLabel className="h-7 px-3 text-[11px] font-semibold uppercase tracking-wider text-[var(--sidebar-muted)]">
+                            {group.title}
+                        </SidebarGroupLabel>
                         <SidebarGroupContent>
-                            <SidebarMenu>
+                            <SidebarMenu className="gap-0.5">
                                 {group.items.map((item) => (
-                                    <SidebarMenuItem key={item.title}>
+                                    <SidebarMenuItem key={item.url}>
                                         <SidebarMenuButton
-                                            tooltip={item.title}
-                                            isActive={pathname.startsWith(item.url)}
                                             asChild
-                                            className="gap-x-4 h-10 px-4"
+                                            tooltip={item.title}
+                                            isActive={isActivePath(pathname, item.url)}
+                                            className={ITEM_CLASS}
                                         >
                                             {/* Default prefetch: the page's shell, not its data */}
-                                            <Link href={item.url}>
-                                                <item.icon className="size-4" />
+                                            <Link href={item.url} onClick={() => setOpenMobile(false)}>
+                                                <item.icon />
                                                 <span>{item.title}</span>
                                             </Link>
                                         </SidebarMenuButton>
@@ -146,47 +221,10 @@ export const AppSidebar = () => {
                 ))}
             </SidebarContent>
 
-            <SidebarFooter className="bg-transparent">
+            <SidebarFooter className="border-t border-sidebar-border px-3 py-3 group-data-[collapsible=icon]:px-2">
                 <SidebarMenu>
-                    {isFreePlan ? (
-                        <SidebarMenuItem>
-                            <SidebarMenuButton
-                                tooltip="Upgrade Plan"
-                                className="gap-x-4 h-10 px-4 text-muted-foreground hover:text-foreground font-medium"
-                                onClick={() => router.push("/billing")}
-                            >
-                                <SparklesIcon className="h-4 w-4" />
-                                <span>Upgrade Plan</span>
-                            </SidebarMenuButton>
-                        </SidebarMenuItem>
-                    ) : (
-                        <SidebarMenuItem>
-                            <SidebarMenuButton
-                                tooltip="Billing Portal"
-                                className="gap-x-4 h-10 px-4 text-muted-foreground hover:text-foreground"
-                                onClick={() => authClient.customer.portal()}
-                            >
-                                <CreditCardIcon className="h-4 w-4" />
-                                <span>Billing Portal</span>
-                            </SidebarMenuButton>
-                        </SidebarMenuItem>
-                    )}
-
                     <SidebarMenuItem>
-                        <SidebarMenuButton
-                            tooltip="Sign out"
-                            className="gap-x-4 h-10 px-4 text-muted-foreground hover:text-destructive"
-                            onClick={() => {
-                                authClient.signOut({
-                                    fetchOptions: {
-                                        onSuccess: () => router.push("/login")
-                                    }
-                                })
-                            }}
-                        >
-                            <LogOutIcon className="h-4 w-4" />
-                            <span>Sign out</span>
-                        </SidebarMenuButton>
+                        <AccountMenu />
                     </SidebarMenuItem>
                 </SidebarMenu>
             </SidebarFooter>
