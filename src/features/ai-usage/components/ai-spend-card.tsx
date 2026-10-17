@@ -32,7 +32,9 @@ const BudgetBar = ({ spentUsd, budgetCents }: { spentUsd: number; budgetCents: n
  * This month's AI spend of the account, per workflow, and the account's
  * monthly AI budget.
  */
-export const AiSpendCard = () => {
+// `canEditBudget` false: a note instead of the budget form, for roles the
+// server refuses (setting the budget needs a workspace admin)
+export const AiSpendCard = ({ canEditBudget = true }: { canEditBudget?: boolean }) => {
     const trpc = useTRPC();
     const queryClient = useQueryClient();
 
@@ -95,11 +97,18 @@ export const AiSpendCard = () => {
                         {data.budgetCents !== null && (
                             <BudgetBar spentUsd={data.costUsd} budgetCents={data.budgetCents} />
                         )}
-                        <BudgetForm
-                            budgetCents={data.budgetCents}
-                            isPending={setBudget.isPending}
-                            onSave={(budgetUsd) => setBudget.mutate({ budgetUsd })}
-                        />
+                        {canEditBudget ? (
+                            <BudgetForm
+                                budgetCents={data.budgetCents}
+                                isPending={setBudget.isPending}
+                                onSave={(budgetUsd) => setBudget.mutate({ budgetUsd })}
+                            />
+                        ) : (
+                            <p className="rounded-md border border-dashed p-3 text-sm text-muted-foreground">
+                                Owners and admins only: only the workspace&apos;s owner and admins
+                                can set the monthly AI budget.
+                            </p>
+                        )}
                     </div>
 
                     {data.workflows.length > 0 && (

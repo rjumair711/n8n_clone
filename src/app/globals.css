@@ -213,23 +213,21 @@
   @apply ring-3 ring-muted-foreground/25 shadow-lg;
 }
 
+/* The app sidebar is the brand's dark navy in light and dark mode. Its
+   colours are the sidebar tokens, set here for everything inside it (the
+   desktop sidebar and the phone sheet), so labels, hover, the active item
+   and the account button all follow one palette. Not !important: plain CSS
+   outside a layer already wins over the bg-sidebar utility. */
 [data-sidebar="sidebar"] {
-  background: linear-gradient(to bottom, #0a0a1a, #0d1530, #0a0a1a) !important;
-  border-right: 1px solid rgba(59, 130, 246, 0.15);
-}
-
-[data-sidebar="sidebar"] span,
-[data-sidebar="sidebar"] a,
-[data-sidebar="sidebar"] button {
-  color: white;
-}
-
-[data-sidebar="sidebar"] [data-active="true"] {
-  background-color: rgba(59, 130, 246, 0.15) !important;
-  color: white !important;
-}
-
-[data-sidebar="sidebar"] button:hover,
-[data-sidebar="sidebar"] a:hover {
-  background-color: rgba(255, 255, 255, 0.05) !important;
+  --sidebar: #0a0a1a;
+  --sidebar-foreground: oklch(0.93 0.01 264);
+  --sidebar-accent: rgba(255, 255, 255, 0.06);
+  --sidebar-accent-foreground: #ffffff;
+  --sidebar-border: rgba(59, 130, 246, 0.18);
+  --sidebar-ring: rgba(96, 165, 250, 0.6);
+  --sidebar-active: rgba(59, 130, 246, 0.18);
+  --sidebar-muted: oklch(0.72 0.03 264);
+  background: linear-gradient(to bottom, #0a0a1a, #0d1530, #0a0a1a);
+  color: var(--sidebar-foreground);
+  border-right: 1px solid var(--sidebar-border);
 }

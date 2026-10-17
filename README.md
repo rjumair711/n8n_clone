@@ -159,11 +159,21 @@ Every workflow keeps its earlier versions, so a change can be looked at and undo
 * **Executions record their version.** Each execution's page shows "Workflow version: Version 12": the saved workflow that run used. The number stays on the execution after the version itself was removed. Executions from before this feature say "Not recorded".
 * **What a version holds.** A copy of the nodes and connections as they are stored, including anything typed into a node's fields. It is only readable by the workflow's owner, like the workflow itself, and the list of versions does not carry the nodes.
 
+## Sidebar and Settings
+
+* **Sidebar.** The logo and the workspace switcher at the top; **Build** (Workflows, Templates, Chatbots) and **Operate** (Executions, Approvals, Credentials); and at the bottom your account button (initials, name, email), which opens **Settings**, **Usage & plan**, **Billing**, **API Keys**, **Docs** and **Sign out**. It shows no usage numbers, and fits a 1366 × 768 window without scrolling. Collapsed, it shows the icons with tooltips; on a phone it opens as a sheet.
+* **Settings** has its own menu (tabs on a phone) and one page per section, `/settings/<section>`; `/settings` opens Profile, and the old `/api-keys` opens Settings → API Keys.
+  * **Account:** Profile, Security (two-factor authentication, sessions), API Keys.
+  * **Workspace:** General (name, invitations for you, leaving), Members & roles, Usage & plan, Audit log (your account's sign-ins and changes).
+  * **AI:** Model prices and RXJ AI included (platform admins), AI budgets (this month's spend; the budget is set by the workspace's owner and admins).
+  * **Enterprise:** Git sync, External secrets (both need the Pro plan on the workspace's owner, and an owner or admin), SSO.
+  * A section your role or plan cannot use says so ("Owners and admins only", "Requires Pro", "Admins only") instead of showing its controls. The server checks the same rules.
+
 ## Teams and roles
 
 Every account has a **workspace**, and can be a member of other people's. Workflows, credentials, executions, chatbots, evaluations, AI usage and budgets belong to the workspace you are working in; pick it in the sidebar. Your two-factor settings, sessions and API keys are your own.
 
-* **Members.** Under **Settings → Workspace and team** an admin invites someone by email with a role. No email is sent: the invitation waits until that person signs in to RXJ with that address, sees it under Settings and accepts or declines it. Where email verification is on, only a verified address can take an invitation. A member can leave; an admin can change a role or remove a member. What a member built stays in the workspace.
+* **Members.** Under **Settings → Members & roles** an admin invites someone by email with a role. No email is sent: the invitation waits until that person signs in to RXJ with that address, sees it under **Settings → General** and accepts or declines it. Where email verification is on, only a verified address can take an invitation. A member can leave; an admin can change a role or remove a member. What a member built stays in the workspace.
 * **Roles.**
 
   | | Viewer | Editor | Admin | Owner |
@@ -176,14 +186,14 @@ Every account has a **workspace**, and can be a member of other people's. Workfl
   | Make or remove admins | | | | yes |
 
 * **Credentials are used, never shown.** A member picks a credential by its name. Its value is not sent to any browser, the owner's included; only admins can replace or delete it.
-* **Plan limits are per workspace.** A workspace has its owner's plan: the number of workflows and credentials, the month's executions, locked nodes, AI credits and AI budgets are counted for the workspace, whoever of its members acts. The sidebar shows the plan of the workspace you are in; **Billing** is always about your own account.
+* **Plan limits are per workspace.** A workspace has its owner's plan: the number of workflows and credentials, the month's executions, locked nodes, AI credits and AI budgets are counted for the workspace, whoever of its members acts. **Settings → Usage & plan** shows the plan of the workspace you are in, its trial, what it used this month against each limit, its AI credits and AI spend; **Billing** is always about your own account.
 * **Audit log.** What members do in a workspace is in its owner's audit log, with who did it.
 * **How it is stored.** A workspace's data is kept under its owner's account: a workflow a member creates has the owner's user id and the workspace's id. That is why running a workflow, its credentials and its limits work the same for every member. Which workspace a request is for comes from a cookie that only picks among the workspaces the user is a member of; the membership and the role are read from the database on every request.
 * **Not there yet.** One workspace per account: a second workspace, moving a workflow between workspaces and handing a workspace to another owner are not possible. An API key works in its owner's own workspace. The pages do not hide what a role cannot do; the server refuses it with a message that says which role it needs.
 
 ## Enterprise features
 
-Three things for companies, all under **Settings**. Git sync and external secrets belong to the workspace and are set up by its admins; they need the **Pro** plan on the workspace's owner (the free trial does not unlock them). What is already set up keeps working after a downgrade; it can no longer be changed.
+Three things for companies, under **Settings → Enterprise** (Git sync, External secrets, SSO). Git sync and external secrets belong to the workspace and are set up by its admins; they need the **Pro** plan on the workspace's owner (the free trial does not unlock them). What is already set up keeps working after a downgrade; it can no longer be changed.
 
 ### Environments and Git sync
 
@@ -202,8 +212,8 @@ A workspace's workflows can be kept as JSON files in a GitHub repository, one fi
 
 A credential can read its value from **HashiCorp Vault** (KV engine, version 1 or 2) or **AWS Secrets Manager** instead of storing it.
 
-* Add a store under Settings with a name (`vault`, `aws`...), and what reaches it: for Vault the address, a token, the KV mount and optionally a namespace; for AWS a region and an access key. These are stored encrypted and never shown again. Use a token or key that can only read the secrets that are needed.
-* In a credential's field, write a reference instead of the secret: the store's name, the secret's path or name, and after `#` the field, in double curly braces starting with `$secrets.`. The Settings card shows an example. For Vault a field is always named; an AWS secret that is one text is used whole when no field is named. A credential that is JSON (an SMTP server) can use references in any of its fields.
+* Add a store under **Settings → External secrets** with a name (`vault`, `aws`...), and what reaches it: for Vault the address, a token, the KV mount and optionally a namespace; for AWS a region and an access key. These are stored encrypted and never shown again. Use a token or key that can only read the secrets that are needed.
+* In a credential's field, write a reference instead of the secret: the store's name, the secret's path or name, and after `#` the field, in double curly braces starting with `$secrets.`. The External secrets settings show an example. For Vault a field is always named; an AWS secret that is one text is used whole when no field is named. A credential that is JSON (an SMTP server) can use references in any of its fields.
 * The value is read when the credential is used, kept in the server's memory for 5 minutes (`EXTERNAL_SECRETS_CACHE_SECONDS`), and never saved. A rotated secret is picked up after that time. Values that were read are removed from what is stored about a run, like every credential value.
 * **Test** on a store reads one secret and shows the names of its fields, never a value.
 * A reference only reaches the stores of the credential's own workspace. Vault is called at the address that was saved, without following redirects; an address in a private network is refused unless the operator allowed it (`PRIVATE_NETWORK_ALLOWLIST`). AWS is called at Amazon's own address for the region.
@@ -213,7 +223,7 @@ A credential can read its value from **HashiCorp Vault** (KV engine, version 1 o
 
 People of a company can sign in through its identity provider with **OpenID Connect (OIDC)**: Okta, Microsoft Entra ID, Google Workspace, Keycloak and others. On the login page they type their work email and press **Sign in with SSO**.
 
-* **Register a provider** under Settings: a short id, the email domain, the provider's issuer URL, a client ID and a client secret. At the provider, register the redirect URI the card shows. An account can register providers when it is on the Pro plan (3), or is a platform admin with two-factor on (10).
+* **Register a provider** under **Settings → SSO**: a short id, the email domain, the provider's issuer URL, a client ID and a client secret. At the provider, register the redirect URI the card shows. An account can register providers when it is on the Pro plan (3), or is a platform admin with two-factor on (10).
 * **The operator has to allow the provider's address first**: its origin (for example the Okta or Entra address) must be in `TRUSTED_ORIGINS`, or registering fails with "not trusted".
 * **The domain has to be proved.** After registering, the card shows a DNS TXT record. Add it at the domain and press **Verify domain**. Until then the provider signs nobody in. This is what makes it safe: only who controls a domain's DNS can have its addresses signed in through their provider.
 * **Accounts.** Someone who signs in through a provider for the first time gets an account, and joins the workspace of whoever registered the provider as a **Viewer**. Someone who already has an account with that address is signed in to it. Two-factor codes of RXJ are not asked for after an SSO sign-in: the provider is trusted to do that.
@@ -1024,7 +1034,7 @@ The script must run with the same `ENCRYPTION_KEY`, `ENCRYPTION_KEY_PREVIOUS` an
 
 # 🔌 Public API
 
-Create a key under **API Keys** (Pro plan or free trial) and send it as `Authorization: Bearer <key>` or `X-API-Key: <key>`.
+Create a key under **Settings → API Keys** (account menu at the bottom of the sidebar; Pro plan or free trial) and send it as `Authorization: Bearer <key>` or `X-API-Key: <key>`.
 
 | Endpoint | Scope | Description |
 | -------- | ----- | ----------- |

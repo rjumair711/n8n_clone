@@ -285,8 +285,8 @@ export const Templates = () => {
             {needsTwoFactor && (
                 <div className="rounded-md border border-amber-500/50 bg-amber-500/5 p-3 text-sm">
                     Turn on two-factor authentication to publish, edit and delete templates.{" "}
-                    <Link href="/settings" className="underline underline-offset-4">
-                        Open Settings
+                    <Link href="/settings/security" className="underline underline-offset-4">
+                        Open Security settings
                     </Link>
                 </div>
             )}

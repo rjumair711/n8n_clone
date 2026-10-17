@@ -31,12 +31,18 @@ export const WorkspaceSwitcher = () => {
     const trpc = useTRPC();
     const { data } = useQuery(trpc.workspaces.getCurrent.queryOptions());
 
-    if (!data) return null;
+    // The same height while loading: nothing below it moves
+    if (!data) {
+        return <div className="h-9 rounded-md border border-sidebar-border" aria-hidden />;
+    }
 
     return (
-        <div className="space-y-1.5 px-3 pt-3">
+        <div className="space-y-1.5">
             <Select value={data.current.id} onValueChange={switchWorkspace}>
-                <SelectTrigger className="w-full" aria-label="Workspace">
+                <SelectTrigger
+                    className="h-9 w-full border-sidebar-border bg-transparent text-sidebar-foreground hover:bg-sidebar-accent dark:bg-transparent [&_svg]:text-[var(--sidebar-muted)]"
+                    aria-label="Workspace"
+                >
                     <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
@@ -49,7 +55,7 @@ export const WorkspaceSwitcher = () => {
                 </SelectContent>
             </Select>
             {data.invitations > 0 && (
-                <Link href="/settings" className="block text-xs underline">
+                <Link href="/settings/workspace" className="block px-1 text-xs text-sidebar-foreground underline">
                     {data.invitations === 1
                         ? "1 workspace invitation"
                         : `${data.invitations} workspace invitations`}

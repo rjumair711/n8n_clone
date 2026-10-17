@@ -1,11 +1,9 @@
-import { Settings } from '@/features/settings/components/settings';
-import { requireAuth } from '@/lib/auth-utils'
+import { redirect } from "next/navigation";
+import { FIRST_SETTINGS_SECTION, settingsHref } from "@/features/settings/lib/sections";
 
-const Page = async () => {
+// Old links to /settings open the first section
+const Page = () => {
+    redirect(settingsHref(FIRST_SETTINGS_SECTION.slug));
+};
 
-  await requireAuth()
-
-  return <Settings />
-}
-
-export default Page
+export default Page;
