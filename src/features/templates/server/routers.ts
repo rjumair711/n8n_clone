@@ -14,7 +14,9 @@ import { assertOwnership } from "@/lib/ownership";
 import {
     PLAN_NAMES,
     canUseTemplate,
+    getTemplateMinPlan,
     instantiateTemplate,
+    splitTemplateDescription,
     toTemplateData,
     type TemplateConnection,
     type TemplateNode,
@@ -97,6 +99,7 @@ export const templatesRouter = createTRPCRouter({
                     published: true,
                     nodeTypes: true,
                     useCount: true,
+                    createdAt: true,
                     updatedAt: true,
                 },
             }),
@@ -109,7 +112,12 @@ export const templatesRouter = createTRPCRouter({
             needsTwoFactor: isAdmin && !canUseAdminActions(ctx.auth.user),
             items: templates.map((template) => ({
                 ...template,
-                locked: !canUseTemplate(template.minPlan, user.plan, user.trialEndsAt),
+                // The plan its nodes need, also for a template saved with a
+                // lower one
+                minPlan: getTemplateMinPlan(template.minPlan, template.nodeTypes),
+                // The card shows the summary, the details panel the steps
+                ...splitTemplateDescription(template.description),
+                locked: !canUseTemplate(template, user.plan, user.trialEndsAt),
             })),
         };
     }),
@@ -132,11 +140,20 @@ export const templatesRouter = createTRPCRouter({
                 where: { id: ctx.workspace.ownerId },
             });
 
-            // Checked here, not only in the gallery: the lock is a rule
-            if (!canUseTemplate(template.minPlan, user.plan, user.trialEndsAt)) {
+            // Checked here, not only in the gallery: the lock is a rule. The
+            // node types are read from the nodes that will be copied, not
+            // only from the stored list.
+            const nodeTypes = [
+                ...new Set([
+                    ...template.nodeTypes,
+                    ...(template.nodes as unknown as TemplateNode[]).map((node) => node.type),
+                ]),
+            ];
+
+            if (!canUseTemplate({ minPlan: template.minPlan, nodeTypes }, user.plan, user.trialEndsAt)) {
                 throw new TRPCError({
                     code: "FORBIDDEN",
-                    message: `This template requires the ${PLAN_NAMES[template.minPlan]} plan.`,
+                    message: `This template requires the ${PLAN_NAMES[getTemplateMinPlan(template.minPlan, nodeTypes)]} plan.`,
                 });
             }
 
@@ -251,6 +268,8 @@ export const templatesRouter = createTRPCRouter({
             const template = await prisma.workflowTemplate.create({
                 data: {
                     ...fields,
+                    // Never below the plan its nodes need
+                    minPlan: getTemplateMinPlan(fields.minPlan, data.nodeTypes),
                     nodes: data.nodes as unknown as Prisma.InputJsonValue,
                     connections: data.connections as unknown as Prisma.InputJsonValue,
                     nodeTypes: data.nodeTypes,
@@ -326,7 +345,15 @@ export const templatesRouter = createTRPCRouter({
 
             const template = await prisma.workflowTemplate.update({
                 where: { id },
-                data: { ...fields, ...content },
+                data: {
+                    ...fields,
+                    ...content,
+                    // Never below the plan its nodes need
+                    minPlan: getTemplateMinPlan(
+                        fields.minPlan,
+                        (Array.isArray(nodes) ? nodes : []).map((node) => node.type)
+                    ),
+                },
                 select: { id: true, name: true },
             });
 
@@ -362,7 +389,7 @@ export const templatesRouter = createTRPCRouter({
             language: starter.language,
             name: starter.name,
             category: starter.category,
-            minPlan: starter.minPlan,
+            minPlan: getTemplateMinPlan(starter.minPlan, starter.nodeTypes),
             nodeTypes: starter.nodeTypes,
             inGallery: existing.has(starter.id),
         }));
@@ -395,7 +422,7 @@ export const templatesRouter = createTRPCRouter({
                     description: starter.description,
                     category: starter.category,
                     language: starter.language,
-                    minPlan: starter.minPlan as SubscriptionPlan,
+                    minPlan: getTemplateMinPlan(starter.minPlan, starter.nodeTypes),
                     published: input.published,
                     nodes: starter.nodes as unknown as Prisma.InputJsonValue,
                     connections: starter.connections as unknown as Prisma.InputJsonValue,

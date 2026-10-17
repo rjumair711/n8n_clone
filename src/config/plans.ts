@@ -129,7 +129,41 @@ export const NODE_PLAN_FEATURES: Record<string, PlanFeature> = {
 // includes them.
 const TRIAL_EXCLUDED_FEATURES = new Set<PlanFeature>(["ssh", "enterprise"]);
 
-const PLAN_ORDER = ["FREE", "BEGINNER", "INTERMEDIATE", "PRO"] as const;
+export type PlanName = keyof typeof PLAN_LIMITS;
+
+// Cheapest first
+export const PLAN_ORDER = ["FREE", "BEGINNER", "INTERMEDIATE", "PRO"] as const;
+
+/**
+ * The cheapest plan that can run every one of these node types. A template
+ * is shown with this plan, and a user on a cheaper plan cannot use it.
+ */
+export const getMinPlanForNodes = (nodeTypes: Iterable<string>): PlanName => {
+  let index = 0;
+
+  for (const type of nodeTypes) {
+    const feature = NODE_PLAN_FEATURES[type];
+    if (!feature) continue;
+
+    const unlockedAt = PLAN_ORDER.findIndex((name) => PLAN_LIMITS[name].features[feature]);
+    index = Math.max(index, unlockedAt === -1 ? PLAN_ORDER.length - 1 : unlockedAt);
+  }
+
+  return PLAN_ORDER[index];
+};
+
+/**
+ * Whether an active free trial unlocks every one of these node types. It
+ * does not unlock SSH, the same as for a single node.
+ */
+export const trialUnlocksNodes = (nodeTypes: Iterable<string>) => {
+  for (const type of nodeTypes) {
+    const feature = NODE_PLAN_FEATURES[type];
+    if (feature && TRIAL_EXCLUDED_FEATURES.has(feature)) return false;
+  }
+
+  return true;
+};
 
 const PLAN_LABELS: Record<keyof typeof PLAN_LIMITS, string> = {
   FREE: "Free",

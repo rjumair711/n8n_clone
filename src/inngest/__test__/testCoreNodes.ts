@@ -2364,11 +2364,142 @@ const main = async () => {
     const trial = new Date(Date.now() + 86_400_000);
     const expired = new Date(Date.now() - 86_400_000);
 
-    assert.equal(templateData.canUseTemplate("FREE", "FREE", null), true);
-    assert.equal(templateData.canUseTemplate("PRO", "INTERMEDIATE", null), false);
-    assert.equal(templateData.canUseTemplate("INTERMEDIATE", "PRO", null), true);
-    assert.equal(templateData.canUseTemplate("PRO", "FREE", trial), true);
-    assert.equal(templateData.canUseTemplate("PRO", "FREE", expired), false);
+    const saved = (minPlan: string, nodeTypes: string[] = []) => ({ minPlan, nodeTypes });
+
+    assert.equal(templateData.canUseTemplate(saved("FREE"), "FREE", null), true);
+    assert.equal(templateData.canUseTemplate(saved("PRO"), "INTERMEDIATE", null), false);
+    assert.equal(templateData.canUseTemplate(saved("INTERMEDIATE"), "PRO", null), true);
+    assert.equal(templateData.canUseTemplate(saved("PRO"), "FREE", trial), true);
+    assert.equal(templateData.canUseTemplate(saved("PRO"), "FREE", expired), false);
+
+    // Saved as Free, but its nodes need more: locked for a Free user
+    assert.equal(templateData.canUseTemplate(saved("FREE", ["SHOPIFY_TRIGGER", "WHATSAPP"]), "FREE", null), false);
+    assert.equal(templateData.canUseTemplate(saved("FREE", ["SHOPIFY_TRIGGER", "WHATSAPP"]), "INTERMEDIATE", null), false);
+    assert.equal(templateData.canUseTemplate(saved("FREE", ["SHOPIFY_TRIGGER", "WHATSAPP"]), "PRO", null), true);
+    assert.equal(templateData.canUseTemplate(saved("FREE", ["GOOGLE_SHEETS"]), "BEGINNER", null), false);
+    assert.equal(templateData.canUseTemplate(saved("FREE", ["GOOGLE_SHEETS"]), "INTERMEDIATE", null), true);
+    // The trial opens it, except for nodes the trial does not unlock
+    assert.equal(templateData.canUseTemplate(saved("FREE", ["WHATSAPP"]), "FREE", trial), true);
+    assert.equal(templateData.canUseTemplate(saved("FREE", ["SSH"]), "FREE", trial), false);
+    assert.equal(templateData.canUseTemplate(saved("FREE", ["SSH"]), "PRO", null), true);
+  });
+
+  await test("a template's plan is the cheapest one that runs all its nodes", async () => {
+    const { getMinPlanForNodes, getRequiredPlanForNode, PLAN_ORDER } = await import("@/config/plans");
+
+    assert.equal(getMinPlanForNodes([]), "FREE");
+    assert.equal(getMinPlanForNodes(["FORM_TRIGGER", "GEMINI", "ANALYZE_DOCUMENT", "INFORMATION_EXTRACTOR", "EMAIL_SEND"]), "FREE");
+    assert.equal(getMinPlanForNodes(["FORM_TRIGGER", "GEMINI", "ANALYZE_DOCUMENT", "GOOGLE_SHEETS"]), "INTERMEDIATE");
+    assert.equal(getMinPlanForNodes(["SCHEDULE_TRIGGER", "SHOPIFY", "SPLIT_OUT", "IF", "EMAIL_SEND"]), "INTERMEDIATE");
+    assert.equal(getMinPlanForNodes(["SHOPIFY_TRIGGER", "IF", "WHATSAPP"]), "PRO");
+    assert.equal(getMinPlanForNodes(["AI_AGENT", "SSH"]), "PRO");
+
+    // The stored plan counts when it is the higher one
+    assert.equal(templateData.getTemplateMinPlan("FREE", ["WHATSAPP"]), "PRO");
+    assert.equal(templateData.getTemplateMinPlan("PRO", ["SLACK"]), "PRO");
+    assert.equal(templateData.getTemplateMinPlan("BEGINNER", []), "BEGINNER");
+
+    // The same answer as the node lock, for every locked node: that plan
+    // runs it, and the plan below does not
+    const { NODE_PLAN_FEATURES } = await import("@/config/plans");
+    for (const type of Object.keys(NODE_PLAN_FEATURES)) {
+      const plan = getMinPlanForNodes([type]);
+      assert.equal(getRequiredPlanForNode(type, plan, null), null, type);
+      const below = PLAN_ORDER[PLAN_ORDER.indexOf(plan) - 1];
+      if (below) assert.notEqual(getRequiredPlanForNode(type, below, null), null, type);
+    }
+
+    // The server uses the computed plan for the gallery, for "Use template"
+    // and when a template is saved
+    const { readFileSync } = await import("node:fs");
+    const router = readFileSync("src/features/templates/server/routers.ts", "utf8");
+    assert.match(router, /minPlan: getTemplateMinPlan\(template\.minPlan, template\.nodeTypes\),/);
+    assert.match(router, /locked: !canUseTemplate\(template, user\.plan, user\.trialEndsAt\),/);
+    assert.match(router, /canUseTemplate\(\{ minPlan: template\.minPlan, nodeTypes \}, user\.plan, user\.trialEndsAt\)/);
+    assert.match(router, /minPlan: getTemplateMinPlan\(fields\.minPlan, data\.nodeTypes\),/);
+    assert.match(router, /minPlan: getTemplateMinPlan\(starter\.minPlan, starter\.nodeTypes\),/);
+  });
+
+  await test("a description splits into what it does and numbered setup steps", () => {
+    const split = templateData.splitTemplateDescription;
+
+    assert.deepEqual(split("Sends a reminder. Set up: pick a credential; choose the sheet. Activate it."), {
+      summary: "Sends a reminder.",
+      steps: ["Pick a credential", "Choose the sheet.", "Activate it."],
+    });
+    assert.deepEqual(split("Reads invoices. To set it up: pick a model, then a sheet."), {
+      summary: "Reads invoices.",
+      steps: ["Pick a model, then a sheet."],
+    });
+    // Numbered, or one per line
+    assert.deepEqual(split("Bot. Setup: 1. Add the token 2. Pick a model 3. Activate").steps, [
+      "Add the token",
+      "Pick a model",
+      "Activate",
+    ]);
+    assert.deepEqual(split("Bot.\nSetup steps:\n1. Add the token\n2) Pick a model\n- Activate").steps, [
+      "Add the token",
+      "Pick a model",
+      "Activate",
+    ]);
+    // Urdu and Arabic
+    assert.deepEqual(split("بوٹ۔ سیٹ اپ: ٹوکن لکھیں؛ ماڈل چنیں۔").steps, ["ٹوکن لکھیں", "ماڈل چنیں۔"]);
+    assert.deepEqual(split("بوت. الإعداد: اكتب الرمز؛ اختر النموذج.").steps, ["اكتب الرمز", "اختر النموذج."]);
+    // No setup part: all of it is the summary
+    assert.deepEqual(split("  Posts to Slack.  "), { summary: "Posts to Slack.", steps: [] });
+    // A dot inside an expression is not a sentence end
+    assert.deepEqual(split("X. Set up: use {{order.total}} and {{order.currency}}.").steps, [
+      "Use {{order.total}} and {{order.currency}}.",
+    ]);
+    // "set up" inside a sentence, without a colon, is not the marker
+    assert.equal(split("Helps you set up meetings.").steps.length, 0);
+
+    // Every built-in and starter template has setup steps
+    return Promise.all([
+      import("@/features/templates/lib/builtin-templates"),
+      import("@/features/templates/lib/starter-templates"),
+    ]).then(([builtin, starters]) => {
+      const all = [
+        ...Object.values(builtin).filter(Array.isArray).flat() as { id: string; description: string }[],
+        ...starters.buildStarterTemplates(),
+      ];
+      assert.ok(all.length >= 19);
+      for (const template of all) {
+        const { summary, steps } = split(template.description);
+        assert.ok(summary.length > 20, `${template.id}: summary`);
+        assert.ok(steps.length >= 2, `${template.id}: ${steps.length} steps`);
+      }
+    });
+  });
+
+  await test("the gallery: compact cards, a details panel, filters, 24 per page, no prefetch or polling", async () => {
+    const { readFileSync } = await import("node:fs");
+    const gallery = readFileSync("src/features/templates/components/templates.tsx", "utf8");
+    const card = readFileSync("src/features/templates/components/template-card.tsx", "utf8");
+
+    assert.match(gallery, /const PAGE_SIZE = 24;/);
+    assert.match(gallery, />\s*Load more\s*</);
+    assert.match(gallery, /<SelectItem value="all">All plans<\/SelectItem>/);
+    assert.match(gallery, /<SelectItem value="popular">Most used<\/SelectItem>/);
+    assert.match(gallery, /<SelectItem value="newest">Newest<\/SelectItem>/);
+    assert.match(gallery, /grid-cols-1 [^"]*@4xl:grid-cols-3 @7xl:grid-cols-4/);
+    assert.match(gallery, /<TemplateDetailsSheet/);
+    // The freeze fixes stay: no polling, no prefetching links
+    assert.equal(/refetchInterval|setInterval/.test(gallery + card), false);
+    for (const link of (gallery + card).match(/<Link\b[^>]*>/g) ?? []) {
+      assert.match(link, /prefetch=\{false\}/, link);
+    }
+
+    // The card: summary clamped to two lines, 4 node chips then "+N"
+    assert.match(card, /const MAX_CHIPS = 4;/);
+    assert.match(card, /line-clamp-2/);
+    assert.match(card, /\+\{chips\.length - MAX_CHIPS\}/);
+    assert.match(card, /export const TemplateCard = memo\(/);
+    // A locked template is shown, with "Upgrade" instead of "Use template"
+    assert.match(card, /template\.locked \?[\s\S]*Upgrade[\s\S]*Use template/);
+    // The panel: steps as a numbered list, and every node
+    assert.match(card, /<ol[\s\S]*list-decimal[\s\S]*template\.steps\.map/);
+    assert.match(card, /Nodes used/);
   });
 
   const { scanTemplateForSecrets } = await import("@/features/templates/lib/template-secrets");
