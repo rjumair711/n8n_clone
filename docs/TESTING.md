@@ -1889,6 +1889,16 @@ Signed out, open `/`.
 14. **From another page.** On `/docs`, click Features in the navbar: the landing page opens at that section.
 15. **Signed in**, open `/docs` and `/about`: the navbar and the button at the end say "Go to dashboard".
 
+## T23. Client-side navigation does not freeze
+
+Before this fix, Chrome showed "Page Unresponsive" on almost every click from one page of the app to another while signed in. Sentry's browser SDK gives its own live scope and client to `beforeSendTransaction`, and the redaction walked them path by path, which never ended. Use a real browser, signed in, with DevTools open on the Performance or Console tab.
+
+1. **Sidebar.** On `/workflows`, click Templates, Chatbots, Settings, Executions and Workflows one after the other. **Expect** each page within a second or two, and the page keeps answering (scroll, type in a search box). No "Page Unresponsive".
+2. **From the landing page.** Signed in, open `/` and click "Go to dashboard". **Expect** `/workflows` without a freeze.
+3. **Sentry still gets traces.** DevTools → Network, filter `monitoring`: after a navigation a request to `/monitoring` goes out. In Sentry (project RXJ → Traces) the navigation shows up a minute later, with no secret in it (a span or breadcrumb that held `Bearer ...` reads `Bearer [REDACTED]`).
+4. **Editor polling stops.** Open a workflow, DevTools → Network, filter `nodes`. Run it with Execute. **Expect** requests to `/api/executions/<id>/nodes` every half second while a node runs, then every 2 seconds, and none from about 10 seconds after the last node finished. A node waiting at a Wait node is asked about every 5 seconds.
+5. **Lists prefetch only the shell.** DevTools → Network on `/workflows` with several workflows (production build or the live app; `npm run dev` does not prefetch). **Expect** the `/workflows/<id>?_rsc=...` prefetch requests to be small (a few kB, the loading screen), not each workflow's full page and data. Opening a workflow still works as before.
+
 # When something fails
 
 Note the node, the exact values you entered, and the error text from the
