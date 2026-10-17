@@ -400,7 +400,8 @@ export const templatesRouter = createTRPCRouter({
     addStarters: adminProcedure
         .input(
             z.object({
-                ids: z.array(z.string().max(120)).min(1).max(100),
+                // 40 starters in 3 languages, with room for more
+                ids: z.array(z.string().max(120)).min(1).max(300),
                 published: z.boolean(),
             })
         )

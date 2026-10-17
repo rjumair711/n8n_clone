@@ -1,0 +1,125 @@
+{
+  "key": "quote_request_with_approval",
+  "category": "Forms",
+  "minPlan": "FREE",
+  "nodes": [
+    {
+      "id": "form",
+      "type": "FORM_TRIGGER",
+      "position": {
+        "x": 0,
+        "y": 0
+      },
+      "data": {
+        "formTitle": "@text:formTitle",
+        "formDescription": "@text:formDescription",
+        "formFields": "@text:formFields",
+        "submitLabel": "@text:submitLabel",
+        "afterSubmit": "message",
+        "thankYouMessage": "@text:thankYouMessage",
+        "captcha": "true"
+      }
+    },
+    {
+      "id": "draft",
+      "type": "GEMINI",
+      "position": {
+        "x": 320,
+        "y": 0
+      },
+      "data": {
+        "variableName": "quote",
+        "systemPrompt": "@text:systemPrompt",
+        "userPrompt": "Customer: {{form.name}}\nRequest: {{form.what_do_you_need}}\nQuantity: {{form.quantity}}\nNeeded by: {{form.needed_by}}"
+      }
+    },
+    {
+      "id": "approve",
+      "type": "APPROVAL",
+      "position": {
+        "x": 640,
+        "y": 0
+      },
+      "data": {
+        "variableName": "approval",
+        "operation": "in_app",
+        "title": "@text:approvalTitle",
+        "message": "{{quote.text}}",
+        "timeoutAmount": "2",
+        "timeoutUnit": "days",
+        "onTimeout": "reject"
+      }
+    },
+    {
+      "id": "send",
+      "type": "EMAIL_SEND",
+      "position": {
+        "x": 960,
+        "y": 0
+      },
+      "data": {
+        "recipient": "{{form.email}}",
+        "subject": "@text:emailSubject",
+        "body": "{{quote.text}}"
+      }
+    }
+  ],
+  "connections": [
+    {
+      "fromNodeId": "form",
+      "toNodeId": "draft",
+      "fromOutput": "source-1",
+      "toInput": "target-1"
+    },
+    {
+      "fromNodeId": "draft",
+      "toNodeId": "approve",
+      "fromOutput": "source-1",
+      "toInput": "target-1"
+    },
+    {
+      "fromNodeId": "approve",
+      "toNodeId": "send",
+      "fromOutput": "approved",
+      "toInput": "target-1"
+    }
+  ],
+  "text": {
+    "en": {
+      "name": "Quote requests drafted by AI, sent after your approval",
+      "description": "Customers ask for a price on a form; Gemini drafts a quote from your price list, you check it in RXJ (Approvals), and only approved quotes are emailed to the customer. Set up: replace the price list in Gemini's System Prompt with your own; pick a credential on Gemini and an SMTP credential on Email; share the Form URL on your website or WhatsApp.",
+      "formTitle": "Request a quote",
+      "formDescription": "Tell us what you need and we will email you a price.",
+      "formFields": "[{\"label\":\"Name\",\"type\":\"text\",\"required\":true,\"options\":\"\"},{\"label\":\"Email\",\"type\":\"email\",\"required\":true,\"options\":\"\"},{\"label\":\"What do you need\",\"type\":\"text\",\"required\":true,\"options\":\"\"},{\"label\":\"Quantity\",\"type\":\"number\",\"required\":true,\"options\":\"\"},{\"label\":\"Needed by\",\"type\":\"date\",\"required\":false,\"options\":\"\"}]",
+      "submitLabel": "Request quote",
+      "thankYouMessage": "Thank you! We will email you a quote shortly.",
+      "systemPrompt": "You write price quotes for a small business. From the customer's request and the price list below, write a short, clear quote in English: each item with quantity, unit price and line total, the grand total, delivery time and that the quote is valid for 7 days. Price list (replace with your own): business cards 2,500 per 500; flyers A5 6,000 per 1,000; banners 400 per square foot; delivery in 3 working days. If something is not on the list, write \"price on request\" for it. Do not invent discounts.",
+      "approvalTitle": "Send this quote to {{form.name}} ({{form.email}})?",
+      "emailSubject": "Your quote"
+    },
+    "ur": {
+      "name": "AI سے تیار قیمت کا تخمینہ، آپ کی منظوری کے بعد",
+      "description": "گاہک فارم پر قیمت پوچھتے ہیں؛ Gemini آپ کی قیمتوں کی فہرست سے تخمینہ لکھتا ہے، آپ اسے RXJ (Approvals) میں دیکھتے ہیں، اور صرف منظور شدہ تخمینہ گاہک کو ای میل ہوتا ہے۔ سیٹ اپ: Gemini کے System Prompt میں اپنی قیمتوں کی فہرست لکھیں؛ Gemini پر credential اور Email پر SMTP credential چنیں؛ Form URL اپنی ویب سائٹ یا واٹس ایپ پر شیئر کریں۔",
+      "formTitle": "قیمت معلوم کریں",
+      "formDescription": "بتائیں آپ کو کیا چاہیے، ہم قیمت ای میل کر دیں گے۔",
+      "formFields": "[{\"label\":\"نام (Name)\",\"type\":\"text\",\"required\":true,\"options\":\"\"},{\"label\":\"ای میل (Email)\",\"type\":\"email\",\"required\":true,\"options\":\"\"},{\"label\":\"آپ کو کیا چاہیے (What do you need)\",\"type\":\"text\",\"required\":true,\"options\":\"\"},{\"label\":\"تعداد (Quantity)\",\"type\":\"number\",\"required\":true,\"options\":\"\"},{\"label\":\"کب تک چاہیے (Needed by)\",\"type\":\"date\",\"required\":false,\"options\":\"\"}]",
+      "submitLabel": "قیمت مانگیں",
+      "thankYouMessage": "شکریہ! ہم جلد آپ کو قیمت ای میل کریں گے۔",
+      "systemPrompt": "آپ ایک چھوٹے کاروبار کے لیے قیمت کا تخمینہ لکھتے ہیں۔ گاہک کی درخواست اور نیچے دی گئی قیمتوں کی فہرست سے اردو میں مختصر اور واضح تخمینہ لکھیں: ہر چیز کی تعداد، فی یونٹ قیمت اور رقم، کل رقم، ڈیلیوری کا وقت اور یہ کہ تخمینہ 7 دن کے لیے ہے۔ قیمتوں کی فہرست (اپنی فہرست سے بدلیں): وزیٹنگ کارڈ 500 کے 2,500 روپے؛ فلائر A5 ایک ہزار کے 6,000 روپے؛ بینر 400 روپے فی مربع فٹ؛ ڈیلیوری 3 کاروباری دن۔ جو چیز فہرست میں نہ ہو اس کے آگے \"قیمت درخواست پر\" لکھیں۔ کوئی رعایت اپنی طرف سے نہ دیں۔",
+      "approvalTitle": "یہ تخمینہ {{form.name}} ({{form.email}}) کو بھیجیں؟",
+      "emailSubject": "آپ کی قیمت کا تخمینہ"
+    },
+    "ar": {
+      "name": "عروض أسعار يكتبها الذكاء الاصطناعي وتُرسل بعد موافقتك",
+      "description": "يطلب العملاء سعراً عبر نموذج؛ يكتب Gemini عرض سعر من قائمة أسعارك، تراجعه في RXJ (Approvals)، ولا يُرسل للعميل إلا العرض الموافق عليه. الإعداد: استبدل قائمة الأسعار في System Prompt لـ Gemini بقائمتك؛ اختر credential في Gemini وcredential لـ SMTP في Email؛ شارك Form URL على موقعك أو واتساب.",
+      "formTitle": "اطلب عرض سعر",
+      "formDescription": "أخبرنا بما تحتاج وسنرسل إليك السعر بالبريد.",
+      "formFields": "[{\"label\":\"الاسم (Name)\",\"type\":\"text\",\"required\":true,\"options\":\"\"},{\"label\":\"البريد الإلكتروني (Email)\",\"type\":\"email\",\"required\":true,\"options\":\"\"},{\"label\":\"ماذا تحتاج (What do you need)\",\"type\":\"text\",\"required\":true,\"options\":\"\"},{\"label\":\"الكمية (Quantity)\",\"type\":\"number\",\"required\":true,\"options\":\"\"},{\"label\":\"مطلوب بتاريخ (Needed by)\",\"type\":\"date\",\"required\":false,\"options\":\"\"}]",
+      "submitLabel": "اطلب السعر",
+      "thankYouMessage": "شكراً! سنرسل إليك عرض السعر قريباً.",
+      "systemPrompt": "تكتب عروض أسعار لنشاط تجاري صغير. من طلب العميل وقائمة الأسعار أدناه اكتب عرض سعر قصيراً وواضحاً بالعربية: كل بند بالكمية وسعر الوحدة والإجمالي، والإجمالي الكلي، ومدة التسليم، وأن العرض صالح 7 أيام. قائمة الأسعار (استبدلها بقائمتك): بطاقات عمل 150 لكل 500؛ منشورات A5 400 لكل 1,000؛ لافتات 25 للقدم المربع؛ التسليم خلال 3 أيام عمل. ما ليس في القائمة اكتب أمامه \"السعر عند الطلب\". لا تخترع خصومات.",
+      "approvalTitle": "إرسال هذا العرض إلى {{form.name}} ({{form.email}})؟",
+      "emailSubject": "عرض السعر الخاص بك"
+    }
+  }
+}

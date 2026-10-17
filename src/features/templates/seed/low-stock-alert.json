@@ -1,0 +1,101 @@
+{
+  "key": "low_stock_alert",
+  "category": "E-commerce",
+  "minPlan": "FREE",
+  "nodes": [
+    {
+      "id": "product",
+      "type": "SHOPIFY_TRIGGER",
+      "position": {
+        "x": 0,
+        "y": 0
+      },
+      "data": {
+        "event": "products/update"
+      }
+    },
+    {
+      "id": "variants",
+      "type": "SPLIT_OUT",
+      "position": {
+        "x": 320,
+        "y": 0
+      },
+      "data": {
+        "variableName": "variant",
+        "inputPath": "shopify.product",
+        "field": "variants",
+        "include": "none"
+      }
+    },
+    {
+      "id": "low",
+      "type": "IF",
+      "position": {
+        "x": 640,
+        "y": 0
+      },
+      "data": {
+        "combinator": "and",
+        "conditions": [
+          {
+            "inputKey": "item.inventory_quantity",
+            "operator": "less_than",
+            "value": "5"
+          }
+        ]
+      }
+    },
+    {
+      "id": "alert",
+      "type": "TELEGRAM",
+      "position": {
+        "x": 960,
+        "y": 0
+      },
+      "data": {
+        "variableName": "stockAlert",
+        "chatId": "",
+        "text": "@text:alert",
+        "parseMode": "None"
+      }
+    }
+  ],
+  "connections": [
+    {
+      "fromNodeId": "product",
+      "toNodeId": "variants",
+      "fromOutput": "source-1",
+      "toInput": "target-1"
+    },
+    {
+      "fromNodeId": "variants",
+      "toNodeId": "low",
+      "fromOutput": "source-1",
+      "toInput": "target-1"
+    },
+    {
+      "fromNodeId": "low",
+      "toNodeId": "alert",
+      "fromOutput": "true",
+      "toInput": "target-1"
+    }
+  ],
+  "text": {
+    "en": {
+      "name": "Low stock alert on Telegram",
+      "description": "When a Shopify product is updated and one of its variants has fewer than 5 in stock, you get a Telegram message with the product, variant and quantity, so you can reorder in time. You are alerted again each time a low product changes. Set up: put your signing secret on the Shopify Trigger and create the Product update webhook in Shopify; change 5 in the IF node to your own limit; pick your Telegram credential and Chat ID.",
+      "alert": "Low stock: {{shopify.product.title}} ({{item.title}}): {{item.inventory_quantity}} left"
+    },
+    "ur": {
+      "name": "ٹیلیگرام پر کم اسٹاک کی اطلاع",
+      "description": "جب کوئی Shopify پروڈکٹ اپڈیٹ ہو اور اس کی کسی قسم کا اسٹاک 5 سے کم ہو تو آپ کو ٹیلیگرام پر پروڈکٹ، قسم اور تعداد کا پیغام ملتا ہے تاکہ وقت پر نیا مال منگوا سکیں۔ کم اسٹاک والی پروڈکٹ جب بھی بدلے، اطلاع دوبارہ آتی ہے۔ سیٹ اپ: Shopify Trigger پر signing secret لکھیں اور Shopify میں Product update ویب ہک بنائیں؛ IF نوڈ میں 5 کی جگہ اپنی حد لکھیں؛ Telegram credential اور Chat ID دیں۔",
+      "alert": "کم اسٹاک: {{shopify.product.title}} ({{item.title}}): صرف {{item.inventory_quantity}} باقی"
+    },
+    "ar": {
+      "name": "تنبيه انخفاض المخزون على تيليجرام",
+      "description": "عند تحديث منتج في Shopify وانخفاض مخزون أحد أنواعه عن 5 تصلك رسالة تيليجرام بالمنتج والنوع والكمية لتعيد الطلب في الوقت المناسب. يتكرر التنبيه كلما تغيّر منتج مخزونه منخفض. الإعداد: أدخل signing secret في Shopify Trigger وأنشئ webhook لحدث Product update في Shopify؛ غيّر 5 في عقدة IF إلى حدك؛ اختر credential تيليجرام وChat ID.",
+      "alert": "مخزون منخفض: {{shopify.product.title}} ({{item.title}}): بقي {{item.inventory_quantity}} فقط"
+    }
+  }
+}

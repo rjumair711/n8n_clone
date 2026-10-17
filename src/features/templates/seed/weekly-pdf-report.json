@@ -1,0 +1,150 @@
+{
+  "key": "weekly_pdf_report",
+  "category": "Reports",
+  "minPlan": "INTERMEDIATE",
+  "nodes": [
+    {
+      "id": "schedule",
+      "type": "SCHEDULE_TRIGGER",
+      "position": {
+        "x": 0,
+        "y": 0
+      },
+      "data": {
+        "variableName": "scheduleTrigger",
+        "cronExpression": "@text:cronExpression"
+      }
+    },
+    {
+      "id": "sheet",
+      "type": "GOOGLE_DRIVE",
+      "position": {
+        "x": 320,
+        "y": 0
+      },
+      "data": {
+        "variableName": "dataSheet",
+        "operation": "download_file",
+        "fileId": ""
+      }
+    },
+    {
+      "id": "rows",
+      "type": "EXTRACT_FROM_FILE",
+      "position": {
+        "x": 640,
+        "y": 0
+      },
+      "data": {
+        "variableName": "rows",
+        "operation": "csv",
+        "file": "dataSheet.file",
+        "header": "yes",
+        "delimiter": "comma"
+      }
+    },
+    {
+      "id": "totals",
+      "type": "CODE",
+      "position": {
+        "x": 960,
+        "y": 0
+      },
+      "data": {
+        "variableName": "report",
+        "code": "// Totals per category from the rows of the sheet\nconst totals = {};\nlet sum = 0;\nfor (const entry of context.items || []) {\n  const row = entry && typeof entry === \"object\" && \"json\" in entry ? entry.json : entry;\n  const amount = Number(row.amount || 0);\n  const category = String(row.category || \"other\");\n  totals[category] = (totals[category] || 0) + amount;\n  sum += amount;\n}\nreturn {\n  lines: Object.keys(totals).sort().map((name) => \"- \" + name + \": \" + totals[name].toFixed(2)).join(\"\\n\"),\n  total: sum.toFixed(2),\n  rows: (context.items || []).length,\n};",
+        "timeoutSeconds": 10
+      }
+    },
+    {
+      "id": "pdf",
+      "type": "PDF_GENERATOR",
+      "position": {
+        "x": 1280,
+        "y": 0
+      },
+      "data": {
+        "variableName": "pdf",
+        "title": "@text:pdfTitle",
+        "content": "@text:pdfContent",
+        "fileName": "weekly-report.pdf",
+        "pageSize": "A4"
+      }
+    },
+    {
+      "id": "send",
+      "type": "GMAIL",
+      "position": {
+        "x": 1600,
+        "y": 0
+      },
+      "data": {
+        "variableName": "reportEmail",
+        "operation": "send_email",
+        "to": "",
+        "subject": "@text:pdfTitle",
+        "emailType": "text",
+        "message": "@text:emailMessage",
+        "attachments": "pdf.file"
+      }
+    }
+  ],
+  "connections": [
+    {
+      "fromNodeId": "schedule",
+      "toNodeId": "sheet",
+      "fromOutput": "source-1",
+      "toInput": "target-1"
+    },
+    {
+      "fromNodeId": "sheet",
+      "toNodeId": "rows",
+      "fromOutput": "source-1",
+      "toInput": "target-1"
+    },
+    {
+      "fromNodeId": "rows",
+      "toNodeId": "totals",
+      "fromOutput": "source-1",
+      "toInput": "target-1"
+    },
+    {
+      "fromNodeId": "totals",
+      "toNodeId": "pdf",
+      "fromOutput": "source-1",
+      "toInput": "target-1"
+    },
+    {
+      "fromNodeId": "pdf",
+      "toNodeId": "send",
+      "fromOutput": "source-1",
+      "toInput": "target-1"
+    }
+  ],
+  "text": {
+    "en": {
+      "name": "Weekly PDF report from a Google Sheet",
+      "description": "Every Monday at 09:00 (Pakistan time), reads a Google Sheet (sales, expenses or donations), totals the amount per category and emails you a PDF report. Sheet columns (first row) include category and amount. Set up: pick your Google credential and the sheet on Google Drive; pick your Google credential on Gmail and type your email address in To. The PDF can hold Urdu and Arabic text.",
+      "cronExpression": "0 4 * * 1",
+      "pdfTitle": "Weekly report",
+      "pdfContent": "# Weekly report\n\nRows read: {{report.rows}}\n\n## Totals per category\n{{report.lines}}\n\n---\n\nTotal: {{report.total}}",
+      "emailMessage": "Your weekly report is attached.\n\nTotal: {{report.total}}"
+    },
+    "ur": {
+      "name": "گوگل شیٹ سے ہفتہ وار PDF رپورٹ",
+      "description": "ہر پیر صبح 9 بجے (پاکستانی وقت) گوگل شیٹ (فروخت، اخراجات یا عطیات) پڑھتا ہے، ہر قسم کی کل رقم جوڑتا ہے اور آپ کو PDF رپورٹ ای میل کرتا ہے۔ شیٹ کے کالموں (پہلی سطر) میں category اور amount ہوں۔ سیٹ اپ: Google Drive نوڈ پر گوگل credential اور شیٹ چنیں؛ Gmail پر گوگل credential چنیں اور To میں اپنا ای میل لکھیں۔ PDF میں اردو اور عربی لکھائی آ سکتی ہے۔",
+      "cronExpression": "0 4 * * 1",
+      "pdfTitle": "ہفتہ وار رپورٹ",
+      "pdfContent": "# ہفتہ وار رپورٹ\n\nپڑھی گئی سطریں: {{report.rows}}\n\n## ہر قسم کی کل رقم\n{{report.lines}}\n\n---\n\nکل: {{report.total}}",
+      "emailMessage": "آپ کی ہفتہ وار رپورٹ ساتھ منسلک ہے۔\n\nکل: {{report.total}}"
+    },
+    "ar": {
+      "name": "تقرير PDF أسبوعي من Google Sheets",
+      "description": "كل يوم اثنين الساعة 09:00 (بتوقيت السعودية) يقرأ جدول Google Sheets (مبيعات أو مصروفات أو تبرعات)، ويجمع المبلغ لكل فئة، ويرسل إليك تقرير PDF بالبريد. يجب أن تتضمن أعمدة الجدول (الصف الأول) category وamount. الإعداد: اختر حساب Google والجدول في Google Drive؛ اختر حساب Google في Gmail واكتب بريدك في To. يدعم ملف PDF النص العربي والأردي.",
+      "cronExpression": "0 6 * * 1",
+      "pdfTitle": "التقرير الأسبوعي",
+      "pdfContent": "# التقرير الأسبوعي\n\nعدد الصفوف: {{report.rows}}\n\n## الإجمالي لكل فئة\n{{report.lines}}\n\n---\n\nالإجمالي: {{report.total}}",
+      "emailMessage": "مرفق تقريرك الأسبوعي.\n\nالإجمالي: {{report.total}}"
+    }
+  }
+}

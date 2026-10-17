@@ -1,0 +1,210 @@
+{
+  "key": "whatsapp_order_status",
+  "category": "WhatsApp bots",
+  "minPlan": "PRO",
+  "nodes": [
+    {
+      "id": "trigger",
+      "type": "WHATSAPP_TRIGGER",
+      "position": {
+        "x": 0,
+        "y": 0
+      },
+      "data": {}
+    },
+    {
+      "id": "digits",
+      "type": "TEXT_FORMATTER",
+      "position": {
+        "x": 320,
+        "y": 0
+      },
+      "data": {
+        "variableName": "phoneDigits",
+        "operation": "extract",
+        "inputText": "{{whatsapp.from}}",
+        "regexPattern": "\\d{10}$"
+      }
+    },
+    {
+      "id": "extract",
+      "type": "INFORMATION_EXTRACTOR",
+      "position": {
+        "x": 640,
+        "y": 0
+      },
+      "data": {
+        "variableName": "request",
+        "inputText": "{{whatsapp.text}}",
+        "attributes": "orderNumber: the order number the customer wrote, digits only",
+        "systemPrompt": "@text:extractPrompt"
+      }
+    },
+    {
+      "id": "model",
+      "type": "GEMINI",
+      "position": {
+        "x": 640,
+        "y": 260
+      },
+      "data": {
+        "variableName": "chatModel"
+      }
+    },
+    {
+      "id": "find",
+      "type": "WOOCOMMERCE",
+      "position": {
+        "x": 960,
+        "y": 0
+      },
+      "data": {
+        "variableName": "openOrder",
+        "operation": "list_orders",
+        "storeUrl": "",
+        "search": "{{request.output.orderNumber}}",
+        "limit": "1",
+        "fields": "id, number, status, date_created, total, currency, billing"
+      }
+    },
+    {
+      "id": "match",
+      "type": "IF",
+      "position": {
+        "x": 1280,
+        "y": 0
+      },
+      "data": {
+        "combinator": "and",
+        "conditions": [
+          {
+            "inputKey": "openOrder.count",
+            "operator": "greater_than",
+            "value": "0"
+          },
+          {
+            "inputKey": "openOrder.items.0.billing.phone",
+            "operator": "contains",
+            "value": "{{phoneDigits.result}}"
+          }
+        ]
+      }
+    },
+    {
+      "id": "compose",
+      "type": "GEMINI",
+      "position": {
+        "x": 1600,
+        "y": -120
+      },
+      "data": {
+        "variableName": "statusReply",
+        "systemPrompt": "@text:replyPrompt",
+        "userPrompt": "Order {{openOrder.items.0.number}}: status {{openOrder.items.0.status}}, placed {{openOrder.items.0.date_created}}, total {{openOrder.items.0.total}} {{openOrder.items.0.currency}}.\nCustomer's message: {{whatsapp.text}}"
+      }
+    },
+    {
+      "id": "reply",
+      "type": "WHATSAPP",
+      "position": {
+        "x": 1920,
+        "y": -120
+      },
+      "data": {
+        "variableName": "statusMessage",
+        "operation": "send_text",
+        "phoneNumberId": "{{whatsapp.phoneNumberId}}",
+        "to": "{{whatsapp.from}}",
+        "message": "{{statusReply.text}}"
+      }
+    },
+    {
+      "id": "notFound",
+      "type": "WHATSAPP",
+      "position": {
+        "x": 1600,
+        "y": 160
+      },
+      "data": {
+        "variableName": "notFoundMessage",
+        "operation": "send_text",
+        "phoneNumberId": "{{whatsapp.phoneNumberId}}",
+        "to": "{{whatsapp.from}}",
+        "message": "@text:notFoundMessage"
+      }
+    }
+  ],
+  "connections": [
+    {
+      "fromNodeId": "trigger",
+      "toNodeId": "digits",
+      "fromOutput": "source-1",
+      "toInput": "target-1"
+    },
+    {
+      "fromNodeId": "digits",
+      "toNodeId": "extract",
+      "fromOutput": "source-1",
+      "toInput": "target-1"
+    },
+    {
+      "fromNodeId": "model",
+      "toNodeId": "extract",
+      "fromOutput": "source-1",
+      "toInput": "sub-model"
+    },
+    {
+      "fromNodeId": "extract",
+      "toNodeId": "find",
+      "fromOutput": "source-1",
+      "toInput": "target-1"
+    },
+    {
+      "fromNodeId": "find",
+      "toNodeId": "match",
+      "fromOutput": "source-1",
+      "toInput": "target-1"
+    },
+    {
+      "fromNodeId": "match",
+      "toNodeId": "compose",
+      "fromOutput": "true",
+      "toInput": "target-1"
+    },
+    {
+      "fromNodeId": "compose",
+      "toNodeId": "reply",
+      "fromOutput": "source-1",
+      "toInput": "target-1"
+    },
+    {
+      "fromNodeId": "match",
+      "toNodeId": "notFound",
+      "fromOutput": "false",
+      "toInput": "target-1"
+    }
+  ],
+  "text": {
+    "en": {
+      "name": "Order status on WhatsApp",
+      "description": "Customers send their order number on WhatsApp and get the status back in their own language. Only the number that placed the order gets an answer, and only status, date and total are shared. Set up: put the Verify Token and App Secret on the WhatsApp Trigger; pick credentials on both Gemini nodes, the WooCommerce node (and its Store URL) and both WhatsApp nodes.",
+      "extractPrompt": "You read WhatsApp messages sent to an online shop and find the order number in them.",
+      "replyPrompt": "You are the order assistant of an online shop. Using only the order data given, tell the customer the status of their order in one or two short sentences, in the language of their message. Status words: pending = waiting for payment, processing = being prepared, on-hold = on hold, completed = delivered or shipped, cancelled = cancelled, refunded = refunded. Do not make up delivery dates.",
+      "notFoundMessage": "Sorry, we could not find that order for this WhatsApp number. Please send the order number from your confirmation message, from the number you ordered with."
+    },
+    "ur": {
+      "name": "واٹس ایپ پر آرڈر کی صورتحال",
+      "description": "گاہک واٹس ایپ پر اپنا آرڈر نمبر بھیجتے ہیں اور اپنی زبان میں آرڈر کی صورتحال جان لیتے ہیں۔ جواب صرف اسی نمبر کو ملتا ہے جس سے آرڈر کیا گیا، اور صرف صورتحال، تاریخ اور رقم بتائی جاتی ہے۔ سیٹ اپ: WhatsApp Trigger پر Verify Token اور App Secret لکھیں؛ دونوں Gemini نوڈز، WooCommerce نوڈ (اور اس کا Store URL) اور دونوں WhatsApp نوڈز پر credentials چنیں۔",
+      "extractPrompt": "آپ ایک آن لائن دکان کو آنے والے واٹس ایپ پیغامات پڑھ کر ان میں آرڈر نمبر تلاش کرتے ہیں۔",
+      "replyPrompt": "آپ ایک آن لائن دکان کے آرڈر اسسٹنٹ ہیں۔ صرف دیے گئے آرڈر کے ڈیٹا سے، گاہک کے پیغام کی زبان میں ایک دو مختصر جملوں میں آرڈر کی صورتحال بتائیں۔ الفاظ کا مطلب: pending = ادائیگی کا انتظار، processing = تیار ہو رہا ہے، on-hold = روکا گیا ہے، completed = روانہ یا ڈیلیور ہو گیا، cancelled = منسوخ، refunded = رقم واپس۔ ڈیلیوری کی تاریخ اپنی طرف سے نہ بتائیں۔",
+      "notFoundMessage": "معذرت، اس واٹس ایپ نمبر کے لیے یہ آرڈر نہیں ملا۔ براہِ کرم اسی نمبر سے، جس سے آرڈر کیا تھا، تصدیقی پیغام والا آرڈر نمبر بھیجیں۔"
+    },
+    "ar": {
+      "name": "حالة الطلب عبر واتساب",
+      "description": "يرسل العملاء رقم الطلب عبر واتساب فيحصلون على حالته بلغتهم. لا يحصل على الرد إلا الرقم الذي أنشأ الطلب، ولا تُذكر إلا الحالة والتاريخ والإجمالي. الإعداد: أدخل Verify Token وApp Secret في WhatsApp Trigger؛ اختر credentials في عقدتي Gemini وعقدة WooCommerce (مع Store URL) وعقدتي WhatsApp.",
+      "extractPrompt": "تقرأ رسائل واتساب المرسلة إلى متجر إلكتروني وتجد فيها رقم الطلب.",
+      "replyPrompt": "أنت مساعد الطلبات في متجر إلكتروني. اعتماداً على بيانات الطلب المعطاة فقط، أخبر العميل بحالة طلبه في جملة أو جملتين قصيرتين وبلغة رسالته. معاني الحالات: pending = بانتظار الدفع، processing = قيد التجهيز، on-hold = معلق، completed = تم الشحن أو التسليم، cancelled = ملغى، refunded = تم رد المبلغ. لا تخترع مواعيد تسليم.",
+      "notFoundMessage": "عذراً، لم نجد هذا الطلب لرقم واتساب هذا. أرسل رقم الطلب الموجود في رسالة التأكيد ومن الرقم الذي طلبت به."
+    }
+  }
+}

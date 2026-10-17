@@ -1,0 +1,135 @@
+{
+  "key": "daily_sales_email",
+  "category": "Reports",
+  "minPlan": "INTERMEDIATE",
+  "nodes": [
+    {
+      "id": "schedule",
+      "type": "SCHEDULE_TRIGGER",
+      "position": {
+        "x": 0,
+        "y": 0
+      },
+      "data": {
+        "variableName": "scheduleTrigger",
+        "cronExpression": "@text:cronExpression"
+      }
+    },
+    {
+      "id": "yesterday",
+      "type": "DATE_TIME",
+      "position": {
+        "x": 320,
+        "y": 0
+      },
+      "data": {
+        "variableName": "yesterday",
+        "operation": "manipulate",
+        "timezone": "@text:timezone",
+        "formatString": "YYYY-MM-DD",
+        "action": "subtract",
+        "amount": 1,
+        "unit": "days"
+      }
+    },
+    {
+      "id": "orders",
+      "type": "SHOPIFY",
+      "position": {
+        "x": 640,
+        "y": 0
+      },
+      "data": {
+        "variableName": "orders",
+        "operation": "list_orders",
+        "shopDomain": "",
+        "status": "any",
+        "financialStatus": "paid",
+        "createdAfter": "{{yesterday.result}}",
+        "limit": "250",
+        "fields": "id, name, created_at, total_price, currency"
+      }
+    },
+    {
+      "id": "totals",
+      "type": "CODE",
+      "position": {
+        "x": 960,
+        "y": 0
+      },
+      "data": {
+        "variableName": "sales",
+        "code": "// Yesterday's paid orders, counted and totalled\nconst yesterday = context.yesterday.result;\nconst orders = (context.orders.items || []).filter((order) => String(order.created_at || \"\").startsWith(yesterday));\nconst total = orders.reduce((sum, order) => sum + Number(order.total_price || 0), 0);\nreturn {\n  count: orders.length,\n  total: total.toFixed(2),\n  currency: orders[0] ? orders[0].currency : \"\",\n  list: orders.map((order) => order.name + \": \" + order.total_price).join(\"\\n\") || \"-\",\n};",
+        "timeoutSeconds": 10
+      }
+    },
+    {
+      "id": "send",
+      "type": "GMAIL",
+      "position": {
+        "x": 1280,
+        "y": 0
+      },
+      "data": {
+        "variableName": "salesEmail",
+        "operation": "send_email",
+        "to": "",
+        "subject": "@text:emailSubject",
+        "emailType": "text",
+        "message": "@text:emailMessage"
+      }
+    }
+  ],
+  "connections": [
+    {
+      "fromNodeId": "schedule",
+      "toNodeId": "yesterday",
+      "fromOutput": "source-1",
+      "toInput": "target-1"
+    },
+    {
+      "fromNodeId": "yesterday",
+      "toNodeId": "orders",
+      "fromOutput": "source-1",
+      "toInput": "target-1"
+    },
+    {
+      "fromNodeId": "orders",
+      "toNodeId": "totals",
+      "fromOutput": "source-1",
+      "toInput": "target-1"
+    },
+    {
+      "fromNodeId": "totals",
+      "toNodeId": "send",
+      "fromOutput": "source-1",
+      "toInput": "target-1"
+    }
+  ],
+  "text": {
+    "en": {
+      "name": "Daily Shopify sales email",
+      "description": "Every morning at 08:00 (Pakistan time), emails you yesterday's paid Shopify orders: how many, the total and the list. Set up: pick your Shopify credential and type your Shop Domain on the Shopify node; pick your Google credential on Gmail and type your email address in To; change the time zone on the Date & Time node if your shop is elsewhere.",
+      "cronExpression": "0 3 * * *",
+      "timezone": "Asia/Karachi",
+      "emailSubject": "Sales for {{yesterday.result}}: {{sales.count}} orders, {{sales.total}} {{sales.currency}}",
+      "emailMessage": "Yesterday ({{yesterday.result}}):\n\nPaid orders: {{sales.count}}\nTotal: {{sales.total}} {{sales.currency}}\n\n{{sales.list}}"
+    },
+    "ur": {
+      "name": "روزانہ Shopify فروخت کی ای میل",
+      "description": "ہر صبح 8 بجے (پاکستانی وقت) آپ کو کل کے ادا شدہ Shopify آرڈرز کی ای میل بھیجتا ہے: تعداد، کل رقم اور فہرست۔ سیٹ اپ: Shopify نوڈ پر credential چنیں اور Shop Domain لکھیں؛ Gmail پر گوگل credential چنیں اور To میں اپنا ای میل لکھیں؛ دکان کسی اور ملک میں ہو تو Date & Time نوڈ کا ٹائم زون بدلیں۔",
+      "cronExpression": "0 3 * * *",
+      "timezone": "Asia/Karachi",
+      "emailSubject": "{{yesterday.result}} کی فروخت: {{sales.count}} آرڈر، {{sales.total}} {{sales.currency}}",
+      "emailMessage": "کل ({{yesterday.result}}):\n\nادا شدہ آرڈر: {{sales.count}}\nکل رقم: {{sales.total}} {{sales.currency}}\n\n{{sales.list}}"
+    },
+    "ar": {
+      "name": "بريد مبيعات Shopify اليومي",
+      "description": "كل صباح الساعة 08:00 (بتوقيت السعودية) يرسل إليك بريداً بطلبات Shopify المدفوعة أمس: العدد والإجمالي والقائمة. الإعداد: اختر credential لـ Shopify واكتب Shop Domain في عقدة Shopify؛ اختر حساب Google في Gmail واكتب بريدك في To؛ غيّر المنطقة الزمنية في عقدة Date & Time إذا كان متجرك في بلد آخر.",
+      "cronExpression": "0 5 * * *",
+      "timezone": "Asia/Riyadh",
+      "emailSubject": "مبيعات {{yesterday.result}}: {{sales.count}} طلب، {{sales.total}} {{sales.currency}}",
+      "emailMessage": "أمس ({{yesterday.result}}):\n\nالطلبات المدفوعة: {{sales.count}}\nالإجمالي: {{sales.total}} {{sales.currency}}\n\n{{sales.list}}"
+    }
+  }
+}

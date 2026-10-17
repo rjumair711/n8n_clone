@@ -1,0 +1,135 @@
+{
+  "key": "leave_and_expense_approval",
+  "category": "Forms",
+  "minPlan": "FREE",
+  "nodes": [
+    {
+      "id": "form",
+      "type": "FORM_TRIGGER",
+      "position": {
+        "x": 0,
+        "y": 0
+      },
+      "data": {
+        "formTitle": "@text:formTitle",
+        "formDescription": "@text:formDescription",
+        "formFields": "@text:formFields",
+        "submitLabel": "@text:submitLabel",
+        "afterSubmit": "message",
+        "thankYouMessage": "@text:thankYouMessage",
+        "captcha": "true"
+      }
+    },
+    {
+      "id": "approve",
+      "type": "APPROVAL",
+      "position": {
+        "x": 320,
+        "y": 0
+      },
+      "data": {
+        "variableName": "approval",
+        "operation": "telegram",
+        "title": "@text:approvalTitle",
+        "message": "@text:approvalMessage",
+        "recipient": "",
+        "timeoutAmount": "2",
+        "timeoutUnit": "days",
+        "onTimeout": "reject"
+      }
+    },
+    {
+      "id": "approved",
+      "type": "EMAIL_SEND",
+      "position": {
+        "x": 640,
+        "y": -120
+      },
+      "data": {
+        "recipient": "{{form.email}}",
+        "subject": "@text:approvedSubject",
+        "body": "@text:approvedBody"
+      }
+    },
+    {
+      "id": "rejected",
+      "type": "EMAIL_SEND",
+      "position": {
+        "x": 640,
+        "y": 160
+      },
+      "data": {
+        "recipient": "{{form.email}}",
+        "subject": "@text:rejectedSubject",
+        "body": "@text:rejectedBody"
+      }
+    }
+  ],
+  "connections": [
+    {
+      "fromNodeId": "form",
+      "toNodeId": "approve",
+      "fromOutput": "source-1",
+      "toInput": "target-1"
+    },
+    {
+      "fromNodeId": "approve",
+      "toNodeId": "approved",
+      "fromOutput": "approved",
+      "toInput": "target-1"
+    },
+    {
+      "fromNodeId": "approve",
+      "toNodeId": "rejected",
+      "fromOutput": "rejected",
+      "toInput": "target-1"
+    }
+  ],
+  "text": {
+    "en": {
+      "name": "Leave and expense requests with Telegram approval",
+      "description": "Staff request leave or an expense on a form; the manager approves or rejects it with one tap on Telegram, and the person gets the answer by email. Set up: pick your Telegram credential and type the manager's Chat ID in the approval node; pick an SMTP credential on both Email nodes; share the Form URL with your staff.",
+      "formTitle": "Leave or expense request",
+      "formDescription": "Your manager will approve or reject it, and you will get the answer by email.",
+      "formFields": "[{\"label\":\"Name\",\"type\":\"text\",\"required\":true,\"options\":\"\"},{\"label\":\"Email\",\"type\":\"email\",\"required\":true,\"options\":\"\"},{\"label\":\"Type\",\"type\":\"dropdown\",\"required\":true,\"options\":\"Leave, Expense\"},{\"label\":\"Details\",\"type\":\"text\",\"required\":true,\"options\":\"\"},{\"label\":\"Dates or amount\",\"type\":\"text\",\"required\":true,\"options\":\"\"}]",
+      "submitLabel": "Send request",
+      "thankYouMessage": "Your request was sent to your manager.",
+      "approvalTitle": "{{form.type}} request from {{form.name}}",
+      "approvalMessage": "{{form.details}}\n{{form.dates_or_amount}}",
+      "approvedSubject": "Your {{form.type}} request was approved",
+      "approvedBody": "Hi {{form.name}},\n\nYour request was approved:\n{{form.details}}\n{{form.dates_or_amount}}",
+      "rejectedSubject": "Your {{form.type}} request was not approved",
+      "rejectedBody": "Hi {{form.name}},\n\nYour request was not approved. Please speak to your manager for details:\n{{form.details}}"
+    },
+    "ur": {
+      "name": "چھٹی اور اخراجات کی درخواست، ٹیلیگرام پر منظوری",
+      "description": "عملہ فارم پر چھٹی یا خرچ کی درخواست دیتا ہے؛ مینیجر ٹیلیگرام پر ایک ٹیپ سے منظور یا مسترد کرتا ہے، اور درخواست دینے والے کو جواب ای میل پر ملتا ہے۔ سیٹ اپ: منظوری والے نوڈ پر Telegram credential اور مینیجر کا Chat ID دیں؛ دونوں Email نوڈز پر SMTP credential چنیں؛ Form URL اپنے عملے کو دیں۔",
+      "formTitle": "چھٹی یا خرچ کی درخواست",
+      "formDescription": "آپ کا مینیجر اسے منظور یا مسترد کرے گا اور جواب آپ کو ای میل پر ملے گا۔",
+      "formFields": "[{\"label\":\"نام (Name)\",\"type\":\"text\",\"required\":true,\"options\":\"\"},{\"label\":\"ای میل (Email)\",\"type\":\"email\",\"required\":true,\"options\":\"\"},{\"label\":\"قسم (Type)\",\"type\":\"dropdown\",\"required\":true,\"options\":\"چھٹی, خرچ\"},{\"label\":\"تفصیل (Details)\",\"type\":\"text\",\"required\":true,\"options\":\"\"},{\"label\":\"تاریخیں یا رقم (Dates or amount)\",\"type\":\"text\",\"required\":true,\"options\":\"\"}]",
+      "submitLabel": "درخواست بھیجیں",
+      "thankYouMessage": "آپ کی درخواست مینیجر کو بھیج دی گئی ہے۔",
+      "approvalTitle": "{{form.name}} کی درخواست: {{form.type}}",
+      "approvalMessage": "{{form.details}}\n{{form.dates_or_amount}}",
+      "approvedSubject": "آپ کی درخواست ({{form.type}}) منظور ہو گئی",
+      "approvedBody": "محترم {{form.name}}،\n\nآپ کی درخواست منظور ہو گئی:\n{{form.details}}\n{{form.dates_or_amount}}",
+      "rejectedSubject": "آپ کی درخواست ({{form.type}}) منظور نہیں ہوئی",
+      "rejectedBody": "محترم {{form.name}}،\n\nآپ کی درخواست منظور نہیں ہوئی۔ تفصیل کے لیے اپنے مینیجر سے بات کریں:\n{{form.details}}"
+    },
+    "ar": {
+      "name": "طلبات الإجازة والمصروفات بموافقة عبر تيليجرام",
+      "description": "يقدم الموظفون طلب إجازة أو مصروف عبر نموذج؛ يوافق المدير أو يرفض بلمسة على تيليجرام، ويصل الرد إلى مقدم الطلب بالبريد. الإعداد: اختر credential تيليجرام واكتب Chat ID للمدير في عقدة الموافقة؛ اختر credential لـ SMTP في عقدتي Email؛ شارك Form URL مع موظفيك.",
+      "formTitle": "طلب إجازة أو مصروف",
+      "formDescription": "سيوافق مديرك أو يرفض، وستصلك الإجابة بالبريد.",
+      "formFields": "[{\"label\":\"الاسم (Name)\",\"type\":\"text\",\"required\":true,\"options\":\"\"},{\"label\":\"البريد الإلكتروني (Email)\",\"type\":\"email\",\"required\":true,\"options\":\"\"},{\"label\":\"النوع (Type)\",\"type\":\"dropdown\",\"required\":true,\"options\":\"إجازة, مصروف\"},{\"label\":\"التفاصيل (Details)\",\"type\":\"text\",\"required\":true,\"options\":\"\"},{\"label\":\"التواريخ أو المبلغ (Dates or amount)\",\"type\":\"text\",\"required\":true,\"options\":\"\"}]",
+      "submitLabel": "إرسال الطلب",
+      "thankYouMessage": "أُرسل طلبك إلى مديرك.",
+      "approvalTitle": "طلب {{form.type}} من {{form.name}}",
+      "approvalMessage": "{{form.details}}\n{{form.dates_or_amount}}",
+      "approvedSubject": "تمت الموافقة على طلب {{form.type}}",
+      "approvedBody": "مرحباً {{form.name}}،\n\nتمت الموافقة على طلبك:\n{{form.details}}\n{{form.dates_or_amount}}",
+      "rejectedSubject": "لم تتم الموافقة على طلب {{form.type}}",
+      "rejectedBody": "مرحباً {{form.name}}،\n\nلم تتم الموافقة على طلبك. تحدث مع مديرك لمعرفة التفاصيل:\n{{form.details}}"
+    }
+  }
+}

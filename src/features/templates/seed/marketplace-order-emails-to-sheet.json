@@ -1,0 +1,138 @@
+{
+  "key": "marketplace_order_emails_to_sheet",
+  "category": "Email & Sheets",
+  "minPlan": "INTERMEDIATE",
+  "nodes": [
+    {
+      "id": "mail",
+      "type": "GMAIL_TRIGGER",
+      "position": {
+        "x": 0,
+        "y": 0
+      },
+      "data": {
+        "query": "is:unread subject:order",
+        "pollMinutes": "5"
+      }
+    },
+    {
+      "id": "extract",
+      "type": "INFORMATION_EXTRACTOR",
+      "position": {
+        "x": 320,
+        "y": 0
+      },
+      "data": {
+        "variableName": "order",
+        "inputText": "{{gmail.subject}}\n{{gmail.text}}",
+        "attributes": "orderNumber: the order number\ncustomer: the buyer's name, without commas\nitems: the products and quantities, without commas\ntotal (number): the order total\ncity: the delivery city",
+        "systemPrompt": "@text:extractPrompt"
+      }
+    },
+    {
+      "id": "model",
+      "type": "GEMINI",
+      "position": {
+        "x": 320,
+        "y": 260
+      },
+      "data": {
+        "variableName": "chatModel"
+      }
+    },
+    {
+      "id": "isOrder",
+      "type": "IF",
+      "position": {
+        "x": 640,
+        "y": 0
+      },
+      "data": {
+        "combinator": "and",
+        "conditions": [
+          {
+            "inputKey": "order.output.orderNumber",
+            "operator": "exists",
+            "value": ""
+          }
+        ]
+      }
+    },
+    {
+      "id": "save",
+      "type": "GOOGLE_SHEETS",
+      "position": {
+        "x": 960,
+        "y": 0
+      },
+      "data": {
+        "variableName": "savedOrder",
+        "sheetId": "",
+        "sheetName": "Sheet1",
+        "rowData": "{{gmail.date}}, {{order.output.orderNumber}}, {{order.output.customer}}, {{order.output.items}}, {{order.output.total}}, {{order.output.city}}"
+      }
+    },
+    {
+      "id": "read",
+      "type": "GMAIL",
+      "position": {
+        "x": 1280,
+        "y": 0
+      },
+      "data": {
+        "variableName": "markedRead",
+        "operation": "mark_as_read",
+        "messageId": "{{gmail.id}}"
+      }
+    }
+  ],
+  "connections": [
+    {
+      "fromNodeId": "mail",
+      "toNodeId": "extract",
+      "fromOutput": "source-1",
+      "toInput": "target-1"
+    },
+    {
+      "fromNodeId": "model",
+      "toNodeId": "extract",
+      "fromOutput": "source-1",
+      "toInput": "sub-model"
+    },
+    {
+      "fromNodeId": "extract",
+      "toNodeId": "isOrder",
+      "fromOutput": "source-1",
+      "toInput": "target-1"
+    },
+    {
+      "fromNodeId": "isOrder",
+      "toNodeId": "save",
+      "fromOutput": "true",
+      "toInput": "target-1"
+    },
+    {
+      "fromNodeId": "save",
+      "toNodeId": "read",
+      "fromOutput": "source-1",
+      "toInput": "target-1"
+    }
+  ],
+  "text": {
+    "en": {
+      "name": "Marketplace order emails to Google Sheets",
+      "description": "Reads the new-order emails your marketplace or website sends you (Daraz, Noon, Amazon or your own shop) and writes each order as a row: number, customer, items, total and city. Set up: change the Gmail Trigger's search so it matches only order emails; create a sheet with the columns Date, Order, Customer, Items, Total, City; pick credentials on the Gmail Trigger, Gemini, Google Sheets (and Spreadsheet ID) and Gmail.",
+      "extractPrompt": "You read order notification emails from online marketplaces and shops."
+    },
+    "ur": {
+      "name": "مارکیٹ پلیس آرڈر ای میلز سے گوگل شیٹ",
+      "description": "آپ کی مارکیٹ پلیس یا ویب سائٹ (Daraz، Noon، Amazon یا آپ کی اپنی دکان) کی نئے آرڈر والی ای میلز پڑھ کر ہر آرڈر کو شیٹ میں سطر بنا دیتا ہے: نمبر، گاہک، اشیاء، کل رقم اور شہر۔ سیٹ اپ: Gmail Trigger کی تلاش ایسی رکھیں کہ صرف آرڈر ای میلز ملیں؛ Date, Order, Customer, Items, Total, City کالموں والی شیٹ بنائیں؛ Gmail Trigger، Gemini، Google Sheets (اور Spreadsheet ID) اور Gmail پر credentials چنیں۔",
+      "extractPrompt": "آپ آن لائن مارکیٹ پلیسز اور دکانوں کی آرڈر اطلاع والی ای میلز پڑھتے ہیں۔"
+    },
+    "ar": {
+      "name": "رسائل طلبات المتاجر إلى Google Sheets",
+      "description": "يقرأ رسائل الطلبات الجديدة التي يرسلها متجرك أو منصتك (نون أو أمازون أو متجرك الخاص) ويكتب كل طلب صفاً: الرقم والعميل والأصناف والإجمالي والمدينة. الإعداد: عدّل بحث Gmail Trigger ليطابق رسائل الطلبات فقط؛ أنشئ جدولاً بالأعمدة Date, Order, Customer, Items, Total, City؛ اختر credentials في Gmail Trigger وGemini وGoogle Sheets (مع Spreadsheet ID) وGmail.",
+      "extractPrompt": "تقرأ رسائل إشعارات الطلبات من المتاجر والمنصات الإلكترونية."
+    }
+  }
+}

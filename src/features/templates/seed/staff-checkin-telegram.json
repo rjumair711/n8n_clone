@@ -1,0 +1,98 @@
+{
+  "key": "staff_checkin_telegram",
+  "category": "Telegram",
+  "minPlan": "INTERMEDIATE",
+  "nodes": [
+    {
+      "id": "trigger",
+      "type": "TELEGRAM_TRIGGER",
+      "position": {
+        "x": 0,
+        "y": 0
+      },
+      "data": {}
+    },
+    {
+      "id": "now",
+      "type": "DATE_TIME",
+      "position": {
+        "x": 320,
+        "y": 0
+      },
+      "data": {
+        "variableName": "now",
+        "operation": "current",
+        "timezone": "@text:timezone",
+        "formatString": "YYYY-MM-DD HH:mm"
+      }
+    },
+    {
+      "id": "save",
+      "type": "GOOGLE_SHEETS",
+      "position": {
+        "x": 640,
+        "y": 0
+      },
+      "data": {
+        "variableName": "attendance",
+        "sheetId": "",
+        "sheetName": "Sheet1",
+        "rowData": "{{now.result}}, {{telegram.message.from.first_name}}, {{telegram.message.from.id}}, {{telegram.message.text}}"
+      }
+    },
+    {
+      "id": "done",
+      "type": "TELEGRAM",
+      "position": {
+        "x": 960,
+        "y": 0
+      },
+      "data": {
+        "variableName": "checkinReply",
+        "chatId": "{{telegram.message.chat.id}}",
+        "text": "@text:savedMessage",
+        "parseMode": "None"
+      }
+    }
+  ],
+  "connections": [
+    {
+      "fromNodeId": "trigger",
+      "toNodeId": "now",
+      "fromOutput": "source-1",
+      "toInput": "target-1"
+    },
+    {
+      "fromNodeId": "now",
+      "toNodeId": "save",
+      "fromOutput": "source-1",
+      "toInput": "target-1"
+    },
+    {
+      "fromNodeId": "save",
+      "toNodeId": "done",
+      "fromOutput": "source-1",
+      "toInput": "target-1"
+    }
+  ],
+  "text": {
+    "en": {
+      "name": "Staff check-in on Telegram",
+      "description": "Staff send \"in\" or \"out\" (or a short note) to your Telegram bot and it is logged with the time and their name in a Google Sheet, so you have a simple attendance record. Set up: create a sheet with the columns Time, Name, Telegram ID, Message; pick credentials on the Telegram Trigger, Google Sheets (and Spreadsheet ID) and Telegram; change the time zone on the Date & Time node if needed; share the bot only with your staff.",
+      "timezone": "Asia/Karachi",
+      "savedMessage": "Recorded at {{now.result}}: {{telegram.message.text}}"
+    },
+    "ur": {
+      "name": "ٹیلیگرام پر عملے کی حاضری",
+      "description": "عملہ آپ کے ٹیلیگرام بوٹ کو \"in\" یا \"out\" (یا مختصر نوٹ) بھیجتا ہے اور وہ وقت اور نام کے ساتھ گوگل شیٹ میں درج ہو جاتا ہے، یوں حاضری کا آسان ریکارڈ بنتا ہے۔ سیٹ اپ: Time, Name, Telegram ID, Message کالموں والی شیٹ بنائیں؛ Telegram Trigger، Google Sheets (اور Spreadsheet ID) اور Telegram پر credentials چنیں؛ ضرورت ہو تو Date & Time نوڈ کا ٹائم زون بدلیں؛ بوٹ صرف اپنے عملے کو دیں۔",
+      "timezone": "Asia/Karachi",
+      "savedMessage": "درج ہو گیا، وقت {{now.result}}: {{telegram.message.text}}"
+    },
+    "ar": {
+      "name": "تسجيل حضور الموظفين عبر تيليجرام",
+      "description": "يرسل الموظفون \"in\" أو \"out\" (أو ملاحظة قصيرة) إلى بوت تيليجرام فتُسجل مع الوقت والاسم في Google Sheets، فيصبح لديك سجل حضور بسيط. الإعداد: أنشئ جدولاً بالأعمدة Time, Name, Telegram ID, Message؛ اختر credentials في Telegram Trigger وGoogle Sheets (مع Spreadsheet ID) وTelegram؛ غيّر المنطقة الزمنية في عقدة Date & Time عند الحاجة؛ شارك البوت مع موظفيك فقط.",
+      "timezone": "Asia/Riyadh",
+      "savedMessage": "تم التسجيل الساعة {{now.result}}: {{telegram.message.text}}"
+    }
+  }
+}
