@@ -17,7 +17,7 @@
   "dependencies": {
     "@ai-sdk/anthropic": "^3.0.46",
     "@ai-sdk/google": "^3.0.30",
-    "@ai-sdk/openai": "^3.0.30",
+    "@ai-sdk/openai": "^4.0.93",
     "@better-auth/core": "1.6.11",
     "@better-auth/sso": "1.6.11",
     "@better-auth/utils": "0.4.0",
