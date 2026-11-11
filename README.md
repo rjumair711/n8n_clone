@@ -1478,6 +1478,20 @@ Nodes that are not built yet. Each new integration is a config passed to `create
 
 Also not built: a true n8n items model for every node from the trigger onward (items start at a list node), a real tokenizer for the Vector Store's token splitting, and the stdio transport for MCP (it needs a process on the user's own machine).
 
+## Client servers dashboard (for the managed private server)
+
+Planned, not built. A page only the RXJ owner sees (an `ADMIN_EMAILS` account), for running the managed private servers of many clients from one place.
+
+| Planned item | What it needs |
+| ------------ | ------------- |
+| Server list | One row per client: name, domain, the Polar subscription it belongs to, and notes |
+| Health | Is the server online (its `/api` answers), which RXJ version and commit it runs, and when it was last checked |
+| Backups | When the last daily backup ran and whether it worked, with a warning when one is missing |
+| Workflow count | How many of the client's 5 included workflows are in use, so work beyond the $20 is easy to see |
+| Updates | "Update" per server and "Update all": pull the new image and restart, one server after the other, stopping at the first that fails |
+| How the servers report | A small status endpoint on each self-hosted server, protected by a per-server key, that the dashboard reads; no SSH keys of client servers are stored in RXJ |
+| Alerts | An email or WhatsApp message to the owner when a server is down or a backup failed |
+
 ## For the AI Backlink Outreach agent
 
 Planned, not built. These are the pieces an agent needs to find link prospects, email them from real mailboxes, follow up in the same thread and keep track of who was contacted.
