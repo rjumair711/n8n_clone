@@ -19,13 +19,13 @@ export const MANAGED_SERVER_OFFER: PricingOffer = {
   description: "RXJ on a server of your own, set up and looked after for you.",
   features: [
     "Your own server: your data stays yours",
-    "Every feature unlocked, no workflow or execution limits",
+    "Every feature unlocked on it",
+    "Up to 5 of your workflows built and looked after for you",
     "Set up with your domain and HTTPS",
-    "Monthly updates",
-    "Daily backups",
+    "Monthly updates and daily backups",
     "Fixed for you when something breaks",
   ],
-  note: "The server itself is in your name, from Hetzner or similar, about $5–7 a month paid to them.",
+  note: "More than 5 workflows: priced separately. The server itself is in your name, from Hetzner or similar, about $5–7 a month paid to them.",
 };
 
 export const PRICING_OFFERS: PricingOffer[] = [MANAGED_SERVER_OFFER];

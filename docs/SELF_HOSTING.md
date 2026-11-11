@@ -15,8 +15,10 @@ about $5–7 a month, paid to them), and for **$20 a month** RXJ takes care of:
 * monthly updates
 * daily backups
 * fixing it when something breaks
+* building and looking after **up to 5 of your workflows**
 
-Building your workflows for you is extra, quoted per job.
+The server itself has no limits: you can build as many workflows on it as
+you like. Having RXJ build or look after more than 5 is priced separately.
 
 ## License
 

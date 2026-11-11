@@ -15036,6 +15036,9 @@ pour()</code></pre>
 
     assert.deepEqual(pricing.PRICING_OFFERS.map((offer) => offer.slug), ["managed-server"]);
     assert.equal(pricing.MANAGED_SERVER_OFFER.price, "$20");
+    // The $20 covers the owner's work on up to 5 workflows; more is extra
+    assert.ok(pricing.MANAGED_SERVER_OFFER.features.includes("Up to 5 of your workflows built and looked after for you"));
+    assert.match(pricing.MANAGED_SERVER_OFFER.note, /^More than 5 workflows: priced separately\./);
 
     const link = "https://sandbox-api.polar.sh/v1/checkout-links/polar_cl_abc/redirect";
     assert.equal(pricing.getManagedServerCheckoutUrl(link), link);

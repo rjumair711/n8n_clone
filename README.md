@@ -1082,7 +1082,7 @@ RXJ includes a complete SaaS monetization architecture powered by Polar.
 
 ## What is on sale: the managed private server
 
-The pricing page and the landing page show one offer: the **managed private server**, $20 a month (`src/config/pricing-plans.ts`). RXJ is installed on the client's own server (see "Self-hosting") and looked after for them. The Beginner, Intermediate and Pro plans are no longer sold.
+The pricing page and the landing page show one offer: the **managed private server**, $20 a month (`src/config/pricing-plans.ts`). RXJ is installed on the client's own server (see "Self-hosting") and looked after for them, and the $20 covers building and looking after up to 5 of their workflows (the server itself has no limit; more workflows are priced separately). The Beginner, Intermediate and Pro plans are no longer sold.
 
 * **Buying:** the button opens the Polar checkout link in `NEXT_PUBLIC_MANAGED_SERVER_CHECKOUT_URL` (the sandbox link while testing, the production link when live). Without it the button says "Coming soon". The link can also be sent to a client directly.
 * **After paying:** set the link's success URL in Polar to `<app URL>/managed-server/thanks?checkout_id={CHECKOUT_ID}`. That page tells the buyer what to have ready; you then email them from the subscription in Polar.
@@ -1356,7 +1356,7 @@ The live app on Vercel and local development use the **same** database, so the s
 
 ## Self-hosting (your own server)
 
-Anyone can run RXJ on their own VPS with Docker: [`docs/SELF_HOSTING.md`](docs/SELF_HOSTING.md) has the steps. `self-host/docker-compose.yml` starts the app, Postgres (pgvector), Valkey (Redis-compatible), an Inngest server and Caddy (HTTPS), and the app applies its migrations to that server's own database when it starts. People who want their own server without the technical work can have RXJ run it for them as a managed private server, $20 a month (see the guide).
+Anyone can run RXJ on their own VPS with Docker: [`docs/SELF_HOSTING.md`](docs/SELF_HOSTING.md) has the steps. `self-host/docker-compose.yml` starts the app, Postgres (pgvector), Valkey (Redis-compatible), an Inngest server and Caddy (HTTPS), and the app applies its migrations to that server's own database when it starts. People who want their own server without the technical work can have RXJ run it for them as a managed private server: $20 a month, including up to 5 workflows built and looked after (see the guide).
 
 * **The self-hosted edition is free.** The image is built with `NEXT_PUBLIC_SELF_HOSTED=true` (`src/config/self-hosted.ts`): every plan gets no limits and every feature (`buildPlanLimits` in `src/config/plans.ts`), new accounts are Pro with no trial, there are no daily message caps, and Polar is off (no plugin, and the checkout and Polar webhook routes answer 404). `/`, `/pricing` and `/billing` open `/workflows`, and Billing is not in the menu.
 * **Nothing reaches RXJ's accounts.** Sentry is off unless the image is built with `NEXT_PUBLIC_SENTRY_DSN` (`src/config/sentry-dsn.ts`), and the editor polls run status instead of using Inngest Cloud's live stream.
