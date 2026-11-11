@@ -53,6 +53,25 @@ jobs:
       - name: testCoreNodes
         run: npx tsx --conditions=react-server src/inngest/__test__/testCoreNodes.ts
 
+  # The Browser node in a real headless Chrome (the runner's own) against a
+  # local test site: JavaScript pages, Run Steps, steps an AI Agent writes,
+  # the element list and the private-address block. No network outside the
+  # runner, no database.
+  browser:
+    name: Browser node
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+      - run: npm ci
+      - name: Browser node against a real Chrome
+        run: npx tsx --conditions=react-server scripts/test-browser-node.ts
+        env:
+          CHROME_PATH: /usr/bin/google-chrome
+
   # `next build` catches what tsc does not: a server-only package (sharp,
   # fs, ...) pulled into the browser bundle by a "use client" import. Runs
   # `prisma generate` and `next build` directly, NOT `npm run build`, so
