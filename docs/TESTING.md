@@ -1930,6 +1930,33 @@ Use a browser window of 1366 × 768 (or DevTools → device toolbar at 1366 × 6
 8. **Nothing lost.** Two-factor, sessions, API keys, the workspace name, invitations, members, roles, leaving a workspace, the audit log, model prices, RXJ AI included, the AI budget, Git sync, external secrets and SSO all work as before, each in its section.
 9. **Loading.** Switch between sections: a skeleton shows in the section area while it loads, and the menu next to it does not move.
 
+## T25. Self-hosting
+
+Needs a throwaway Linux VPS (or a Linux machine with Docker) and a test
+subdomain pointing at it. Nothing here touches the shared Neon database:
+the self-hosted install has its own Postgres. Follow `docs/SELF_HOSTING.md`.
+
+| # | Do | Expect |
+| - | -- | ------ |
+| 1 | `docker compose up -d` with a complete `.env`, then `docker compose logs app` | the migrations are applied ("All migrations have been successfully applied"), then `Ready` |
+| 2 | Leave `ENCRYPTION_KEY` empty and `docker compose up -d app` | the app stops with `[RXJ] The server cannot start` naming `ENCRYPTION_KEY` |
+| 3 | Open `https://<domain>/` | a valid certificate, and you land on `/login` (signed out) or `/workflows`, never the landing page |
+| 4 | Sign up, open `/pricing` and `/billing` | both open `/workflows`; the account menu has no Billing |
+| 5 | Settings → Usage & plan | plan Pro, no trial banner |
+| 6 | Add an SSH, WhatsApp, Gmail and AI Agent node; activate 5 workflows | no lock and no upgrade prompt anywhere |
+| 7 | Webhook Trigger dialog | the URL starts with `https://<domain>/api/webhooks/` |
+| 8 | Run a workflow with a Webhook Trigger, call it with `curl` | the run shows in Executions; the editor shows each node turning green |
+| 9 | Run a workflow with a Wait node of 1 minute | it carries on after a minute (Inngest server and Valkey work) |
+| 10 | `docker compose restart` during a Wait | the run still finishes afterwards |
+| 11 | `curl -X POST https://<domain>/api/subscription/checkout` and `/api/webhooks/polar` | both answer 404 |
+| 12 | Browser dev tools → Network while using the app | no request goes to `sentry.io`, `inn.gs` or `polar.sh` |
+| 13 | From outside the server: `curl http://<server ip>:8288` | refused (the Inngest dashboard is only on 127.0.0.1) |
+
+On the hosted app (after the merge), check that nothing changed: `/` shows
+the landing page, Billing is in the menu, a Free account still sees the Pro
+lock on SSH, and checkout opens Polar's **production** checkout, not the
+sandbox.
+
 # When something fails
 
 Note the node, the exact values you entered, and the error text from the

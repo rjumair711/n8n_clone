@@ -1,0 +1,6 @@
+# HTTPS for RXJ. Caddy gets and renews a Let's Encrypt certificate for
+# RXJ_DOMAIN by itself; the domain's DNS must point at this server first.
+{$RXJ_DOMAIN} {
+	encode zstd gzip
+	reverse_proxy app:3000
+}

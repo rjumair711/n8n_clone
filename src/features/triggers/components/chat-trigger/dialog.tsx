@@ -1,5 +1,6 @@
 "use client"
 
+import { getPublicAppUrl } from "@/lib/public-app-url";
 import { useEffect, useState } from "react";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
@@ -112,7 +113,7 @@ export const ChatTriggerDialog = ({
         values.handoffChannel === "whatsapp" ? "WHATSAPP" : "SMTP"
     );
 
-    const appUrl = process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000";
+    const appUrl = getPublicAppUrl();
     const domains = parseAllowedDomains(values.chatAllowedDomains);
 
     const handleSave = () => {

@@ -48,6 +48,7 @@ import { authClient } from "@/lib/auth-client"
 import { getInitials } from "@/lib/initials"
 import { RxjLogo } from "@/features/marketing/components/rxj-logo"
 import { WorkspaceSwitcher } from "@/features/workspaces/components/workspace-switcher"
+import { SELF_HOSTED } from "@/config/self-hosted"
 
 type NavItem = { title: string; icon: LucideIcon; url: string }
 
@@ -77,7 +78,8 @@ const ACCOUNT_ITEMS: NavItem[] = [
     { title: "Billing", icon: CreditCardIcon, url: "/billing" },
     { title: "API Keys", icon: Code2Icon, url: "/settings/api-keys" },
     { title: "Docs", icon: BookOpenIcon, url: "/docs" },
-]
+// A self-hosted server has no billing
+].filter((item) => !SELF_HOSTED || item.url !== "/billing")
 
 // One size for every item: 36px high, 16px icons, the same gap and padding
 const ITEM_CLASS =

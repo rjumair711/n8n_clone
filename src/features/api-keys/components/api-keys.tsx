@@ -1,5 +1,6 @@
 "use client";
 
+import { getPublicAppUrl } from "@/lib/public-app-url";
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { format, formatDistanceToNow } from "date-fns";
@@ -110,7 +111,7 @@ export const ApiKeys = ({ embedded = false }: { embedded?: boolean }) => {
 
     const today = new Date().toISOString().slice(0, 10);
 
-    const baseUrl = process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000";
+    const baseUrl = getPublicAppUrl();
     const example = `curl -X POST "${baseUrl}/api/v1/workflows/<workflowId>/execute" \\
   -H "Authorization: Bearer <your-api-key>" \\
   -H "Content-Type: application/json" \\

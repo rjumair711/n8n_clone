@@ -24,6 +24,7 @@ import { polarClient } from "./polar"
 import { getCreditPacks, readCreditOrder } from "@/config/ai-credits"
 import { grantCreditPurchase } from "./ai-credits"
 import { SubscriptionPlan } from "@prisma/client"
+import { SELF_HOSTED } from "@/config/self-hosted"
 import { Resend } from "resend"
 
 // Where the app may be opened from. Set NEXT_PUBLIC_APP_URL (and
@@ -177,12 +178,15 @@ export const auth = betterAuth({
             where: {
               id: user.id,
             },
-            data: {
-              plan: "FREE",
-              trialEndsAt: new Date(
-                Date.now() + 7 * 24 * 60 * 60 * 1000
-              ),
-            },
+            // A self-hosted server has no plans to try: everyone is on Pro
+            data: SELF_HOSTED
+              ? { plan: "PRO", trialEndsAt: null }
+              : {
+                  plan: "FREE",
+                  trialEndsAt: new Date(
+                    Date.now() + 7 * 24 * 60 * 60 * 1000
+                  ),
+                },
           });
         },
       },
@@ -359,7 +363,9 @@ export const auth = betterAuth({
     // After twoFactor on purpose: its hook has then already turned a
     // password sign-in that still needs a code into a "twoFactorRedirect"
     auditLogPlugin,
-    polar({
+    // Billing. A self-hosted server has none: no Polar customer, checkout
+    // or webhooks (src/config/self-hosted.ts)
+    ...(SELF_HOSTED ? [] : [polar({
       client: polarClient,
       createCustomerOnSignUp: true,
       use: [
@@ -436,6 +442,6 @@ export const auth = betterAuth({
           },
         }),
       ],
-    }),
+    })]),
   ],
 })

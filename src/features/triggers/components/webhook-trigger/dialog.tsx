@@ -1,5 +1,6 @@
 "use client"
 
+import { getPublicAppUrl } from "@/lib/public-app-url";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
@@ -33,7 +34,7 @@ export const WebhookTriggerDialog = ({
     const workflowId = params.workflowId as string;
 
     // Construct the webhook URL
-    const baseUrl = process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000"
+    const baseUrl = getPublicAppUrl()
     const webhookUrl = `${baseUrl}/api/webhooks/trigger/${workflowId}`
 
     // The route rejects requests without the secret, so every node needs one

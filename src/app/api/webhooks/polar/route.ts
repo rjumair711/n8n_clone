@@ -4,6 +4,7 @@ import { SubscriptionPlan } from "@prisma/client";
 import { NextResponse } from "next/server";
 import { getCreditPacks, readCreditOrder } from "@/config/ai-credits";
 import { grantCreditPurchase } from "@/lib/ai-credits";
+import { SELF_HOSTED } from "@/config/self-hosted";
 
 // 💡 Dynamically map the incoming Polar product IDs to your database plan strings
 const WEBHOOK_PLAN_MAP: Record<string, string> = {
@@ -13,6 +14,11 @@ const WEBHOOK_PLAN_MAP: Record<string, string> = {
 };
 
 export async function POST(req: Request) {
+    // A self-hosted server has no billing, so nothing may change a plan
+    if (SELF_HOSTED) {
+        return NextResponse.json({ succeeded: false, error: "Not found" }, { status: 404 });
+    }
+
     try {
         // This route changes a user's plan, so nothing is read from a
         // request that Polar did not sign. The signature covers the exact

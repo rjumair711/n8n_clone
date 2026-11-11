@@ -1,16 +1,11 @@
 import { auth } from "@/lib/auth";
 import { headers } from "next/headers";
 import { NextResponse } from "next/server";
-import { Polar } from "@polar-sh/sdk";
 import { getCreditPacks } from "@/config/ai-credits";
-
-// Initialize the Polar SDK client
-const polar = new Polar({
-  accessToken: process.env.POLAR_ACCESS_TOKEN ?? "",
-  // 💡 Tip: If you are using a Polar Sandbox organization for local testing, 
-  // uncomment the next line:
-  server: "sandbox", 
-});
+import { SELF_HOSTED } from "@/config/self-hosted";
+// The same client as the rest of the app: POLAR_SERVER picks the sandbox
+// (development) or the production Polar account
+import { polarClient as polar } from "@/lib/polar";
 
 // Map the plan slugs to your exact environment variables
 const PLAN_PRODUCT_IDS: Record<string, string | undefined> = {
@@ -20,6 +15,11 @@ const PLAN_PRODUCT_IDS: Record<string, string | undefined> = {
 };
 
 export async function POST(req: Request) {
+  // A self-hosted server sells nothing
+  if (SELF_HOSTED) {
+    return NextResponse.json({ error: "Not found" }, { status: 404 });
+  }
+
   try {
     // 1. Authenticate user session
     const session = await auth.api.getSession({

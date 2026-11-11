@@ -1,6 +1,8 @@
 // Settings without which the server must not start. Pure, so it can be
 // tested; src/instrumentation.ts runs it when the server starts.
 
+import { isSelfHostedEnv } from "@/config/self-hosted";
+
 type Env = Record<string, string | undefined>;
 
 /**
@@ -18,6 +20,32 @@ export const getStartupErrors = (env: Env = process.env): string[] => {
     errors.push(
       "INNGEST_SIGNING_KEY is not set. In production it is required, so that only Inngest can call /api/inngest. Copy the signing key of the app's environment from the Inngest dashboard (or of your self-hosted Inngest server) into INNGEST_SIGNING_KEY."
     );
+  }
+
+  if (isSelfHostedEnv(env)) errors.push(...getSelfHostedErrors(env));
+
+  return errors;
+};
+
+/**
+ * The self-hosted edition (docs/SELF_HOSTING.md) unlocks every plan and
+ * switches billing off. It must never run as the hosted app: on Vercel it
+ * would share the hosted database and give every account Pro. It also needs
+ * the secrets that the hosted app has set in Vercel.
+ */
+export const getSelfHostedErrors = (env: Env): string[] => {
+  const errors: string[] = [];
+
+  if (env.VERCEL) {
+    errors.push(
+      "NEXT_PUBLIC_SELF_HOSTED=true is set on Vercel. The self-hosted edition is for your own server only; remove the variable from the Vercel project."
+    );
+  }
+
+  for (const name of ["DATABASE_URL", "BETTER_AUTH_SECRET", "ENCRYPTION_KEY"]) {
+    if (!env[name]?.trim()) {
+      errors.push(`${name} is not set. Generate it as described in docs/SELF_HOSTING.md and put it in the .env file next to docker-compose.yml.`);
+    }
   }
 
   return errors;

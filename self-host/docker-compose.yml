@@ -1,0 +1,105 @@
+# RXJ on your own server. Step by step: docs/SELF_HOSTING.md
+#
+#   cp env.example .env     # then fill it in
+#   docker compose up -d
+#
+# Services: the app, Postgres (with pgvector), Valkey (Redis-compatible) and
+# Inngest (which runs the workflows), and Caddy, which gets an HTTPS
+# certificate for your domain.
+# Only Caddy is reachable from the internet (ports 80 and 443).
+
+name: rxj
+
+services:
+  app:
+    # The published image. To build it on the server instead (needs about
+    # 8 GB of memory): docker compose build app
+    image: ${RXJ_IMAGE:-ghcr.io/rjumair711/rxj:latest}
+    build:
+      context: ..
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      DATABASE_URL: postgresql://rxj:${POSTGRES_PASSWORD}@postgres:5432/rxj
+      NEXT_PUBLIC_APP_URL: https://${RXJ_DOMAIN}
+      BETTER_AUTH_URL: https://${RXJ_DOMAIN}
+      # The Inngest server below, not Inngest Cloud
+      INNGEST_BASE_URL: http://inngest:8288
+    # Lets workflows reach services on the server itself (e.g. Ollama) as
+    # host.docker.internal, once it is in PRIVATE_NETWORK_ALLOWLIST
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      inngest:
+        condition: service_started
+
+  postgres:
+    # Postgres 17 with pgvector, for the Vector Store node
+    image: pgvector/pgvector:0.8.1-pg17
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: rxj
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: rxj
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+      # Creates Inngest's own database on the first start
+      - ./postgres-init:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U rxj -d rxj"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  # Inngest's queue. Valkey is a Redis-compatible server under the BSD
+  # license (Redis 7.4 and later are not open source)
+  redis:
+    image: valkey/valkey:8.1-alpine
+    restart: unless-stopped
+    command: ["valkey-server", "--appendonly", "yes"]
+    volumes:
+      - redis-data:/data
+
+  inngest:
+    image: inngest/inngest:v1.50.0
+    restart: unless-stopped
+    command: ["inngest", "start", "--sdk-url", "http://app:3000/api/inngest"]
+    environment:
+      INNGEST_SIGNING_KEY: ${INNGEST_SIGNING_KEY}
+      INNGEST_EVENT_KEY: ${INNGEST_EVENT_KEY}
+      INNGEST_POSTGRES_URI: postgresql://rxj:${POSTGRES_PASSWORD}@postgres:5432/inngest
+      INNGEST_REDIS_URI: redis://redis:6379
+    # The Inngest dashboard has no login: only the server itself can open
+    # it. From your computer: ssh -L 8288:localhost:8288 you@your-server
+    ports:
+      - "127.0.0.1:8288:8288"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_started
+
+  caddy:
+    image: caddy:2.10.2-alpine
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    environment:
+      RXJ_DOMAIN: ${RXJ_DOMAIN}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+    depends_on:
+      - app
+
+volumes:
+  postgres-data:
+  redis-data:
+  caddy-data:
+  caddy-config:

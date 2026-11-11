@@ -14973,6 +14973,115 @@ pour()</code></pre>
     assert.match(sql, /CREATE INDEX "Execution_workflowId_startedAt_idx"/);
   });
 
+  // ------------------------------------------------------- Self-hosting
+  console.log("Self-hosted edition");
+
+  await test("self-hosted: every plan is unlimited with every feature; the hosted plans are unchanged", async () => {
+    const plans = await import("@/config/plans");
+
+    // These tests run without NEXT_PUBLIC_SELF_HOSTED: the hosted limits
+    assert.equal(plans.PLAN_LIMITS.FREE.activeWorkflows, 3);
+    assert.equal(plans.PLAN_LIMITS.FREE.features.ssh, false);
+    assert.equal(plans.getRequiredPlanForNode("SSH", "FREE"), "Pro");
+
+    const self = plans.buildPlanLimits(true);
+    for (const name of plans.PLAN_ORDER) {
+      assert.equal(self[name].monthlyExecutions, Infinity, name);
+      assert.equal(self[name].activeWorkflows, Infinity, name);
+      assert.equal(self[name].credentials, Infinity, name);
+      for (const [feature, on] of Object.entries(self[name].features)) assert.equal(on, true, `${name} ${feature}`);
+    }
+    assert.deepEqual(
+      Object.keys(self.FREE.features).sort(),
+      Object.keys(plans.buildPlanLimits(false).PRO.features).sort()
+    );
+    assert.equal(plans.buildPlanLimits(false), plans.PLAN_LIMITS);
+  });
+
+  await test("self-hosted: Sentry reports nowhere unless the owner sets a DSN; the hosted app keeps RXJ's", async () => {
+    const { getSentryDsn, SENTRY_DSN } = await import("@/config/sentry-dsn");
+
+    assert.equal(getSentryDsn(undefined, true), undefined);
+    assert.equal(getSentryDsn("  ", true), undefined);
+    assert.equal(getSentryDsn("https://k@o1.ingest.sentry.io/2", true), "https://k@o1.ingest.sentry.io/2");
+    assert.match(getSentryDsn(undefined, false) ?? "", /^https:\/\/[0-9a-f]+@o4509519524200448\.ingest\.us\.sentry\.io\//);
+    assert.equal(SENTRY_DSN, getSentryDsn(undefined, false));
+  });
+
+  await test("self-hosted: the server refuses to start on Vercel or without its secrets", async () => {
+    const { getStartupErrors } = await import("@/lib/startup-checks");
+    const ok = {
+      NEXT_PUBLIC_SELF_HOSTED: "true",
+      NODE_ENV: "production",
+      INNGEST_SIGNING_KEY: "abc123",
+      DATABASE_URL: "postgresql://rxj:pw@postgres:5432/rxj",
+      BETTER_AUTH_SECRET: "s",
+      ENCRYPTION_KEY: "k",
+    };
+
+    assert.deepEqual(getStartupErrors(ok), []);
+    assert.match(getStartupErrors({ ...ok, VERCEL: "1" }).join("\n"), /self-hosted edition is for your own server only/);
+    for (const name of ["DATABASE_URL", "BETTER_AUTH_SECRET", "ENCRYPTION_KEY"]) {
+      assert.match(getStartupErrors({ ...ok, [name]: "" }).join("\n"), new RegExp(`${name} is not set`));
+    }
+    // Not self-hosted: nothing new is asked for
+    assert.deepEqual(getStartupErrors({ NODE_ENV: "production", INNGEST_SIGNING_KEY: "abc", VERCEL: "1" }), []);
+  });
+
+  await test("self-hosted: the editor's URLs use the build's address, else the page's own", async () => {
+    const { getPublicAppUrl } = await import("@/lib/public-app-url");
+    const saved = process.env.NEXT_PUBLIC_APP_URL;
+    const g = globalThis as { window?: unknown };
+
+    try {
+      process.env.NEXT_PUBLIC_APP_URL = "https://rxj.example.com/";
+      assert.equal(getPublicAppUrl(), "https://rxj.example.com");
+
+      delete process.env.NEXT_PUBLIC_APP_URL;
+      assert.equal(getPublicAppUrl(), "http://localhost:3000");
+      g.window = { location: { origin: "https://automate.my-server.org" } };
+      assert.equal(getPublicAppUrl(), "https://automate.my-server.org");
+    } finally {
+      delete g.window;
+      if (saved === undefined) delete process.env.NEXT_PUBLIC_APP_URL;
+      else process.env.NEXT_PUBLIC_APP_URL = saved;
+    }
+  });
+
+  await test("self-hosted: the Docker files keep secrets out and leave the Vercel deploy alone", async () => {
+    const { readFileSync } = await import("node:fs");
+    const { join } = await import("node:path");
+    const read = (path: string) => readFileSync(join(process.cwd(), path), "utf8");
+
+    const dockerfile = read("Dockerfile");
+    assert.match(dockerfile, /NEXT_PUBLIC_SELF_HOSTED=true/);
+    // The Vercel build script (with its migration step) is not what the image runs
+    assert.equal(/npm run build/.test(dockerfile.replace(/^#.*$/gm, "")), false);
+    assert.equal(/NEXT_PUBLIC_APP_URL=/.test(dockerfile), false);
+    assert.match(dockerfile, /set -e;.*migrate deploy.*exec node server\.js/);
+    assert.match(read(".dockerignore"), /^\*\*\/\.env\*$/m);
+
+    const compose = read("self-host/docker-compose.yml");
+    assert.match(compose, /"127\.0\.0\.1:8288:8288"/);
+    assert.match(compose, /INNGEST_BASE_URL: http:\/\/inngest:8288/);
+    assert.equal(/neon\.tech|VERCEL/.test(compose), false);
+    // Valkey (BSD) instead of Redis 7.4+ (not open source)
+    assert.match(compose, /image: valkey\/valkey:/);
+    assert.equal(/image: redis:/.test(compose), false);
+    assert.match(read("LICENSE"), /^Elastic License 2\.0$/m);
+
+    // The Vercel deploy migrates exactly as before
+    assert.match(read("package.json"), /"build": "prisma generate && node scripts\/migrate-on-deploy\.mjs && cross-env/);
+    assert.match(read("scripts/migrate-on-deploy.mjs"), /env\.VERCEL_ENV === "production"/);
+
+    // Self-hosted servers have no billing endpoints that do anything
+    assert.match(read("src/app/api/subscription/checkout/route.ts"), /if \(SELF_HOSTED\) \{\s*return NextResponse\.json\(\{ error: "Not found" \}, \{ status: 404 \}\)/);
+    assert.match(read("src/app/api/webhooks/polar/route.ts"), /if \(SELF_HOSTED\) \{/);
+    assert.match(read("src/lib/auth.ts"), /\.\.\.\(SELF_HOSTED \? \[\] : \[polar\(\{/);
+    // Checkout follows POLAR_SERVER instead of always using the sandbox
+    assert.equal(/server: "sandbox"/.test(read("src/app/api/subscription/checkout/route.ts")), false);
+  });
+
   console.log(`\n${passed} checks passed`);
 };
 
