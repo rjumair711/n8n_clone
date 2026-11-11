@@ -1,5 +1,6 @@
 "use client";
 
+import { getPublicAppUrl } from "@/lib/public-app-url";
 import {
   Dialog,
   DialogContent,
@@ -317,16 +318,16 @@ export const IntegrationDialog = ({
 
   const params = useParams();
   const webhookUrl = config.webhookPath
-    ? `${process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000"}/api/webhooks/${config.webhookPath}/${params.workflowId}`
+    ? `${getPublicAppUrl()}/api/webhooks/${config.webhookPath}/${params.workflowId}`
     : null;
 
   const endpointUrl = config.endpointUrl
-    ? `${process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000"}${config.endpointUrl.path}/${params.workflowId}`
+    ? `${getPublicAppUrl()}${config.endpointUrl.path}/${params.workflowId}`
     : null;
 
   const formUrl =
     config.formUrl && nodeId
-      ? `${process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000"}/forms/${nodeId}`
+      ? `${getPublicAppUrl()}/forms/${nodeId}`
       : null;
 
   const watchedValues = form.watch();

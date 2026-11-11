@@ -2,13 +2,16 @@
 
 import { useEffect } from "react";
 import { useExecutionStore } from "@/features/executions/store/execution-store";
+import { SELF_HOSTED } from "@/config/self-hosted";
 
 export function useExecutionSubscription(executionId: string | null) {
   const setNodeStatus = useExecutionStore((s) => s.setNodeStatus);
   const setExecutionActive = useExecutionStore((s) => s.setExecutionActive);
 
   useEffect(() => {
-    if (!executionId) return;
+    // The stream below is Inngest Cloud's. A self-hosted server runs its own
+    // Inngest, so the editor relies on polling the run (use-execution-nodes)
+    if (!executionId || SELF_HOSTED) return;
 
     let eventSource: EventSource;
 

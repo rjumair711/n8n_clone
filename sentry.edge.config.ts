@@ -4,10 +4,13 @@
 // https://docs.sentry.io/platforms/javascript/guides/nextjs/
 
 import * as Sentry from "@sentry/nextjs";
+import { SENTRY_DSN } from "./src/config/sentry-dsn";
 import { redactForSentry } from "./src/lib/redaction";
 
 Sentry.init({
-  dsn: "https://b9e51a0f783724171c76397b7177ede0@o4509519524200448.ingest.us.sentry.io/4510924234948608",
+  // Not set on a self-hosted server: Sentry is then off (src/config/sentry-dsn.ts)
+  dsn: SENTRY_DSN,
+  enabled: Boolean(SENTRY_DSN),
 
   integrations: [
     Sentry.consoleLoggingIntegration({ levels: ["log", "warn", "error"] }),

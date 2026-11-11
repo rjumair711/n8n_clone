@@ -1,3 +1,5 @@
+import { SELF_HOSTED } from "./self-hosted";
+
 export enum SubscriptionPlan {
   FREE = "FREE",
   BEGINNER = "BEGINNER",
@@ -5,7 +7,8 @@ export enum SubscriptionPlan {
   PRO = "PRO",
 }
 
-export const PLAN_LIMITS = {
+// What the paid plans of the hosted app include
+const PAID_PLAN_LIMITS = {
   FREE: {
     monthlyExecutions: 500,
     activeWorkflows: 3,
@@ -107,7 +110,54 @@ export const PLAN_LIMITS = {
   },
 } as const;
 
-export type PlanFeature = keyof typeof PLAN_LIMITS.PRO.features;
+export type PlanFeature = keyof typeof PAID_PLAN_LIMITS.PRO.features;
+
+export type PlanLimits = {
+  monthlyExecutions: number;
+  activeWorkflows: number;
+  executionHistoryDays: number;
+  credentials: number;
+  features: Record<PlanFeature, boolean>;
+};
+
+// Self-hosted: no limits, every feature, whatever plan a user row says
+const UNLIMITED: PlanLimits = {
+  monthlyExecutions: Infinity,
+  activeWorkflows: Infinity,
+  executionHistoryDays: Infinity,
+  credentials: Infinity,
+  features: Object.fromEntries(
+    Object.keys(PAID_PLAN_LIMITS.PRO.features).map((feature) => [feature, true])
+  ) as Record<PlanFeature, boolean>,
+};
+
+/** The limits of every plan, for the hosted app or a self-hosted server. */
+export const buildPlanLimits = (
+  selfHosted: boolean
+): Record<keyof typeof PAID_PLAN_LIMITS, PlanLimits> =>
+  selfHosted
+    ? { FREE: UNLIMITED, BEGINNER: UNLIMITED, INTERMEDIATE: UNLIMITED, PRO: UNLIMITED }
+    : PAID_PLAN_LIMITS;
+
+export const PLAN_LIMITS = buildPlanLimits(SELF_HOSTED);
+
+/**
+ * The plan a Polar product is, or null for a product that is not a plan
+ * (the managed private server, an AI credit pack). Only plan products may
+ * change a user's plan.
+ */
+export const getPlanForPolarProduct = (
+  productId: string | null | undefined,
+  env: Record<string, string | undefined> = process.env
+): "BEGINNER" | "INTERMEDIATE" | "PRO" | null => {
+  if (!productId) return null;
+
+  if (productId === env.POLAR_BEGINNER_PRODUCT_ID) return "BEGINNER";
+  if (productId === env.POLAR_INTERMEDIATE_PRODUCT_ID) return "INTERMEDIATE";
+  if (productId === env.POLAR_PRO_PRODUCT_ID) return "PRO";
+
+  return null;
+};
 
 // Nodes that are only available on plans with the given feature. Node types
 // that are not listed are available on every plan.

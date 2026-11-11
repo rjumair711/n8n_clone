@@ -6,6 +6,8 @@
 // the paid plans, and these caps are what keeps a trial account from being
 // used to send in bulk.
 
+import { SELF_HOSTED } from "./self-hosted";
+
 export type MessageChannel = "email" | "whatsapp" | "twilio" | "telegram";
 
 type Plan = "FREE" | "BEGINNER" | "INTERMEDIATE" | "PRO";
@@ -92,8 +94,11 @@ export const getMessageSend = (
   return { channel: node.channel, count: Math.max(count, 1) };
 };
 
+// A self-hosted server sends through its owner's own accounts: no cap
 export const getDailyMessageCap = (plan: string, channel: MessageChannel): number =>
-  (DAILY_MESSAGE_CAPS[plan as Plan] ?? DAILY_MESSAGE_CAPS.FREE)[channel];
+  SELF_HOSTED
+    ? Infinity
+    : (DAILY_MESSAGE_CAPS[plan as Plan] ?? DAILY_MESSAGE_CAPS.FREE)[channel];
 
 /**
  * The error shown when a send would go over the cap.

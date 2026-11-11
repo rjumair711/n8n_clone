@@ -1080,6 +1080,15 @@ RXJ includes a complete SaaS monetization architecture powered by Polar.
 * Real-time dynamic tier upgrades and revoked downgrades matching checkout selections
 * Dynamic sidebar plan UI with live checkout state cache invalidation
 
+## What is on sale: the managed private server
+
+The pricing page and the landing page show one offer: the **managed private server**, $20 a month (`src/config/pricing-plans.ts`). RXJ is installed on the client's own server (see "Self-hosting") and looked after for them, and the $20 covers building and looking after up to 5 of their workflows (the server itself has no limit; more workflows are priced separately). The Beginner, Intermediate and Pro plans are no longer sold.
+
+* **Buying:** the button opens the Polar checkout link in `NEXT_PUBLIC_MANAGED_SERVER_CHECKOUT_URL` (the sandbox link while testing, the production link when live). Without it the button says "Coming soon". The link can also be sent to a client directly.
+* **After paying:** set the link's success URL in Polar to `<app URL>/managed-server/thanks?checkout_id={CHECKOUT_ID}`. That page tells the buyer what to have ready; you then email them from the subscription in Polar.
+* **Webhooks:** only the three plan products change a user's plan (`getPlanForPolarProduct` in `src/config/plans.ts`). A managed-server subscription, or its end, leaves the buyer's RXJ account as it is, and `/api/webhooks/polar` answers it with success so Polar does not retry it.
+* **Existing subscribers** of the old plans keep their plan, its limits and the Polar customer portal under Billing. Everyone else stays on the Free plan, with the 7-day trial at sign-up; upgrade prompts in the app open the pricing page.
+
 ---
 
 # 📊 Usage Tracking System
@@ -1370,6 +1379,7 @@ Step-by-step workflows for testing every node by hand are in [`docs/TESTING.md`]
 | Secret scan | [gitleaks](https://github.com/gitleaks/gitleaks) over the commits of the push or pull request, with `.gitleaks.toml` |
 
 * The jobs only read the repository. None has the database address or any other secret of the app, and none migrates or deploys: `DATABASE_URL` in the workflow is a placeholder that `prisma generate` reads without connecting.
+* `.github/workflows/docker-image.yml` is separate from CI: it builds the self-hosted Docker image and publishes it to the GitHub Container Registry on pushes to `main` and `v*` tags (it needs `packages: write`; it never sees the database). See "Self-hosting".
 * `.gitleaks.toml` uses gitleaks' own rules and skips two places that hold made-up secrets on purpose: `src/inngest/__test__/` and `docs/TESTING.md`. A real secret must never go into those.
 * `.github/dependabot.yml` has Dependabot open pull requests once a week: one for all minor and patch updates of npm packages, separate ones for major updates, security updates and GitHub Actions. They run through the same CI and are merged by hand, because a merge to `main` deploys.
 
@@ -1386,6 +1396,16 @@ The live app on Vercel and local development use the **same** database, so the s
 * `DATABASE_URL` must be available to the build on Vercel (it already is for `prisma generate`), and should be a direct connection, not a pooled one: `prisma migrate deploy` takes a lock that connection poolers can break.
 * `DATABASE_POOLED_URL` (optional) is what the app's own queries use when it is set: Neon's pooled address, the same as `DATABASE_URL` with `-pooler` after the endpoint id in the host, and `&pgbouncer=true` at the end. Serverless functions then share the pooler's connections instead of each opening its own. Migrations keep using `DATABASE_URL`.
 * `INNGEST_SIGNING_KEY` has to be set in the production environment, or the server does not start (see "Security").
+
+## Self-hosting (your own server)
+
+Anyone can run RXJ on their own VPS with Docker: [`docs/SELF_HOSTING.md`](docs/SELF_HOSTING.md) has the steps. `self-host/docker-compose.yml` starts the app, Postgres (pgvector), Valkey (Redis-compatible), an Inngest server and Caddy (HTTPS), and the app applies its migrations to that server's own database when it starts. People who want their own server without the technical work can have RXJ run it for them as a managed private server: $20 a month, including up to 5 workflows built and looked after (see the guide).
+
+* **The self-hosted edition is free.** The image is built with `NEXT_PUBLIC_SELF_HOSTED=true` (`src/config/self-hosted.ts`): every plan gets no limits and every feature (`buildPlanLimits` in `src/config/plans.ts`), new accounts are Pro with no trial, there are no daily message caps, and Polar is off (no plugin, and the checkout and Polar webhook routes answer 404). `/`, `/pricing` and `/billing` open `/workflows`, and Billing is not in the menu.
+* **Nothing reaches RXJ's accounts.** Sentry is off unless the image is built with `NEXT_PUBLIC_SENTRY_DSN` (`src/config/sentry-dsn.ts`), and the editor polls run status instead of using Inngest Cloud's live stream.
+* **One image for every domain.** The image is built without `NEXT_PUBLIC_APP_URL`; the editor shows webhook and form URLs from the address it is open at (`src/lib/public-app-url.ts`), and the server reads the variable when it starts.
+* **The hosted app is unchanged.** Vercel never sets `NEXT_PUBLIC_SELF_HOSTED`, and a server with it refuses to start when `VERCEL` is set, so it can never unlock plans on the shared database. The image runs `next build`, not `npm run build`, so `scripts/migrate-on-deploy.mjs` is not involved.
+* **Publishing:** `.github/workflows/docker-image.yml` builds the image on every push to `main` and publishes it as `ghcr.io/<owner>/rxj:latest` (pull requests that change its files only build it). Make the package public once on GitHub after the first run.
 
 ## Environment variables
 
@@ -1435,6 +1455,11 @@ The live app on Vercel and local development use the **same** database, so the s
 | `CSV_MAX_ROWS` | Most rows read from a CSV file, default 10000 |
 | `TELEGRAM_PROXY` | Optional proxy for calls to the Telegram API |
 | `NGROK_URL` | Tunnel domain for local development |
+| `NEXT_PUBLIC_MANAGED_SERVER_CHECKOUT_URL` | The Polar checkout link of the managed private server ($20 a month) that the pricing page opens. Sandbox link while testing, production link when live. Read when the app is built, so redeploy after changing it |
+| `NEXT_PUBLIC_SELF_HOSTED` | `true` builds the self-hosted edition: no billing, every feature unlocked. Set by the Dockerfile; **never set it on Vercel** (the server refuses to start there). See "Self-hosting" |
+| `NEXT_PUBLIC_SENTRY_DSN` | Optional. Your own Sentry project. Not set: the hosted app reports to RXJ's project and a self-hosted server to none. Read when the app is built |
+| `INNGEST_BASE_URL`, `INNGEST_EVENT_KEY` | Self-hosting: the address of your own Inngest server and its event key (set by `self-host/docker-compose.yml`) |
+| `RUN_MIGRATIONS` | Self-hosted image only: `false` stops the container from applying migrations when it starts. Default `true` |
 
 ---
 
@@ -1551,3 +1576,9 @@ Node Executors
    ↓
 External APIs / AI Providers / Messaging Services
 ```
+
+---
+
+# 📄 License
+
+RXJ is source-available under the [Elastic License 2.0](LICENSE). Anyone may use, copy and change it for free, also in a business and on their own server. Nobody but the licensor may offer it to others as a hosted or managed service: that is how the hosted app and the managed private server ($20 a month, see [`docs/SELF_HOSTING.md`](docs/SELF_HOSTING.md)) stay RXJ's own. The packages RXJ uses are under their own licenses (MIT, Apache 2.0 and similar); the self-hosted setup also runs the Inngest server (SSPL, Apache 2.0 three years after each release), Postgres with pgvector, Valkey and Caddy, each under its own license.

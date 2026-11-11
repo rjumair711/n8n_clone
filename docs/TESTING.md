@@ -1947,6 +1947,50 @@ Use a browser window of 1366 × 768 (or DevTools → device toolbar at 1366 × 6
 8. **Nothing lost.** Two-factor, sessions, API keys, the workspace name, invitations, members, roles, leaving a workspace, the audit log, model prices, RXJ AI included, the AI budget, Git sync, external secrets and SSO all work as before, each in its section.
 9. **Loading.** Switch between sections: a skeleton shows in the section area while it loads, and the menu next to it does not move.
 
+## T25. Self-hosting
+
+Needs a throwaway Linux VPS (or a Linux machine with Docker) and a test
+subdomain pointing at it. Nothing here touches the shared Neon database:
+the self-hosted install has its own Postgres. Follow `docs/SELF_HOSTING.md`.
+
+| # | Do | Expect |
+| - | -- | ------ |
+| 1 | `docker compose up -d` with a complete `.env`, then `docker compose logs app` | the migrations are applied ("All migrations have been successfully applied"), then `Ready` |
+| 2 | Leave `ENCRYPTION_KEY` empty and `docker compose up -d app` | the app stops with `[RXJ] The server cannot start` naming `ENCRYPTION_KEY` |
+| 3 | Open `https://<domain>/` | a valid certificate, and you land on `/login` (signed out) or `/workflows`, never the landing page |
+| 4 | Sign up, open `/pricing` and `/billing` | both open `/workflows`; the account menu has no Billing |
+| 5 | Settings → Usage & plan | plan Pro, no trial banner |
+| 6 | Add an SSH, WhatsApp, Gmail and AI Agent node; activate 5 workflows | no lock and no upgrade prompt anywhere |
+| 7 | Webhook Trigger dialog | the URL starts with `https://<domain>/api/webhooks/` |
+| 8 | Run a workflow with a Webhook Trigger, call it with `curl` | the run shows in Executions; the editor shows each node turning green |
+| 9 | Run a workflow with a Wait node of 1 minute | it carries on after a minute (Inngest server and Valkey work) |
+| 10 | `docker compose restart` during a Wait | the run still finishes afterwards |
+| 11 | `curl -X POST https://<domain>/api/subscription/checkout` and `/api/webhooks/polar` | both answer 404 |
+| 12 | Browser dev tools → Network while using the app | no request goes to `sentry.io`, `inn.gs` or `polar.sh` |
+| 13 | From outside the server: `curl http://<server ip>:8288` | refused (the Inngest dashboard is only on 127.0.0.1) |
+
+On the hosted app (after the merge), check that nothing changed: `/` shows
+the landing page, Billing is in the menu, a Free account still sees the Pro
+lock on SSH, and checkout opens Polar's **production** checkout, not the
+sandbox.
+
+## T26. Managed private server (Polar sandbox)
+
+Needs `NEXT_PUBLIC_MANAGED_SERVER_CHECKOUT_URL` set to the sandbox
+checkout link, and `npm run dev` restarted after setting it.
+
+| # | Do | Expect |
+| - | -- | ------ |
+| 1 | Open `/` and scroll to Pricing | one card, "Managed private server", $20/month, with the note about the server being in the client's name; no Beginner, Intermediate or Pro |
+| 2 | Open `/pricing` | the same offer; the button says "Get your private server" |
+| 3 | Remove the variable, restart, open `/pricing` | the button says "Coming soon" and is not a link |
+| 4 | Put it back, click the button | Polar's sandbox checkout for $20/month opens |
+| 5 | Pay with card `4242 4242 4242 4242`, any future date, any CVC | Polar opens `/managed-server/thanks` with the "What to have ready" list |
+| 6 | Pay with the email of an RXJ account that is on Pro | the account is still Pro afterwards (Settings → Usage & plan) |
+| 7 | In Polar sandbox, cancel that subscription | the account is still Pro |
+| 8 | Polar sandbox → Settings → Webhooks → the deliveries of steps 5 and 7 | each answered 200, none failed or retried |
+| 9 | Sign in as a user on Free and click an "Upgrade" link (e.g. a locked SSH node) | the pricing page with the managed server opens |
+
 # When something fails
 
 Note the node, the exact values you entered, and the error text from the

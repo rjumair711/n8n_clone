@@ -1,0 +1,13 @@
+# Kept out of the Docker build (Dockerfile). Secrets above all: no .env
+# file of any folder may end up in an image.
+**/.env*
+.git
+node_modules
+.next
+.vercel
+coverage
+*.log
+*.tsbuildinfo
+next-env.d.ts
+src/generated/prisma
+self-host

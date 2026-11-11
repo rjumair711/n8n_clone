@@ -5,13 +5,30 @@ import {
   getSentryCspReportUri,
 } from "./src/config/security-headers";
 
-// The DSN the Sentry configs use; public by design. Violations of the
-// report-only Content-Security-Policy are sent to the same Sentry project,
-// unless CSP_REPORT_URI names another endpoint.
-const SENTRY_DSN =
-  "https://b9e51a0f783724171c76397b7177ede0@o4509519524200448.ingest.us.sentry.io/4510924234948608";
+import { SELF_HOSTED } from "./src/config/self-hosted";
+import { SENTRY_DSN } from "./src/config/sentry-dsn";
+
+// SENTRY_DSN is what the Sentry configs use (none on a self-hosted server,
+// see src/config/sentry-dsn.ts). Violations of the report-only
+// Content-Security-Policy are sent to the same Sentry project, unless
+// CSP_REPORT_URI names another endpoint.
 
 const nextConfig: NextConfig = {
+  // The self-hosted Docker image runs the small standalone server
+  // (Dockerfile). The Vercel build is left as it was.
+  ...(SELF_HOSTED ? { output: "standalone" as const } : {}),
+
+  // A self-hosted server has no marketing site and no billing: the address
+  // opens the app (signed-out visitors are sent on to /login)
+  async redirects() {
+    if (!SELF_HOSTED) return [];
+
+    return ["/", "/pricing", "/billing"].map((source) => ({
+      source,
+      destination: "/workflows",
+      permanent: false,
+    }));
+  },
 
   typescript: {
     // Bypasses the worker process that crashes on cleanup
@@ -29,7 +46,7 @@ const nextConfig: NextConfig = {
   // also for where to make an exception for an embeddable route.
   async headers() {
     return getSecurityHeaderRules({
-      reportUri: process.env.CSP_REPORT_URI || getSentryCspReportUri(SENTRY_DSN),
+      reportUri: process.env.CSP_REPORT_URI || getSentryCspReportUri(SENTRY_DSN ?? null),
     });
   },
 

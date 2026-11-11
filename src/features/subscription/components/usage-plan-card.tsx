@@ -16,6 +16,7 @@ import { getTrialDaysLeft } from "@/lib/subscription/get-trial-days-left";
 import { cn } from "@/lib/utils";
 import { useTRPC } from "@/trpc/client";
 import { useCurrentPlan } from "../hook/use-current-plan";
+import { SELF_HOSTED } from "@/config/self-hosted";
 
 // Above this share of a limit the bar turns amber; at the limit, red
 const WARN_SHARE = 0.8;
@@ -160,12 +161,15 @@ export const UsagePlanCard = () => {
                             whichever workspace you work in.
                         </CardDescription>
                     </div>
-                    <Button asChild variant="outline" size="sm">
-                        <Link href="/billing">
-                            <CreditCardIcon className="size-4" />
-                            Manage billing
-                        </Link>
-                    </Button>
+                    {/* A self-hosted server has no billing */}
+                    {!SELF_HOSTED && (
+                        <Button asChild variant="outline" size="sm">
+                            <Link href="/billing">
+                                <CreditCardIcon className="size-4" />
+                                Manage billing
+                            </Link>
+                        </Button>
+                    )}
                 </CardHeader>
                 <CardContent className="space-y-5">
                     <Meter label="Workflows" used={current.workflowCount} limit={limits.activeWorkflows} />
