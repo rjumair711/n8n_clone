@@ -44,6 +44,7 @@ import {
   readWebPageExecutor,
   webSearchExecutor,
 } from '../components/apps/web';
+import { browserExecutor } from '../components/apps/browser';
 import {
   textToSpeechExecutor,
   transcribeAudioExecutor,
@@ -200,6 +201,7 @@ const baseExecutors: Record<NodeType, NodeExecutor<any>> = {
   [NodeType.SENDGRID]: sendgridExecutor,
   [NodeType.WEB_SEARCH]: webSearchExecutor,
   [NodeType.READ_WEB_PAGE]: readWebPageExecutor,
+  [NodeType.BROWSER]: browserExecutor,
   [NodeType.TRANSCRIBE_AUDIO]: transcribeAudioExecutor,
   [NodeType.TEXT_TO_SPEECH]: textToSpeechExecutor,
   [NodeType.TYPEFORM_TRIGGER]: contextTriggerExecutor,

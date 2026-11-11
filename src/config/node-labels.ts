@@ -36,6 +36,7 @@ const NODE_LABELS: Record<string, string> = {
     MYSQL: "MySQL",
     SENDGRID: "SendGrid",
     READ_WEB_PAGE: "Read Web Page",
+    BROWSER: "Browser",
 };
 
 // "MANUAL_TRIGGER" -> "Manual Trigger", "AI_AGENT" -> "AI Agent"

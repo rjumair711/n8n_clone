@@ -56,7 +56,9 @@ const nextConfig: NextConfig = {
   // pg-native) are native too; Next lists both by default, named here so
   // the list is complete. They must never reach the browser bundle: the
   // files that load them are marked "server-only".
-  serverExternalPackages: ["quickjs-emscripten", "ssh2", "sharp", "pg"],
+  // puppeteer-core (Browser node) connects to a browser over WebSockets and
+  // loads its protocol files at runtime
+  serverExternalPackages: ["quickjs-emscripten", "ssh2", "sharp", "pg", "puppeteer-core"],
   outputFileTracingIncludes: {
     "/api/inngest": [
       "./node_modules/@jitl/quickjs-*/**/*",

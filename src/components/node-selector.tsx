@@ -17,7 +17,7 @@ import { Braces, BrainCircuit, Lightbulb, ShieldCheck, DatabaseZap, FolderSync, 
 import { AlertTriangle, ArrowDownUp, CopyMinus, Group, ListEnd, OctagonX, Reply, Sigma, Split, Workflow } from "lucide-react"
 import { Clock, FilterIcon, GlobeIcon, MousePointerIcon, Send, VariableIcon, ChevronDown, ChevronRight, Code2, Bot, MemoryStickIcon, Search, Type, Calculator, GitBranch, GitFork, Merge, Repeat, Webhook, MessageSquare } from "lucide-react"
 import { toast } from "sonner"
-import { AudioLines, ClipboardList, Hourglass, Lock, Route, ScanEye, UserCheck, Volume2 } from "lucide-react"
+import { AppWindow, AudioLines, ClipboardList, Hourglass, Lock, Route, ScanEye, UserCheck, Volume2 } from "lucide-react"
 import { getRequiredPlanForNode } from "@/config/plans"
 import { TOOL_APPROVAL_DEFAULT_BY_RISK } from "@/lib/approvals"
 import { useCurrentPlan } from "@/features/subscription/hook/use-current-plan"
@@ -491,6 +491,12 @@ const communicationNodes: NodeTypeOption[] = [
         label: "Read Web Page",
         description: "Fetch a page and get its main content as clean text; also an AI Agent tool",
         icon: "/logos/web-page.svg"
+    },
+    {
+        type: NodeType.BROWSER,
+        label: "Browser",
+        description: "Open a page in a real browser: read JavaScript pages, take screenshots, click and fill forms",
+        icon: AppWindow
     },
     {
         type: NodeType.TRANSCRIBE_AUDIO,

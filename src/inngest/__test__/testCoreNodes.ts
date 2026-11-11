@@ -15051,6 +15051,150 @@ pour()</code></pre>
     assert.match(sql, /CREATE INDEX "Execution_workflowId_startedAt_idx"/);
   });
 
+  // ------------------------------------------------------- Browser node
+  console.log("Browser node");
+
+  await test("browser: steps are read as JSON, checked, and {{...}} is filled in after parsing", async () => {
+    const { parseBrowserSteps, BrowserStepError, BROWSER_MAX_STEPS, BROWSER_MAX_WAIT_MS } =
+      await import("@/lib/browser-steps");
+
+    const steps = parseBrowserSteps(
+      JSON.stringify([
+        { action: "type", selector: "#email", text: "{{json.email}}" },
+        { action: "click", selector: "button[type=submit]" },
+        { action: "waitForNavigation" },
+        { action: "wait", ms: 999999 },
+        { action: "press", key: "Enter" },
+        { action: "select", selector: "#country", value: "PK" },
+        { action: "goto", url: "https://example.com/next" },
+        { action: "scroll" },
+      ]),
+      // A value with quotes cannot break the JSON: it is filled in after
+      (text) => text.replace("{{json.email}}", 'a"b@example.com')
+    );
+
+    assert.deepEqual(steps[0], { action: "type", selector: "#email", text: 'a"b@example.com' });
+    assert.equal(steps.length, 8);
+    assert.deepEqual(steps[3], { action: "wait", ms: BROWSER_MAX_WAIT_MS });
+    assert.deepEqual(parseBrowserSteps("  "), []);
+
+    for (const [input, message] of [
+      ["not json", /must be a JSON list/],
+      ['{"action":"click"}', /must be a JSON list/],
+      ['[{"action":"click"}]', /Step 1: "selector" is missing/],
+      ['[{"action":"hover","selector":"a"}]', /unknown action "hover"/],
+      ['[{"action":"press","key":"F12"}]', /key "F12" is not allowed/],
+      ['[{"action":"goto","url":"file:///etc/passwd"}]', /must start with http/],
+      ['[{"action":"wait","ms":"soon"}]', /"ms" must be a number/],
+      [JSON.stringify(Array.from({ length: BROWSER_MAX_STEPS + 1 }, () => ({ action: "scroll" }))), /At most 30 steps/],
+    ] as const) {
+      assert.throws(() => parseBrowserSteps(input), (error: unknown) => error instanceof BrowserStepError && message.test((error as Error).message), input.slice(0, 40));
+    }
+  });
+
+  await test("browser: timeout is 5 to 120 seconds, default 30", async () => {
+    const { resolveBrowserTimeout } = await import("@/lib/browser-steps");
+    assert.equal(resolveBrowserTimeout(""), 30);
+    assert.equal(resolveBrowserTimeout("abc"), 30);
+    assert.equal(resolveBrowserTimeout("0"), 30);
+    assert.equal(resolveBrowserTimeout("2"), 5);
+    assert.equal(resolveBrowserTimeout("45"), 45);
+    assert.equal(resolveBrowserTimeout("9999"), 120);
+  });
+
+  await test("browser: every page request goes through the guard, once per host", async () => {
+    const { makeRequestGuard } = await import("@/lib/browser");
+    const checked: string[] = [];
+    const allowed = makeRequestGuard(async (url) => {
+      checked.push(url);
+      if (url.includes("10.0.0.5") || url.includes("internal.example")) throw new Error("blocked");
+    });
+
+    assert.equal(await allowed("https://shop.example.com/a.js"), true);
+    assert.equal(await allowed("https://shop.example.com/b.css"), true);
+    assert.equal(await allowed("http://10.0.0.5/admin"), false);
+    assert.equal(await allowed("https://internal.example/x"), false);
+    assert.equal(await allowed("data:image/png;base64,AAAA"), true);
+    assert.equal(await allowed("about:blank"), true);
+    for (const refused of ["file:///etc/passwd", "chrome://settings", "ftp://example.com/x", "not a url"]) {
+      assert.equal(await allowed(refused), false, refused);
+    }
+    // One check per scheme and host, not per request
+    assert.deepEqual(checked, ["https://shop.example.com/", "http://10.0.0.5/", "https://internal.example/"]);
+  });
+
+  await test("browser: a credential must be a public wss:// address; otherwise BROWSER_CDP_URL", async () => {
+    const { resolveBrowserEndpoint, toWebSocketEndpoint } = await import("@/lib/browser");
+
+    assert.deepEqual(await resolveBrowserEndpoint("wss://1.1.1.1/?token=abc", {}), {
+      kind: "credential",
+      url: "wss://1.1.1.1/?token=abc",
+    });
+    await assert.rejects(resolveBrowserEndpoint("ws://1.1.1.1/", {}), /must start with wss:\/\//);
+    await assert.rejects(resolveBrowserEndpoint("not a url", {}), /not an address/);
+    await assert.rejects(resolveBrowserEndpoint("wss://127.0.0.1:3000/", {}));
+    await assert.rejects(resolveBrowserEndpoint("wss://10.1.2.3/", {}));
+    assert.deepEqual(await resolveBrowserEndpoint(null, { BROWSER_CDP_URL: "http://browser:9222" }), {
+      kind: "server",
+      url: "http://browser:9222",
+    });
+    await assert.rejects(resolveBrowserEndpoint("", {}), /no browser to use/);
+
+    // Chrome names itself localhost; it is reached at the address that was asked
+    const asked: string[] = [];
+    const ws = await toWebSocketEndpoint("http://127.0.0.1:9333", (async (url: string) => {
+      asked.push(url);
+      return new Response(JSON.stringify({ webSocketDebuggerUrl: "ws://localhost/devtools/browser/abc" }));
+    }) as typeof fetch);
+    assert.equal(ws, "ws://127.0.0.1:9333/devtools/browser/abc");
+    assert.deepEqual(asked, ["http://127.0.0.1:9333/json/version"]);
+    assert.equal(await toWebSocketEndpoint("ws://127.0.0.1:9222/devtools/browser/x"), "ws://127.0.0.1:9222/devtools/browser/x");
+  });
+
+  await test("browser: reading is a Read tool, Run Steps is dangerous; Pro, and the trial unlocks it", async () => {
+    const { getToolRisk, getBlockedToolsMessage } = await import("@/features/executions/lib/agent-tools");
+    const plans = await import("@/config/plans");
+
+    assert.equal(getToolRisk("BROWSER", { operation: "content" }), "read");
+    assert.equal(getToolRisk("BROWSER", { operation: "screenshot" }), "read");
+    assert.equal(getToolRisk("BROWSER", {}), "read");
+    assert.equal(getToolRisk("BROWSER", { operation: "steps" }), "dangerous");
+    assert.match(getBlockedToolsMessage([{ type: "BROWSER", data: { operation: "steps" } }], false) ?? "", /submits forms in a browser/);
+
+    assert.equal(plans.getRequiredPlanForNode("BROWSER", "FREE"), "Pro");
+    assert.equal(plans.getRequiredPlanForNode("BROWSER", "PRO"), null);
+    assert.equal(plans.getRequiredPlanForNode("BROWSER", "FREE", new Date(Date.now() + 86_400_000)), null);
+    assert.equal(plans.buildPlanLimits(true).FREE.features.browser, true);
+  });
+
+  await test("browser: the node is registered, and the self-hosted setup has its own browser", async () => {
+    const { readFileSync, readdirSync } = await import("node:fs");
+    const { join } = await import("node:path");
+    const read = (path: string) => readFileSync(path, "utf8");
+
+    assert.match(read("src/features/executions/lib/executor-registry.ts"), /\[NodeType\.BROWSER\]: browserExecutor,/);
+    assert.match(read("src/config/node-components.ts"), /\[NodeType\.BROWSER\]: BrowserNode,/);
+    assert.match(read("src/components/node-selector.tsx"), /type: NodeType\.BROWSER,/);
+    assert.match(read("next.config.ts"), /"puppeteer-core"\]/);
+
+    const compose = read("self-host/docker-compose.yml");
+    assert.match(compose, /BROWSER_CDP_URL: http:\/\/browser:9222/);
+    assert.match(compose, /image: chromedp\/headless-shell:/);
+    // The browser has no published port and is not on the database's network
+    const browserService = compose.slice(compose.indexOf("\n  browser:"), compose.indexOf("\n  caddy:"));
+    assert.equal(/ports:/.test(browserService), false);
+    assert.match(browserService, /networks:\s+- browser\s/);
+    assert.equal(/- default/.test(browserService), false);
+
+    // The migration only adds the two enum values
+    const dir = readdirSync(join(process.cwd(), "prisma/migrations")).find((name) => name.endsWith("_browser_node"));
+    assert.ok(dir);
+    const sql = read(`prisma/migrations/${dir}/migration.sql`);
+    assert.match(sql, /ALTER TYPE "CredentialType" ADD VALUE 'BROWSER';/);
+    assert.match(sql, /ALTER TYPE "NodeType" ADD VALUE 'BROWSER';/);
+    assert.equal(/DROP|DELETE|UPDATE|TRUNCATE|RENAME/i.test(sql), false);
+  });
+
   // ------------------------------------------------------- Self-hosting
   console.log("Self-hosted edition");
 

@@ -44,6 +44,7 @@ The platform is designed as a scalable SaaS product with:
 * Website chat widget: a public Chat Trigger with an embed snippet, a hosted chat page, per-visitor memory and a handoff to a person
 * OCR and vision: an Analyze Image / Document node that reads images and PDFs, scanned ones too, with a vision model
 * Web Search and Read Web Page nodes, usable as AI Agent tools
+* Browser node: a real Chrome reads pages that need JavaScript, takes screenshots, and clicks, types and submits forms
 * Audio: Transcribe Audio and Text to Speech nodes, and voice messages from the Telegram and WhatsApp triggers
 * Inngest background execution system
 * Dynamic time-based execution engine via an automated Background Ticker (`* * * * *` clock matching system)
@@ -675,6 +676,7 @@ Every execution also keeps the trigger and the data it started with, so it can b
 | RSS Read         | Read the items of an RSS or Atom feed; the following nodes run once per item |
 | Web Search       | Search the web with Tavily, Brave Search or your own SearXNG server; titles, links and snippets. Also an AI Agent tool. See "Web Search and Read Web Page" |
 | Read Web Page    | Fetch a page and return its main content as clean Markdown or text, cut to a length you set. Also an AI Agent tool. Private and local addresses are blocked |
+| Browser          | Open a page in a real browser: Get Page Content (pages that need JavaScript), Take Screenshot, or Run Steps (click, type, select, submit). A hosted browser with your own key, or the self-hosted server's own. Pro plan; the trial unlocks it |
 | Transcribe Audio | Turn a voice message or audio file into text with OpenAI Whisper, Groq Whisper or any OpenAI-compatible server. See "Audio" |
 | Text to Speech   | Turn text into spoken audio with OpenAI TTS or an OpenAI-compatible server; the result is a file |
 | Respond to Webhook | Answer the HTTP request that started the workflow (JSON, text, redirect, status code, headers) |
@@ -786,6 +788,43 @@ Two nodes that bring the web into a workflow. Both work as ordinary steps and as
 * **SSRF guard:** the page, and every redirect on the way, goes through the same guard as the HTTP Request node, so private, local and cloud-metadata addresses are refused. The address is also checked before it is handed to Jina Reader or Firecrawl. A download stops at 3 MB and after 20 seconds, and only web pages and text are read (a PDF or image address is refused with a pointer to the HTTP Request node).
 * The built-in reader is deliberately small: no JavaScript, no login, no paywalls, and it reads a page as the server sent it. It announces itself as `RXJ-PageReader`; some sites refuse automated readers.
 * What a page says is data. As an agent tool the text is handed to the model inside the same `<tool_result>` block as every other tool result, marked as untrusted.
+
+## Browser
+
+A real Chrome, for what the Read Web Page node cannot do: pages that build their content with JavaScript, pages that need a click or a form first, and screenshots. Executor: `src/features/executions/components/apps/browser.ts`; connection and safety: `src/lib/browser.ts`; the steps: `src/lib/browser-steps.ts`.
+
+| Operation | What it does | Result |
+| --------- | ------------ | ------ |
+| Get Page Content | Opens the URL, waits until the page is quiet (and for **Wait For Element**, if set), and returns its main text like Read Web Page | `{{browser.content}}`, `.title`, `.description`, `.url` (after redirects), `.truncated`, `.length` |
+| Take Screenshot | Opens the URL and captures it as a PNG, the visible part or (**Full Page**) all of it | `{{browser.file}}`, a workflow file, plus `.url` and `.title` |
+| Run Steps | Opens the URL, then runs **Steps** in order, then returns the page's text; **Screenshot At The End** adds `{{browser.file}}` | the same as Get Page Content |
+
+**Steps** are a JSON list, for example:
+
+```json
+[
+  {"action": "type", "selector": "#email", "text": "{{json.email}}"},
+  {"action": "click", "selector": "button[type=submit]"},
+  {"action": "waitForNavigation"}
+]
+```
+
+Actions: `goto` (url), `click` (selector), `type` (selector, text), `select` (selector, value), `press` (key: Enter, Tab, Escape, Backspace, Delete, Space, the arrows, PageUp/PageDown, Home, End), `waitFor` (selector), `waitForNavigation`, `wait` (ms, at most 10000) and `scroll`. Selectors are CSS selectors. At most 30 steps. `{{...}}` is filled in after the JSON is read, so a value with quotes in it cannot break the list. A step that fails stops the node with its number ("step 2 (click) failed: ...").
+
+**Where the browser comes from.** RXJ never starts a browser itself (Vercel cannot run one):
+
+* **A Browser credential** (type "Hosted Browser"): the `wss://` connection address of a hosted browser with your key in it, e.g. Browserless `wss://production-sfo.browserless.io?token=KEY`, Browserbase `wss://connect.browserbase.com?apiKey=KEY` or Steel `wss://connect.steel.dev?apiKey=KEY`. Only `wss://` addresses on public hosts are accepted. This is what the hosted app uses; the browser service bills you.
+* **No credential:** `BROWSER_CDP_URL`, a browser the server's operator runs. The self-hosted setup has one built in: the `browser` container (`chromedp/headless-shell`, MIT license), reachable only by the app.
+
+**Safety**
+
+* Every request the page makes (the page, every redirect, scripts, images, XHR) goes through the same SSRF guard as the HTTP Request node, so private, local and cloud-metadata addresses are refused, with `PRIVATE_NETWORK_ALLOWLIST` as the only exception. `file:`, `chrome:` and other schemes are refused; `data:`, `blob:` and `about:` work.
+* On a self-hosted server the browser container is on a network of its own with only the app, not with Postgres, Valkey or Inngest, and has no published port.
+* Each run gets a new, empty browser context (no cookies or storage from other runs), and downloads are switched off.
+* **Timeout (seconds)**, 5 to 120 (default 30), covers the whole node; the text is cut to **Max Characters** (default 8000).
+* As an AI Agent tool, Get Page Content and Take Screenshot are Read tools. Run Steps is a **dangerous** tool, because it can log in and submit forms: it needs "Allow dangerous tools". The steps are the workflow's own; the model only fills in what the workflow lets it (for example the URL with `{{$fromAI "url"}}`).
+* Pro plan (the free trial unlocks it, as you bring your own browser); every feature on a self-hosted server.
+* Not built yet: logging in with saved cookies, file uploads into forms, and steps the model writes itself.
 
 ## Apps and databases
 
@@ -1073,7 +1112,7 @@ RXJ includes a complete SaaS monetization architecture powered by Polar.
 * Workflow usage tracking
 * Execution usage tracking
 * Credential usage limits
-* Plan-locked nodes (scheduling, Google Sheets, Gmail, AI Agent, WhatsApp, SSH) and API access. The free trial unlocks all of them except SSH
+* Plan-locked nodes (scheduling, Google Sheets, Gmail, AI Agent, WhatsApp, SSH, Browser) and API access. The free trial unlocks all of them except SSH
 * Billing management page
 * Polar customer portal integration
 * Better Auth Polar webhook sub-plugin lifecycle syncing architecture
@@ -1399,7 +1438,7 @@ The live app on Vercel and local development use the **same** database, so the s
 
 ## Self-hosting (your own server)
 
-Anyone can run RXJ on their own VPS with Docker: [`docs/SELF_HOSTING.md`](docs/SELF_HOSTING.md) has the steps. `self-host/docker-compose.yml` starts the app, Postgres (pgvector), Valkey (Redis-compatible), an Inngest server and Caddy (HTTPS), and the app applies its migrations to that server's own database when it starts. People who want their own server without the technical work can have RXJ run it for them as a managed private server: $20 a month, including up to 5 workflows built and looked after (see the guide).
+Anyone can run RXJ on their own VPS with Docker: [`docs/SELF_HOSTING.md`](docs/SELF_HOSTING.md) has the steps. `self-host/docker-compose.yml` starts the app, Postgres (pgvector), Valkey (Redis-compatible), an Inngest server, a headless Chrome for the Browser node and Caddy (HTTPS), and the app applies its migrations to that server's own database when it starts. People who want their own server without the technical work can have RXJ run it for them as a managed private server: $20 a month, including up to 5 workflows built and looked after (see the guide).
 
 * **The self-hosted edition is free.** The image is built with `NEXT_PUBLIC_SELF_HOSTED=true` (`src/config/self-hosted.ts`): every plan gets no limits and every feature (`buildPlanLimits` in `src/config/plans.ts`), new accounts are Pro with no trial, there are no daily message caps, and Polar is off (no plugin, and the checkout and Polar webhook routes answer 404). `/`, `/pricing` and `/billing` open `/workflows`, and Billing is not in the menu.
 * **Nothing reaches RXJ's accounts.** Sentry is off unless the image is built with `NEXT_PUBLIC_SENTRY_DSN` (`src/config/sentry-dsn.ts`), and the editor polls run status instead of using Inngest Cloud's live stream.
@@ -1456,6 +1495,7 @@ Anyone can run RXJ on their own VPS with Docker: [`docs/SELF_HOSTING.md`](docs/S
 | `TELEGRAM_PROXY` | Optional proxy for calls to the Telegram API |
 | `NGROK_URL` | Tunnel domain for local development |
 | `NEXT_PUBLIC_MANAGED_SERVER_CHECKOUT_URL` | The Polar checkout link of the managed private server ($20 a month) that the pricing page opens. Sandbox link while testing, production link when live. Read when the app is built, so redeploy after changing it |
+| `BROWSER_CDP_URL` | Optional. A browser the Browser node uses when it has no credential: `http://host:9222` or a `ws://` address of Chrome's DevTools. Set by `self-host/docker-compose.yml`; leave unset on Vercel |
 | `NEXT_PUBLIC_SELF_HOSTED` | `true` builds the self-hosted edition: no billing, every feature unlocked. Set by the Dockerfile; **never set it on Vercel** (the server refuses to start there). See "Self-hosting" |
 | `NEXT_PUBLIC_SENTRY_DSN` | Optional. Your own Sentry project. Not set: the hosted app reports to RXJ's project and a self-hosted server to none. Read when the app is built |
 | `INNGEST_BASE_URL`, `INNGEST_EVENT_KEY` | Self-hosting: the address of your own Inngest server and its event key (set by `self-host/docker-compose.yml`) |
@@ -1473,7 +1513,6 @@ Nodes that are not built yet. Each new integration is a config passed to `create
 | More PDF scripts | Chinese, Japanese, Korean, Devanagari and emoji have no bundled font and are rejected; Urdu is drawn in Naskh style, not Nastaliq |
 | Old Office files | Extract from File cannot read the old .xls and .doc formats. (It also cannot read scanned PDFs, but the Analyze Image / Document node now can, with a vision model.) |
 | Rendering PDF pages | Analyze Image / Document takes a scanned page's picture out of the PDF instead of drawing the page, so a page made only of vector drawings without text cannot be read. Drawing pages needs a canvas library on the server |
-| Browser Automation | Deliberately not built: it needs a headless browser service that cannot run on standard serverless functions, and it is easy to abuse. If added, the plan is a node that uses the user's own hosted-browser API key |
 | MongoDB, Redis, Supabase (REST) | More data stores next to Postgres and MySQL |
 | Slack / Discord bots | Bot-token nodes and triggers; today both send through webhook URLs |
 
@@ -1531,7 +1570,7 @@ Note on cold email: Resend and SendGrid are transactional services, and their po
 * Resend (account emails)
 * QuickJS (sandboxed code and expressions)
 * disposable-email-domains-js (the list of throwaway email domains refused at sign-up)
-* fast-xml-parser (RSS and Atom feeds), mysql2 (MySQL node), ssh2 (SSH node)
+* fast-xml-parser (RSS and Atom feeds), mysql2 (MySQL node), ssh2 (SSH node), puppeteer-core (Browser node)
 * pdf-lib, fontkit and bidi-js (PDF Generator), unpdf, mammoth and exceljs (reading PDF, Word and Excel files)
 * Noto Sans and Noto Naskh Arabic fonts (SIL Open Font License), bundled in `assets/fonts`
 

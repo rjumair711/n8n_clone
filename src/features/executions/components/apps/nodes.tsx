@@ -1,7 +1,7 @@
 "use client";
 
 import { CredentialType } from "@prisma/client";
-import { AudioLines, PencilRuler, Rss, Volume2 } from "lucide-react";
+import { AppWindow, AudioLines, PencilRuler, Rss, Volume2 } from "lucide-react";
 import {
   AUDIO_PROVIDERS,
   DEFAULT_VOICE,
@@ -525,6 +525,103 @@ export const readWebPageConfig: IntegrationConfig = {
 };
 
 export const ReadWebPageNode = createIntegrationNode(readWebPageConfig, (data) =>
+  data.url ? data.url : undefined
+);
+
+// =========================================================================
+// BROWSER
+// =========================================================================
+// A real Chrome: the server's own (self-hosted, BROWSER_CDP_URL) or a hosted
+// browser from the user's Browser credential. Executor: apps/browser.ts
+export const browserConfig: IntegrationConfig = {
+  label: "Browser",
+  description:
+    "Opens a page in a real browser: reads pages that need JavaScript, takes screenshots, and clicks, types and submits forms. Private and local addresses are blocked.",
+  logo: AppWindow,
+  credentialType: CredentialType.BROWSER,
+  credentialLabel: "Browser Credential",
+  credentialOptional: true,
+  credentialHelp:
+    "A hosted browser (Browserless, Browserbase, Steel...). Leave empty on a self-hosted RXJ server: it has its own browser.",
+  defaultVariableName: "browser",
+  operations: [
+    { value: "content", label: "Get Page Content" },
+    { value: "screenshot", label: "Take Screenshot" },
+    { value: "steps", label: "Run Steps (click, type, submit)" },
+  ],
+  hint: 'Get Page Content: the text is at {{<name>.content}}, with {{<name>.title}} and {{<name>.url}}. Take Screenshot: the PNG is {{<name>.file}}. Run Steps opens the URL, runs the steps in order, then returns the page\'s text like Get Page Content. As an AI Agent tool, set URL to {{$fromAI "url" "The address of the page"}}; Run Steps is a dangerous tool, because it can submit forms.',
+  fields: [
+    {
+      name: "url",
+      label: "URL",
+      placeholder: "https://example.com",
+      required: true,
+    },
+    {
+      name: "steps",
+      label: "Steps",
+      type: "textarea",
+      operations: ["steps"],
+      required: true,
+      placeholder:
+        '[\n  {"action": "type", "selector": "#email", "text": "{{json.email}}"},\n  {"action": "click", "selector": "button[type=submit]"},\n  {"action": "waitForNavigation"}\n]',
+      description:
+        "A JSON list, run in order. Actions: goto (url), click (selector), type (selector, text), select (selector, value), press (key: Enter, Tab, Escape...), waitFor (selector), waitForNavigation, wait (ms, up to 10000), scroll. Selectors are CSS selectors. Up to 30 steps; {{...}} works inside the values.",
+    },
+    {
+      name: "waitForSelector",
+      label: "Wait For Element",
+      placeholder: ".product-list",
+      description:
+        "Optional: a CSS selector to wait for before the page is read or captured, for content that appears late.",
+    },
+    {
+      name: "format",
+      label: "Output",
+      type: "select",
+      defaultValue: "markdown",
+      operations: ["content", "steps"],
+      options: [
+        { value: "markdown", label: "Markdown (headings, lists, links)" },
+        { value: "text", label: "Plain text" },
+      ],
+    },
+    {
+      name: "maxCharacters",
+      label: "Max Characters",
+      placeholder: "8000",
+      defaultValue: "8000",
+      operations: ["content", "steps"],
+      description:
+        "The text is cut to this length (100 to 100000) and marked as cut. Less text costs fewer tokens when a model reads it.",
+    },
+    {
+      name: "fullPage",
+      label: "Full Page",
+      type: "switch",
+      defaultValue: "false",
+      operations: ["screenshot"],
+      description: "Capture the whole page, not only what fits on the screen.",
+    },
+    {
+      name: "screenshotAtEnd",
+      label: "Screenshot At The End",
+      type: "switch",
+      defaultValue: "false",
+      operations: ["steps"],
+      description: "Also capture the page after the last step, as {{<name>.file}}.",
+    },
+    {
+      name: "timeout",
+      label: "Timeout (seconds)",
+      placeholder: "30",
+      defaultValue: "30",
+      description: "The longest the whole node may take, 5 to 120 seconds.",
+    },
+  ],
+};
+
+export const BrowserNode = createIntegrationNode(browserConfig, (data) =>
   data.url ? data.url : undefined
 );
 

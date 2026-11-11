@@ -29,7 +29,7 @@ does that.
 
 ## What you get
 
-The `self-host/` folder starts five containers with Docker Compose:
+The `self-host/` folder starts six containers with Docker Compose:
 
 | Container | What it does |
 | --------- | ------------ |
@@ -37,6 +37,7 @@ The `self-host/` folder starts five containers with Docker Compose:
 | `postgres` | The database, Postgres 17 with pgvector |
 | `redis` | Inngest's queue (Valkey, a Redis-compatible open-source server) |
 | `inngest` | Runs the workflows: triggers, schedules, waits and retries |
+| `browser` | Headless Chrome for the Browser node; only the app can reach it |
 | `caddy` | HTTPS for your domain, with a free Let's Encrypt certificate |
 
 Only Caddy is open to the internet, on ports 80 and 443.
