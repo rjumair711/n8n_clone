@@ -25,6 +25,7 @@ import { getCreditPacks, readCreditOrder } from "@/config/ai-credits"
 import { grantCreditPurchase } from "./ai-credits"
 import { SubscriptionPlan } from "@prisma/client"
 import { SELF_HOSTED } from "@/config/self-hosted"
+import { getPlanForPolarProduct } from "@/config/plans"
 import { Resend } from "resend"
 
 // Where the app may be opened from. Set NEXT_PUBLIC_APP_URL (and
@@ -407,18 +408,11 @@ export const auth = betterAuth({
               const customerEmail = data.customer?.email;
               const productId = data.product?.id; // 💡 Use the type-safe native ID property
 
-              if (customerEmail && productId) {
-                let dynamicPlan: SubscriptionPlan = "FREE";
+              // Only the plan products change a plan. Any other subscription
+              // (the managed private server, for one) leaves it alone
+              const dynamicPlan: SubscriptionPlan | null = getPlanForPolarProduct(productId)
 
-                // Map the product ID to your respective Prisma plan enum string
-                if (productId === process.env.POLAR_BEGINNER_PRODUCT_ID) {
-                  dynamicPlan = "BEGINNER";
-                } else if (productId === process.env.POLAR_INTERMEDIATE_PRODUCT_ID) {
-                  dynamicPlan = "INTERMEDIATE";
-                } else if (productId === process.env.POLAR_PRO_PRODUCT_ID) {
-                  dynamicPlan = "PRO";
-                }
-
+              if (customerEmail && dynamicPlan) {
                 await prisma.user.update({
                   where: { email: customerEmail },
                   data: { plan: dynamicPlan },
@@ -431,7 +425,8 @@ export const auth = betterAuth({
             // 2. Downgrade user back to FREE if their plan expires or is revoked
             if (type === "subscription.revoked") {
               const customerEmail = data.customer?.email;
-              if (customerEmail) {
+              // Ending another product's subscription keeps the plan
+              if (customerEmail && getPlanForPolarProduct(data.product?.id)) {
                 await prisma.user.update({
                   where: { email: customerEmail },
                   data: { plan: "FREE" },

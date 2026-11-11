@@ -141,6 +141,24 @@ export const buildPlanLimits = (
 
 export const PLAN_LIMITS = buildPlanLimits(SELF_HOSTED);
 
+/**
+ * The plan a Polar product is, or null for a product that is not a plan
+ * (the managed private server, an AI credit pack). Only plan products may
+ * change a user's plan.
+ */
+export const getPlanForPolarProduct = (
+  productId: string | null | undefined,
+  env: Record<string, string | undefined> = process.env
+): "BEGINNER" | "INTERMEDIATE" | "PRO" | null => {
+  if (!productId) return null;
+
+  if (productId === env.POLAR_BEGINNER_PRODUCT_ID) return "BEGINNER";
+  if (productId === env.POLAR_INTERMEDIATE_PRODUCT_ID) return "INTERMEDIATE";
+  if (productId === env.POLAR_PRO_PRODUCT_ID) return "PRO";
+
+  return null;
+};
+
 // Nodes that are only available on plans with the given feature. Node types
 // that are not listed are available on every plan.
 export const NODE_PLAN_FEATURES: Record<string, PlanFeature> = {

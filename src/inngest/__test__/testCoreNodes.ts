@@ -14998,6 +14998,31 @@ pour()</code></pre>
     assert.equal(plans.buildPlanLimits(false), plans.PLAN_LIMITS);
   });
 
+  await test("Polar: only the plan products change a user's plan", async () => {
+    const { getPlanForPolarProduct } = await import("@/config/plans");
+    const { readFileSync } = await import("node:fs");
+    const env = {
+      POLAR_BEGINNER_PRODUCT_ID: "prod-b",
+      POLAR_INTERMEDIATE_PRODUCT_ID: "prod-i",
+      POLAR_PRO_PRODUCT_ID: "prod-p",
+    };
+
+    assert.equal(getPlanForPolarProduct("prod-b", env), "BEGINNER");
+    assert.equal(getPlanForPolarProduct("prod-i", env), "INTERMEDIATE");
+    assert.equal(getPlanForPolarProduct("prod-p", env), "PRO");
+    // The managed private server, a credit pack, or nothing at all
+    for (const id of ["prod-managed-server", "", null, undefined]) {
+      assert.equal(getPlanForPolarProduct(id, env), null, String(id));
+    }
+    // Unset product ids never match a missing one
+    assert.equal(getPlanForPolarProduct(undefined, {}), null);
+
+    const auth = readFileSync("src/lib/auth.ts", "utf8");
+    assert.match(auth, /if \(customerEmail && dynamicPlan\) \{/);
+    assert.match(auth, /if \(customerEmail && getPlanForPolarProduct\(data\.product\?\.id\)\) \{/);
+    assert.equal(/let dynamicPlan: SubscriptionPlan = "FREE"/.test(auth), false);
+  });
+
   await test("self-hosted: Sentry reports nowhere unless the owner sets a DSN; the hosted app keeps RXJ's", async () => {
     const { getSentryDsn, SENTRY_DSN } = await import("@/config/sentry-dsn");
 
