@@ -1974,6 +1974,28 @@ checkout link, and `npm run dev` restarted after setting it.
 | 8 | Polar sandbox → Settings → Webhooks → the deliveries of steps 5 and 7 | each answered 200, none failed or retried |
 | 9 | Sign in as a user on Free and click an "Upgrade" link (e.g. a locked SSH node) | the pricing page with the managed server opens |
 
+## T27. Browser node
+
+Hosted app: needs a Browser credential (for example a free Browserless
+account: `wss://production-sfo.browserless.io?token=<key>`) and a Pro account
+or one on its trial. Self-hosted: no credential; the `browser` container is
+used.
+
+| # | Do | Expect |
+| - | -- | ------ |
+| 1 | Manual Trigger → Browser, Get Page Content, URL `https://quotes.toscrape.com/js/` | `browser.content` has the quotes (that page builds them with JavaScript; Read Web Page's built-in reader finds no text there) |
+| 2 | Same, Take Screenshot, Full Page on | `browser.file` is a PNG of the whole page; download it from the run |
+| 3 | Run Steps, URL `https://quotes.toscrape.com/login`, Steps `[{"action":"type","selector":"#username","text":"test"},{"action":"type","selector":"#password","text":"test"},{"action":"click","selector":"input[type=submit]"},{"action":"waitForNavigation"}]`, Screenshot At The End on | `browser.content` has "Logout"; the screenshot shows the logged-in page |
+| 4 | Steps `[{"action":"click","selector":"#does-not-exist"}]`, Timeout 10 | fails with `step 1 (click) failed: ...` within about 10 seconds |
+| 5 | Steps `not json` | fails at once: `Steps must be a JSON list` |
+| 6 | URL `http://127.0.0.1:3000` or `http://169.254.169.254/` | refused: private or local addresses are not allowed |
+| 7 | Hosted app: a credential with `ws://...` instead of `wss://` | refused: the address must start with wss:// |
+| 8 | Hosted app, no credential | fails: no browser to use, pick a Browser credential |
+| 9 | Connect the node to an AI Agent's Tools port with Get Page Content and URL `{{$fromAI "url" "The page"}}`; ask "What are the first three quotes on https://quotes.toscrape.com/js/?" | the agent calls the tool and answers |
+| 10 | Switch that tool to Run Steps, Allow dangerous tools off | the run fails: dangerous tool connected (it clicks, types and submits forms in a browser) |
+| 11 | As a Free account after the trial | the node shows a Pro lock |
+| 12 | Self-hosted: `docker compose exec app wget -qO- http://browser:9222/json/version` | answers with Chrome's version; `docker compose exec browser wget -qO- http://postgres:5432` cannot reach Postgres |
+
 # When something fails
 
 Note the node, the exact values you entered, and the error text from the

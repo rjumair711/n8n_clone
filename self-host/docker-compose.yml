@@ -26,6 +26,11 @@ services:
       BETTER_AUTH_URL: https://${RXJ_DOMAIN}
       # The Inngest server below, not Inngest Cloud
       INNGEST_BASE_URL: http://inngest:8288
+      # The browser below, for the Browser node
+      BROWSER_CDP_URL: http://browser:9222
+    networks:
+      - default
+      - browser
     # Lets workflows reach services on the server itself (e.g. Ollama) as
     # host.docker.internal, once it is in PRIVATE_NETWORK_ALLOWLIST
     extra_hosts:
@@ -82,6 +87,19 @@ services:
       redis:
         condition: service_started
 
+  # Headless Chrome for the Browser node (MIT-licensed image). It is on a
+  # network of its own with only the app, so pages it opens cannot reach
+  # Postgres, Valkey or Inngest; the app also checks every address it loads.
+  # No port is published: nothing outside this server can use it.
+  browser:
+    image: chromedp/headless-shell:157.0.8103.27
+    restart: unless-stopped
+    command: ["--disable-dev-shm-usage", "--no-first-run"]
+    shm_size: 512m
+    mem_limit: 1g
+    networks:
+      - browser
+
   caddy:
     image: caddy:2.10.2-alpine
     restart: unless-stopped
@@ -97,6 +115,11 @@ services:
       - caddy-config:/config
     depends_on:
       - app
+
+networks:
+  default:
+  # Only the app and the browser
+  browser:
 
 volumes:
   postgres-data:

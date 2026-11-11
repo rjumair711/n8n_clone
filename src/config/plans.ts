@@ -29,6 +29,8 @@ const PAID_PLAN_LIMITS = {
       aiAgents: false,
       apiAccess: false,
       ssh: false,
+      // The Browser node: a real browser opens pages users choose
+      browser: false,
       // Enterprise: SSO, Git sync and external secrets
       enterprise: false,
     },
@@ -54,6 +56,8 @@ const PAID_PLAN_LIMITS = {
       aiAgents: false,
       apiAccess: false,
       ssh: false,
+      // The Browser node: a real browser opens pages users choose
+      browser: false,
       // Enterprise: SSO, Git sync and external secrets
       enterprise: false,
     },
@@ -79,6 +83,8 @@ const PAID_PLAN_LIMITS = {
       aiAgents: true,
       apiAccess: false,
       ssh: false,
+      // The Browser node: a real browser opens pages users choose
+      browser: false,
       // Enterprise: SSO, Git sync and external secrets
       enterprise: false,
     },
@@ -104,6 +110,8 @@ const PAID_PLAN_LIMITS = {
       aiAgents: true,
       apiAccess: true,
       ssh: true,
+      // The Browser node: a real browser opens pages users choose
+      browser: true,
       // Enterprise: SSO, Git sync and external secrets
       enterprise: true,
     },
@@ -170,6 +178,7 @@ export const NODE_PLAN_FEATURES: Record<string, PlanFeature> = {
   GMAIL: "gmail",
   GMAIL_TRIGGER: "gmail",
   SSH: "ssh",
+  BROWSER: "browser",
 };
 
 // Not unlocked by the free trial. SSH opens connections from this server to

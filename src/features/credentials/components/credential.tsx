@@ -71,6 +71,7 @@ const credentialTypeOptions = [
   { value: CredentialType.JINA_READER, label: "Jina (Read Web Page, Vector Store reranking)", logo: "/logos/web-page.svg" },
   { value: CredentialType.COHERE, label: "Cohere (Vector Store reranking)", logo: "/logos/chat-model.svg" },
   { value: CredentialType.FIRECRAWL, label: "Firecrawl (Read Web Page)", logo: "/logos/web-page.svg" },
+  { value: CredentialType.BROWSER, label: "Hosted Browser (Browser node)", logo: "/logos/web-page.svg" },
   { value: CredentialType.JIRA, label: "Jira", logo: "/logos/jira.svg" },
   { value: CredentialType.HUBSPOT, label: "HubSpot", logo: "/logos/hubspot.svg" },
   { value: CredentialType.SHOPIFY, label: "Shopify", logo: "/logos/shopify.svg" },
@@ -278,6 +279,13 @@ const credentialFieldConfig: Record<CredentialType, {
     secretLabel: "API Key",
     secretPlaceholder: "fc-...",
     help: "Create one at firecrawl.dev. Used by the Read Web Page node for pages that need JavaScript.",
+  },
+  [CredentialType.BROWSER]: {
+    namePlaceholder: "My Hosted Browser",
+    defaultName: "Hosted browser",
+    secretLabel: "WebSocket URL",
+    secretPlaceholder: "wss://production-sfo.browserless.io?token=...",
+    help: "The wss:// connection address of a hosted browser, with your key in it: Browserless (wss://production-sfo.browserless.io?token=KEY), Browserbase (wss://connect.browserbase.com?apiKey=KEY) or Steel (wss://connect.steel.dev?apiKey=KEY). Used by the Browser node. A self-hosted RXJ server does not need one.",
   },
   [CredentialType.JIRA]: {
     namePlaceholder: "My Jira Account",

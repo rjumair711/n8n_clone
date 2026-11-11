@@ -313,6 +313,9 @@ enum CredentialType {
   FACEBOOK_PAGE
   INSTAGRAM
   COHERE
+  // Browser node: the WebSocket address of a hosted browser (Browserless,
+  // Browserbase, Steel) with its key
+  BROWSER
 }
 
 model Workflow {
@@ -740,6 +743,7 @@ enum NodeType {
   GUARDRAILS
   THINK_TOOL
   AI_AGENT_TOOL
+  BROWSER
 }
 
 model Node {

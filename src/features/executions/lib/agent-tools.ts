@@ -165,6 +165,7 @@ const TOOL_LABELS: Record<string, string> = {
   TRANSCRIBE_AUDIO: "Transcribe Audio",
   TEXT_TO_SPEECH: "Text to Speech",
   READ_WEB_PAGE: "Read Web Page",
+  BROWSER: "Browser",
   EDIT_FIELDS: "Edit Fields",
   GOOGLE_DRIVE: "Google Drive",
   PDF_GENERATOR: "PDF Generator",
@@ -297,6 +298,14 @@ export const describeToolRisk = (
     return { risk: "dangerous", reason: "it runs raw SQL" };
   }
 
+  if (nodeType === "BROWSER") {
+    // Reading a page or taking a picture of it changes nothing; Run Steps
+    // can log in, fill in forms and submit them
+    return operation === "content" || operation === "screenshot" || !operation
+      ? { risk: "read" }
+      : { risk: "dangerous", reason: "it clicks, types and submits forms in a browser" };
+  }
+
   if (nodeType === "HTTP_REQUEST") {
     const method = String(nodeData.method || "GET").trim().toUpperCase();
 
@@ -405,6 +414,17 @@ export const getDefaultToolDescription = (
 
   if (nodeType === "READ_WEB_PAGE") {
     return "Fetches a web page by its URL and returns its main text. Use it to read a page found with a search.";
+  }
+
+  if (nodeType === "BROWSER") {
+    const operation = String(nodeData.operation || "content");
+    if (operation === "screenshot") {
+      return "Opens a web page in a real browser and takes a screenshot of it.";
+    }
+    if (operation === "steps") {
+      return "Opens a web page in a real browser, runs the workflow's fixed steps (clicks, typing, submitting), and returns the page's text.";
+    }
+    return "Opens a web page in a real browser, so pages that need JavaScript work too, and returns its main text.";
   }
 
   if (nodeData.operation) {
