@@ -1957,6 +1957,23 @@ the landing page, Billing is in the menu, a Free account still sees the Pro
 lock on SSH, and checkout opens Polar's **production** checkout, not the
 sandbox.
 
+## T26. Managed private server (Polar sandbox)
+
+Needs `NEXT_PUBLIC_MANAGED_SERVER_CHECKOUT_URL` set to the sandbox
+checkout link, and `npm run dev` restarted after setting it.
+
+| # | Do | Expect |
+| - | -- | ------ |
+| 1 | Open `/` and scroll to Pricing | one card, "Managed private server", $20/month, with the note about the server being in the client's name; no Beginner, Intermediate or Pro |
+| 2 | Open `/pricing` | the same offer; the button says "Get your private server" |
+| 3 | Remove the variable, restart, open `/pricing` | the button says "Coming soon" and is not a link |
+| 4 | Put it back, click the button | Polar's sandbox checkout for $20/month opens |
+| 5 | Pay with card `4242 4242 4242 4242`, any future date, any CVC | Polar opens `/managed-server/thanks` with the "What to have ready" list |
+| 6 | Pay with the email of an RXJ account that is on Pro | the account is still Pro afterwards (Settings → Usage & plan) |
+| 7 | In Polar sandbox, cancel that subscription | the account is still Pro |
+| 8 | Polar sandbox → Settings → Webhooks → the deliveries of steps 5 and 7 | each answered 200, none failed or retried |
+| 9 | Sign in as a user on Free and click an "Upgrade" link (e.g. a locked SSH node) | the pricing page with the managed server opens |
+
 # When something fails
 
 Note the node, the exact values you entered, and the error text from the

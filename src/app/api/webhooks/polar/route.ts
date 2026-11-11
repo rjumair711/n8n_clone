@@ -6,12 +6,7 @@ import { getCreditPacks, readCreditOrder } from "@/config/ai-credits";
 import { grantCreditPurchase } from "@/lib/ai-credits";
 import { SELF_HOSTED } from "@/config/self-hosted";
 
-// 💡 Dynamically map the incoming Polar product IDs to your database plan strings
-const WEBHOOK_PLAN_MAP: Record<string, string> = {
-  [process.env.POLAR_BEGINNER_PRODUCT_ID ?? ""]: "BEGINNER",
-  [process.env.POLAR_INTERMEDIATE_PRODUCT_ID ?? ""]: "INTERMEDIATE",
-  [process.env.POLAR_PRO_PRODUCT_ID ?? ""]: "PRO",
-};
+import { getPlanForPolarProduct } from "@/config/plans";
 
 export async function POST(req: Request) {
     // A self-hosted server has no billing, so nothing may change a plan
@@ -58,23 +53,21 @@ export async function POST(req: Request) {
         }
 
         if (eventType === "subscription.created" || eventType === "subscription.updated") {
+            // Only the plan products change a plan. Any other subscription
+            // (the managed private server) is answered with success, so
+            // Polar does not retry it or count it as a failing endpoint
+            const determinedPlan = getPlanForPolarProduct(eventData.product_id);
+
+            if (!determinedPlan) {
+                return NextResponse.json({ succeeded: true, skipped: "not a plan product" });
+            }
+
             // Extract the userId you passed into the checkout metadata/custom fields
             const userId = eventData.metadata?.userId || eventData.custom_fields?.userId;
 
             if (!userId) {
                 console.error(" No userId found in Polar webhook event metadata.");
                 return new NextResponse("Missing userId metadata", { status: 400 });
-            }
-
-            // 💡 1. Grab the product_id from Polar's event data payload
-            const polarProductId = eventData.product_id;
-
-            // 💡 2. Resolve the plan string name from our map
-            const determinedPlan = WEBHOOK_PLAN_MAP[polarProductId];
-
-            if (!determinedPlan) {
-                console.error(`⚠️ Unknown or unmapped product ID received from Polar: ${polarProductId}`);
-                return new NextResponse("Unknown product configuration mapping", { status: 400 });
             }
 
             // Update the user profile tier matching your Prisma configuration dynamically

@@ -1080,6 +1080,15 @@ RXJ includes a complete SaaS monetization architecture powered by Polar.
 * Real-time dynamic tier upgrades and revoked downgrades matching checkout selections
 * Dynamic sidebar plan UI with live checkout state cache invalidation
 
+## What is on sale: the managed private server
+
+The pricing page and the landing page show one offer: the **managed private server**, $20 a month (`src/config/pricing-plans.ts`). RXJ is installed on the client's own server (see "Self-hosting") and looked after for them. The Beginner, Intermediate and Pro plans are no longer sold.
+
+* **Buying:** the button opens the Polar checkout link in `NEXT_PUBLIC_MANAGED_SERVER_CHECKOUT_URL` (the sandbox link while testing, the production link when live). Without it the button says "Coming soon". The link can also be sent to a client directly.
+* **After paying:** set the link's success URL in Polar to `<app URL>/managed-server/thanks?checkout_id={CHECKOUT_ID}`. That page tells the buyer what to have ready; you then email them from the subscription in Polar.
+* **Webhooks:** only the three plan products change a user's plan (`getPlanForPolarProduct` in `src/config/plans.ts`). A managed-server subscription, or its end, leaves the buyer's RXJ account as it is, and `/api/webhooks/polar` answers it with success so Polar does not retry it.
+* **Existing subscribers** of the old plans keep their plan, its limits and the Polar customer portal under Billing. Everyone else stays on the Free plan, with the 7-day trial at sign-up; upgrade prompts in the app open the pricing page.
+
 ---
 
 # 📊 Usage Tracking System
@@ -1403,6 +1412,7 @@ Anyone can run RXJ on their own VPS with Docker: [`docs/SELF_HOSTING.md`](docs/S
 | `CSV_MAX_ROWS` | Most rows read from a CSV file, default 10000 |
 | `TELEGRAM_PROXY` | Optional proxy for calls to the Telegram API |
 | `NGROK_URL` | Tunnel domain for local development |
+| `NEXT_PUBLIC_MANAGED_SERVER_CHECKOUT_URL` | The Polar checkout link of the managed private server ($20 a month) that the pricing page opens. Sandbox link while testing, production link when live. Read when the app is built, so redeploy after changing it |
 | `NEXT_PUBLIC_SELF_HOSTED` | `true` builds the self-hosted edition: no billing, every feature unlocked. Set by the Dockerfile; **never set it on Vercel** (the server refuses to start there). See "Self-hosting" |
 | `NEXT_PUBLIC_SENTRY_DSN` | Optional. Your own Sentry project. Not set: the hosted app reports to RXJ's project and a self-hosted server to none. Read when the app is built |
 | `INNGEST_BASE_URL`, `INNGEST_EVENT_KEY` | Self-hosting: the address of your own Inngest server and its event key (set by `self-host/docker-compose.yml`) |

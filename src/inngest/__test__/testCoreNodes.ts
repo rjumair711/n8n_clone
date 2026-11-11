@@ -15021,6 +15021,36 @@ pour()</code></pre>
     assert.match(auth, /if \(customerEmail && dynamicPlan\) \{/);
     assert.match(auth, /if \(customerEmail && getPlanForPolarProduct\(data\.product\?\.id\)\) \{/);
     assert.equal(/let dynamicPlan: SubscriptionPlan = "FREE"/.test(auth), false);
+
+    // The other webhook address answers success for other products before
+    // it asks for a userId, so Polar neither retries nor disables it
+    const route = readFileSync("src/app/api/webhooks/polar/route.ts", "utf8");
+    assert.match(route, /if \(!determinedPlan\) \{\s+return NextResponse\.json\(\{ succeeded: true, skipped: "not a plan product" \}\);/);
+    assert.ok(route.indexOf("getPlanForPolarProduct(eventData.product_id)") < route.indexOf("Missing userId metadata"));
+    assert.equal(/WEBHOOK_PLAN_MAP/.test(route), false);
+  });
+
+  await test("pricing: only the managed private server is on sale, through its checkout link", async () => {
+    const pricing = await import("@/config/pricing-plans");
+    const { readFileSync } = await import("node:fs");
+
+    assert.deepEqual(pricing.PRICING_OFFERS.map((offer) => offer.slug), ["managed-server"]);
+    assert.equal(pricing.MANAGED_SERVER_OFFER.price, "$20");
+
+    const link = "https://sandbox-api.polar.sh/v1/checkout-links/polar_cl_abc/redirect";
+    assert.equal(pricing.getManagedServerCheckoutUrl(link), link);
+    assert.equal(pricing.getManagedServerCheckoutUrl(`  ${link}  `), link);
+    // (Leaving the value out reads the environment, so it is not tested here)
+    for (const value of ["", "   ", "not a url", "http://polar.sh/x", "javascript:alert(1)"]) {
+      assert.equal(pricing.getManagedServerCheckoutUrl(value), null, String(value));
+    }
+
+    const page = readFileSync("src/app/pricing/page.tsx", "utf8");
+    assert.match(page, /const checkoutUrl = getManagedServerCheckoutUrl\(\);/);
+    assert.match(page, /href=\{checkoutUrl\}/);
+    assert.equal(/Beginner|Intermediate|\/api\/subscription\/checkout/.test(page), false);
+    assert.match(readFileSync("src/features/marketing/components/landing-page.tsx", "utf8"), /PRICING_OFFERS\.map/);
+    assert.match(readFileSync("src/app/managed-server/thanks/page.tsx", "utf8"), /We will email you/);
   });
 
   await test("self-hosted: Sentry reports nowhere unless the owner sets a DSN; the hosted app keeps RXJ's", async () => {

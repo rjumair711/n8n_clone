@@ -3,7 +3,7 @@ import Image from "next/image";
 import Link from "next/link";
 import type { CSSProperties, ReactNode } from "react";
 import { getNodeLabel } from "@/config/node-labels";
-import { PRICING_PLANS } from "@/config/pricing-plans";
+import { PRICING_OFFERS } from "@/config/pricing-plans";
 import { getTemplateLanguage } from "@/features/templates/lib/template-languages";
 import { cn } from "@/lib/utils";
 import {
@@ -495,27 +495,17 @@ export const LandingPage = ({
             <SectionHeading
               id="pricing-title"
               eyebrow="Pricing"
-              title="Plans that stay affordable"
-              lead="Every account starts with a 7-day free trial. Upgrade, downgrade or cancel at any time."
+              title="Your own server, run for you"
+              lead="Start building for free. When you want RXJ on a server of your own, we set it up and look after it."
               center
             />
-            <div className="mt-12 grid gap-4 md:grid-cols-3">
-              {PRICING_PLANS.map((plan) => (
+            <div className="mx-auto mt-12 grid max-w-md gap-4">
+              {PRICING_OFFERS.map((plan) => (
                 <article
                   key={plan.slug}
-                  className={cn(
-                    "m-card m-reveal flex flex-col p-6 sm:p-7",
-                    plan.popular && "border-transparent ring-2 ring-[#6d4bff]",
-                  )}
+                  className="m-card m-reveal flex flex-col border-transparent p-6 ring-2 ring-[#6d4bff] sm:p-7"
                 >
-                  <div className="flex items-center justify-between gap-2">
-                    <h3 className="m-h3">{plan.name}</h3>
-                    {plan.popular && (
-                      <span className="rounded-full bg-[#4b2df5] px-2.5 py-1 text-xs font-medium text-white">
-                        Most popular
-                      </span>
-                    )}
-                  </div>
+                  <h3 className="m-h3">{plan.name}</h3>
                   <p className="mt-2 text-sm text-m-muted">
                     {plan.description}
                   </p>
@@ -536,17 +526,14 @@ export const LandingPage = ({
                       </li>
                     ))}
                   </ul>
-                  <AuthLink
-                    signedInHref="/pricing"
-                    className={cn(
-                      "m-btn mt-8",
-                      plan.popular ? "m-btn-primary" : "m-btn-ghost",
-                    )}
-                    aria-label={`Start free trial, ${plan.name} plan`}
-                    signedInLabel="Choose plan"
+                  <p className="mt-6 text-xs text-m-muted">{plan.note}</p>
+                  <Link
+                    href="/pricing"
+                    className="m-btn m-btn-primary mt-8"
+                    aria-label={`Get started, ${plan.name}`}
                   >
-                    Start free trial
-                  </AuthLink>
+                    Get started
+                  </Link>
                 </article>
               ))}
             </div>
