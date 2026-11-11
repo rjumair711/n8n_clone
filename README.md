@@ -795,7 +795,7 @@ A real Chrome, for what the Read Web Page node cannot do: pages that build their
 
 | Operation | What it does | Result |
 | --------- | ------------ | ------ |
-| Get Page Content | Opens the URL, waits until the page is quiet (and for **Wait For Element**, if set), and returns its main text like Read Web Page | `{{browser.content}}`, `.title`, `.description`, `.url` (after redirects), `.truncated`, `.length` |
+| Get Page Content | Opens the URL, waits until the page is quiet (and for **Wait For Element**, if set), and returns its main text like Read Web Page | `{{browser.content}}`, `.title`, `.description`, `.url` (after redirects), `.truncated`, `.length`; with **List Clickable Elements**, `.elements`: the visible links, buttons and form fields, each with a CSS `selector` (up to 60) |
 | Take Screenshot | Opens the URL and captures it as a PNG, the visible part or (**Full Page**) all of it | `{{browser.file}}`, a workflow file, plus `.url` and `.title` |
 | Run Steps | Opens the URL, then runs **Steps** in order, then returns the page's text; **Screenshot At The End** adds `{{browser.file}}` | the same as Get Page Content |
 
@@ -811,6 +811,8 @@ A real Chrome, for what the Read Web Page node cannot do: pages that build their
 
 Actions: `goto` (url), `click` (selector), `type` (selector, text), `select` (selector, value), `press` (key: Enter, Tab, Escape, Backspace, Delete, Space, the arrows, PageUp/PageDown, Home, End), `waitFor` (selector), `waitForNavigation`, `wait` (ms, at most 10000) and `scroll`. Selectors are CSS selectors. At most 30 steps. `{{...}}` is filled in after the JSON is read, so a value with quotes in it cannot break the list. A step that fails stops the node with its number ("step 2 (click) failed: ...").
 
+**Steps an AI Agent writes.** Connect the node to an AI Agent's Tools port with Run Steps and make the whole Steps field `{{$fromAI "steps" "The browser actions as a JSON list"}}`. The model is then told the format and writes the list itself, for example to log in and open a page. Give the agent a second Browser tool with Get Page Content and **List Clickable Elements** on, so it reads the real selectors first instead of guessing them. The browser starts fresh on every call, so the model repeats a login in each list. What the model writes is read as it is and never rendered again: a `{{...}}` it copied from a page is typed as text, not run. Run Steps stays a dangerous tool, so "Allow dangerous tools" must be on; turning on approval for it (see "Human approval for tools") lets a person check each list of actions first.
+
 **Where the browser comes from.** RXJ never starts a browser itself (Vercel cannot run one):
 
 * **A Browser credential** (type "Hosted Browser"): the `wss://` connection address of a hosted browser with your key in it, e.g. Browserless `wss://production-sfo.browserless.io?token=KEY`, Browserbase `wss://connect.browserbase.com?apiKey=KEY` or Steel `wss://connect.steel.dev?apiKey=KEY`. Only `wss://` addresses on public hosts are accepted. This is what the hosted app uses; the browser service bills you.
@@ -824,7 +826,7 @@ Actions: `goto` (url), `click` (selector), `type` (selector, text), `select` (se
 * **Timeout (seconds)**, 5 to 120 (default 30), covers the whole node; the text is cut to **Max Characters** (default 8000).
 * As an AI Agent tool, Get Page Content and Take Screenshot are Read tools. Run Steps is a **dangerous** tool, because it can log in and submit forms: it needs "Allow dangerous tools". The steps are the workflow's own; the model only fills in what the workflow lets it (for example the URL with `{{$fromAI "url"}}`).
 * Pro plan (the free trial unlocks it, as you bring your own browser); every feature on a self-hosted server.
-* Not built yet: logging in with saved cookies, file uploads into forms, and steps the model writes itself.
+* Not built yet: logging in with saved cookies, file uploads into forms, and one browser kept open across several tool calls.
 
 ## Apps and databases
 
@@ -1407,7 +1409,7 @@ Step-by-step workflows for testing every node by hand are in [`docs/TESTING.md`]
 
 ## Continuous integration
 
-`.github/workflows/ci.yml` runs on every pull request and on every push to `main`. It has five jobs, each of which fails the run on its own:
+`.github/workflows/ci.yml` runs on every pull request and on every push to `main`. It has six jobs, each of which fails the run on its own:
 
 | Job | What it runs |
 | --- | ------------ |
@@ -1415,6 +1417,7 @@ Step-by-step workflows for testing every node by hand are in [`docs/TESTING.md`]
 | Core node tests | `npx tsx --conditions=react-server src/inngest/__test__/testCoreNodes.ts` |
 | Build | `npx prisma generate` then `npx next build`, with placeholder env values. Catches what tsc does not, such as a server package (sharp, `fs`) pulled into the browser bundle by a `"use client"` import. It runs `next build` directly, not `npm run build`, so `scripts/migrate-on-deploy.mjs` never runs |
 | npm audit | `npm audit --audit-level=high`: fails on a known vulnerability of high or critical severity in any dependency |
+| Browser node | `scripts/test-browser-node.ts` in the runner's own headless Chrome against a local test site: JavaScript pages, Run Steps (type, select, click, page change), steps an AI Agent writes, the element list and the private-address block |
 | Secret scan | [gitleaks](https://github.com/gitleaks/gitleaks) over the commits of the push or pull request, with `.gitleaks.toml` |
 
 * The jobs only read the repository. None has the database address or any other secret of the app, and none migrates or deploys: `DATABASE_URL` in the workflow is a placeholder that `prisma generate` reads without connecting.
@@ -1517,6 +1520,20 @@ Nodes that are not built yet. Each new integration is a config passed to `create
 | Slack / Discord bots | Bot-token nodes and triggers; today both send through webhook URLs |
 
 Also not built: a true n8n items model for every node from the trigger onward (items start at a list node), a real tokenizer for the Vector Store's token splitting, and the stdio transport for MCP (it needs a process on the user's own machine).
+
+## Client servers dashboard (for the managed private server)
+
+Planned, not built. A page only the RXJ owner sees (an `ADMIN_EMAILS` account), for running the managed private servers of many clients from one place.
+
+| Planned item | What it needs |
+| ------------ | ------------- |
+| Server list | One row per client: name, domain, the Polar subscription it belongs to, and notes |
+| Health | Is the server online (its `/api` answers), which RXJ version and commit it runs, and when it was last checked |
+| Backups | When the last daily backup ran and whether it worked, with a warning when one is missing |
+| Workflow count | How many of the client's 5 included workflows are in use, so work beyond the $20 is easy to see |
+| Updates | "Update" per server and "Update all": pull the new image and restart, one server after the other, stopping at the first that fails |
+| How the servers report | A small status endpoint on each self-hosted server, protected by a per-server key, that the dashboard reads; no SSH keys of client servers are stored in RXJ |
+| Alerts | An email or WhatsApp message to the owner when a server is down or a backup failed |
 
 ## For the AI Backlink Outreach agent
 

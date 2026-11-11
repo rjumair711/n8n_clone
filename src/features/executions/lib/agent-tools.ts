@@ -422,9 +422,18 @@ export const getDefaultToolDescription = (
       return "Opens a web page in a real browser and takes a screenshot of it.";
     }
     if (operation === "steps") {
+      const steps = typeof nodeData.steps === "string" ? nodeData.steps.trim() : "";
+
+      // The model writes the steps: tell it how
+      if (/^\{\{[\s\S]*\}\}$/.test(steps)) {
+        return `Opens a web page in a real browser, carries out the actions you write, and returns the page's text. The browser starts fresh on every call, so include every action from the start (for example logging in) each time. Write "steps" as a JSON list such as [{"action":"type","selector":"#email","text":"me@example.com"},{"action":"click","selector":"button[type=submit]"},{"action":"waitForNavigation"}]. Actions: goto (url), click (selector), type (selector, text), select (selector, value), press (key: Enter, Tab, Escape, Backspace, Delete, Space, arrows, PageUp, PageDown, Home, End), waitFor (selector), waitForNavigation, wait (ms, at most 10000), scroll. At most 30. Use CSS selectors; read them first from a page-content tool that lists the page's elements, never guess.`;
+      }
+
       return "Opens a web page in a real browser, runs the workflow's fixed steps (clicks, typing, submitting), and returns the page's text.";
     }
-    return "Opens a web page in a real browser, so pages that need JavaScript work too, and returns its main text.";
+    return nodeData.listElements === "true"
+      ? "Opens a web page in a real browser, so pages that need JavaScript work too, and returns its main text and its visible links, buttons and form fields, each with a CSS selector to use in browser actions."
+      : "Opens a web page in a real browser, so pages that need JavaScript work too, and returns its main text.";
   }
 
   if (nodeData.operation) {

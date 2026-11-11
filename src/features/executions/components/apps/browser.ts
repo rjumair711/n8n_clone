@@ -4,6 +4,7 @@ import { NonRetriableError } from "inngest";
 import type { NodeExecutor } from "@/features/executions/types";
 import {
   gotoGuarded,
+  listPageElements,
   openBrowserPage,
   resolveBrowserEndpoint,
   runBrowserSteps,
@@ -48,11 +49,26 @@ type BrowserData = {
   maxCharacters?: string;
   fullPage?: string;
   screenshotAtEnd?: string;
+  listElements?: string;
   timeout?: string;
   [key: string]: string | undefined;
 };
 
 const label = "Browser";
+
+// The whole Steps field is one {{...}}, e.g. {{$fromAI "steps"}}: an AI
+// Agent writes the list
+export const isWholeTemplate = (text: string) => /^\s*\{\{[\s\S]*\}\}\s*$/.test(text);
+
+/**
+ * The steps of Run Steps. Written in the node: a JSON list whose values may
+ * hold {{...}}, filled in after the JSON is read. Written by an AI Agent
+ * (the whole field is {{$fromAI ...}}): the model's JSON, read as it is.
+ * Its values are never rendered again, so text the model copied from a
+ * page cannot run {{...}} expressions.
+ */
+export const readSteps = (field: string, render: (text: string) => string) =>
+  isWholeTemplate(field) ? parseBrowserSteps(render(field)) : parseBrowserSteps(field, render);
 
 const readPage = async (
   session: BrowserSession,
@@ -123,7 +139,7 @@ export const browserExecutor: NodeExecutor<BrowserData> = async ({
   let steps: ReturnType<typeof parseBrowserSteps> = [];
   if (operation === "steps") {
     try {
-      steps = parseBrowserSteps(data.steps ?? "", render);
+      steps = readSteps(data.steps ?? "", render);
     } catch (error) {
       if (error instanceof BrowserStepError) {
         throw new NonRetriableError(`Browser node: ${error.message}`);
@@ -195,12 +211,16 @@ export const browserExecutor: NodeExecutor<BrowserData> = async ({
       }
 
       const page = await readPage(session, { format, maxCharacters });
+      // The links, buttons and fields with their selectors, for an AI Agent
+      // that writes Run Steps next
+      const elements = data.listElements === "true" ? await listPageElements(session) : undefined;
+      const withElements = elements ? { ...page, elements } : page;
 
       if (operation === "steps" && data.screenshotAtEnd === "true") {
-        return { ...page, file: await screenshot(session, { fullPage: false, userId, executionId }) };
+        return { ...withElements, file: await screenshot(session, { fullPage: false, userId, executionId }) };
       }
 
-      return page;
+      return withElements;
     };
 
     try {

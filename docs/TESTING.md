@@ -2012,6 +2012,12 @@ used.
 | 10 | Switch that tool to Run Steps, Allow dangerous tools off | the run fails: dangerous tool connected (it clicks, types and submits forms in a browser) |
 | 11 | As a Free account after the trial | the node shows a Pro lock |
 | 12 | Self-hosted: `docker compose exec app wget -qO- http://browser:9222/json/version` | answers with Chrome's version; `docker compose exec browser wget -qO- http://postgres:5432` cannot reach Postgres |
+| 13 | Get Page Content with List Clickable Elements on, URL `https://quotes.toscrape.com/login` | `browser.elements` lists `#username`, `#password` and the submit button, each with a `selector`; the password field has no text |
+| 14 | **AI-written steps.** AI Agent with two Browser tools: (a) Get Page Content, List Clickable Elements on, URL `{{$fromAI "url" "The page"}}`; (b) Run Steps, URL `https://quotes.toscrape.com/login`, Steps `{{$fromAI "steps" "The browser actions as a JSON list"}}`. Allow dangerous tools on. Ask: "Log in at https://quotes.toscrape.com/login with user test and password test, then tell me the first quote." | the agent reads the page first, then calls (b) with its own list (type, type, click, waitForNavigation); the answer has the first quote |
+| 15 | Same, with approval on for tool (b) | the run waits; the approval page shows the list of actions the model wrote; Approve continues it |
+| 16 | Ask the agent to type the text `{{json.anything}}` into the username field | the field gets exactly that text; nothing is filled in |
+
+Automatic: the **Browser node** CI job runs `scripts/test-browser-node.ts` on every pull request in a real Chrome. To run it yourself (needs Chrome and a few GB of free memory): `npx tsx --conditions=react-server scripts/test-browser-node.ts`.
 
 # When something fails
 

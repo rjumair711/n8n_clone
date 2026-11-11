@@ -566,7 +566,7 @@ export const browserConfig: IntegrationConfig = {
       placeholder:
         '[\n  {"action": "type", "selector": "#email", "text": "{{json.email}}"},\n  {"action": "click", "selector": "button[type=submit]"},\n  {"action": "waitForNavigation"}\n]',
       description:
-        "A JSON list, run in order. Actions: goto (url), click (selector), type (selector, text), select (selector, value), press (key: Enter, Tab, Escape...), waitFor (selector), waitForNavigation, wait (ms, up to 10000), scroll. Selectors are CSS selectors. Up to 30 steps; {{...}} works inside the values.",
+        "A JSON list, run in order. Actions: goto (url), click (selector), type (selector, text), select (selector, value), press (key: Enter, Tab, Escape...), waitFor (selector), waitForNavigation, wait (ms, up to 10000), scroll. Selectors are CSS selectors. Up to 30 steps; {{...}} works inside the values. To let an AI Agent write the steps, make the whole field {{$fromAI \"steps\" \"The browser actions as a JSON list\"}}.",
     },
     {
       name: "waitForSelector",
@@ -602,6 +602,15 @@ export const browserConfig: IntegrationConfig = {
       defaultValue: "false",
       operations: ["screenshot"],
       description: "Capture the whole page, not only what fits on the screen.",
+    },
+    {
+      name: "listElements",
+      label: "List Clickable Elements",
+      type: "switch",
+      defaultValue: "false",
+      operations: ["content", "steps"],
+      description:
+        "Also return the page's visible links, buttons and form fields with a CSS selector for each, as {{<name>.elements}} (up to 60). An AI Agent uses them to write Run Steps.",
     },
     {
       name: "screenshotAtEnd",

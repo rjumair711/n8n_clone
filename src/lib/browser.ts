@@ -192,14 +192,15 @@ export const openBrowserPage = async ({
     page.on("request", (request) => {
       if (request.isInterceptResolutionHandled()) return;
 
-      allowed(request.url()).then(
-        (ok) => {
+      allowed(request.url())
+        .then((ok) => {
           if (ok) return request.continue();
           if (blocked.length < 5) blocked.push(request.url().slice(0, 200));
           return request.abort("blockedbyclient");
-        },
-        () => request.abort("blockedbyclient")
-      );
+        })
+        // The page may be closed while a request waits: nothing to do then,
+        // and an unhandled rejection would stop the whole server process
+        .catch(() => request.abort("blockedbyclient").catch(() => {}));
     });
 
     // Nothing is downloaded to the browser's disk
@@ -285,7 +286,8 @@ export const runBrowserSteps = async (session: BrowserSession, steps: BrowserSte
           await new Promise((resolve) => setTimeout(resolve, step.ms));
           break;
         case "scroll":
-          await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
+          // A string, not a function: the browser runs it as it is written
+          await page.evaluate("window.scrollTo(0, document.body.scrollHeight)");
           break;
       }
     } catch (error) {
@@ -295,6 +297,81 @@ export const runBrowserSteps = async (session: BrowserSession, steps: BrowserSte
       );
     }
   }
+};
+
+export type PageElement = {
+  selector: string;
+  tag: string;
+  type?: string;
+  text?: string;
+  name?: string;
+  placeholder?: string;
+  href?: string;
+};
+
+export const MAX_PAGE_ELEMENTS = 60;
+
+// Runs in the page. Kept as a string, not a function, so no build tool can
+// add helpers to it that the page does not have. Lists the visible links,
+// buttons and form fields with a CSS selector for each: an AI Agent reads
+// this list, then writes Run Steps with these selectors.
+const LIST_ELEMENTS_SCRIPT = `(() => {
+  const max = ${MAX_PAGE_ELEMENTS};
+  const clip = (value, length) => (value || "").replace(/\\s+/g, " ").trim().slice(0, length);
+  const selectorOf = (element) => {
+    if (element.id) return "#" + CSS.escape(element.id);
+    const tag = element.tagName.toLowerCase();
+    const name = element.getAttribute("name");
+    if (name) {
+      const byName = tag + '[name="' + name.replace(/["\\\\]/g, "\\\\$&") + '"]';
+      if (document.querySelectorAll(byName).length === 1) return byName;
+    }
+    const parts = [];
+    let current = element;
+    while (current && current.nodeType === 1 && current !== document.body) {
+      let index = 1;
+      let sibling = current;
+      while ((sibling = sibling.previousElementSibling)) {
+        if (sibling.tagName === current.tagName) index++;
+      }
+      parts.unshift(current.tagName.toLowerCase() + ":nth-of-type(" + index + ")");
+      current = current.parentElement;
+    }
+    return "body > " + parts.join(" > ");
+  };
+  const visible = (element) => {
+    const box = element.getBoundingClientRect();
+    const style = getComputedStyle(element);
+    return box.width > 0 && box.height > 0 && style.visibility !== "hidden" && style.display !== "none";
+  };
+  const found = [];
+  for (const element of document.querySelectorAll('a[href], button, input, select, textarea, [role="button"], [role="link"]')) {
+    if (found.length >= max) break;
+    if (element.type === "hidden" || element.disabled || !visible(element)) continue;
+    const entry = { selector: selectorOf(element), tag: element.tagName.toLowerCase() };
+    if (element.type) entry.type = clip(element.type, 20);
+    const text = clip(element.innerText || element.value || element.getAttribute("aria-label") || element.title, 80);
+    if (text) entry.text = text;
+    if (element.name) entry.name = clip(element.name, 60);
+    if (element.placeholder) entry.placeholder = clip(element.placeholder, 60);
+    if (element.tagName === "A") entry.href = clip(element.href, 200);
+    found.push(entry);
+  }
+  return found;
+})()`;
+
+/**
+ * The visible links, buttons and form fields of the page, with a selector
+ * for each (at most 60). Passwords' values are never read: only the type.
+ */
+export const listPageElements = async (session: BrowserSession): Promise<PageElement[]> => {
+  const elements = (await session.page.evaluate(LIST_ELEMENTS_SCRIPT)) as PageElement[];
+
+  return Array.isArray(elements)
+    ? elements.map((element) =>
+        element.type === "password" ? { ...element, text: undefined } : element
+      )
+    : [];
 };
 
 export { BROWSER_MAX_TIMEOUT_SECONDS };

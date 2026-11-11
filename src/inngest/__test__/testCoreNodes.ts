@@ -15092,6 +15092,42 @@ pour()</code></pre>
     }
   });
 
+  await test("browser: steps an AI Agent writes are read as the model wrote them, never rendered again", async () => {
+    const { readSteps, isWholeTemplate } = await import("@/features/executions/components/apps/browser");
+    const { renderTemplate } = await import("@/features/executions/lib/templates");
+    const { getDefaultToolDescription } = await import("@/features/executions/lib/agent-tools");
+
+    assert.equal(isWholeTemplate('{{$fromAI "steps" "The actions"}}'), true);
+    assert.equal(isWholeTemplate('  {{ai.steps}} '), true);
+    assert.equal(isWholeTemplate('[{"action":"type","selector":"#a","text":"{{json.x}}"}]'), false);
+
+    const field = '{{$fromAI "steps" "The browser actions as a JSON list"}}';
+    const modelText = JSON.stringify([{ action: "type", selector: "#q", text: "{{json.secret}}" }, { action: "press", key: "Enter" }]);
+    const context = { json: { secret: "s3cret" }, ai: { steps: modelText } };
+    const steps = readSteps(field, (text) => renderTemplate(text, context as never));
+    // The model's {{json.secret}} stays text: copied page text cannot run expressions
+    assert.deepEqual(steps[0], { action: "type", selector: "#q", text: "{{json.secret}}" });
+    assert.equal(steps.length, 2);
+
+    // A model that sends a real list instead of a string works the same
+    const asList = readSteps(field, (text) => renderTemplate(text, { ai: { steps: [{ action: "scroll" }] } } as never));
+    assert.deepEqual(asList, [{ action: "scroll" }]);
+
+    // Steps written in the node still fill in {{...}} per value
+    const fixed = readSteps('[{"action":"type","selector":"#a","text":"{{json.secret}}"}]', (text) => renderTemplate(text, context as never));
+    assert.deepEqual(fixed[0], { action: "type", selector: "#a", text: "s3cret" });
+
+    // The model is told the format when it writes the steps, and the element list helps it
+    assert.match(getDefaultToolDescription("BROWSER", { operation: "steps", steps: field }), /Write "steps" as a JSON list/);
+    assert.doesNotMatch(getDefaultToolDescription("BROWSER", { operation: "steps", steps: "[]" }), /Write "steps"/);
+    assert.match(getDefaultToolDescription("BROWSER", { operation: "content", listElements: "true" }), /each with a CSS selector/);
+
+    // The real-browser test runs in CI
+    const { readFileSync } = await import("node:fs");
+    const ci = readFileSync(".github/workflows/ci.yml", "utf8");
+    assert.match(ci, /npx tsx --conditions=react-server scripts\/test-browser-node\.ts/);
+  });
+
   await test("browser: timeout is 5 to 120 seconds, default 30", async () => {
     const { resolveBrowserTimeout } = await import("@/lib/browser-steps");
     assert.equal(resolveBrowserTimeout(""), 30);
