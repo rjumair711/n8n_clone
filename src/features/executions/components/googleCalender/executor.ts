@@ -1,5 +1,5 @@
 import { NodeExecutor } from "../../types";
-import { renderEscapedTemplate } from "@/features/executions/lib/templates";
+import { renderTemplate } from "@/features/executions/lib/templates";
 import { NonRetriableError } from "inngest";
 import { google } from "googleapis";
 import Handlebars from "handlebars";
@@ -46,7 +46,7 @@ export const googleCalendarExecutor: NodeExecutor<GoogleCalendarNodeData> = asyn
     // Resolve dynamic variables via Handlebars safely
     const compile = (template?: string) => {
         if (!template) return "";
-        return renderEscapedTemplate(template, context);
+        return renderTemplate(template, context);
     };
 
     const resolvedCalendarId = compile(data.calendarId) || "primary";

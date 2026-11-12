@@ -1,6 +1,6 @@
 import { readCredentialValue } from "@/lib/external-secrets";
 import type { NodeExecutor } from "@/features/executions/types";
-import { renderEscapedTemplate } from "@/features/executions/lib/templates";
+import { renderTemplate } from "@/features/executions/lib/templates";
 import { NonRetriableError } from "inngest";
 import { createAnthropic } from "@ai-sdk/anthropic";
 import Handlebars from "handlebars";
@@ -63,10 +63,10 @@ export const AnthropicExecutor: NodeExecutor<
 
   // Compile prompts
   const systemPrompt = data.systemPrompt
-    ? renderEscapedTemplate(data.systemPrompt, context)
+    ? renderTemplate(data.systemPrompt, context)
     : "You are a helpful assistant.";
 
-  const userPrompt = renderEscapedTemplate(data.userPrompt, context);
+  const userPrompt = renderTemplate(data.userPrompt, context);
 
   // Fetch credential
   const credential = await step.run(

@@ -1,5 +1,5 @@
 import type { NodeExecutor } from "@/features/executions/types";
-import { renderEscapedTemplate } from "@/features/executions/lib/templates";
+import { renderTemplate } from "@/features/executions/lib/templates";
 import { NonRetriableError } from "inngest";
 import Handlebars from "handlebars";
 
@@ -25,7 +25,7 @@ export const textFormatterExecutor: NodeExecutor<TextFormatterData> = async ({
   const operation = data.operation || "trim";
 
   // Interpolate potential variables in the input text
-  const rawInput = renderEscapedTemplate(data.inputText, context);
+  const rawInput = renderTemplate(data.inputText, context);
 
   let resultOutput: any = {};
 

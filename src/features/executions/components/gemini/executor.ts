@@ -1,6 +1,6 @@
 import { readCredentialValue } from "@/lib/external-secrets";
 import type { NodeExecutor } from "@/features/executions/types";
-import { renderEscapedTemplate } from "@/features/executions/lib/templates";
+import { renderTemplate } from "@/features/executions/lib/templates";
 import { NonRetriableError } from "inngest";
 import { createGoogleGenerativeAI } from "@ai-sdk/google";
 import Handlebars from "handlebars";
@@ -47,10 +47,10 @@ export const geminiExecutor: NodeExecutor<GeminiData> = async ({
   // 2. TEMPLATE COMPILATION
   // ==========================================
   const systemPrompt = data.systemPrompt
-    ? renderEscapedTemplate(data.systemPrompt, context)
+    ? renderTemplate(data.systemPrompt, context)
     : "You are a helpful assistant.";
 
-  const userPrompt = renderEscapedTemplate(data.userPrompt, context);
+  const userPrompt = renderTemplate(data.userPrompt, context);
 
   // ==========================================
   // 3. CREDENTIAL RETRIEVAL

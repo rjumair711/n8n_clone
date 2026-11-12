@@ -727,6 +727,65 @@ const main = async () => {
     assert.equal(renderEscapedTemplate("{{html}}", data), "&lt;b&gt;x&lt;/b&gt;");
   });
 
+  await test("values reach each node as typed: escaped only where the format needs it", async () => {
+    const templates = await import("@/features/executions/lib/templates");
+    const { readFileSync } = await import("node:fs");
+    const { textFormatterExecutor } = await import("@/features/executions/components/textFormatter/executor");
+    const person = { form: { name: "O'Brien & Sons <Ltd>", note: "Hi.\nA [link](x) #1 - done!" } };
+
+    // HTML: the email's own tags count, never the ones in the data
+    assert.equal(templates.isHtmlTemplate("<p>Hi {{form.name}}</p>"), true);
+    assert.equal(templates.isHtmlTemplate("Hi {{form.name}},\n\nThanks!"), false);
+    assert.equal(templates.isHtmlTemplate("Total < 5 and > 2"), false);
+    assert.equal(templates.isHtmlTemplate("Line one<br/>Line two"), true);
+    assert.equal(templates.isHtmlTemplate("{{form.name}}"), false);
+
+    // MarkdownV2: values get backslashes, the template's own markup stays
+    assert.equal(
+      templates.renderTemplateEscapingValues("*Note:* {{form.note}}", person, templates.escapeTelegramMarkdownV2),
+      "*Note:* Hi\\.\nA \\[link\\]\\(x\\) \\#1 \\- done\\!"
+    );
+    assert.equal(templates.escapeTelegramMarkdownV2("a_b*c\\d"), "a\\_b\\*c\\\\d");
+
+    // JSON (Notion): values as typed, unless they would add keys
+    const json = '{"Name": {"title": [{"text": {"content": "{{form.name}}"}}]}}';
+    assert.deepEqual(templates.renderJsonTemplate(json, person), {
+      Name: { title: [{ text: { content: "O'Brien & Sons <Ltd>" } }] },
+    });
+    // Unescaped, this is valid JSON with a second property, Status
+    const sneaky = { form: { name: 'x"}}]}, "Status": {"a": [{"b": {"c": "y' } };
+    assert.deepEqual(
+      Object.keys(JSON.parse(templates.renderTemplate(json, sneaky))),
+      ["Name", "Status"]
+    );
+    const guarded = templates.renderJsonTemplate(json, sneaky) as Record<string, unknown>;
+    assert.deepEqual(Object.keys(guarded), ["Name"]);
+    assert.match(JSON.stringify(guarded), /&quot;/);
+    // {{json x}} and raw JSON values work, invalid JSON is null
+    assert.deepEqual(templates.renderJsonTemplate('{"a": {{json form.name}}}', person), { a: "O'Brien & Sons <Ltd>" });
+    assert.deepEqual(templates.renderJsonTemplate('{"tags": {{list}}}', { list: '["a","b"]' }), { tags: ["a", "b"] });
+    assert.equal(templates.renderJsonTemplate('{"a": ', person), null);
+
+    // A node that runs here: Text Formatter no longer sees &#x27;
+    const upper = await textFormatterExecutor({
+      ...baseParams,
+      data: { variableName: "t", operation: "uppercase", inputText: "{{form.name}}" },
+      context: person,
+    } as never);
+    assert.equal((upper as { t: { result: string } }).t.result, "O'BRIEN & SONS <LTD>");
+
+    // The nodes whose values are plain text render without escaping; the
+    // ones that keep it do so only for HTML
+    const source = (file: string) => readFileSync(`src/features/executions/components/${file}/executor.ts`, "utf8");
+    for (const file of ["anthropic", "openai", "gemini", "calculator", "daytime", "textFormatter", "googleCalender", "notion"]) {
+      assert.equal(/renderEscapedTemplate/.test(source(file)), false, file);
+    }
+    assert.match(source("email"), /bodyIsHtml\s*\?\s*renderEscapedTemplate\(data\.body, context\)\s*:\s*renderTemplate\(data\.body, context\)/);
+    assert.match(source("email"), /\.\.\.\(bodyIsHtml \? \{ html: body \} : \{ text: body \}\)/);
+    assert.match(source("telegram"), /data\.parseMode === "HTML"\s*\?\s*renderEscapedTemplate\(data\.text, context\)/);
+    assert.match(source("notion"), /renderJsonTemplate\(data\.propertiesJson/);
+  });
+
   await test("expressions are sandboxed and bounded", () => {
     assert.throws(() => renderTemplate("{{ $json.user.nope.deeper }}", data), /Expression .* failed/);
     assert.throws(() => renderTemplate("{{ $json && process.env }}", data), /process/);
