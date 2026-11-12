@@ -339,8 +339,8 @@ const findCycleNodes = (
  * Checks a model's answer. `errors` is what the model is told when it has
  * to try again, so each one says which node it is about and what to do.
  *
- * `lockedTypes` are node types that exist but that the user's plan does
- * not include (type -> the plan that has it).
+ * `lockedTypes` are node types that exist but that this server does not
+ * offer (SSH on the hosted app): type -> "self-hosted".
  */
 export const checkGeneratedWorkflow = (
   raw: unknown,
@@ -379,7 +379,7 @@ export const checkGeneratedWorkflow = (
     if (!entry) {
       errors.push(
         lockedTypes[type]
-          ? `${describeNode({ id: node.id, type })}: this node needs the ${lockedTypes[type]} plan, which this account does not have. Build the workflow without it.`
+          ? `${describeNode({ id: node.id, type })}: this node only runs on a self-hosted or managed RXJ server, not on this one. Build the workflow without it.`
           : `Node "${node.id}": "${node.type}" is not a node type. Use only the types in the catalogue.`
       );
       continue;

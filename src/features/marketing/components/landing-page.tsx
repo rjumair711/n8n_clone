@@ -225,7 +225,7 @@ export const LandingPage = ({
                 className="m-btn m-btn-primary w-full sm:w-auto"
                 signedInLabel="Go to dashboard"
               >
-                Start free trial — 7 days
+                Start for free
               </AuthLink>
               <a href="#demo" className="m-btn m-btn-ghost w-full sm:w-auto">
                 <PlayIcon className="size-4" aria-hidden="true" />
@@ -408,7 +408,7 @@ export const LandingPage = ({
                     className="m-link inline-flex items-center gap-1"
                     signedInLabel="Open your workflows"
                   >
-                    Start free trial
+                    Start for free
                     <ArrowRightIcon className="size-3.5" aria-hidden="true" />
                   </AuthLink>
                 </p>
@@ -478,7 +478,7 @@ export const LandingPage = ({
                   className="m-btn m-btn-ghost mt-5"
                   signedInLabel="Open templates"
                 >
-                  Start free trial to browse templates
+                  Sign up free to browse templates
                 </AuthLink>
               </div>
             )}
@@ -606,7 +606,7 @@ export const LandingPage = ({
               className="m-btn m-btn-primary mt-8"
               signedInLabel="Go to dashboard"
             >
-              Start free trial
+              Start for free
               <ArrowRightIcon className="size-4" aria-hidden="true" />
             </AuthLink>
           </div>

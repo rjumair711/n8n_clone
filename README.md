@@ -162,12 +162,12 @@ Every workflow keeps its earlier versions, so a change can be looked at and undo
 
 ## Sidebar and Settings
 
-* **Sidebar.** The logo and the workspace switcher at the top; **Build** (Workflows, Templates, Chatbots) and **Operate** (Executions, Approvals, Credentials); and at the bottom your account button (initials, name, email), which opens **Settings**, **Usage & plan**, **Billing**, **API Keys**, **Docs** and **Sign out**. It shows no usage numbers, and fits a 1366 × 768 window without scrolling. Collapsed, it shows the icons with tooltips; on a phone it opens as a sheet.
+* **Sidebar.** The logo and the workspace switcher at the top; **Build** (Workflows, Templates, Chatbots) and **Operate** (Executions, Approvals, Credentials); and at the bottom your account button (initials, name, email), which opens **Settings**, **Usage**, **Billing**, **API Keys**, **Docs** and **Sign out**. It shows no usage numbers, and fits a 1366 × 768 window without scrolling. Collapsed, it shows the icons with tooltips; on a phone it opens as a sheet.
 * **Settings** has its own menu (tabs on a phone) and one page per section, `/settings/<section>`; `/settings` opens Profile, and the old `/api-keys` opens Settings → API Keys.
   * **Account:** Profile, Security (two-factor authentication, sessions), API Keys.
-  * **Workspace:** General (name, invitations for you, leaving), Members & roles, Usage & plan, Audit log (your account's sign-ins and changes).
+  * **Workspace:** General (name, invitations for you, leaving), Members & roles, Usage, Audit log (your account's sign-ins and changes).
   * **AI:** Model prices and RXJ AI included (platform admins), AI budgets (this month's spend; the budget is set by the workspace's owner and admins).
-  * **Enterprise:** Git sync, External secrets (both need the Pro plan on the workspace's owner, and an owner or admin), SSO.
+  * **Enterprise:** Git sync, External secrets (both need an owner or admin), SSO.
   * A section your role or plan cannot use says so ("Owners and admins only", "Requires Pro", "Admins only") instead of showing its controls. The server checks the same rules.
 
 ## Teams and roles
@@ -187,14 +187,14 @@ Every account has a **workspace**, and can be a member of other people's. Workfl
   | Make or remove admins | | | | yes |
 
 * **Credentials are used, never shown.** A member picks a credential by its name. Its value is not sent to any browser, the owner's included; only admins can replace or delete it.
-* **Plan limits are per workspace.** A workspace has its owner's plan: the number of workflows and credentials, the month's executions, locked nodes, AI credits and AI budgets are counted for the workspace, whoever of its members acts. **Settings → Usage & plan** shows the plan of the workspace you are in, its trial, what it used this month against each limit, its AI credits and AI spend; **Billing** is always about your own account.
+* **Limits are per workspace.** The month's executions, AI credits and AI budgets are counted for the workspace's owner, whoever of its members acts. **Settings → Usage** shows what the workspace you are in used this month against each limit, its AI credits and AI spend; **Billing** is always about your own account.
 * **Audit log.** What members do in a workspace is in its owner's audit log, with who did it.
 * **How it is stored.** A workspace's data is kept under its owner's account: a workflow a member creates has the owner's user id and the workspace's id. That is why running a workflow, its credentials and its limits work the same for every member. Which workspace a request is for comes from a cookie that only picks among the workspaces the user is a member of; the membership and the role are read from the database on every request.
 * **Not there yet.** One workspace per account: a second workspace, moving a workflow between workspaces and handing a workspace to another owner are not possible. An API key works in its owner's own workspace. The pages do not hide what a role cannot do; the server refuses it with a message that says which role it needs.
 
 ## Enterprise features
 
-Three things for companies, under **Settings → Enterprise** (Git sync, External secrets, SSO). Git sync and external secrets belong to the workspace and are set up by its admins; they need the **Pro** plan on the workspace's owner (the free trial does not unlock them). What is already set up keeps working after a downgrade; it can no longer be changed.
+Three things for companies, under **Settings → Enterprise** (Git sync, External secrets, SSO). Git sync and external secrets belong to the workspace and are set up by its admins. Every account has them.
 
 ### Environments and Git sync
 
@@ -224,7 +224,7 @@ A credential can read its value from **HashiCorp Vault** (KV engine, version 1 o
 
 People of a company can sign in through its identity provider with **OpenID Connect (OIDC)**: Okta, Microsoft Entra ID, Google Workspace, Keycloak and others. On the login page they type their work email and press **Sign in with SSO**.
 
-* **Register a provider** under **Settings → SSO**: a short id, the email domain, the provider's issuer URL, a client ID and a client secret. At the provider, register the redirect URI the card shows. An account can register providers when it is on the Pro plan (3), or is a platform admin with two-factor on (10).
+* **Register a provider** under **Settings → SSO**: a short id, the email domain, the provider's issuer URL, a client ID and a client secret. At the provider, register the redirect URI the card shows. An account can register providers (3), or 10 when it is a platform admin with two-factor on.
 * **The operator has to allow the provider's address first**: its origin (for example the Okta or Entra address) must be in `TRUSTED_ORIGINS`, or registering fails with "not trusted".
 * **The domain has to be proved.** After registering, the card shows a DNS TXT record. Add it at the domain and press **Verify domain**. Until then the provider signs nobody in. This is what makes it safe: only who controls a domain's DNS can have its addresses signed in through their provider.
 * **Accounts.** Someone who signs in through a provider for the first time gets an account, and joins the workspace of whoever registered the provider as a **Viewer**. Someone who already has an account with that address is signed in to it. Two-factor codes of RXJ are not asked for after an SSO sign-in: the provider is trusted to do that.
@@ -676,13 +676,13 @@ Every execution also keeps the trigger and the data it started with, so it can b
 | RSS Read         | Read the items of an RSS or Atom feed; the following nodes run once per item |
 | Web Search       | Search the web with Tavily, Brave Search or your own SearXNG server; titles, links and snippets. Also an AI Agent tool. See "Web Search and Read Web Page" |
 | Read Web Page    | Fetch a page and return its main content as clean Markdown or text, cut to a length you set. Also an AI Agent tool. Private and local addresses are blocked |
-| Browser          | Open a page in a real browser: Get Page Content (pages that need JavaScript), Take Screenshot, or Run Steps (click, type, select, submit). A hosted browser with your own key, or the self-hosted server's own. Pro plan; the trial unlocks it |
+| Browser          | Open a page in a real browser: Get Page Content (pages that need JavaScript), Take Screenshot, or Run Steps (click, type, select, submit). A hosted browser with your own key, or the self-hosted server's own. Every account |
 | Transcribe Audio | Turn a voice message or audio file into text with OpenAI Whisper, Groq Whisper or any OpenAI-compatible server. See "Audio" |
 | Text to Speech   | Turn text into spoken audio with OpenAI TTS or an OpenAI-compatible server; the result is a file |
 | Respond to Webhook | Answer the HTTP request that started the workflow (JSON, text, redirect, status code, headers) |
 | Webhook Callback | POST the workflow's data to another URL                                   |
 | Execute Workflow | Run another workflow and use its result; also works as an AI Agent tool   |
-| SSH              | Run a command on your own server and get its output and exit code. Pro plan only |
+| SSH              | Run a command on your own server and get its output and exit code. Self-hosted and managed servers only |
 | JavaScript Code  | Execute custom JavaScript in an isolated QuickJS (WebAssembly) sandbox    |
 | Set Variable     | Store reusable variables                                                  |
 | Filter           | Stop the current branch unless a condition is true                        |
@@ -825,7 +825,7 @@ Actions: `goto` (url), `click` (selector), `type` (selector, text), `select` (se
 * Each run gets a new, empty browser context (no cookies or storage from other runs), and downloads are switched off.
 * **Timeout (seconds)**, 5 to 120 (default 30), covers the whole node; the text is cut to **Max Characters** (default 8000).
 * As an AI Agent tool, Get Page Content and Take Screenshot are Read tools. Run Steps is a **dangerous** tool, because it can log in and submit forms: it needs "Allow dangerous tools". The steps are the workflow's own; the model only fills in what the workflow lets it (for example the URL with `{{$fromAI "url"}}`).
-* Pro plan (the free trial unlocks it, as you bring your own browser); every feature on a self-hosted server.
+* Open to every account (the browser is the user's own hosted one, or the self-hosted server's).
 * Not built yet: logging in with saved cookies, file uploads into forms, and one browser kept open across several tool calls.
 
 ## Apps and databases
@@ -1021,7 +1021,7 @@ Supported credential types:
 * **Tenant isolation:** every workflow, execution, credential and file belongs to one workspace (kept under its owner's account, see Teams and roles), and every API key to one account. Anything that loads one of them by id goes through a single check, `assertOwnership` in `src/lib/ownership.ts`: a record that belongs to someone else gets the same `404` "not found" as one that does not exist, in the app, in `/api/v1` and on file download links. `scripts/test-tenant-isolation.ts` tries every such route as a second user (see `docs/TESTING.md`, T11d).
 * **Execution logs:** credential values and common secret shapes are replaced with `[REDACTED]` before node input, output and errors are stored or sent to Sentry; execution data is deleted after 7, 30 or 90 days; a workflow can be set not to save node data at all (see "Execution logs: redaction and retention").
 * **SQL injection:** in the Postgres and MySQL nodes, values belong in **Query Parameters** (a JSON array, one value per `$1` or `?`), which accepts expressions such as `["{{webhook.body.email}}"]` and never mixes them into the SQL. An "Execute Query" whose query text contains a `{{ }}` expression shows a warning in the editor and is refused when the workflow runs, unless the node's **Allow expressions in query text (unsafe)** option is on (off by default). Nodes that already had expressions in their query before this rule keep working: the migration switches the option on for them.
-* **SSH:** the server address is part of the credential, so a saved key can only be used against that server. Private and local addresses are refused, a command has a time limit (30 seconds, up to 120) and an output limit, and the node is not unlocked by the free trial. Use `{{shellQuote value}}` for anything that comes from outside the workflow, such as webhook data, so it cannot be read as extra commands.
+* **SSH:** the server address is part of the credential, so a saved key can only be used against that server. Private and local addresses are refused, a command has a time limit (30 seconds, up to 120) and an output limit, and the node only runs on a self-hosted or managed server, not on the hosted app. Use `{{shellQuote value}}` for anything that comes from outside the workflow, such as webhook data, so it cannot be read as extra commands.
 
 ---
 
@@ -1075,7 +1075,7 @@ The script must run with the same `ENCRYPTION_KEY`, `ENCRYPTION_KEY_PREVIOUS` an
 
 # 🔌 Public API
 
-Create a key under **Settings → API Keys** (account menu at the bottom of the sidebar; Pro plan or free trial) and send it as `Authorization: Bearer <key>` or `X-API-Key: <key>`.
+Create a key under **Settings → API Keys** (account menu at the bottom of the sidebar; every account) and send it as `Authorization: Bearer <key>` or `X-API-Key: <key>`.
 
 | Endpoint | Scope | Description |
 | -------- | ----- | ----------- |
@@ -1108,18 +1108,32 @@ RXJ includes a complete SaaS monetization architecture powered by Polar.
 
 ## SaaS Features
 
-* Automatic 7-day free trial user allocation upon signup
 * Dynamic plan detection and runtime casting via Prisma Enums
 * Usage-based monetization
 * Workflow usage tracking
 * Execution usage tracking
 * Credential usage limits
-* Plan-locked nodes (scheduling, Google Sheets, Gmail, AI Agent, WhatsApp, SSH, Browser) and API access. The free trial unlocks all of them except SSH
+* No plans: every account has every node, template and feature (SSH only on self-hosted and managed servers). See "No plans: one set of limits" below
 * Billing management page
 * Polar customer portal integration
 * Better Auth Polar webhook sub-plugin lifecycle syncing architecture
-* Real-time dynamic tier upgrades and revoked downgrades matching checkout selections
 * Dynamic sidebar plan UI with live checkout state cache invalidation
+
+## No plans: one set of limits
+
+There are no Beginner, Intermediate or Pro plans and no free trial (`src/config/plans.ts`). Every account can use every node, template and feature, with the same limits, which protect the hosted app's costs:
+
+| What | Every account on the hosted app | A self-hosted or managed server |
+| ---- | ------------------------------- | ------------------------------- |
+| Workflows and credentials | No limit | No limit |
+| Workflow runs | 2,000 a month (`HOSTED_MONTHLY_EXECUTIONS`) | No limit |
+| Messages | The daily caps under "Limits against abuse" | No limit |
+| RXJ AI (included) | 1,000 credits a month, then bought credits | Its owner's own keys |
+| SSH | Not available: anyone who signs up could use the server's address against other people's servers | Yes |
+
+* The `plan` and `trialEndsAt` columns stay in the database for older rows; every plan name now means the same limits, and new accounts get no trial. The functions that callers use (`getRequiredPlanForNode`, `canUseTemplate`, `PLAN_LIMITS[...]`) keep their names.
+* What only an own server offers says so in plain words ("SSH is only available on a self-hosted or managed RXJ server (see Pricing)"), and the dialog it opens shows the server's message and links to the managed private server. A role error (a viewer who may not edit) is shown as the error it is.
+* **Earlier subscribers** of the old plans are not charged anything new, but Polar keeps billing their subscriptions until they are cancelled: cancel or refund them in Polar.
 
 ## What is on sale: the managed private server
 
@@ -1128,7 +1142,7 @@ The pricing page and the landing page show one offer: the **managed private serv
 * **Buying:** the button opens the Polar checkout link in `NEXT_PUBLIC_MANAGED_SERVER_CHECKOUT_URL` (the sandbox link while testing, the production link when live). Without it the button says "Coming soon". The link can also be sent to a client directly.
 * **After paying:** set the link's success URL in Polar to `<app URL>/managed-server/thanks?checkout_id={CHECKOUT_ID}`. That page tells the buyer what to have ready; you then email them from the subscription in Polar.
 * **Webhooks:** only the three plan products change a user's plan (`getPlanForPolarProduct` in `src/config/plans.ts`). A managed-server subscription, or its end, leaves the buyer's RXJ account as it is, and `/api/webhooks/polar` answers it with success so Polar does not retry it.
-* **Existing subscribers** of the old plans keep their plan, its limits and the Polar customer portal under Billing. Everyone else stays on the Free plan, with the 7-day trial at sign-up; upgrade prompts in the app open the pricing page.
+* **Earlier plan subscribers** keep the Polar customer portal under Billing, where they can cancel; their plan column no longer changes anything. Prompts about what only an own server offers open the pricing page.
 
 ---
 
@@ -1139,15 +1153,11 @@ RXJ tracks:
 * workflow usage
 * monthly executions
 * credential limits
-* current subscription plan
-* trial duration
 
 Users can view:
 
 * workflows used
 * executions used
-* current plan
-* remaining trial days
 
 **How the numbers are counted** (`src/lib/subscription/usage-counts.ts`). Usage belongs to the workspace, so it is the workspace owner's.
 
@@ -1177,18 +1187,12 @@ The amounts are estimates for keeping an eye on spend. You pay your providers di
 A user can run cheap models without an API key of their own. The platform's provider keys do the calling and the user pays with **AI credits**.
 
 * **Credits.** One credit is a tenth of a US cent of model cost: 1,000 credits are one dollar. A call's cost comes from the price table above ("AI token usage and cost"), at the price set when the call is made.
-* **Monthly credits per plan** (calendar month, UTC; they do not carry over; a free trial does not change the number):
-
-  | Free | Beginner | Intermediate | Pro |
-  | ---- | -------- | ------------ | --- |
-  | 100 | 1,000 | 5,000 | 20,000 |
-
-  The numbers are in one file, `src/config/ai-credits.ts`.
+* **Monthly credits:** every account gets **1,000** a month (one US dollar of model cost; calendar month, UTC; they do not carry over). The number is `MONTHLY_AI_CREDITS` in `src/config/ai-credits.ts`; the platform's keys pay for these calls, so it is what one account can cost you in AI each month before credits it bought.
 * **Setting it up (admins).** Under **Settings → RXJ AI (included)** an admin with two-factor on adds a provider (one of the Chat Model presets that has its own address, for example Zhipu GLM or DeepSeek), its API key and the model IDs users may pick. The key is stored encrypted, is never shown again, and is covered by the key rotation script. A provider can be switched off without removing it. **Every included model needs a row in the price table**: without one it cannot be used, because it would cost no credits; the card says which models are missing a price. Saving and removing a provider is in the audit log. Until a provider is added, users do not see any of this.
 * **Using it.** On a **Chat Model** node the credential list has **RXJ AI (included)**. With it, Provider and Model have to be one of the included ones (the dialog says which, and "Load models" lists them). It works wherever a Chat Model node works: as a step, as the model of an AI Agent, Text Classifier, Information Extractor, Analyze Image / Document or Guardrails, as a fallback model and behind a Model Router. **Build with AI** offers it in its credential list too. The platform's key is only ever sent to the provider's own address, never to a Base URL typed into the node.
 * **What is charged.** Each included call is written down like any other (the execution's AI usage table, the Billing page) and its cost is taken from the month's plan credits first, then from bought credits.
-* **Hard stop.** With no plan credits and no bought credits left, a node that uses RXJ AI (included) fails before it calls anything, with: "RXJ AI (included) credits are used up: the Free plan includes 100 credits a month and you have no bought credits left. Upgrade your plan or buy credits at `<app>/billing`, or pick your own API key credential on the node. The monthly credits start again on the 1st (UTC)." Build with AI shows the same message. The check is made before a node runs, not during it, so the last node (an agent with many steps, for example) can use more than was left; bought credits never go below zero.
-* **Billing page.** The **AI credits** card shows what is left of the month's credits and of bought credits, and has the buttons to buy more and the link to the plans.
+* **Hard stop.** With no monthly credits and no bought credits left, a node that uses RXJ AI (included) fails before it calls anything, with: "RXJ AI (included) credits are used up: every account gets 1,000 credits a month and you have no bought credits left. Buy credits at `<app>/billing`, or pick your own API key credential on the node. The monthly credits start again on the 1st (UTC)." Build with AI shows the same message. The check is made before a node runs, not during it, so the last node (an agent with many steps, for example) can use more than was left; bought credits never go below zero.
+* **Billing page.** The **AI credits** card shows what is left of the month's credits and of bought credits, and has the buttons to buy more.
 * **Buying credits (Polar credit packs).** A pack is a one-time product in Polar. `POLAR_CREDIT_PACKS` lists the packs on sale as `<product id>:<credits>`, comma-separated, for example `prod_abc:5000,prod_def:25000`; the price is whatever the product costs in Polar. "Buy 5,000 credits" opens Polar's checkout. When Polar reports the order as paid (`order.paid` on the Polar webhook), the credits are added. Each order is counted once, however often Polar sends the event. Bought credits do not expire and are used after the month's plan credits. Without `POLAR_CREDIT_PACKS` there are no buy buttons, only the link to the plans.
 * **AI budgets** still apply: an included call has a cost, so it counts towards the account's and the workflow's monthly AI budget and appears in "AI spend this month" (where the note about paying your provider does not apply to it).
 
@@ -1224,72 +1228,71 @@ RXJ includes onboarding UX to improve activation and retention.
 * Build with AI: a workflow from a description (see below)
 * One-click chatbot: documents or website pages in, a website widget, share link and WhatsApp out (see below)
 * Guided product introduction
-* Trial onboarding flow with proactive expiration countdowns
 
 ## Workflow templates
 
 The **Templates** page is a gallery of ready-made workflows. "Use template" copies one into the user's account as a new workflow, which opens with its nodes marked "Not Configured" wherever the user has to connect their own account.
 
 * **Built-in templates** are added by database migrations and can be edited or hidden by an admin like any other: *Invoice to Google Sheets*, *CV screening: score and email*, *Shopify order paid: WhatsApp confirmation* and *Shopify abandoned cart: email reminder*. The WhatsApp one sends an approved message template, because WhatsApp does not let a business start a conversation with free text; its description says how to set that up and how to switch it to WooCommerce. The abandoned cart one runs every hour and emails the shoppers whose checkout was last touched one to two hours ago.
-* **Publishing:** an admin builds a workflow, then picks it under **New template** and gives it a name, description, category and the plan it is available from. Editing a template can replace its content with the current version of a workflow; hidden templates are visible to admins only.
+* **Publishing:** an admin builds a workflow, then picks it under **New template** and gives it a name, description and category. Editing a template can replace its content with the current version of a workflow; hidden templates are visible to admins only.
 * **Admins** are accounts whose email is in the `ADMIN_EMAILS` environment variable **and** is verified. Only they can publish, edit and delete templates. A Google or GitHub sign-in counts as verified; a password account has to confirm its email first, which needs `RESEND_API_KEY`. Without that key the server logs a warning at startup, and a password account using an admin address stays an ordinary user.
 * **Admins need two-factor authentication.** Publishing, editing and deleting templates is refused until the admin turns it on under **Settings**; until then the Templates page shows a note with a link there instead of the admin buttons.
 * **What a template never contains:** stored credentials, webhook and signing secrets, WhatsApp verify tokens and app secrets, Slack and Discord webhook URLs, and the workflow an Execute Workflow node pointed at. Anything typed into ordinary fields (a key pasted into a header, a prompt) is copied as it is.
 * **Secret scan:** before a template is published or updated, every field of every node is scanned for the secret shapes the log redaction knows (`sk-` keys, Bearer tokens, JWTs, AWS, Slack and GitHub tokens, passwords in URLs) and for hand-typed values in `Authorization`, `Cookie` and `X-API-Key` headers. Values made only of `{{ }}` expressions pass. If anything is found the template is not saved and the dialog lists the node and field (never the value). An admin can tick **I checked this, publish anyway** to save it regardless. Editing only a template's details scans its stored content again. The scan knows those shapes only, so a secret of another shape still has to be caught by reading the workflow.
-* **The gallery.** Compact cards of the same height: plan badge (each plan its own colour, with a lock when the user's plan is lower), language, name, category, a two-line summary, up to four node chips then "+N", and **Use template** (**Upgrade** on a locked one). Clicking a card opens a **Details** panel with the whole description, the setup steps as a numbered list, every node used, and the same button. Filters: search, category, plan and language; sort by most used or newest. 24 cards at first, then **Load more**. The grid has 4 columns on wide screens, 3 next to the sidebar at 1366 px and 1 on a phone; it follows the width the page gets, so collapsing the sidebar can add a column. The page does not poll and its links do not prefetch.
+* **The gallery.** Compact cards of the same height: an **Own server** badge with a lock on a template that has an SSH node (on the hosted app), language, name, category, a two-line summary, up to four node chips then "+N", and **Use template** (**Own server** on a locked one, which explains the managed server). Clicking a card opens a **Details** panel with the whole description, the setup steps as a numbered list, every node used, and the same button. Filters: search, category and language; sort by most used or newest. 24 cards at first, then **Load more**. The grid has 4 columns on wide screens, 3 next to the sidebar at 1366 px and 1 on a phone; it follows the width the page gets, so collapsing the sidebar can add a column. The page does not poll and its links do not prefetch.
 * **Summary and steps** come from the one description field: the summary is the text before "Set up:" (or "To set it up:", "سیٹ اپ:", "الإعداد:"), and the steps are what follows, one per line, numbered, or one per sentence or semicolon. A description without that marker is all summary. There is no separate database field.
-* **Plans:** a template needs the cheapest plan that can run every one of its nodes (`getMinPlanForNodes` in `src/config/plans.ts`: WhatsApp and SSH are Pro; Gmail, Google Sheets, the Schedule Trigger and the AI Agent are Intermediate), or the plan its admin picked if that is higher. The gallery shows that plan, **Use template** checks it on the server (from the nodes that will be copied), and saving a template never stores a lower one. A template saved earlier as Free with a WhatsApp node shows and is locked as Pro without any change to its row. Locked templates stay in the gallery with a lock and **Upgrade**. An active free trial opens every template, the same way it opens plan-locked nodes, except one with an SSH node (the trial does not unlock SSH).
-* Using a template counts toward the plan's workflow limit, and workflows already made from a template do not change when the template is edited or deleted.
+* **No plans:** every template is open to every account (`canUseTemplate` in `src/features/templates/lib/template-data.ts`), except one with a node only a self-hosted server runs (SSH, on the hosted app). **Use template** checks that on the server, from the nodes that will be copied. The plan an admin once stored on a template row no longer counts.
+* Workflows already made from a template do not change when the template is edited or deleted.
 * **Languages.** Every template has a language: English, Urdu or Arabic (templates made before the field existed are English). The gallery has a language filter next to the search; Urdu and Arabic names and descriptions are shown right to left. An admin picks the language under **New template** and in the edit dialog.
 * **Starter templates** ship with the app as JSON seed data in `src/features/templates/seed/`, each in English, Urdu and Arabic: 40 templates, 120 in all. They are not in the gallery until an admin adds them: **Templates → Starter templates**, tick the ones wanted, and add them hidden (to read them first) or published. Adding them again changes nothing: one that is already there, also one edited since, is left alone.
 
-  | Starter template | What it does | Plan |
+  | Starter template | What it does | Who |
   | ---------------- | ------------ | ---- |
-  | WhatsApp clinic appointment bot | Answers patients about doctors, hours and fees and books appointments into a Google Sheet. Gives no medical advice | Pro |
-  | School fee reminder on WhatsApp | On the 1st of the month reads the fee list from a Google Sheet and sends an approved WhatsApp template to parents who have not paid | Pro |
-  | WhatsApp shop order bot | Shows the menu, takes the order, adds up the total and saves it in a Google Sheet | Pro |
-  | WhatsApp real estate lead bot | Asks what the person wants (buy, rent or sell, type, area, budget, timeline) and saves the lead in a Google Sheet | Pro |
-  | Support FAQ bot | A website chat that answers from a list of questions and answers written into the agent's instructions | Intermediate |
-  | Cash-on-delivery order confirmation on WhatsApp | Each new cash-on-delivery order gets a WhatsApp message asking the customer to confirm. | Pro |
-  | Order status on WhatsApp | Customers send their order number on WhatsApp and get the status back in their own language. | Pro |
-  | WhatsApp helper that understands voice notes | Answers customers' WhatsApp questions about your business, including voice notes in Urdu, Arabic or English, which are turned into text first. | Pro |
-  | WhatsApp product catalogue assistant | Answers product questions on WhatsApp from your own catalogue files and hands the chat to your team on Telegram when a customer wants to order or needs a person. | Pro |
-  | Appointment reminders on WhatsApp | Every evening at 18:00 (Pakistan time), reads your bookings sheet and sends a WhatsApp reminder to everyone booked for tomorrow. | Pro |
-  | After-sale review request on WhatsApp | Three days after a Shopify order is fulfilled, asks the customer on WhatsApp to rate it from 1 to 5. | Pro |
-  | Expense logger on Telegram | Send your bot a message like "fuel 2500" or "bought stock for 12000" and it adds a dated row to a Google Sheet with the item, amount and category. | Intermediate |
-  | Overdue invoice reminder on Telegram | Every morning at 09:00 (Pakistan time), sends you one Telegram message for each unpaid invoice in your sheet that is past its due date. | Intermediate |
-  | Contact form to Google Sheets with confirmation email | A hosted contact form: every submission becomes a row in your Google Sheet and the person gets a confirmation email from your Gmail. | Intermediate |
-  | Marketplace order emails to Google Sheets | Reads the new-order emails your marketplace or website sends you (Daraz, Noon, Amazon or your own shop) and writes each order as a row: number, customer, items, total and city. | Intermediate |
-  | AI email replies you approve first | For each new customer email, Gemini drafts a reply from your business facts; you approve or reject it in RXJ (Approvals), and only approved replies are sent, in the same thread. | Intermediate |
-  | Daily Shopify sales email | Every morning at 08:00 (Pakistan time), emails you yesterday's paid Shopify orders: how many, the total and the list. | Intermediate |
-  | Weekly PDF report from a Google Sheet | Every Monday at 09:00 (Pakistan time), reads a Google Sheet (sales, expenses or donations), totals the amount per category and emails you a PDF report. | Intermediate |
-  | School admission enquiries | Parents fill in an admission form; the enquiry is saved to a Google Sheet and the parent gets an email straight away with the fee for that class and the next step. | Intermediate |
-  | Shopify paid orders ledger in Google Sheets | Every paid Shopify order becomes a row in a Google Sheet for your accounts: date, order, customer, phone, total, currency and payment method. | Intermediate |
-  | Website chat that answers order questions | A chat for your WooCommerce website: it looks up a visitor's orders by the email they ordered with and tells them the status, and answers delivery and return questions. | Intermediate |
-  | Website chat that answers from your documents | A chat widget for your website that answers only from your own documents: brochures, price lists, FAQs and policies in a Google Drive folder. | Intermediate |
-  | Staff check-in on Telegram | Staff send "in" or "out" (or a short note) to your Telegram bot and it is logged with the time and their name in a Google Sheet, so you have a simple attendance record. | Intermediate |
-  | New Shopify order alert on Telegram | Every new Shopify order posts a short summary to your team's Telegram group: order number, customer, phone, city and total, so packing can start at once. | Free |
-  | Simple AI bot on Telegram | A Telegram bot that answers any question with Gemini, in the language it is asked in. | Free |
-  | Staff knowledge bot on Telegram | Your staff ask the Telegram bot questions (prices, procedures, policies) and get answers from the documents in a Google Drive folder. | Free |
-  | Customer feedback form with unhappy-customer alert | A feedback form for your shop, clinic or restaurant. | Free |
-  | Facebook Page FAQ bot on Messenger | Answers the common questions people send to your Facebook Page (hours, delivery, payment) on Messenger, in their language, from facts you write. | Free |
-  | Telegram voice notes to Notion | Send a voice note to your Telegram bot (in Urdu, Arabic or English) and it is written out as text and saved as a page in a Notion database: ideas, to-dos and meeting notes on the go. | Free |
-  | School announcements with principal approval | Teachers submit an announcement on a form; the principal approves or rejects it on Telegram, and approved announcements are posted to the parents' Telegram channel. | Free |
-  | Leave and expense requests with Telegram approval | Staff request leave or an expense on a form; the manager approves or rejects it with one tap on Telegram, and the person gets the answer by email. | Free |
-  | Booking form to Google Calendar | Customers pick a date and a time slot on a booking form; a 30-minute event goes into your Google Calendar and they get a confirmation email. | Free |
-  | Event registration with a PDF ticket | People register for your event, class or seminar on a form and get their own PDF ticket by email at once. | Free |
-  | Quote requests drafted by AI, sent after your approval | Customers ask for a price on a form; Gemini drafts a quote from your price list, you check it in RXJ (Approvals), and only approved quotes are emailed to the customer. | Free |
-  | Low stock alert on Telegram | When a Shopify product is updated and one of its variants has fewer than 5 in stock, you get a Telegram message with the product, variant and quantity, so you can reorder in time. | Free |
-  | Shipping email with tracking link | When a Shopify order is fulfilled, the customer gets an email in your own words with the courier and the tracking link. | Free |
-  | Product descriptions in English, Urdu and Arabic | When you add a product to Shopify, Gemini writes a short description in English, Urdu and Arabic from its title, type and tags and saves it on the product. | Free |
-  | Cancelled order alert from WooCommerce | When an order in your WooCommerce store is cancelled, your team gets a Telegram message with the order, customer, phone and total, so someone can call and save the sale or stop the parcel. | Free |
-  | PDF summary by email | Upload a PDF (a contract, a report, a tender, a circular) on a form and get a short summary with the key points by email a minute later. | Free |
-  | Invoice generator: PDF by email and to Google Drive | Fill in a short form and get a numbered PDF invoice: it is emailed to your customer and a copy is saved to a Google Drive folder. | Free |
+  | WhatsApp clinic appointment bot | Answers patients about doctors, hours and fees and books appointments into a Google Sheet. Gives no medical advice | Everyone |
+  | School fee reminder on WhatsApp | On the 1st of the month reads the fee list from a Google Sheet and sends an approved WhatsApp template to parents who have not paid | Everyone |
+  | WhatsApp shop order bot | Shows the menu, takes the order, adds up the total and saves it in a Google Sheet | Everyone |
+  | WhatsApp real estate lead bot | Asks what the person wants (buy, rent or sell, type, area, budget, timeline) and saves the lead in a Google Sheet | Everyone |
+  | Support FAQ bot | A website chat that answers from a list of questions and answers written into the agent's instructions | Everyone |
+  | Cash-on-delivery order confirmation on WhatsApp | Each new cash-on-delivery order gets a WhatsApp message asking the customer to confirm. | Everyone |
+  | Order status on WhatsApp | Customers send their order number on WhatsApp and get the status back in their own language. | Everyone |
+  | WhatsApp helper that understands voice notes | Answers customers' WhatsApp questions about your business, including voice notes in Urdu, Arabic or English, which are turned into text first. | Everyone |
+  | WhatsApp product catalogue assistant | Answers product questions on WhatsApp from your own catalogue files and hands the chat to your team on Telegram when a customer wants to order or needs a person. | Everyone |
+  | Appointment reminders on WhatsApp | Every evening at 18:00 (Pakistan time), reads your bookings sheet and sends a WhatsApp reminder to everyone booked for tomorrow. | Everyone |
+  | After-sale review request on WhatsApp | Three days after a Shopify order is fulfilled, asks the customer on WhatsApp to rate it from 1 to 5. | Everyone |
+  | Expense logger on Telegram | Send your bot a message like "fuel 2500" or "bought stock for 12000" and it adds a dated row to a Google Sheet with the item, amount and category. | Everyone |
+  | Overdue invoice reminder on Telegram | Every morning at 09:00 (Pakistan time), sends you one Telegram message for each unpaid invoice in your sheet that is past its due date. | Everyone |
+  | Contact form to Google Sheets with confirmation email | A hosted contact form: every submission becomes a row in your Google Sheet and the person gets a confirmation email from your Gmail. | Everyone |
+  | Marketplace order emails to Google Sheets | Reads the new-order emails your marketplace or website sends you (Daraz, Noon, Amazon or your own shop) and writes each order as a row: number, customer, items, total and city. | Everyone |
+  | AI email replies you approve first | For each new customer email, Gemini drafts a reply from your business facts; you approve or reject it in RXJ (Approvals), and only approved replies are sent, in the same thread. | Everyone |
+  | Daily Shopify sales email | Every morning at 08:00 (Pakistan time), emails you yesterday's paid Shopify orders: how many, the total and the list. | Everyone |
+  | Weekly PDF report from a Google Sheet | Every Monday at 09:00 (Pakistan time), reads a Google Sheet (sales, expenses or donations), totals the amount per category and emails you a PDF report. | Everyone |
+  | School admission enquiries | Parents fill in an admission form; the enquiry is saved to a Google Sheet and the parent gets an email straight away with the fee for that class and the next step. | Everyone |
+  | Shopify paid orders ledger in Google Sheets | Every paid Shopify order becomes a row in a Google Sheet for your accounts: date, order, customer, phone, total, currency and payment method. | Everyone |
+  | Website chat that answers order questions | A chat for your WooCommerce website: it looks up a visitor's orders by the email they ordered with and tells them the status, and answers delivery and return questions. | Everyone |
+  | Website chat that answers from your documents | A chat widget for your website that answers only from your own documents: brochures, price lists, FAQs and policies in a Google Drive folder. | Everyone |
+  | Staff check-in on Telegram | Staff send "in" or "out" (or a short note) to your Telegram bot and it is logged with the time and their name in a Google Sheet, so you have a simple attendance record. | Everyone |
+  | New Shopify order alert on Telegram | Every new Shopify order posts a short summary to your team's Telegram group: order number, customer, phone, city and total, so packing can start at once. | Everyone |
+  | Simple AI bot on Telegram | A Telegram bot that answers any question with Gemini, in the language it is asked in. | Everyone |
+  | Staff knowledge bot on Telegram | Your staff ask the Telegram bot questions (prices, procedures, policies) and get answers from the documents in a Google Drive folder. | Everyone |
+  | Customer feedback form with unhappy-customer alert | A feedback form for your shop, clinic or restaurant. | Everyone |
+  | Facebook Page FAQ bot on Messenger | Answers the common questions people send to your Facebook Page (hours, delivery, payment) on Messenger, in their language, from facts you write. | Everyone |
+  | Telegram voice notes to Notion | Send a voice note to your Telegram bot (in Urdu, Arabic or English) and it is written out as text and saved as a page in a Notion database: ideas, to-dos and meeting notes on the go. | Everyone |
+  | School announcements with principal approval | Teachers submit an announcement on a form; the principal approves or rejects it on Telegram, and approved announcements are posted to the parents' Telegram channel. | Everyone |
+  | Leave and expense requests with Telegram approval | Staff request leave or an expense on a form; the manager approves or rejects it with one tap on Telegram, and the person gets the answer by email. | Everyone |
+  | Booking form to Google Calendar | Customers pick a date and a time slot on a booking form; a 30-minute event goes into your Google Calendar and they get a confirmation email. | Everyone |
+  | Event registration with a PDF ticket | People register for your event, class or seminar on a form and get their own PDF ticket by email at once. | Everyone |
+  | Quote requests drafted by AI, sent after your approval | Customers ask for a price on a form; Gemini drafts a quote from your price list, you check it in RXJ (Approvals), and only approved quotes are emailed to the customer. | Everyone |
+  | Low stock alert on Telegram | When a Shopify product is updated and one of its variants has fewer than 5 in stock, you get a Telegram message with the product, variant and quantity, so you can reorder in time. | Everyone |
+  | Shipping email with tracking link | When a Shopify order is fulfilled, the customer gets an email in your own words with the courier and the tracking link. | Everyone |
+  | Product descriptions in English, Urdu and Arabic | When you add a product to Shopify, Gemini writes a short description in English, Urdu and Arabic from its title, type and tags and saves it on the product. | Everyone |
+  | Cancelled order alert from WooCommerce | When an order in your WooCommerce store is cancelled, your team gets a Telegram message with the order, customer, phone and total, so someone can call and save the sale or stop the parcel. | Everyone |
+  | PDF summary by email | Upload a PDF (a contract, a report, a tender, a circular) on a form and get a short summary with the key points by email a minute later. | Everyone |
+  | Invoice generator: PDF by email and to Google Drive | Fill in a short form and get a numbered PDF invoice: it is emailed to your customer and a copy is saved to a Google Drive folder. | Everyone |
 
-  The plan is the cheapest one that can run every node of the template (WhatsApp is Pro, the AI Agent is Intermediate); an admin can raise it, not lower it. The agent's instructions and example details (clinic, menu, FAQ) are written in the template's language and are meant to be replaced. A seed file holds the workflow once and its texts per language; a setting written `@text:<key>` takes that text. To add a template or a translation, edit the JSON: the tests check that every language has every text.
+  Every starter is open to every account. The agent's instructions and example details (clinic, menu, FAQ) are written in the template's language and are meant to be replaced. A seed file holds the workflow once and its texts per language; a setting written `@text:<key>` takes that text. To add a template or a translation, edit the JSON: the tests check that every language has every text.
 
   More about the seeds:
-  * **Plans.** 17 of the 40 starters run on Free, 13 need Intermediate (Google Sheets, Gmail, schedules or the AI Agent) and 10 need Pro (WhatsApp). The tests check that each seed declares exactly the plan its nodes need. Beginner unlocks no node Free lacks, so no template needs it.
+  * **Open to everyone.** No starter has an SSH node, so all 40 run on every account. The seeds still carry the plan they were written for; it no longer counts, and the tests check that every starter is open.
   * **Description.** Each one is a summary for the card, then `Set up:` (`سیٹ اپ:`, `الإعداد:`) and the steps separated by semicolons; the details panel shows them as a numbered list. At most 600 characters.
   * **Forms.** A form field's name (`{{form.<name>}}`) is made from the Latin letters of its label, so Urdu and Arabic labels end with the English word in brackets, for example `نام (Name)`. The tests check that a template's fields have the same names in all three languages and that every `{{form.x}}` it reads is one of its fields.
   * **Times.** Schedules run in UTC. A starter that runs at a local time has its cron per language: 18:00 is `0 13 * * *` in the English and Urdu versions (Pakistan) and `0 15 * * *` in the Arabic one (Saudi Arabia). Booking times carry the offset (`+05:00` / `+03:00`).
@@ -1321,7 +1324,7 @@ Describe a workflow in words and get it on the canvas. The **Build with AI** but
 * **It is switched on when it is created**, unlike a workflow made by Build with AI: the widget and the link only work for an active workflow. Nobody can reach it until you share them. The page reads everything from the workflow's nodes, so a chatbot changed in the editor still works on its page (and any workflow with a Chat Trigger into an AI Agent can be opened as `/chatbots/<workflow id>`).
 * **Where the documents go.** Into a Vector Store collection of its own (`chatbot-...`), cut into chunks (by heading for web pages and Markdown) and embedded with the Vector Store node's own settings and credential. The first 400,000 characters of a document are read; a chatbot can have 50 documents and pages. The embedding calls are written down on the Billing page under "Chatbot knowledge" and count towards the account's AI budget, which is checked first. Deleting the workflow does not delete the collection: remove the documents on the chatbot's page first, or use a Vector Store node with Delete Collection.
 * **Safety.** Web pages are fetched through the same guard as the Read Web Page node (no addresses inside the server's network). Only the user's own credentials can be picked. The WhatsApp App Secret is stored on the WhatsApp Trigger node like one typed in the editor and is never sent back to the page. Adding documents is limited to 30 a minute per user (`CHATBOT_SOURCE_RATE_LIMIT_PER_MINUTE`).
-* **Plans.** A chatbot needs the AI Agent, and WhatsApp needs a plan with WhatsApp; the page says so before anything is created. A chatbot counts as one workflow towards the plan's workflow limit.
+* **Every account** can create chatbots, with the website widget, the share link and WhatsApp.
 
 ## Account security
 
@@ -1344,21 +1347,20 @@ The **Settings** page (sidebar) holds two things.
 
 ## Limits against abuse
 
-A free trial unlocks the paid nodes, so these keep a trial or a cheap plan from being used to send in bulk or to sign up over and over.
+Every account has every node, so these keep the hosted app from being used to send in bulk or to sign up over and over.
 
-* **Daily message caps.** Each user may send this many messages per day (the day is UTC) through the nodes that reach people outside the app. The numbers are in one file, `src/config/message-caps.ts`.
+* **Daily message caps.** Every account may send this many messages per day (the day is UTC) through the nodes that reach people outside the app. The numbers are in one file, `src/config/message-caps.ts`.
 
-  | Plan | Email (SMTP, Gmail, Resend, SendGrid) | WhatsApp | Twilio (SMS and WhatsApp) | Telegram |
-  | ---- | ----- | -------- | ------ | -------- |
-  | Free (and the free trial) | 20 | 20 | 10 | 50 |
-  | Beginner | 100 | 50 | 25 | 200 |
-  | Intermediate | 1,000 | 500 | 250 | 2,000 |
-  | Pro | 10,000 | 5,000 | 2,500 | 20,000 |
+  | Email (SMTP, Gmail, Resend, SendGrid) | WhatsApp | Twilio (SMS and WhatsApp) | Telegram |
+  | ----- | -------- | ------ | -------- |
+  | 1,000 | 500 | 250 | 2,000 |
+
+  A self-hosted or managed server has no caps.
 
   * For email every recipient counts (To, Cc and Bcc), so one email to 30 addresses is 30. The four email nodes share one count.
   * Reading mail with the Gmail node does not count; sending and replying do.
-  * The cap is the plan's, trial or not, and it holds wherever the node runs: in a workflow, once per item of a list, and as an AI Agent tool.
-  * When a send would go over, the node fails before anything is sent, with for example "Daily email limit reached: the Free plan allows 20 emails per day and 20 were sent today. The count starts again at 00:00 UTC. Upgrade your plan to send more."
+  * The cap is the same for every account, and it holds wherever the node runs: in a workflow, once per item of a list, and as an AI Agent tool.
+  * When a send would go over, the node fails before anything is sent, with for example "Daily email limit reached: an account may send 1000 emails per day and 1000 were sent today. The count starts again at 00:00 UTC. A self-hosted or managed RXJ server has no daily limit."
   * A message is counted when the node is about to send it, so one the provider then refuses still counts.
 * **Disposable email addresses** (mailinator, 10minutemail and the like, and their subdomains) cannot be used to sign up, with a password or through Google or GitHub. The list comes from the `disposable-email-domains-js` package; `npm update disposable-email-domains-js` brings in new domains. Accounts that already exist are not affected.
 * **Cloudflare Turnstile** on the password sign-up form, when `TURNSTILE_SITE_KEY` and `TURNSTILE_SECRET_KEY` are both set. Without them (or with only one, which logs a warning at startup) sign-up works as before. Google and GitHub sign-ups are not asked: the provider has checked them.
@@ -1443,7 +1445,7 @@ The live app on Vercel and local development use the **same** database, so the s
 
 Anyone can run RXJ on their own VPS with Docker: [`docs/SELF_HOSTING.md`](docs/SELF_HOSTING.md) has the steps. `self-host/docker-compose.yml` starts the app, Postgres (pgvector), Valkey (Redis-compatible), an Inngest server, a headless Chrome for the Browser node and Caddy (HTTPS), and the app applies its migrations to that server's own database when it starts. People who want their own server without the technical work can have RXJ run it for them as a managed private server: $20 a month, including up to 5 workflows built and looked after (see the guide).
 
-* **The self-hosted edition is free.** The image is built with `NEXT_PUBLIC_SELF_HOSTED=true` (`src/config/self-hosted.ts`): every plan gets no limits and every feature (`buildPlanLimits` in `src/config/plans.ts`), new accounts are Pro with no trial, there are no daily message caps, and Polar is off (no plugin, and the checkout and Polar webhook routes answer 404). `/`, `/pricing` and `/billing` open `/workflows`, and Billing is not in the menu.
+* **The self-hosted edition is free.** The image is built with `NEXT_PUBLIC_SELF_HOSTED=true` (`src/config/self-hosted.ts`): no limits and every feature, SSH included (`buildPlanLimits` in `src/config/plans.ts`), there are no daily message caps, and Polar is off (no plugin, and the checkout and Polar webhook routes answer 404). `/`, `/pricing` and `/billing` open `/workflows`, and Billing is not in the menu.
 * **Nothing reaches RXJ's accounts.** Sentry is off unless the image is built with `NEXT_PUBLIC_SENTRY_DSN` (`src/config/sentry-dsn.ts`), and the editor polls run status instead of using Inngest Cloud's live stream.
 * **One image for every domain.** The image is built without `NEXT_PUBLIC_APP_URL`; the editor shows webhook and form URLs from the address it is open at (`src/lib/public-app-url.ts`), and the server reads the variable when it starts.
 * **The hosted app is unchanged.** Vercel never sets `NEXT_PUBLIC_SELF_HOSTED`, and a server with it refuses to start when `VERCEL` is set, so it can never unlock plans on the shared database. The image runs `next build`, not `npm run build`, so `scripts/migrate-on-deploy.mjs` is not involved.

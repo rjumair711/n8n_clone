@@ -18,7 +18,7 @@ import { AlertTriangle, ArrowDownUp, CopyMinus, Group, ListEnd, OctagonX, Reply,
 import { Clock, FilterIcon, GlobeIcon, MousePointerIcon, Send, VariableIcon, ChevronDown, ChevronRight, Code2, Bot, MemoryStickIcon, Search, Type, Calculator, GitBranch, GitFork, Merge, Repeat, Webhook, MessageSquare } from "lucide-react"
 import { toast } from "sonner"
 import { AppWindow, AudioLines, ClipboardList, Hourglass, Lock, Route, ScanEye, UserCheck, Volume2 } from "lucide-react"
-import { getRequiredPlanForNode } from "@/config/plans"
+import { getRequiredPlanForNode, unavailableMessage } from "@/config/plans"
 import { TOOL_APPROVAL_DEFAULT_BY_RISK } from "@/lib/approvals"
 import { useCurrentPlan } from "@/features/subscription/hook/use-current-plan"
 import { UpgradeModal } from "@/components/upgrade-modal"
@@ -721,7 +721,7 @@ export function NodeSelector({
         const requiredPlan = getRequiredPlan(selection.type)
 
         if (requiredPlan) {
-            toast.error(`${selection.label} requires the ${requiredPlan} plan`)
+            toast.error(unavailableMessage(selection.label))
             setUpgradeOpen(true)
             return;
         }
@@ -807,7 +807,7 @@ export function NodeSelector({
                                     {requiredPlan && (
                                         <span className="inline-flex items-center gap-1 rounded-full border px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground">
                                             <Lock className="size-3" />
-                                            {requiredPlan}
+                                            Own server
                                         </span>
                                     )}
                                 </span>

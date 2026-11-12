@@ -7,7 +7,7 @@ import type { Node, Edge } from "@xyflow/react"
 import { NodeType, type Prisma } from "@prisma/client"
 import { sendWorkflowExecution } from "@/inngest/utils";
 import { TRPCError } from "@trpc/server";
-import { PLAN_LIMITS, getRequiredPlanForNode } from "@/config/plans";
+import { PLAN_LIMITS, getRequiredPlanForNode, monthlyRunLimitMessage } from "@/config/plans";
 import { TRIGGER_SOURCES } from "@/config/trigger-sources";
 import { TESTABLE_TRIGGERS, TRIGGER_LABELS, buildTestPayload } from "./test-payloads";
 import { syncTelegramWebhooks } from "@/lib/telegram";
@@ -128,7 +128,7 @@ export const workflowsRouter = createTRPCRouter({
                 throw new TRPCError({
                     code: "FORBIDDEN",
 
-                    message: `Monthly execution limit reached. Your current plan includes ${executionLimit} executions per month.`,
+                    message: monthlyRunLimitMessage(executionLimit),
                 });
             }
 

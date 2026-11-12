@@ -4,7 +4,7 @@ import prisma from "@/lib/db";
 import { apiError, authenticateApiRequest } from "@/lib/api-keys";
 import { NotFoundError, assertOwnership } from "@/lib/ownership";
 import { sendWorkflowExecution } from "@/inngest/utils";
-import { PLAN_LIMITS } from "@/config/plans";
+import { PLAN_LIMITS, monthlyRunLimitMessage } from "@/config/plans";
 import { TRIGGER_SOURCES } from "@/config/trigger-sources";
 import { getExecutionsThisMonth } from "@/lib/subscription/usage-counts";
 
@@ -76,7 +76,7 @@ export async function POST(
     if (executionsThisMonth >= executionLimit) {
         return apiError(
             429,
-            `Monthly execution limit reached. Your plan includes ${executionLimit} executions per month.`
+            monthlyRunLimitMessage(executionLimit)
         );
     }
 

@@ -2114,15 +2114,17 @@ const main = async () => {
   const ssh = await import("@/lib/ssh");
   const { getRequiredPlanForNode } = await import("@/config/plans");
 
-  await test("SSH is Pro-only and the free trial does not unlock it", () => {
-    const trial = new Date(Date.now() + 86_400_000);
+  await test("SSH only runs on a self-hosted server; every other node is open to every account", async () => {
+    const { OWN_SERVER_REQUIRED, unavailableMessage } = await import("@/config/plans");
 
-    assert.equal(getRequiredPlanForNode("SSH", "FREE", trial), "Pro");
-    assert.equal(getRequiredPlanForNode("SSH", "INTERMEDIATE", trial), "Pro");
-    assert.equal(getRequiredPlanForNode("SSH", "PRO", null), null);
-    // Other locked nodes are still opened by the trial
-    assert.equal(getRequiredPlanForNode("AI_AGENT", "FREE", trial), null);
-    assert.equal(getRequiredPlanForNode("AI_AGENT", "FREE", null), "Intermediate");
+    // Whatever the plan column of an older row says
+    for (const plan of ["FREE", "BEGINNER", "INTERMEDIATE", "PRO"]) {
+      assert.equal(getRequiredPlanForNode("SSH", plan, null), OWN_SERVER_REQUIRED, plan);
+      for (const type of ["AI_AGENT", "WHATSAPP", "GMAIL", "GOOGLE_SHEETS", "SCHEDULE_TRIGGER", "BROWSER", "HTTP_REQUEST"]) {
+        assert.equal(getRequiredPlanForNode(type, plan, null), null, `${type} on ${plan}`);
+      }
+    }
+    assert.equal(unavailableMessage("SSH"), "SSH is only available on a self-hosted or managed RXJ server (see Pricing)");
   });
 
   await test("values are quoted for the shell, also from a template", () => {
@@ -2360,54 +2362,33 @@ const main = async () => {
     assert.equal(second.nodes[0].id, "new_3");
   });
 
-  await test("plan locks", () => {
-    const trial = new Date(Date.now() + 86_400_000);
-    const expired = new Date(Date.now() - 86_400_000);
-
+  await test("templates: every template is open, except one with a node only a self-hosted server runs", () => {
     const saved = (minPlan: string, nodeTypes: string[] = []) => ({ minPlan, nodeTypes });
 
-    assert.equal(templateData.canUseTemplate(saved("FREE"), "FREE", null), true);
-    assert.equal(templateData.canUseTemplate(saved("PRO"), "INTERMEDIATE", null), false);
-    assert.equal(templateData.canUseTemplate(saved("INTERMEDIATE"), "PRO", null), true);
-    assert.equal(templateData.canUseTemplate(saved("PRO"), "FREE", trial), true);
-    assert.equal(templateData.canUseTemplate(saved("PRO"), "FREE", expired), false);
-
-    // Saved as Free, but its nodes need more: locked for a Free user
-    assert.equal(templateData.canUseTemplate(saved("FREE", ["SHOPIFY_TRIGGER", "WHATSAPP"]), "FREE", null), false);
-    assert.equal(templateData.canUseTemplate(saved("FREE", ["SHOPIFY_TRIGGER", "WHATSAPP"]), "INTERMEDIATE", null), false);
-    assert.equal(templateData.canUseTemplate(saved("FREE", ["SHOPIFY_TRIGGER", "WHATSAPP"]), "PRO", null), true);
-    assert.equal(templateData.canUseTemplate(saved("FREE", ["GOOGLE_SHEETS"]), "BEGINNER", null), false);
-    assert.equal(templateData.canUseTemplate(saved("FREE", ["GOOGLE_SHEETS"]), "INTERMEDIATE", null), true);
-    // The trial opens it, except for nodes the trial does not unlock
-    assert.equal(templateData.canUseTemplate(saved("FREE", ["WHATSAPP"]), "FREE", trial), true);
-    assert.equal(templateData.canUseTemplate(saved("FREE", ["SSH"]), "FREE", trial), false);
-    assert.equal(templateData.canUseTemplate(saved("FREE", ["SSH"]), "PRO", null), true);
+    // The plan stored on a row, and the user's plan and trial, no longer count
+    for (const stored of ["FREE", "BEGINNER", "INTERMEDIATE", "PRO"]) {
+      for (const userPlan of ["FREE", "PRO"]) {
+        assert.equal(templateData.canUseTemplate(saved(stored, ["SHOPIFY_TRIGGER", "WHATSAPP", "GOOGLE_SHEETS", "AI_AGENT"]), userPlan, null), true);
+      }
+    }
+    // SSH runs only on a server of your own
+    assert.equal(templateData.canUseTemplate(saved("FREE", ["SSH"]), "PRO", null), false);
+    assert.equal(templateData.canUseTemplate(saved("FREE", ["AI_AGENT", "SSH"]), "FREE", null), false);
   });
 
-  await test("a template's plan is the cheapest one that runs all its nodes", async () => {
-    const { getMinPlanForNodes, getRequiredPlanForNode, PLAN_ORDER } = await import("@/config/plans");
+  await test("a template's plan: FREE (everyone), or PRO (own server) when it has a node only a self-hosted server runs", async () => {
+    const { getMinPlanForNodes } = await import("@/config/plans");
 
     assert.equal(getMinPlanForNodes([]), "FREE");
-    assert.equal(getMinPlanForNodes(["FORM_TRIGGER", "GEMINI", "ANALYZE_DOCUMENT", "INFORMATION_EXTRACTOR", "EMAIL_SEND"]), "FREE");
-    assert.equal(getMinPlanForNodes(["FORM_TRIGGER", "GEMINI", "ANALYZE_DOCUMENT", "GOOGLE_SHEETS"]), "INTERMEDIATE");
-    assert.equal(getMinPlanForNodes(["SCHEDULE_TRIGGER", "SHOPIFY", "SPLIT_OUT", "IF", "EMAIL_SEND"]), "INTERMEDIATE");
-    assert.equal(getMinPlanForNodes(["SHOPIFY_TRIGGER", "IF", "WHATSAPP"]), "PRO");
+    assert.equal(getMinPlanForNodes(["FORM_TRIGGER", "GEMINI", "GOOGLE_SHEETS"]), "FREE");
+    assert.equal(getMinPlanForNodes(["SCHEDULE_TRIGGER", "SHOPIFY", "WHATSAPP", "BROWSER"]), "FREE");
     assert.equal(getMinPlanForNodes(["AI_AGENT", "SSH"]), "PRO");
 
-    // The stored plan counts when it is the higher one
-    assert.equal(templateData.getTemplateMinPlan("FREE", ["WHATSAPP"]), "PRO");
-    assert.equal(templateData.getTemplateMinPlan("PRO", ["SLACK"]), "PRO");
-    assert.equal(templateData.getTemplateMinPlan("BEGINNER", []), "BEGINNER");
-
-    // The same answer as the node lock, for every locked node: that plan
-    // runs it, and the plan below does not
-    const { NODE_PLAN_FEATURES } = await import("@/config/plans");
-    for (const type of Object.keys(NODE_PLAN_FEATURES)) {
-      const plan = getMinPlanForNodes([type]);
-      assert.equal(getRequiredPlanForNode(type, plan, null), null, type);
-      const below = PLAN_ORDER[PLAN_ORDER.indexOf(plan) - 1];
-      if (below) assert.notEqual(getRequiredPlanForNode(type, below, null), null, type);
-    }
+    // The plan an admin once stored no longer counts
+    assert.equal(templateData.getTemplateMinPlan("PRO", ["SLACK"]), "FREE");
+    assert.equal(templateData.getTemplateMinPlan("FREE", ["SSH"]), "PRO");
+    assert.equal(templateData.PLAN_NAMES.FREE, "Everyone");
+    assert.equal(templateData.PLAN_NAMES.PRO, "Own server");
 
     // The server uses the computed plan for the gallery, for "Use template"
     // and when a template is saved
@@ -2416,8 +2397,10 @@ const main = async () => {
     assert.match(router, /minPlan: getTemplateMinPlan\(template\.minPlan, template\.nodeTypes\),/);
     assert.match(router, /locked: !canUseTemplate\(template, user\.plan, user\.trialEndsAt\),/);
     assert.match(router, /canUseTemplate\(\{ minPlan: template\.minPlan, nodeTypes \}, user\.plan, user\.trialEndsAt\)/);
-    assert.match(router, /minPlan: getTemplateMinPlan\(fields\.minPlan, data\.nodeTypes\),/);
-    assert.match(router, /minPlan: getTemplateMinPlan\(starter\.minPlan, starter\.nodeTypes\),/);
+    assert.match(router, /message: unavailableMessage\("This template has a node that"\),/);
+    // No plan filter and no plan picker in the gallery
+    const gallery = readFileSync("src/features/templates/components/templates.tsx", "utf8");
+    assert.equal(/All plans|Available From Plan/.test(gallery), false);
   });
 
   await test("a description splits into what it does and numbered setup steps", () => {
@@ -2479,7 +2462,6 @@ const main = async () => {
 
     assert.match(gallery, /const PAGE_SIZE = 24;/);
     assert.match(gallery, />\s*Load more\s*</);
-    assert.match(gallery, /<SelectItem value="all">All plans<\/SelectItem>/);
     assert.match(gallery, /<SelectItem value="popular">Most used<\/SelectItem>/);
     assert.match(gallery, /<SelectItem value="newest">Newest<\/SelectItem>/);
     assert.match(gallery, /grid-cols-1 [^"]*@4xl:grid-cols-3 @7xl:grid-cols-4/);
@@ -2495,8 +2477,8 @@ const main = async () => {
     assert.match(card, /line-clamp-2/);
     assert.match(card, /\+\{chips\.length - MAX_CHIPS\}/);
     assert.match(card, /export const TemplateCard = memo\(/);
-    // A locked template is shown, with "Upgrade" instead of "Use template"
-    assert.match(card, /template\.locked \?[\s\S]*Upgrade[\s\S]*Use template/);
+    // A template with an SSH node is shown, with "Own server" instead of "Use template"
+    assert.match(card, /template\.locked \?[\s\S]*Own server[\s\S]*Use template/);
     // The panel: steps as a numbered list, and every node
     assert.match(card, /<ol[\s\S]*list-decimal[\s\S]*template\.steps\.map/);
     assert.match(card, /Nodes used/);
@@ -2987,23 +2969,19 @@ const main = async () => {
   // ------------------------------------------------- TRIAL AND PLAN ABUSE
   console.log("Message caps, disposable email and Turnstile");
 
-  await test("every plan has a daily cap for every message channel, rising with the plan", async () => {
+  await test("every account has the same daily cap for every message channel", async () => {
     const caps = await import("@/config/message-caps");
-    const plans = ["FREE", "BEGINNER", "INTERMEDIATE", "PRO"] as const;
     const channels = ["email", "whatsapp", "twilio", "telegram"] as const;
 
     for (const channel of channels) {
-      let previous = 0;
-      for (const plan of plans) {
-        const cap = caps.DAILY_MESSAGE_CAPS[plan][channel];
-        assert.ok(Number.isInteger(cap) && cap > previous, `${plan} ${channel}`);
-        assert.equal(caps.getDailyMessageCap(plan, channel), cap);
-        previous = cap;
+      const cap = caps.ACCOUNT_MESSAGE_CAPS[channel];
+      assert.ok(Number.isInteger(cap) && cap > 0, channel);
+      // Whatever the plan column of an older row says, or one the config does not know
+      for (const plan of ["FREE", "BEGINNER", "INTERMEDIATE", "PRO", "GOLD"]) {
+        assert.equal(caps.getDailyMessageCap(plan, channel), cap, `${plan} ${channel}`);
       }
     }
-
-    // A plan the config does not know is treated as Free, never as unlimited
-    assert.equal(caps.getDailyMessageCap("GOLD", "email"), caps.DAILY_MESSAGE_CAPS.FREE.email);
+    assert.deepEqual(caps.ACCOUNT_MESSAGE_CAPS, { email: 1000, whatsapp: 500, twilio: 250, telegram: 2000 });
   });
 
   await test("the nodes that send are counted, per recipient for email", async () => {
@@ -3049,22 +3027,24 @@ const main = async () => {
     }
   });
 
-  await test("the cap error says the plan, the limit and when it resets", async () => {
+  await test("the cap error says the limit, when it resets, and that an own server has none", async () => {
     const { messageCapError } = await import("@/config/message-caps");
 
     assert.equal(
-      messageCapError({ plan: "FREE", channel: "email", used: 20, count: 1 }),
-      "Daily email limit reached: the Free plan allows 20 emails per day and 20 were sent today. The count starts again at 00:00 UTC. Upgrade your plan to send more."
+      messageCapError({ plan: "FREE", channel: "email", used: 1000, count: 1 }),
+      "Daily email limit reached: an account may send 1000 emails per day and 1000 were sent today. The count starts again at 00:00 UTC. A self-hosted or managed RXJ server has no daily limit."
     );
     assert.match(
-      messageCapError({ plan: "FREE", channel: "email", used: 18, count: 5 }),
-      /18 were sent today\. This send has 5 recipients and 2 are left\./
+      messageCapError({ plan: "PRO", channel: "email", used: 998, count: 5 }),
+      /998 were sent today\. This send has 5 recipients and 2 are left\./
     );
     assert.match(
-      messageCapError({ plan: "BEGINNER", channel: "whatsapp", used: 50, count: 1 }),
-      /^Daily WhatsApp message limit reached: the Beginner plan allows 50 WhatsApp messages per day/
+      messageCapError({ plan: "BEGINNER", channel: "whatsapp", used: 500, count: 1 }),
+      /^Daily WhatsApp message limit reached: an account may send 500 WhatsApp messages per day/
     );
-    assert.equal(/Upgrade/.test(messageCapError({ plan: "PRO", channel: "twilio", used: 2500, count: 1 })), false);
+    for (const plan of ["FREE", "PRO"]) {
+      assert.equal(/plan|Upgrade/i.test(messageCapError({ plan, channel: "twilio", used: 250, count: 1 })), false, plan);
+    }
   });
 
   await test("the cap is applied where every node runs, and counted in one statement", async () => {
@@ -5424,7 +5404,7 @@ const main = async () => {
     const account = sidebar.slice(sidebar.indexOf("const ACCOUNT_ITEMS"), sidebar.indexOf("// One size for every item"));
     assert.deepEqual(
       [...account.matchAll(/title: "([^"]+)"/g)].map((match) => match[1]),
-      ["Settings", "Usage & plan", "Billing", "API Keys", "Docs"]
+      ["Settings", "Usage", "Billing", "API Keys", "Docs"]
     );
     // Sign out comes after them, at the end of the menu
     assert.ok(sidebar.lastIndexOf("Sign out") > sidebar.indexOf("ACCOUNT_ITEMS.map"));
@@ -11689,11 +11669,11 @@ pour()</code></pre>
     assert.equal(builderWorkflow.checkGeneratedWorkflow({ nodes: "none" }, testCatalogue).workflow, null);
     assert.match(builderWorkflow.checkGeneratedWorkflow({ nodes: [] }, testCatalogue).errors[0], /The workflow has no nodes/);
 
-    // Unknown node types, and ones the plan does not include
+    // Unknown node types, and ones this server does not offer (SSH on the hosted app)
     assert.match(check((answer) => { answer.nodes[2].type = "SLACK_V2"; })[0], /Node "n3": "SLACK_V2" is not a node type\. Use only the types in the catalogue\./);
     assert.match(
-      check((answer) => { answer.nodes[2].type = "GMAIL"; }, { GMAIL: "Intermediate" })[0],
-      /Node "n3" \(GMAIL\): this node needs the Intermediate plan, which this account does not have\./
+      check((answer) => { answer.nodes[2].type = "GMAIL"; }, { GMAIL: "self-hosted" })[0],
+      /Node "n3" \(GMAIL\): this node only runs on a self-hosted or managed RXJ server, not on this one\. Build the workflow without it\./
     );
     // ...and only that is reported for the node, not its connections too
     assert.equal(check((answer) => { answer.nodes[2].type = "SLACK_V2"; }).length, 1);
@@ -12125,12 +12105,12 @@ pour()</code></pre>
 
   const credits = await import("@/config/ai-credits");
 
-  await test("plans get monthly credits; bought credits are used after them", () => {
+  await test("every account gets the same monthly credits; bought credits are used after them", () => {
     assert.equal(credits.CREDITS_PER_USD, 1000);
-    assert.deepEqual(credits.PLAN_AI_CREDITS, { FREE: 100, BEGINNER: 1_000, INTERMEDIATE: 5_000, PRO: 20_000 });
-    assert.equal(credits.getPlanAllowanceUsd("FREE"), 0.1);
-    assert.equal(credits.getPlanAllowanceUsd("PRO"), 20);
-    assert.equal(credits.getPlanAllowanceUsd("NO_SUCH_PLAN"), 0);
+    assert.equal(credits.MONTHLY_AI_CREDITS, 1_000);
+    assert.deepEqual(credits.PLAN_AI_CREDITS, { FREE: 1_000, BEGINNER: 1_000, INTERMEDIATE: 1_000, PRO: 1_000 });
+    // Whatever the plan column of an older row says
+    for (const plan of ["FREE", "PRO", "NO_SUCH_PLAN"]) assert.equal(credits.getPlanAllowanceUsd(plan), 1, plan);
     assert.equal(credits.usdToCredits(0.0375), 37.5);
     assert.equal(credits.formatCredits(1.25), "1,250");
     assert.equal(credits.formatCredits(0.0004), "0.4");
@@ -12144,10 +12124,10 @@ pour()</code></pre>
     const partly = credits.buildCreditStatus({ plan: "BEGINNER", usedUsd: 0.75, purchasedUsd: 5 });
     assert.deepEqual([partly.allowanceLeftUsd, partly.purchasedUsd, partly.availableUsd], [0.25, 5, 5.25]);
     // Past the allowance: only bought credits are left; the allowance never goes negative
-    const past = credits.buildCreditStatus({ plan: "FREE", usedUsd: 0.4, purchasedUsd: 2 });
+    const past = credits.buildCreditStatus({ plan: "FREE", usedUsd: 1.4, purchasedUsd: 2 });
     assert.deepEqual([past.allowanceLeftUsd, past.availableUsd], [0, 2]);
     // The hard stop: nothing left at all
-    assert.equal(credits.buildCreditStatus({ plan: "FREE", usedUsd: 0.1, purchasedUsd: 0 }).availableUsd, 0);
+    assert.equal(credits.buildCreditStatus({ plan: "FREE", usedUsd: 1, purchasedUsd: 0 }).availableUsd, 0);
     assert.equal(credits.buildCreditStatus({ plan: "FREE", usedUsd: 3, purchasedUsd: -1 }).availableUsd, 0);
 
     // What a call takes from bought credits: only what the allowance does not cover
@@ -12160,9 +12140,9 @@ pour()</code></pre>
     const message = credits.creditsUsedUpMessage({ plan: "FREE", appUrl: "https://rxj.example.com" });
     assert.equal(
       message,
-      "RXJ AI (included) credits are used up: the Free plan includes 100 credits a month and you have no bought credits left. Upgrade your plan or buy credits at https://rxj.example.com/billing, or pick your own API key credential on the node. The monthly credits start again on the 1st (UTC)."
+      "RXJ AI (included) credits are used up: every account gets 1,000 credits a month and you have no bought credits left. Buy credits at https://rxj.example.com/billing, or pick your own API key credential on the node. The monthly credits start again on the 1st (UTC)."
     );
-    assert.match(credits.creditsUsedUpMessage({ plan: "PRO", appUrl: "x" }), /the Pro plan includes 20,000 credits a month/);
+    assert.equal(credits.creditsUsedUpMessage({ plan: "PRO", appUrl: "https://rxj.example.com" }), message);
 
     assert.equal(credits.isIncludedCredential("rxj-ai"), true);
     assert.equal(credits.isIncludedCredential("ckabc123"), false);
@@ -12324,7 +12304,8 @@ pour()</code></pre>
     assert.match(read("src/features/settings/components/sections/rxj-ai-section.tsx"), /return <IncludedAiCard \/>;/);
     assert.match(read("src/app/(dashboard)/(rest)/settings/rxj-ai/page.tsx"), /<RxjAiSection \/>/);
     const card = read("src/features/ai-credits/components/ai-credits-card.tsx");
-    assert.match(card, /<Link href="\/pricing" className="underline">\s+Upgrade your plan/);
+    // No plans to upgrade to: credits are bought, or a key of your own is used
+    assert.equal(/Upgrade your plan|A higher plan/.test(card), false);
     assert.match(card, /body: JSON\.stringify\(\{ creditPack: productId \}\),/);
 
     // -- Build with AI can be paid with credits too
@@ -12865,22 +12846,15 @@ pour()</code></pre>
     );
   });
 
-  await test("starter templates: the plan their nodes need, the same form in every language, setup steps", async () => {
-    const { getTemplateMinPlan, splitTemplateDescription } = await import("@/features/templates/lib/template-data");
+  await test("starter templates: open to everyone, the same form in every language, setup steps", async () => {
+    const { canUseTemplate, getTemplateMinPlan, splitTemplateDescription } = await import("@/features/templates/lib/template-data");
     const { parseFormFields } = await import("@/lib/form-fields");
 
-    // The plan a seed declares is the cheapest one that runs all its nodes
+    // There are no plans: whatever plan a seed still declares, every starter
+    // is for everyone (none has a node only a self-hosted server runs)
     for (const starter of allStarters) {
-      assert.equal(getTemplateMinPlan("FREE", starter.nodeTypes), starter.minPlan, `${starter.key}: plan`);
-    }
-
-    // The 35 added with the gallery: 17 Free, 12 Intermediate, 6 Pro
-    const added = starterTemplates.STARTER_SEEDS.slice(5);
-    const plans = (plan: string) => added.filter((seed) => seed.minPlan === plan).length;
-    assert.deepEqual([plans("FREE"), plans("BEGINNER"), plans("INTERMEDIATE"), plans("PRO")], [17, 0, 12, 6]);
-    // A WhatsApp template is never shown as Free
-    for (const starter of allStarters) {
-      if (starter.nodeTypes.some((type) => type.startsWith("WHATSAPP"))) assert.equal(starter.minPlan, "PRO", starter.key);
+      assert.equal(getTemplateMinPlan(starter.minPlan, starter.nodeTypes), "FREE", `${starter.key}: plan`);
+      assert.equal(canUseTemplate(starter, "FREE", null), true, `${starter.key}: open`);
     }
 
     for (const seed of starterTemplates.STARTER_SEEDS) {
@@ -12952,11 +12926,11 @@ pour()</code></pre>
           false,
           node.id
         );
-        // A plan that can use the template can run every node of it
+        // Every account can run every node of it
         assert.equal(
-          getRequiredPlanForNode(node.type, starter.minPlan as "FREE", null),
+          getRequiredPlanForNode(node.type, "FREE", null),
           null,
-          `${label}: ${node.type} needs more than ${starter.minPlan}`
+          `${label}: ${node.type} is not open to every account`
         );
       }
 
@@ -13513,8 +13487,8 @@ pour()</code></pre>
     assert.match(run, /event\.data\.usePinnedData === true\s+\? await step\.run\("load-pinned-nodes"/);
     // The node the user asked to run always runs, before any pin is looked at
     assert.match(run, /if \(partialPlan\?\.targetId === node\.id\) return null;\s+if \(pinnedNodeIds\.has\(node\.id\)\) return "pinned";/);
-    // A node that is not run costs no plan check, no executor and no retry
-    assert.ok(run.indexOf("const dataSource = getNodeDataSource(node);") < run.indexOf("// Paid-plan nodes stop the run"));
+    // A node that is not run costs no availability check, no executor and no retry
+    assert.ok(run.indexOf("const dataSource = getNodeDataSource(node);") < run.indexOf("// A node this server does not offer (SSH on the hosted app) stops the"));
     // What is stored about it goes through the run's redaction
     assert.match(run, /dataSource,\s+\.\.\.\(saveNodeData\s+\? \{\s+input: toJson\(redactor\.data\(context\)\),\s+output: toJson\(redactor\.data\(result\.context\)\),/);
     // A run that never reached its node fails and says why
@@ -14523,13 +14497,11 @@ pour()</code></pre>
     assert.match(ssoSource, /update: \{\},\s+create: \{ workspaceId: workspace\.id, userId, role: SSO_JOIN_ROLE \},/);
 
     const plans = await import("@/config/plans");
-    assert.equal(plans.PLAN_LIMITS.PRO.features.enterprise, true);
-    for (const plan of ["FREE", "BEGINNER", "INTERMEDIATE"] as const) {
-      assert.equal(plans.PLAN_LIMITS[plan].features.enterprise, false, plan);
-      // Not unlocked by the free trial either
-      assert.equal(plans.getRequiredPlanForFeature("enterprise", plan, new Date(Date.now() + 86_400_000)), "Pro", plan);
+    // There are no plans: every account has the enterprise features
+    for (const plan of ["FREE", "BEGINNER", "INTERMEDIATE", "PRO"] as const) {
+      assert.equal(plans.PLAN_LIMITS[plan].features.enterprise, true, plan);
+      assert.equal(plans.getRequiredPlanForFeature("enterprise", plan, null), null, plan);
     }
-    assert.equal(plans.getRequiredPlanForFeature("enterprise", "PRO"), null);
   });
 
   await test("enterprise settings are for a workspace's admins; secrets and tokens stay on the server", async () => {
@@ -15197,9 +15169,9 @@ pour()</code></pre>
     assert.equal(getToolRisk("BROWSER", { operation: "steps" }), "dangerous");
     assert.match(getBlockedToolsMessage([{ type: "BROWSER", data: { operation: "steps" } }], false) ?? "", /submits forms in a browser/);
 
-    assert.equal(plans.getRequiredPlanForNode("BROWSER", "FREE"), "Pro");
+    // Open to every account (the browser is the user's own, or the server's)
+    assert.equal(plans.getRequiredPlanForNode("BROWSER", "FREE"), null);
     assert.equal(plans.getRequiredPlanForNode("BROWSER", "PRO"), null);
-    assert.equal(plans.getRequiredPlanForNode("BROWSER", "FREE", new Date(Date.now() + 86_400_000)), null);
     assert.equal(plans.buildPlanLimits(true).FREE.features.browser, true);
   });
 
@@ -15234,13 +15206,24 @@ pour()</code></pre>
   // ------------------------------------------------------- Self-hosting
   console.log("Self-hosted edition");
 
-  await test("self-hosted: every plan is unlimited with every feature; the hosted plans are unchanged", async () => {
+  await test("self-hosted: no limits and every feature; the hosted app: one set of limits, SSH off", async () => {
     const plans = await import("@/config/plans");
 
     // These tests run without NEXT_PUBLIC_SELF_HOSTED: the hosted limits
-    assert.equal(plans.PLAN_LIMITS.FREE.activeWorkflows, 3);
+    // The hosted app: one set of limits for every plan name
+    for (const plan of plans.PLAN_ORDER) {
+      assert.equal(plans.PLAN_LIMITS[plan], plans.PLAN_LIMITS.FREE, plan);
+    }
+    assert.equal(plans.PLAN_LIMITS.FREE.activeWorkflows, Infinity);
+    assert.equal(plans.PLAN_LIMITS.FREE.credentials, Infinity);
+    assert.equal(plans.PLAN_LIMITS.FREE.monthlyExecutions, plans.HOSTED_MONTHLY_EXECUTIONS);
+    assert.equal(plans.HOSTED_MONTHLY_EXECUTIONS, 2000);
     assert.equal(plans.PLAN_LIMITS.FREE.features.ssh, false);
-    assert.equal(plans.getRequiredPlanForNode("SSH", "FREE"), "Pro");
+    assert.equal(plans.getRequiredPlanForNode("SSH", "PRO"), plans.OWN_SERVER_REQUIRED);
+    for (const [feature, on] of Object.entries(plans.PLAN_LIMITS.FREE.features)) {
+      assert.equal(on, feature !== "ssh", feature);
+    }
+    assert.match(plans.monthlyRunLimitMessage(2000), /^Monthly run limit reached: an account may start 2,000 workflow runs a month/);
 
     const self = plans.buildPlanLimits(true);
     for (const name of plans.PLAN_ORDER) {
@@ -15253,7 +15236,7 @@ pour()</code></pre>
       Object.keys(self.FREE.features).sort(),
       Object.keys(plans.buildPlanLimits(false).PRO.features).sort()
     );
-    assert.equal(plans.buildPlanLimits(false), plans.PLAN_LIMITS);
+    assert.deepEqual(plans.buildPlanLimits(false), plans.PLAN_LIMITS);
   });
 
   await test("Polar: only the plan products change a user's plan", async () => {

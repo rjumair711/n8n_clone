@@ -18,17 +18,21 @@ export const isIncludedCredential = (credentialId: string | null | undefined) =>
 // price table (Settings, admins). 1,000 credits are one dollar.
 export const CREDITS_PER_USD = 1000;
 
-// Credits a plan gets every calendar month (UTC). They do not carry over.
-// A free trial does not change the number: it is the plan's.
+// Credits every account gets each calendar month (UTC). They do not carry
+// over. There are no plans: the number is the same for everyone. The
+// platform's provider keys pay for them, so this is what one account can
+// cost the owner in AI each month, before credits it bought.
+export const MONTHLY_AI_CREDITS = 1_000;
+
+// Kept by plan name for older callers: all the same
 export const PLAN_AI_CREDITS: Record<string, number> = {
-  FREE: 100,
-  BEGINNER: 1_000,
-  INTERMEDIATE: 5_000,
-  PRO: 20_000,
+  FREE: MONTHLY_AI_CREDITS,
+  BEGINNER: MONTHLY_AI_CREDITS,
+  INTERMEDIATE: MONTHLY_AI_CREDITS,
+  PRO: MONTHLY_AI_CREDITS,
 };
 
-export const getPlanAllowanceUsd = (plan: string) =>
-  (PLAN_AI_CREDITS[plan] ?? 0) / CREDITS_PER_USD;
+export const getPlanAllowanceUsd = (_plan?: string) => MONTHLY_AI_CREDITS / CREDITS_PER_USD;
 
 export const usdToCredits = (usd: number | null | undefined) =>
   Math.round((Number(usd) || 0) * CREDITS_PER_USD * 100) / 100;
@@ -106,28 +110,19 @@ export const buildCreditStatus = ({
 export const getPurchasedCharge = (costUsd: number, allowanceLeftUsd: number) =>
   Math.max(costUsd - Math.max(allowanceLeftUsd, 0), 0);
 
-const PLAN_NAMES: Record<string, string> = {
-  FREE: "Free",
-  BEGINNER: "Beginner",
-  INTERMEDIATE: "Intermediate",
-  PRO: "Pro",
-};
-
 /**
  * What a user reads when a call is refused because nothing is left. `appUrl`
  * is the app's public address: the message is also shown in execution logs,
  * where a link has to be written out.
  */
 export const creditsUsedUpMessage = ({
-  plan,
   appUrl,
 }: {
-  plan: string;
+  // No longer changes the message; kept for the callers
+  plan?: string;
   appUrl: string;
 }) =>
-  `${INCLUDED_CREDENTIAL_NAME} credits are used up: the ${PLAN_NAMES[plan] ?? plan} plan includes ${(
-    PLAN_AI_CREDITS[plan] ?? 0
-  ).toLocaleString("en-US")} credits a month and you have no bought credits left. Upgrade your plan or buy credits at ${appUrl}/billing, or pick your own API key credential on the node. The monthly credits start again on the 1st (UTC).`;
+  `${INCLUDED_CREDENTIAL_NAME} credits are used up: every account gets ${MONTHLY_AI_CREDITS.toLocaleString("en-US")} credits a month and you have no bought credits left. Buy credits at ${appUrl}/billing, or pick your own API key credential on the node. The monthly credits start again on the 1st (UTC).`;
 
 export type CreditPack = {
   // The Polar product (a one-time purchase)

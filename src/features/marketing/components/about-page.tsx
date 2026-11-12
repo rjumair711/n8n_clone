@@ -74,7 +74,7 @@ export const AboutPage = () => (
             className="m-btn m-btn-primary shrink-0"
             signedInLabel="Go to dashboard"
           >
-            Start free trial
+            Start for free
             <ArrowRightIcon className="size-4" aria-hidden="true" />
           </AuthLink>
         </div>

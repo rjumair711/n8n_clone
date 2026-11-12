@@ -16,7 +16,6 @@ import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { useTRPC } from "@/trpc/client";
 import { getNodeLabel } from "@/config/node-labels";
-import { PLAN_ORDER } from "@/config/plans";
 import { UpgradeModal } from "@/components/upgrade-modal";
 import { Button } from "@/components/ui/button";
 import {
@@ -39,7 +38,6 @@ import {
 import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
 import { Checkbox } from "@/components/ui/checkbox";
-import { PLAN_NAMES } from "../lib/template-data";
 import {
     DEFAULT_TEMPLATE_LANGUAGE,
     TEMPLATE_LANGUAGES,
@@ -100,8 +98,6 @@ export const Templates = () => {
     const [category, setCategory] = useState("All");
     // "all", or the language of the templates shown
     const [language, setLanguage] = useState("all");
-    // "all", or the plan the templates shown need
-    const [plan, setPlan] = useState("all");
     const [sort, setSort] = useState<SortOrder>("popular");
     const [shown, setShown] = useState(PAGE_SIZE);
     // The details panel: which template, and whether it is open (the
@@ -211,16 +207,12 @@ export const Templates = () => {
         [items]
     );
 
-    // Only the languages and plans the gallery has templates in
+    // Only the languages the gallery has templates in
     const languages = useMemo(
         () =>
             TEMPLATE_LANGUAGES.filter((entry) =>
                 items.some((item) => getTemplateLanguage(item.language).value === entry.value)
             ),
-        [items]
-    );
-    const plans = useMemo(
-        () => PLAN_ORDER.filter((name) => items.some((item) => item.minPlan === name)),
         [items]
     );
 
@@ -231,7 +223,6 @@ export const Templates = () => {
             (item) =>
                 (category === "All" || item.category === category) &&
                 (language === "all" || getTemplateLanguage(item.language).value === language) &&
-                (plan === "all" || item.minPlan === plan) &&
                 (!query ||
                     item.name.toLowerCase().includes(query) ||
                     item.description.toLowerCase().includes(query) ||
@@ -243,7 +234,7 @@ export const Templates = () => {
                 ? b.useCount - a.useCount
                 : new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
         );
-    }, [items, deferredSearch, category, language, plan, sort]);
+    }, [items, deferredSearch, category, language, sort]);
 
     const visible = matching.slice(0, shown);
 
@@ -353,19 +344,6 @@ export const Templates = () => {
                         {categories.map((name) => (
                             <SelectItem key={name} value={name}>
                                 {name === "All" ? "All categories" : name}
-                            </SelectItem>
-                        ))}
-                    </SelectContent>
-                </Select>
-                <Select value={plan} onValueChange={filterBy(setPlan)}>
-                    <SelectTrigger className="w-full sm:w-40" aria-label="Plan">
-                        <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                        <SelectItem value="all">All plans</SelectItem>
-                        {plans.map((name) => (
-                            <SelectItem key={name} value={name}>
-                                {PLAN_NAMES[name]}
                             </SelectItem>
                         ))}
                     </SelectContent>
@@ -587,7 +565,7 @@ export const Templates = () => {
                                 </p>
                             </div>
 
-                            <div className="grid grid-cols-2 gap-4">
+                            <div className="space-y-2">
                                 <div className="space-y-2">
                                     <Label htmlFor="template-category">Category</Label>
                                     <Input
@@ -597,30 +575,10 @@ export const Templates = () => {
                                         onChange={(event) => setForm({ ...form, category: event.target.value })}
                                     />
                                 </div>
-                                <div className="space-y-2">
-                                    <Label>Available From Plan</Label>
-                                    <Select
-                                        value={form.minPlan}
-                                        onValueChange={(minPlan) =>
-                                            setForm({ ...form, minPlan: minPlan as SubscriptionPlan })
-                                        }
-                                    >
-                                        <SelectTrigger className="w-full">
-                                            <SelectValue />
-                                        </SelectTrigger>
-                                        <SelectContent>
-                                            {Object.values(SubscriptionPlan).map((plan) => (
-                                                <SelectItem key={plan} value={plan}>
-                                                    {PLAN_NAMES[plan]}
-                                                </SelectItem>
-                                            ))}
-                                        </SelectContent>
-                                    </Select>
-                                </div>
                             </div>
                             <p className="-mt-2 text-xs text-muted-foreground">
-                                If the template&apos;s nodes need a higher plan (WhatsApp, Gmail,
-                                Google Sheets, schedules, AI Agent, SSH), it is saved with that plan.
+                                Every template is for everyone. One with an SSH node only runs on a
+                                self-hosted or managed RXJ server, and the gallery says so.
                             </p>
 
                             <div className="flex items-center justify-between gap-4 rounded-md border p-3">
@@ -755,7 +713,7 @@ export const Templates = () => {
                                             <span className="shrink-0 text-xs text-muted-foreground">
                                                 {starter.inGallery
                                                     ? "In the gallery"
-                                                    : `${written.label} · ${PLAN_NAMES[starter.minPlan] ?? starter.minPlan}`}
+                                                    : written.label}
                                             </span>
                                         </li>
                                     );

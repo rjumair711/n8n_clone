@@ -179,15 +179,9 @@ export const auth = betterAuth({
             where: {
               id: user.id,
             },
-            // A self-hosted server has no plans to try: everyone is on Pro
-            data: SELF_HOSTED
-              ? { plan: "PRO", trialEndsAt: null }
-              : {
-                  plan: "FREE",
-                  trialEndsAt: new Date(
-                    Date.now() + 7 * 24 * 60 * 60 * 1000
-                  ),
-                },
+            // There are no plans or trials: every account gets the same
+            // (src/config/plans.ts). The column stays for older rows.
+            data: { plan: SELF_HOSTED ? "PRO" : "FREE", trialEndsAt: null },
           });
         },
       },

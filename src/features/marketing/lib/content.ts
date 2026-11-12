@@ -193,7 +193,7 @@ export const SECURITY = [
   {
     icon: KeyRoundIcon,
     title: "Two-factor and SSO",
-    text: "Authenticator-app codes with backup codes, sign-in lockout, and single sign-on with OpenID Connect on the Pro plan.",
+    text: "Authenticator-app codes with backup codes, sign-in lockout, and single sign-on with OpenID Connect.",
   },
   {
     icon: ScrollTextIcon,
@@ -212,15 +212,15 @@ const free = PLAN_LIMITS.FREE;
 export const FAQ = [
   {
     question: "Do I need my own API keys?",
-    answer: `You can bring your own: connect a key for OpenAI, Anthropic, Gemini, DeepSeek, Kimi, Qwen or any OpenAI-compatible provider and pay that provider directly. Where "RXJ AI (included)" is offered, you can also run selected low-cost models without a key and pay with AI credits: ${number(PLAN_AI_CREDITS.FREE)} a month on Free, ${number(PLAN_AI_CREDITS.BEGINNER)} on Beginner, ${number(PLAN_AI_CREDITS.INTERMEDIATE)} on Intermediate and ${number(PLAN_AI_CREDITS.PRO)} on Pro. 1,000 credits are one US dollar of model cost.`,
+    answer: `You can bring your own: connect a key for OpenAI, Anthropic, Gemini, DeepSeek, Kimi, Qwen or any OpenAI-compatible provider and pay that provider directly. Where "RXJ AI (included)" is offered, you can also run selected low-cost models without a key and pay with AI credits: every account gets ${number(PLAN_AI_CREDITS.FREE)} a month. 1,000 credits are one US dollar of model cost.`,
   },
   {
-    question: "What does the free trial include?",
-    answer: `Seven days, starting when you sign up, with no card asked for. The trial unlocks the nodes that otherwise need a paid plan (scheduling, Google Sheets, Gmail, the AI Agent and WhatsApp) and every template. SSH and the enterprise features (SSO, Git sync, external secrets) are not part of it. The Free plan's limits still apply: ${free.activeWorkflows} active workflows, ${number(free.monthlyExecutions)} executions a month and daily caps on outgoing messages.`,
+    question: "Is it free? Are there plans?",
+    answer: `There are no plans and no trial. Every account can use every node, template and feature, with no card asked for, as many workflows as it likes, ${number(free.monthlyExecutions)} executions a month and daily caps on outgoing messages. SSH runs only on a server of your own.`,
   },
   {
-    question: "What happens when the trial ends?",
-    answer: `Your account and workflows stay. You are on the Free plan (${free.activeWorkflows} active workflows, ${number(free.monthlyExecutions)} executions a month) and the plan-locked nodes ask for an upgrade. You can upgrade, downgrade or cancel at any time from Billing.`,
+    question: "What does the managed private server add?",
+    answer: "RXJ on a server in your name, set up and looked after for you, for $20 a month: every feature including SSH, no limits on runs or messages, monthly updates, daily backups, and up to 5 of your workflows built and looked after. You can also run RXJ on your own server for free.",
   },
   {
     question: "What counts as an execution?",

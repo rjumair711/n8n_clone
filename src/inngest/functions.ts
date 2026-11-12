@@ -57,7 +57,7 @@ import { slackChannel } from "./channels/slack";
 
 import prisma from "@/lib/db";
 
-import { PLAN_LIMITS, getRequiredPlanForNode } from "@/config/plans";
+import { PLAN_LIMITS, getRequiredPlanForNode, monthlyRunLimitMessage, unavailableMessage } from "@/config/plans";
 import { claimExecution } from "@/lib/subscription/usage-counts";
 
 import { webhookChannel } from "./channels/webhookResponse";
@@ -372,7 +372,7 @@ export const executeWorkflow =
 
           if (!allowed) {
             throw new NonRetriableError(
-              `Monthly execution limit reached. Your ${userPlan} plan includes ${allowedExecutions} executions per month.`
+              monthlyRunLimitMessage(allowedExecutions)
             );
           }
         }
@@ -543,7 +543,8 @@ export const executeWorkflow =
           }
         }
 
-        // Paid-plan nodes stop the run with a message the user can act on
+        // A node this server does not offer (SSH on the hosted app) stops the
+        // run with a message the user can act on
         const requiredPlan = getRequiredPlanForNode(
           node.type,
           userPlan,
@@ -552,7 +553,7 @@ export const executeWorkflow =
 
         if (requiredPlan) {
           throw new NonRetriableError(
-            `The ${node.type} node requires the ${requiredPlan} plan. Upgrade your plan or remove the node.`
+            `${unavailableMessage(`The ${node.type} node`)}. Remove the node, or run the workflow on your own server.`
           );
         }
 

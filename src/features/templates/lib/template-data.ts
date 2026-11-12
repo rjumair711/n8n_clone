@@ -1,12 +1,7 @@
 // Turning a workflow into a template and back. Pure functions, so the rules
 // about what a template may contain can be tested without a database.
 
-import {
-  PLAN_ORDER,
-  getMinPlanForNodes,
-  trialUnlocksNodes,
-  type PlanName,
-} from "@/config/plans";
+import { getMinPlanForNodes, isNodeAvailable, type PlanName } from "@/config/plans";
 
 export type TemplateNode = {
   id: string;
@@ -134,40 +129,33 @@ export const instantiateTemplate = (
   };
 };
 
+// How a template's plan is shown. There are no plans: a template is for
+// everyone, or (PRO, computed from its nodes) needs a server of your own.
 export const PLAN_NAMES: Record<string, string> = {
-  FREE: "Free",
-  BEGINNER: "Beginner",
-  INTERMEDIATE: "Intermediate",
-  PRO: "Pro",
+  FREE: "Everyone",
+  BEGINNER: "Everyone",
+  INTERMEDIATE: "Everyone",
+  PRO: "Own server",
 };
 
-const planIndex = (plan: string) => (PLAN_ORDER as readonly string[]).indexOf(plan);
-
 /**
- * The plan a template needs: the one its admin picked, or the cheapest plan
- * that can run all of its nodes if that is higher. A template saved as
- * "Free" with a WhatsApp node is a Pro template.
+ * FREE when this server offers every node of the template, PRO (shown as
+ * "Own server") when it does not. The plan an admin once stored on the row
+ * no longer counts: there are no plans.
  */
-export const getTemplateMinPlan = (minPlan: string, nodeTypes: Iterable<string>): PlanName => {
-  const needed = getMinPlanForNodes(nodeTypes);
-
-  return planIndex(minPlan) > planIndex(needed) ? (minPlan as PlanName) : needed;
-};
+export const getTemplateMinPlan = (_minPlan: string, nodeTypes: Iterable<string>): PlanName =>
+  getMinPlanForNodes(nodeTypes);
 
 /**
- * Whether a user may use a template. An active free trial opens it, the
- * same way it opens plan-locked nodes, unless one of its nodes is one the
- * trial does not unlock (SSH).
+ * Whether a template may be used: every template, unless it has a node only
+ * a self-hosted server offers (SSH on the hosted app). The plan and trial
+ * arguments no longer change anything; they stay for the callers.
  */
 export const canUseTemplate = (
   template: { minPlan: string; nodeTypes: readonly string[] },
-  userPlan: string,
-  trialEndsAt?: Date | string | null
-) =>
-  planIndex(userPlan) >= planIndex(getTemplateMinPlan(template.minPlan, template.nodeTypes)) ||
-  (!!trialEndsAt &&
-    new Date(trialEndsAt) > new Date() &&
-    trialUnlocksNodes(template.nodeTypes));
+  _userPlan?: string,
+  _trialEndsAt?: Date | string | null
+) => template.nodeTypes.every((type) => isNodeAvailable(type));
 
 // Where the setup part of a description starts, in the languages templates
 // are written in

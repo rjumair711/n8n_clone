@@ -73,7 +73,7 @@ export const SiteNav = () => {
                 Sign in
               </Link>
               <Link href="/signup" className="m-btn m-btn-sm m-btn-primary">
-                Start free trial
+                Start for free
               </Link>
             </>
           )}
@@ -121,7 +121,7 @@ export const SiteNav = () => {
                 ) : (
                   <>
                     <Link href="/signup" className="m-btn m-btn-primary">
-                      Start free trial
+                      Start for free
                     </Link>
                     <Link href="/login" className="m-btn m-btn-ghost">
                       Sign in

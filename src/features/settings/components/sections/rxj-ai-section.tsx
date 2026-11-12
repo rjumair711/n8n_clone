@@ -20,8 +20,8 @@ export const RxjAiSection = () => {
     if (!data?.isAdmin) {
         return (
             <SectionNote title="Admins only">
-                RXJ AI (included) is set up by the platform&apos;s admins. What your plan
-                includes and what is left is under Usage &amp; plan and Billing.
+                RXJ AI (included) is set up by the platform&apos;s admins. What every account
+                includes and what is left is under Usage and Billing.
             </SectionNote>
         );
     }

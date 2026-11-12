@@ -26,12 +26,12 @@ export const DOCS_SECTIONS: DocsSection[] = [
       "Sign up with an email and password, or with Google or GitHub. No card is asked for.",
     items: [
       {
-        term: "Free trial",
-        text: "Seven days from the moment you sign up. It unlocks the nodes that otherwise need a paid plan (scheduling, Google Sheets, Gmail, the AI Agent and WhatsApp) and every template.",
+        term: "Everything included",
+        text: `There are no plans or trials. Every account can use every node, template and feature, with as many workflows as it likes and ${free.monthlyExecutions.toLocaleString("en-US")} executions a month.`,
       },
       {
-        term: "After the trial",
-        text: `Your account and workflows stay. You are on the Free plan: ${free.activeWorkflows} active workflows and ${free.monthlyExecutions.toLocaleString("en-US")} executions a month. Plan-locked nodes ask for an upgrade.`,
+        term: "Your own server",
+        text: "SSH, and no limits at all, on a server of your own: run RXJ yourself for free, or have it run for you as a managed private server ($20 a month, see Pricing).",
       },
       {
         term: "Two-factor sign-in",
@@ -223,17 +223,17 @@ export const DOCS_SECTIONS: DocsSection[] = [
   },
   {
     id: "plans",
-    title: "Plans and limits",
+    title: "Limits",
     intro:
-      "A plan sets how many workflows can be active, how many executions you have a month and which nodes are unlocked.",
+      "There are no plans: every account has every node and the same limits. A self-hosted or managed RXJ server has none.",
     items: [
       {
         term: "An execution",
-        text: "One run of a workflow, however many nodes it has. Executions are counted per calendar month.",
+        text: `One run of a workflow, however many nodes it has. Every account has ${free.monthlyExecutions.toLocaleString("en-US")} a month, counted per calendar month.`,
       },
       {
-        term: "Changing plan",
-        text: "Upgrade, downgrade or cancel at any time from Billing.",
+        term: "No limits",
+        text: "A managed private server ($20 a month) or RXJ on your own server: no run or message limits, and SSH.",
       },
     ],
   },

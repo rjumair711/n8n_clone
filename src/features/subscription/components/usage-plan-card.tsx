@@ -3,16 +3,13 @@
 import Link from "next/link";
 import { useQuery } from "@tanstack/react-query";
 import { CreditCardIcon } from "lucide-react";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { PLAN_LIMITS } from "@/config/plans";
 import { formatCredits } from "@/config/ai-credits";
 import { SectionSkeleton } from "@/features/settings/components/settings-section";
-import { PLAN_NAMES } from "@/features/templates/lib/template-data";
 import { formatUsd } from "@/lib/ai-cost";
-import { getTrialDaysLeft } from "@/lib/subscription/get-trial-days-left";
 import { cn } from "@/lib/utils";
 import { useTRPC } from "@/trpc/client";
 import { useCurrentPlan } from "../hook/use-current-plan";
@@ -108,7 +105,7 @@ const Stat = ({
 );
 
 /**
- * Settings → Workspace → Usage & plan: the plan of the workspace the user
+ * Settings → Workspace → Usage: the limits of the workspace the user
  * works in (its owner's), what it used this month against the plan's
  * limits, and its AI credits and spend. The numbers are the ones the limits
  * are checked against on the server.
@@ -129,11 +126,8 @@ export const UsagePlanCard = () => {
 
     if (isLoading || !current) return <SectionSkeleton rows={4} />;
 
-    const plan = current.plan in PLAN_LIMITS ? (current.plan as keyof typeof PLAN_LIMITS) : "FREE";
-    const limits = PLAN_LIMITS[plan];
-    const planName = PLAN_NAMES[plan] ?? plan;
-    const trialDaysLeft = getTrialDaysLeft(current.trialEndsAt ?? null);
-    const onTrial = plan === "FREE" && !!current.trialEndsAt;
+    // There are no plans: every account has the same limits
+    const limits = PLAN_LIMITS.FREE;
     const creditsSetUp = !!credits && (credits.available || credits.purchasedUsd > 0);
 
     return (
@@ -142,23 +136,17 @@ export const UsagePlanCard = () => {
                 <CardHeader className="flex flex-row flex-wrap items-start justify-between gap-4">
                     <div className="space-y-1.5">
                         <CardTitle className="flex flex-wrap items-center gap-2 text-base">
-                            {planName} plan
-                            {onTrial && (
-                                <Badge variant={trialDaysLeft > 0 ? "secondary" : "destructive"}>
-                                    {trialDaysLeft > 0
-                                        ? `Trial: ${trialDaysLeft} day${trialDaysLeft === 1 ? "" : "s"} left`
-                                        : "Trial ended"}
-                                </Badge>
-                            )}
+                            Usage this month
                         </CardTitle>
                         <CardDescription>
-                            The plan and its limits belong to the workspace{" "}
-                            <strong>{current.workspace.name}</strong>: they are its
-                            owner&apos;s plan, whoever works in it.
+                            Every account has every node and feature. The numbers belong to the
+                            workspace <strong>{current.workspace.name}</strong> and count
+                            against its owner&apos;s account, whoever works in it.
                             {!current.workspace.personal &&
                                 " This is not your own workspace, so these are not your own account's numbers."}{" "}
-                            Billing is about your own account (your plan, payments and invoices),
-                            whichever workspace you work in.
+                            {SELF_HOSTED
+                                ? "This server has no limits."
+                                : "A self-hosted or managed RXJ server has no limits."}
                         </CardDescription>
                     </div>
                     {/* A self-hosted server has no billing */}
@@ -166,7 +154,7 @@ export const UsagePlanCard = () => {
                         <Button asChild variant="outline" size="sm">
                             <Link href="/billing">
                                 <CreditCardIcon className="size-4" />
-                                Manage billing
+                                Billing
                             </Link>
                         </Button>
                     )}
@@ -199,7 +187,7 @@ export const UsagePlanCard = () => {
                     value={creditsSetUp ? formatCredits(credits.availableUsd) : "—"}
                     detail={
                         creditsSetUp
-                            ? `${formatCredits(credits.allowanceLeftUsd)} of this month's ${formatCredits(credits.allowanceUsd)} from the plan${
+                            ? `${formatCredits(credits.allowanceLeftUsd)} of this month's ${formatCredits(credits.allowanceUsd)} included${
                                 credits.purchasedUsd > 0 ? `, ${formatCredits(credits.purchasedUsd)} bought` : ""
                             }`
                             : "RXJ AI (included) is not set up on this server."

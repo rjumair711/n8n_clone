@@ -12,19 +12,22 @@ export type MessageChannel = "email" | "whatsapp" | "twilio" | "telegram";
 
 type Plan = "FREE" | "BEGINNER" | "INTERMEDIATE" | "PRO";
 
-// Messages per user per day (UTC). For email every recipient counts as one.
-export const DAILY_MESSAGE_CAPS: Record<Plan, Record<MessageChannel, number>> = {
-  FREE: { email: 20, whatsapp: 20, twilio: 10, telegram: 50 },
-  BEGINNER: { email: 100, whatsapp: 50, twilio: 25, telegram: 200 },
-  INTERMEDIATE: { email: 1000, whatsapp: 500, twilio: 250, telegram: 2000 },
-  PRO: { email: 10000, whatsapp: 5000, twilio: 2500, telegram: 20000 },
+// Messages one account may send per day (UTC). For email every recipient
+// counts as one. There are no plans: every account has the same caps; they
+// keep the hosted app from being used to send in bulk.
+export const ACCOUNT_MESSAGE_CAPS: Record<MessageChannel, number> = {
+  email: 1000,
+  whatsapp: 500,
+  twilio: 250,
+  telegram: 2000,
 };
 
-const PLAN_NAMES: Record<Plan, string> = {
-  FREE: "Free",
-  BEGINNER: "Beginner",
-  INTERMEDIATE: "Intermediate",
-  PRO: "Pro",
+// Kept by plan name for older callers: all the same
+export const DAILY_MESSAGE_CAPS: Record<Plan, Record<MessageChannel, number>> = {
+  FREE: ACCOUNT_MESSAGE_CAPS,
+  BEGINNER: ACCOUNT_MESSAGE_CAPS,
+  INTERMEDIATE: ACCOUNT_MESSAGE_CAPS,
+  PRO: ACCOUNT_MESSAGE_CAPS,
 };
 
 // What one message is called in the error, singular and plural
@@ -98,7 +101,7 @@ export const getMessageSend = (
 export const getDailyMessageCap = (plan: string, channel: MessageChannel): number =>
   SELF_HOSTED
     ? Infinity
-    : (DAILY_MESSAGE_CAPS[plan as Plan] ?? DAILY_MESSAGE_CAPS.FREE)[channel];
+    : ACCOUNT_MESSAGE_CAPS[channel];
 
 /**
  * The error shown when a send would go over the cap.
@@ -116,12 +119,9 @@ export const messageCapError = ({
 }) => {
   const cap = getDailyMessageCap(plan, channel);
   const [one, many] = CHANNEL_WORDS[channel];
-  const planName = PLAN_NAMES[plan as Plan] ?? PLAN_NAMES.FREE;
 
   const left = Math.max(cap - used, 0);
   const attempt =
     count > 1 ? ` This send has ${count} recipients and ${left} ${left === 1 ? "is" : "are"} left.` : "";
-  const upgrade = plan === "PRO" ? "" : " Upgrade your plan to send more.";
-
-  return `Daily ${one} limit reached: the ${planName} plan allows ${cap} ${cap === 1 ? one : many} per day and ${used} ${used === 1 ? "was" : "were"} sent today.${attempt} The count starts again at 00:00 UTC.${upgrade}`;
+  return `Daily ${one} limit reached: an account may send ${cap} ${cap === 1 ? one : many} per day and ${used} ${used === 1 ? "was" : "were"} sent today.${attempt} The count starts again at 00:00 UTC. A self-hosted or managed RXJ server has no daily limit.`;
 };
