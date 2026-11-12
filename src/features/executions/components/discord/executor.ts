@@ -3,6 +3,7 @@ import { renderEscapedTemplate } from "@/features/executions/lib/templates";
 import { NonRetriableError } from "inngest";
 import Handlebars from "handlebars";
 import { decode } from "html-entities";
+import { discordAllowedMentions } from "../slack/payload";
 import ky from "ky";
 import { assertPublicUrl } from "@/lib/ssrf";
 
@@ -83,6 +84,9 @@ export const discordExecutor: NodeExecutor<
                 content.slice(0, 2000),
 
               username,
+
+              // Only mentions typed in the template notify anyone
+              allowed_mentions: discordAllowedMentions(data.content),
             },
           }
         );

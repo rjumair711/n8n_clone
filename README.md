@@ -138,7 +138,7 @@ Differences from n8n: `$json` is the whole set of workflow variables (not the pr
 | Email (SMTP) | A body with HTML tags of its own (`<p>`, `<br>`, `<a>`) is sent as HTML, with the values HTML-escaped so data cannot add links or markup. Any other body is sent as plain text, as written, with its line breaks |
 | Telegram | Parse Mode HTML: values HTML-escaped. MarkdownV2: the reserved characters in values get a backslash. None: as they are. The text you type keeps its own markup |
 | Notion Properties (JSON) | As they are, unless a value would change the JSON's structure (a quote that closes its string and adds a property); then that render escapes values, as before. Use `{{json x}}` to insert a value as a JSON string |
-| Slack, Discord | As they are |
+| Slack, Discord | As they are, except mentions: in a Slack incoming webhook `&`, `<` and `>` in values stay escaped (so `<!channel>` or a link from data is text), and Discord only lets the kinds of mention typed in the message notify anyone |
 
 ---
 
@@ -447,7 +447,7 @@ Switch on **Make chat public** in the Chat Trigger's settings, save and activate
 * **Allowed domains:** a list of sites that may show the widget (`example.com`, `*.example.com`). Browsers refuse to frame the chat anywhere else, and `widget.js` shows no button there. Empty means any site. The hosted chat page itself is always reachable by its link.
 * **Rate limits:** 60 messages per minute per widget (`CHAT_WIDGET_RATE_LIMIT_PER_MINUTE`) and 10 per minute per visitor (`CHAT_VISITOR_RATE_LIMIT_PER_MINUTE`), counted both by session id and by address.
 * **Answers are not streamed.** The agent's answer is produced in a background run, so the chat shows a typing indicator and then the whole answer. Only the agent's answer (`output`) is ever sent to the visitor, never the rest of the run's data. The workflow must keep "Save execution data" on: the answer is read from the run's saved output.
-* **"Talk to a human" (optional):** a button under the chat. The visitor can leave an email or phone number; the conversation is sent to the person you set, by email (SMTP credential), Slack (incoming webhook) or WhatsApp, and the bot stops answering in that conversation. Messages written afterwards are kept and answered with a short note. The person replies through their own channel: there is no agent inbox in the app. If the message cannot be sent, the visitor is told and the bot keeps answering.
+* **"Talk to a human" (optional):** a button under the chat. The visitor can leave an email or phone number; the conversation is sent to the person you set, by email (SMTP credential), Slack (an incoming webhook, or a Workflow Builder webhook with a text variable named content; nothing the visitor wrote can mention anyone in Slack) or WhatsApp, and the bot stops answering in that conversation. Messages written afterwards are kept and answered with a short note. The person replies through their own channel: there is no agent inbox in the app. If the message cannot be sent, the visitor is told and the bot keeps answering.
 * Conversations of the widget are stored for 30 days. Every message is a workflow execution and counts toward the plan's monthly executions. A message has at most 4000 characters.
 
 ## Model nodes
@@ -897,8 +897,8 @@ Two store nodes and two triggers. The nodes can also be AI Agent tools: reading 
 
 | Integration | Description         |
 | ----------- | ------------------- |
-| Discord     | Discord automation  |
-| Slack       | Slack notifications |
+| Discord     | Discord automation. Only the kinds of mention typed in the message itself (@everyone or @here, <@user>, <@&role>) notify anyone; a mention inside a {{value}} is posted as text |
+| Slack       | Slack notifications through an incoming webhook (hooks.slack.com/services/..., sent as text) or a Workflow Builder webhook (hooks.slack.com/triggers/..., sent as the variable content). In an incoming webhook, <!channel>, <@user> or a link inside a {{value}} is shown as text; the ones typed in the message work |
 | Telegram    | Bot messaging: text, or a file with a caption, and the Telegram Trigger for incoming messages |
 | WhatsApp    | Text, template and file messages via the WhatsApp Business Cloud API, and the WhatsApp Trigger |
 | Messenger   | Text and picture replies to people who wrote to your Facebook Page, and the Messenger Trigger |

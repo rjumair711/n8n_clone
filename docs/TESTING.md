@@ -1573,6 +1573,20 @@ Needs the `instagram_messenger` migration applied, a public `NEXT_PUBLIC_APP_URL
 
 Delete the test posts afterwards.
 
+**Slack and Discord webhooks.** No migration. Use a test Slack workspace and a test Discord server. Put a Form Trigger with one field Note before the node.
+
+| Node | Settings | Expect |
+|------|----------|--------|
+| Slack | An incoming webhook URL (`https://hooks.slack.com/services/...`), Message `New note: {{form.note}}`; submit `O'Brien & Sons` | the message arrives as typed (before this fix Slack answered `no_text` and the node failed) |
+| Slack | Same, submit `<!channel> click <https://example.com|here>` | the text is shown as typed; nobody is notified and there is no link |
+| Slack | Message `<!here> {{form.note}}` | the @here typed in the message notifies the channel |
+| Slack | A Workflow Builder webhook (`https://hooks.slack.com/triggers/...`) whose workflow has a text variable `content` | the workflow runs with the message in `content`, as before |
+| Discord | Message `Note: {{form.note}}`; submit `@everyone free stuff` | posted as text; nobody is pinged |
+| Discord | Message `@everyone {{form.note}}` | the @everyone typed in the message pings, as before |
+| Send and Wait for Approval | Operation Slack, an incoming webhook URL; run it | the request arrives with working Approve and Reject links |
+| Send and Wait for Approval | Operation Slack, a Workflow Builder webhook URL whose workflow has a text variable `content` | the workflow gets the request in `content` (before this fix the request was sent as `text` and the workflow got nothing) |
+| Website chat "Talk to a human" | Slack with an incoming webhook; as a visitor write `<!channel> help` and ask for a human | the handoff arrives; `<!channel>` is shown as text and notifies nobody |
+
 **Values as typed (no HTML escaping).** No migration. Make a Form Trigger with the fields Name and Note, and submit Name `O'Brien & Sons <Ltd>` and Note `Price: 5.00 - call me!` for each row. Use a test bot, a test inbox and a test Notion database.
 
 | Node | Settings | Expect |

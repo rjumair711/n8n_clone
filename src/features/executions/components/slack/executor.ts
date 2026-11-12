@@ -5,6 +5,7 @@ import Handlebars from "handlebars";
 import { decode } from "html-entities";
 import ky from "ky";
 import { assertPublicUrl } from "@/lib/ssrf";
+import { buildSlackPayload } from "./payload";
 
 Handlebars.registerHelper("json", (context) => {
   const jsonString = JSON.stringify(context, null, 2);
@@ -50,6 +51,10 @@ export const slackExecutor: NodeExecutor<SlackData> = async ({
 
   const content = decode(rawContent);
 
+  // "text" for an incoming webhook, "content" for a Workflow Builder one
+  // (see payload.ts)
+  const payload = buildSlackPayload(data.webhookUrl, rawContent);
+
   try {
 
     const result = await step.run(
@@ -61,9 +66,7 @@ export const slackExecutor: NodeExecutor<SlackData> = async ({
 
         await ky.post(data.webhookUrl!, {
           redirect: "error",
-          json: {
-            content,
-          },
+          json: payload,
         });
 
         return {
