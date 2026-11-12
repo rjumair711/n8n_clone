@@ -1,7 +1,7 @@
 {
   "key": "form_to_sheet_with_email",
   "category": "Forms",
-  "minPlan": "INTERMEDIATE",
+  "minPlan": "FREE",
   "nodes": [
     {
       "id": "form",

@@ -670,7 +670,7 @@ Repeat with Title `رسید نمبر 42` and Content `محترم علی خان،
 
 | # | Do | Expect |
 |---|----|--------|
-| 1 | Filter by plan **Pro** | only WhatsApp templates (10), each with an amber Pro badge. **Intermediate**: 13. **Free**: 17. No WhatsApp template is Free |
+| 1 | Run `npx tsx scripts/check-starter-templates.ts` | "All valid": every seed declares the plan `FREE` |
 | 2 | Open the details of any new template in each language | a summary, **Setup** with 2 or more numbered steps, and **Nodes used**; Urdu and Arabic right to left |
 | 3 | **Use template** on "Contact form to Google Sheets with confirmation email" (Urdu) | the workflow opens: Form Trigger → Google Sheets → Gmail. The form's labels are Urdu with the English word in brackets; Google Sheets and Gmail are marked Not Configured |
 | 4 | Set it up with a test sheet and your own Gmail, activate it, open the Form URL and submit | a row with the time, name, email, phone and message; a confirmation email in Urdu to the address you typed |
@@ -1553,6 +1553,9 @@ Delete the test posts afterwards.
 | Google Drive | Download File with that `id` | `drive.file` exists |
 | Google Drive | Search Files, Name Contains `invoice` | `drive.files` lists it |
 | Google Sheets / Calendar | pick the Google Account credential instead of a service account | row appended / event created |
+| Google Sheets | Row Values `{{form.name}}, {{form.message}}, {{form.code}}` after a Form Trigger with those fields; submit name `O'Brien & Sons`, message `Hello, I need 5 boxes, by Friday`, code `=1+1` | one row of three cells: `O'Brien & Sons` (no `&#x27;` or `&amp;`), the whole message with its commas, and the text `=1+1` (not 2) |
+| Google Sheets | Row Values `=TODAY(), {{form.name}}` | the first cell is today's date (a formula you typed still works) |
+| Google Sheets | An existing workflow whose Row Values is a single variable holding `a, b, c` | three cells, as before |
 
 ## T19. Triggers from other services (public URL)
 

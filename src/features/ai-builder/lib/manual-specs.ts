@@ -485,7 +485,8 @@ export const MANUAL_SPECS: Record<string, ManualSpec> = {
         name: "rowData",
         type: "text",
         required: true,
-        description: "The values of the new row, comma-separated, one per column.",
+        description:
+          "The values of the new row, comma-separated, one per column. A comma inside a {{variable}}'s value stays in its cell; values are not HTML-escaped, and a value that looks like a formula is kept as text.",
         example: "{{form.name}}, {{form.email}}",
       },
       variableName("sheetsResult"),

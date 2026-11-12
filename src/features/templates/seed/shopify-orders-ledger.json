@@ -1,7 +1,7 @@
 {
   "key": "shopify_orders_ledger",
   "category": "E-commerce",
-  "minPlan": "INTERMEDIATE",
+  "minPlan": "FREE",
   "nodes": [
     {
       "id": "paid",

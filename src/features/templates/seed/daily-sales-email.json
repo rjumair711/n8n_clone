@@ -1,7 +1,7 @@
 {
   "key": "daily_sales_email",
   "category": "Reports",
-  "minPlan": "INTERMEDIATE",
+  "minPlan": "FREE",
   "nodes": [
     {
       "id": "schedule",

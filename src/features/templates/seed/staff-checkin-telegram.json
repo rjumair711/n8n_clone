@@ -1,7 +1,7 @@
 {
   "key": "staff_checkin_telegram",
   "category": "Telegram",
-  "minPlan": "INTERMEDIATE",
+  "minPlan": "FREE",
   "nodes": [
     {
       "id": "trigger",

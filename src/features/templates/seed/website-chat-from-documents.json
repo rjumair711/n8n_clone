@@ -1,7 +1,7 @@
 {
   "key": "website_chat_from_documents",
   "category": "Chatbots",
-  "minPlan": "INTERMEDIATE",
+  "minPlan": "FREE",
   "nodes": [
     {
       "id": "chat",

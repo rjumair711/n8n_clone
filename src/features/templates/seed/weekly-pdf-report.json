@@ -1,7 +1,7 @@
 {
   "key": "weekly_pdf_report",
   "category": "Reports",
-  "minPlan": "INTERMEDIATE",
+  "minPlan": "FREE",
   "nodes": [
     {
       "id": "schedule",

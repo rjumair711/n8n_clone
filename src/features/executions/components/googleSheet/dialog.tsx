@@ -169,8 +169,9 @@ export const GoogleSheetsDialog = ({ open, onOpenChange, onSubmit, defaultValues
                     <Input placeholder="{{name}}, {{email}}, {{message}}" {...field} />
                   </FormControl>
                   <FormDescription>
-                    Comma-separated values to append as a new row. Use{" "}
-                    {"{{variables}}"} from previous nodes.
+                    One value per column, separated by commas. Use{" "}
+                    {"{{variables}}"} from previous nodes; a comma inside a
+                    variable's value stays in its cell.
                   </FormDescription>
                   <FormMessage />
                 </FormItem>

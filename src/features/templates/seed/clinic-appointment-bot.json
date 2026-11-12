@@ -1,7 +1,7 @@
 {
   "key": "clinic_appointment_bot",
   "category": "WhatsApp bots",
-  "minPlan": "PRO",
+  "minPlan": "FREE",
   "nodes": [
     {
       "id": "trigger",

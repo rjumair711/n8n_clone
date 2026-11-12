@@ -1,7 +1,7 @@
 {
   "key": "overdue_invoice_reminder",
   "category": "Reminders",
-  "minPlan": "INTERMEDIATE",
+  "minPlan": "FREE",
   "nodes": [
     {
       "id": "schedule",

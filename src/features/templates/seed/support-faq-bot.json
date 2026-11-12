@@ -1,7 +1,7 @@
 {
   "key": "support_faq_bot",
   "category": "Chatbots",
-  "minPlan": "INTERMEDIATE",
+  "minPlan": "FREE",
   "nodes": [
     {
       "id": "trigger",
