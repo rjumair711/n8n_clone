@@ -635,10 +635,10 @@ Repeat with Title `رسید نمبر 42` and Content `محترم علی خان،
 | # | Do | Expect |
 |---|----|--------|
 | 1 | As admin open **Templates** | a **Starter templates** button next to **New template** |
-| 2 | **Starter templates** | 129 lines: 43 templates, each in English, Urdu and Arabic, with its language and plan. Urdu and Arabic names read right to left |
-| 3 | **Select all**, leave "Publish right away" off, **Add 129 to the gallery** | "129 starter templates added". They are in the gallery marked Hidden |
+| 2 | **Starter templates** | 156 lines: 52 templates, each in English, Urdu and Arabic, with its language and plan. Urdu and Arabic names read right to left |
+| 3 | **Select all**, leave "Publish right away" off, **Add 156 to the gallery** | "156 starter templates added". They are in the gallery marked Hidden |
 | 4 | Open **Starter templates** again | every line is ticked, disabled and says "In the gallery" |
-| 5 | Pick **اردو (Urdu)** in the language filter | only the 43 Urdu templates, right to left, each with an "Urdu" badge. **All languages** shows everything again |
+| 5 | Pick **اردو (Urdu)** in the language filter | only the 52 Urdu templates, right to left, each with an "Urdu" badge. **All languages** shows everything again |
 | 6 | Combine the filter with a category (WhatsApp bots) and with the search | the three work together |
 | 7 | Edit an Urdu template | Language shows اردو (Urdu). Switch **Published** on and save: "Template saved" |
 | 8 | Delete one starter template, then add it again from **Starter templates** | it can be ticked again and comes back as shipped |
@@ -699,6 +699,20 @@ Repeat with Title `رسید نمبر 42` and Content `محترم علی خان،
 | 10 | Send "Invoice INV-204 for October" | the accountant's address gets "Invoice from …: Invoice INV-204 …" with the text; no approval |
 | 11 | Send an obvious marketing mail ("Buy cheap followers now") | it is marked as read in the test inbox; nothing else |
 | 12 | Leave an approval untouched for 24 hours (or set the timeout to 1 minute) | it expires as rejected; nothing is sent |
+
+**Nine more AI and automation starters.** No migration. `npx tsx scripts/check-starter-templates.ts` lists 156 starter templates and none of these nine among the problems. Add them as admin (step 3 above) and use test accounts, a test sheet, a test Airtable base, a test store and test WhatsApp and Telegram numbers; nothing here touches real customers.
+
+| # | Do | Expect |
+|---|----|--------|
+| 1 | **Use template** on "WhatsApp lead qualifier to Google Sheets", set it up, and message the number "I need a website" | it asks your name, then the budget and timeline one at a time; after the name and need a row with the date, name, your number, need, budget and timeline; "I want to talk to someone" sends an email to the address in Gmail's To |
+| 2 | **Use template** on "Telegram AI assistant with memory", message "What are your hours?" then "and on Sunday?" | both are answered from the facts; the second makes sense without repeating the question. A second Telegram account does not see the first one's chat |
+| 3 | **Use template** on "Support tickets sorted by AI and sent to the right team" with two test Slack webhooks; submit "I was charged twice for order 1001" | a sheet row with category billing; an acknowledgement email to the form's address; a message in the billing Slack channel. "The parcel never arrived" goes to the dispatch email; "Do you sell gift cards?" to the owner email |
+| 4 | **Use template** on "Booking form to Google Calendar with a reminder the day before"; book for 3 days from now | the event and the confirmation at once; the execution stays **Waiting** and the reminder email arrives 24 hours before the appointment. Book for tomorrow morning: confirmation only, the run ends without waiting. Book 10 days ahead: confirmation only |
+| 5 | **Use template** on "Social media posts drafted by AI, saved for review" with a test Airtable base (table Posts: Topic, LinkedIn, Instagram, X, Status); submit the topic "Eid sale, 20% off all cakes" | one record with the topic, three drafts and Status Draft; no "20%" or price is added that was not in the topic. Nothing is posted anywhere |
+| 6 | **Use template** on "Daily business digest with an AI summary" with a test Shopify store, and run it by hand | one email: the subject has yesterday's date, the number of orders and the total; the body has a 3 to 5 line summary, then the counted numbers. The numbers match Shopify's orders list for that day |
+| 7 | **Use template** on "Shopify order shipped: WhatsApp tracking update" with an approved `order_shipped` template; fulfil a test order with a tracking link and a phone number with country code | the customer number gets the template with the name, order, courier and link. Fulfil one without a tracking link: no message |
+| 8 | **Use template** on "Unpaid WooCommerce order reminder on WhatsApp" with an approved `payment_reminder` template; create a test order left at Pending payment, then run the workflow by hand the next day | that order gets one reminder with its payment link. Run again the day after: no second reminder. A COD order (Processing) never gets one |
+| 9 | **Use template** on "Meeting recording to summary and action items"; upload a short test recording (under 10 MB) | an email with Summary, Decisions, Action items and Open questions, and transcript.txt attached. A file over 10 MB fails with the size limit message |
 
 ## T11. API keys
 
