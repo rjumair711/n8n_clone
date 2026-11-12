@@ -12763,15 +12763,16 @@ pour()</code></pre>
   });
 
   await test("every starter template is there in English, Urdu and Arabic", () => {
-    // The first five, then the 35 added with the template gallery
+    // The first five, the 35 added with the template gallery, then the AI
+    // support bot, lead form and email triage
     assert.deepEqual(
       starterTemplates.STARTER_SEEDS.slice(0, 5).map((seed) => seed.key),
       ["clinic_appointment_bot", "school_fee_reminder", "shop_order_bot", "real_estate_lead_bot", "support_faq_bot"]
     );
-    assert.equal(starterTemplates.STARTER_SEEDS.length, 40);
-    assert.equal(new Set(starterTemplates.STARTER_SEEDS.map((seed) => seed.key)).size, 40);
-    assert.equal(allStarters.length, 120);
-    assert.equal(new Set(allStarters.map((starter) => starter.id)).size, 120);
+    assert.equal(starterTemplates.STARTER_SEEDS.length, 43);
+    assert.equal(new Set(starterTemplates.STARTER_SEEDS.map((seed) => seed.key)).size, 43);
+    assert.equal(allStarters.length, 129);
+    assert.equal(new Set(allStarters.map((starter) => starter.id)).size, 129);
 
     for (const seed of starterTemplates.STARTER_SEEDS) {
       assert.match(seed.key, /^[a-z_]+$/);
@@ -13031,6 +13032,131 @@ pour()</code></pre>
     assert.equal(widget.public, true);
     assert.equal(widget.title, "سپورٹ");
     assert.equal(widget.direction, "rtl");
+  });
+
+  await test("AI email triage: each category takes its own branch, and a reply is only sent once approved", async () => {
+    const { parseCategories } = await import("@/features/executions/lib/ai-fields");
+
+    for (const starter of allStarters.filter((entry) => entry.key === "ai_email_triage")) {
+      const label = `${starter.key} (${starter.language})`;
+      const local = (id: string) => id.slice(starter.id.length + 1);
+      const node = (seedId: string) => starter.nodes.find((entry) => local(entry.id) === seedId)!;
+      const classifier = node("classify");
+
+      // The categories are the output ids, so they stay English in every language
+      const categories = parseCategories(String(classifier.data.categories));
+      assert.deepEqual(
+        categories.map((category) => category.id),
+        ["category-urgent", "category-sales", "category-support", "category-invoice", "category-spam"],
+        label
+      );
+      const leaving = starter.connections
+        .filter((conn) => conn.fromNodeId === classifier.id && conn.toInput === "target-1")
+        .map((conn) => conn.fromOutput)
+        .sort();
+      assert.deepEqual(leaving, categories.map((category) => category.id).sort(), label);
+
+      // The only node that answers the customer comes after the approval
+      const send = node("send");
+      assert.equal(send.data.operation, "reply");
+      assert.deepEqual(
+        starter.connections
+          .filter((conn) => conn.toNodeId === send.id)
+          .map((conn) => `${local(conn.fromNodeId)}:${conn.fromOutput}`),
+        ["approve:approved"],
+        label
+      );
+      // The invoice copy and the alert go to an address or chat the user types in
+      assert.equal(node("forward").data.to, "");
+      assert.equal(node("alert").data.chatId, "");
+
+      const graph = buildGraph(starter.nodes, starter.connections);
+      const run = async (category: string | null, approved: boolean) => {
+        const ran: string[] = [];
+
+        await runWorkflowGraph({
+          graph,
+          trigger: "GMAIL_TRIGGER",
+          context: { gmail: { id: "m1", from: "a@example.com", subject: "Hi", text: "Hello" } },
+          runNode: async (entry, current) => {
+            ran.push(local(entry.id));
+
+            if (entry.type === "TEXT_CLASSIFIER") {
+              return { ...current, triage: { category }, matchedBranch: category ? `category-${category}` : "other" };
+            }
+            if (entry.type === "APPROVAL") return { ...current, approval: { approved } };
+
+            return current;
+          },
+        });
+
+        return ran;
+      };
+
+      assert.deepEqual(await run("urgent", true), ["mail", "classify", "alert", "draft", "approve", "send"], label);
+      assert.deepEqual(await run("sales", true), ["mail", "classify", "draft", "approve", "send"], label);
+      assert.deepEqual(await run("support", false), ["mail", "classify", "draft", "approve"], label);
+      assert.deepEqual(await run("invoice", true), ["mail", "classify", "forward"], label);
+      assert.deepEqual(await run("spam", true), ["mail", "classify", "junk"], label);
+      // Mail that fits no category is left alone in the inbox
+      assert.deepEqual(await run(null, true), ["mail", "classify"], label);
+    }
+  });
+
+  await test("website lead form: summary, sheet row, owner alert, then a reply to the person", async () => {
+    for (const starter of allStarters.filter((entry) => entry.key === "website_lead_form_ai")) {
+      const label = `${starter.key} (${starter.language})`;
+      const local = (id: string) => id.slice(starter.id.length + 1);
+      const node = (seedId: string) => starter.nodes.find((entry) => local(entry.id) === seedId)!;
+
+      // The sheet splits a row at commas: the free-text message stays out of
+      // it, and what the model writes into it is asked for without commas
+      const row = String(node("save").data.rowData);
+      assert.equal(row.includes("form.message"), false, label);
+      const attributes = String(node("extract").data.attributes).split("\n");
+      for (const line of attributes) {
+        if (!row.includes(`lead.output.${line.split(":")[0]}`)) continue;
+        assert.match(line, /without commas|one of [a-z, ]+$/, `${label}: ${line}`);
+      }
+
+      assert.equal(node("alert").data.to, "", label);
+      assert.equal(node("reply").data.to, "{{form.email}}", label);
+      assert.equal(node("reply").data.message, "{{replyDraft.text}}", label);
+
+      const graph = buildGraph(starter.nodes, starter.connections);
+      const ran: string[] = [];
+      await runWorkflowGraph({
+        graph,
+        trigger: "FORM_TRIGGER",
+        context: { form: { name: "Sara", email: "sara@example.com", message: "A quote please" } },
+        runNode: async (entry, current) => {
+          ran.push(local(entry.id));
+          return current;
+        },
+      });
+      assert.deepEqual(ran, ["form", "extract", "save", "alert", "write", "reply"], label);
+    }
+  });
+
+  await test("WhatsApp support bot: answers from memory per number and hands off by email, not by guessing", () => {
+    for (const starter of allStarters.filter((entry) => entry.key === "whatsapp_support_bot")) {
+      const label = `${starter.key} (${starter.language})`;
+      const agent = starter.nodes.find((node) => node.type === "AI_AGENT")!;
+      const tools = starter.connections
+        .filter((conn) => conn.toNodeId === agent.id && conn.toInput === "sub-tools")
+        .map((conn) => starter.nodes.find((node) => node.id === conn.fromNodeId)!);
+
+      // An email reaches the owner at any time; a WhatsApp message the
+      // business starts would need an approved template
+      assert.deepEqual(tools.map((tool) => `${tool.type}:${tool.data.operation}`), ["GMAIL:send_email"], label);
+      assert.equal(tools[0].data.to, "", label);
+      assert.match(String(tools[0].data.message), /\{\{whatsapp\.from\}\}/);
+      assert.match(String(tools[0].data.message), /\{\{\$fromAI "summary"/);
+
+      const memory = starter.nodes.find((node) => node.type === "BUFFER_MEMORY")!;
+      assert.equal(memory.data.sessionId, "{{sessionId}}");
+      assert.ok(String(agent.data.systemMessage).includes("notify_owner"), label);
+    }
   });
 
   await test("the fee reminder messages only parents who have not paid, in the template's language", async () => {
