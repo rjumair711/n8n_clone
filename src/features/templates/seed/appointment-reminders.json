@@ -1,7 +1,7 @@
 {
   "key": "appointment_reminders",
   "category": "Reminders",
-  "minPlan": "PRO",
+  "minPlan": "FREE",
   "nodes": [
     {
       "id": "schedule",

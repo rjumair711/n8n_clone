@@ -842,7 +842,7 @@ Actions: `goto` (url), `click` (selector), `type` (selector, text), `select` (se
 
 | Node             | Description                                                               |
 | ---------------- | ------------------------------------------------------------------------- |
-| Google Sheets    | Append rows (Google account or service account)                           |
+| Google Sheets    | Append rows (Google account or service account). Row Values: one value per column, separated by commas; a comma inside a variable's value stays in its cell, values are not HTML-escaped, and a value from data that looks like a formula (=, +, -, @) is written as text |
 | Google Calendar  | Create, update and delete events (Google account or service account)      |
 | Google Drive     | Search, upload, download, create folder, delete. Google Docs and Slides download as PDF, Sheets as CSV |
 | Gmail            | Send (with file attachments), reply, search, get and mark messages as read. A reply stays in the thread: to a message you received it goes to its sender, to a message you sent yourself (a follow-up) it goes to the people that message was sent to, with its CC only when **CC of a Message You Sent** is set to Keep |
@@ -1314,7 +1314,7 @@ The **Templates** page is a gallery of ready-made workflows. "Use template" copi
   Every starter is open to every account. The agent's instructions and example details (clinic, menu, FAQ) are written in the template's language and are meant to be replaced. A seed file holds the workflow once and its texts per language; a setting written `@text:<key>` takes that text. To add a template or a translation, edit the JSON: the tests check that every language has every text.
 
   More about the seeds:
-  * **Open to everyone.** No starter has an SSH node, so all 52 run on every account. The seeds still carry the plan they were written for; it no longer counts, and the tests check that every starter is open.
+  * **Open to everyone.** No starter has an SSH node, so all 52 run on every account. Every seed declares the plan `FREE`, and the tests check that every starter is open.
   * **Description.** Each one is a summary for the card, then `Set up:` (`سیٹ اپ:`, `الإعداد:`) and the steps separated by semicolons; the details panel shows them as a numbered list. At most 600 characters.
   * **Forms.** A form field's name (`{{form.<name>}}`) is made from the Latin letters of its label, so Urdu and Arabic labels end with the English word in brackets, for example `نام (Name)`. The tests check that a template's fields have the same names in all three languages and that every `{{form.x}}` it reads is one of its fields.
   * **Times.** Schedules run in UTC. A starter that runs at a local time has its cron per language: 18:00 is `0 13 * * *` in the English and Urdu versions (Pakistan) and `0 15 * * *` in the Arabic one (Saudi Arabia). Booking times carry the offset (`+05:00` / `+03:00`).

@@ -1,7 +1,7 @@
 {
   "key": "after_sale_review_request",
   "category": "E-commerce",
-  "minPlan": "PRO",
+  "minPlan": "FREE",
   "nodes": [
     {
       "id": "fulfilled",

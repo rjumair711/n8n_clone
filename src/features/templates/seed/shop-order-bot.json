@@ -1,7 +1,7 @@
 {
   "key": "shop_order_bot",
   "category": "WhatsApp bots",
-  "minPlan": "PRO",
+  "minPlan": "FREE",
   "nodes": [
     {
       "id": "trigger",

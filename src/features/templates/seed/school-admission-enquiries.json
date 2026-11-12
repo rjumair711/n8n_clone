@@ -1,7 +1,7 @@
 {
   "key": "school_admission_enquiries",
   "category": "Education",
-  "minPlan": "INTERMEDIATE",
+  "minPlan": "FREE",
   "nodes": [
     {
       "id": "form",

@@ -1,7 +1,7 @@
 {
   "key": "school_fee_reminder",
   "category": "Reminders",
-  "minPlan": "PRO",
+  "minPlan": "FREE",
   "nodes": [
     {
       "id": "schedule",

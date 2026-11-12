@@ -12775,6 +12775,59 @@ pour()</code></pre>
     assert.equal(/console\.(log|error|warn)/.test(router + knowledge), false);
   });
 
+  // ------------------------------------------------ GOOGLE SHEETS ROWS
+  console.log("Google Sheets rows");
+
+  await test("Google Sheets: commas inside a value stay in their cell, nothing is HTML-escaped, no formulas from data", async () => {
+    const { buildSheetRow, splitRowTemplate, protectCell } = await import(
+      "@/features/executions/components/googleSheet/row"
+    );
+    const { readFileSync } = await import("node:fs");
+
+    // Split at the template's own commas, not at commas inside {{ }}
+    assert.deepEqual(splitRowTemplate("{{a}}, {{b}} ,c"), ["{{a}}", "{{b}}", "c"]);
+    assert.deepEqual(splitRowTemplate('{{$fromAI "name" "first, last"}}, x'), ['{{$fromAI "name" "first, last"}}', "x"]);
+    assert.deepEqual(splitRowTemplate("{{{raw}}}, y"), ["{{{raw}}}", "y"]);
+
+    const context = {
+      form: { name: "O'Brien & Sons <Ltd>", email: "ob@example.com", message: "Hello, I need 5 boxes, by Friday" },
+      line: "a, b, c",
+    };
+
+    assert.deepEqual(buildSheetRow("{{form.name}}, {{form.email}}, {{form.message}}", context), [
+      "O'Brien & Sons <Ltd>",
+      "ob@example.com",
+      "Hello, I need 5 boxes, by Friday",
+    ]);
+    // A template with no comma of its own spreads its value, as it always did
+    assert.deepEqual(buildSheetRow("{{line}}", context), ["a", "b", "c"]);
+    // Literal columns and empty values keep their place
+    assert.deepEqual(buildSheetRow("Lead, {{missing}}, {{form.email}}", context), ["Lead", "", "ob@example.com"]);
+
+    // Values from data never become formulas; numbers stay numbers
+    const formulas = { v: { eq: "=IMPORTXML(\"http://x\",\"//a\")", plus: "+1+1", at: "@SUM(A1)", minus: "-2+3", neg: "-500", phone: "+923001234567", dash: "- note" } };
+    assert.deepEqual(
+      buildSheetRow("{{v.eq}}, {{v.plus}}, {{v.at}}, {{v.minus}}, {{v.neg}}, {{v.phone}}, {{v.dash}}", formulas),
+      ["'=IMPORTXML(\"http://x\",\"//a\")", "'+1+1", "'@SUM(A1)", "'-2+3", "-500", "+923001234567", "'- note"]
+    );
+    assert.deepEqual(buildSheetRow("{{v.eq}}", formulas), ["'=IMPORTXML(\"http://x\"", "\"//a\")"]);
+    assert.equal(protectCell("12.5"), "12.5");
+    assert.equal(protectCell("hello"), "hello");
+    // A formula the author typed still works
+    assert.deepEqual(buildSheetRow("=TODAY(), {{form.email}}", context), ["=TODAY()", "ob@example.com"]);
+    assert.deepEqual(buildSheetRow("=TODAY()", context), ["=TODAY()"]);
+
+    // The node uses it, and no longer HTML-escapes
+    const executor = readFileSync("src/features/executions/components/googleSheet/executor.ts", "utf8");
+    assert.match(executor, /buildSheetRow\(data\.rowData, context\)/);
+    assert.equal(/renderEscapedTemplate|\.split\(","\)/.test(executor), false);
+  });
+
+  await test("starter seeds declare the plan their nodes need: FREE", async () => {
+    const { STARTER_SEEDS } = await import("@/features/templates/lib/starter-templates");
+    for (const seed of STARTER_SEEDS) assert.equal(seed.minPlan, "FREE", seed.key);
+  });
+
   // ------------------------------------------------ LOCALIZED TEMPLATES
   console.log("Localized templates");
 

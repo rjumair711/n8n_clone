@@ -1,10 +1,9 @@
 import { NodeExecutor } from "../../types";
-import { renderEscapedTemplate } from "@/features/executions/lib/templates";
 import { NonRetriableError } from "inngest";
 import { google } from "googleapis";
-import Handlebars from "handlebars";
 import prisma from "@/lib/db";
 import { getGoogleAuth } from "@/lib/google-oauth";
+import { buildSheetRow } from "./row";
 
 type GoogleSheetsData = {
   credentialId?: string;
@@ -68,14 +67,9 @@ export const googleSheetsExecutor: NodeExecutor<
   }
 
 
-  // Resolve handlebars variables
-  const resolvedRowData =
-    renderEscapedTemplate(data.rowData, context);
-
-  // Convert CSV string to array
-  const rowValues = resolvedRowData
-    .split(",")
-    .map((v: string) => v.trim());
+  // One cell per comma of the template; values as typed, never formulas
+  // (see row.ts)
+  const rowValues = buildSheetRow(data.rowData, context);
 
   const sheetName =
     data.sheetName || "Sheet1";

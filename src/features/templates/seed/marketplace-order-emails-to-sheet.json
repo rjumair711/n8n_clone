@@ -1,7 +1,7 @@
 {
   "key": "marketplace_order_emails_to_sheet",
   "category": "Email & Sheets",
-  "minPlan": "INTERMEDIATE",
+  "minPlan": "FREE",
   "nodes": [
     {
       "id": "mail",

@@ -1,7 +1,7 @@
 {
   "key": "telegram_expense_logger",
   "category": "Telegram",
-  "minPlan": "INTERMEDIATE",
+  "minPlan": "FREE",
   "nodes": [
     {
       "id": "trigger",
