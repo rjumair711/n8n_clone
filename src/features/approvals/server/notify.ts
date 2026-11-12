@@ -6,6 +6,7 @@ import { renderTemplate } from "@/features/executions/lib/templates";
 import { emailExecutor } from "@/features/executions/components/email/executor";
 import { telegramExecutor } from "@/features/executions/components/telegram/executor";
 import { whatsappExecutor } from "@/features/executions/components/whatsapp/executor";
+import { buildSlackTextPayload } from "@/features/executions/components/slack/payload";
 import {
   buildApprovalEmail,
   buildApprovalText,
@@ -21,7 +22,7 @@ export type ApprovalDelivery = {
   credentialId?: string;
   // Email address, Telegram chat id or WhatsApp number
   recipient?: string;
-  // Slack: an incoming webhook URL
+  // Slack: an incoming webhook or a Workflow Builder webhook URL
   webhookUrl?: string;
   // WhatsApp: the sender's Phone Number ID
   phoneNumberId?: string;
@@ -206,10 +207,10 @@ export const sendChannelMessage = async ({
 
         await ky.post(webhookUrl, {
           redirect: "error",
-          // Slack reads "text"; Discord and Slack-compatible webhooks "content"
-          json: /^https:\/\/hooks\.slack\.com\//i.test(webhookUrl)
-            ? { text }
-            : { text, content: text.slice(0, 2000) },
+          // An incoming webhook reads "text" (escaped, so nothing in the
+          // message can mention anyone), a Workflow Builder one "content",
+          // Discord and other compatible webhooks both
+          json: buildSlackTextPayload(webhookUrl, text),
         });
         return;
       }

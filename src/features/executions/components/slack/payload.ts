@@ -38,6 +38,27 @@ export const buildSlackPayload = (
   return { text, content: text };
 };
 
+// Slack's escaping, for text that is all data (nothing typed by an author)
+export const escapeSlackText = (text: string) =>
+  text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+
+/**
+ * The same choice of field for a message made entirely of data: an
+ * approval request (with its links) or a chat handoff (with what the
+ * visitor wrote). In an incoming webhook nothing in it can mention anyone;
+ * links are still turned into links by Slack.
+ */
+export const buildSlackTextPayload = (
+  webhookUrl: string,
+  text: string
+): { text?: string; content?: string } => {
+  if (isSlackWorkflowWebhook(webhookUrl)) return { content: text };
+  if (isSlackIncomingWebhook(webhookUrl)) return { text: escapeSlackText(text) };
+
+  // Discord and Slack-compatible webhooks read "content", at most 2000 characters
+  return { text, content: text.slice(0, 2000) };
+};
+
 /**
  * Discord's allowed_mentions: only the kinds of mention typed in the
  * template itself (@everyone or @here, <@user>, <@&role>) can notify

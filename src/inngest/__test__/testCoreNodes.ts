@@ -757,6 +757,23 @@ const main = async () => {
     // A mention typed inside a block is still the author's own
     assert.deepEqual(discordAllowedMentions("{{#if urgent}}@here {{/if}}{{form.note}}"), { parse: ["everyone"] });
 
+    // Approval requests and chat handoffs: all of it is data, so in an
+    // incoming webhook all of it is escaped; links stay links
+    const { buildSlackTextPayload } = await import("@/features/executions/components/slack/payload");
+    const request = "Approve? <!channel> Tom & Jerry\nhttps://app.example.com/a?decision=approve&expires=1";
+    assert.deepEqual(buildSlackTextPayload(incoming, request), {
+      text: "Approve? &lt;!channel&gt; Tom &amp; Jerry\nhttps://app.example.com/a?decision=approve&amp;expires=1",
+    });
+    assert.deepEqual(buildSlackTextPayload(workflow, request), { content: request });
+    assert.deepEqual(buildSlackTextPayload("https://discord.com/api/webhooks/1/x", "y".repeat(3000)), {
+      text: "y".repeat(3000),
+      content: "y".repeat(2000),
+    });
+    assert.match(
+      readFileSync("src/features/approvals/server/notify.ts", "utf8"),
+      /json: buildSlackTextPayload\(webhookUrl, text\),/
+    );
+
     const slack = readFileSync("src/features/executions/components/slack/executor.ts", "utf8");
     const discord = readFileSync("src/features/executions/components/discord/executor.ts", "utf8");
     assert.match(slack, /json: payload,/);

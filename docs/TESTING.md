@@ -1552,6 +1552,9 @@ Delete the test posts afterwards.
 | Slack | A Workflow Builder webhook (`https://hooks.slack.com/triggers/...`) whose workflow has a text variable `content` | the workflow runs with the message in `content`, as before |
 | Discord | Message `Note: {{form.note}}`; submit `@everyone free stuff` | posted as text; nobody is pinged |
 | Discord | Message `@everyone {{form.note}}` | the @everyone typed in the message pings, as before |
+| Send and Wait for Approval | Operation Slack, an incoming webhook URL; run it | the request arrives with working Approve and Reject links |
+| Send and Wait for Approval | Operation Slack, a Workflow Builder webhook URL whose workflow has a text variable `content` | the workflow gets the request in `content` (before this fix the request was sent as `text` and the workflow got nothing) |
+| Website chat "Talk to a human" | Slack with an incoming webhook; as a visitor write `<!channel> help` and ask for a human | the handoff arrives; `<!channel>` is shown as text and notifies nobody |
 
 ## T18. Google (reconnect the Google Account credential first)
 
