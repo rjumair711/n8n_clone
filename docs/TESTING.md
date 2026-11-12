@@ -1542,6 +1542,21 @@ Needs the `instagram_messenger` migration applied, a public `NEXT_PUBLIC_APP_URL
 
 Delete the test posts afterwards.
 
+**Values as typed (no HTML escaping).** No migration. Make a Form Trigger with the fields Name and Note, and submit Name `O'Brien & Sons <Ltd>` and Note `Price: 5.00 - call me!` for each row. Use a test bot, a test inbox and a test Notion database.
+
+| Node | Settings | Expect |
+|------|----------|--------|
+| Gemini | User Prompt `Repeat exactly: {{form.name}}` | the answer has `O'Brien & Sons <Ltd>`; the execution's input shows no `&#x27;` or `&amp;` |
+| Text Formatter | Uppercase `{{form.name}}` | `O'BRIEN & SONS <LTD>` |
+| Email (SMTP) | Body `Hi {{form.name}},` then a new line and `Thanks` | a plain-text email with the name as typed and the line break kept |
+| Email (SMTP) | Body `<p>Hi <b>{{form.name}}</b></p>` | an HTML email: "Hi" and the name in bold, and `<Ltd>` shown as text, not as a tag |
+| Telegram | Parse Mode None, Text `{{form.name}}: {{form.note}}` | the message reads exactly as submitted |
+| Telegram | Parse Mode HTML, Text `<b>{{form.name}}</b>` | the name in bold, `<Ltd>` shown as text |
+| Telegram | Parse Mode MarkdownV2, Text `*{{form.note}}*` | the note in bold, with the `.`, `-` and `!` shown; no "can't parse entities" error |
+| Notion | Properties `{"Name": {"title": [{"text": {"content": "{{form.name}}"}}]}}` | a page titled `O'Brien & Sons <Ltd>` |
+| Notion | The same, submit Name `x"}}]}, "Status": {"a": [{"b": {"c": "y` | one page with only the title set (the quote is shown as `&quot;`); no other property is changed |
+| Google Calendar | Summary `Visit: {{form.name}}` | the event title as typed |
+
 ## T18. Google (reconnect the Google Account credential first)
 
 | Node | Test | Expect |

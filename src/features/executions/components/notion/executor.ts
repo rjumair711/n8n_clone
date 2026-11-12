@@ -1,6 +1,6 @@
 import { readCredentialValue } from "@/lib/external-secrets";
 import type { NodeExecutor } from "@/features/executions/types";
-import { renderEscapedTemplate } from "@/features/executions/lib/templates";
+import { renderJsonTemplate, renderTemplate } from "@/features/executions/lib/templates";
 import { NonRetriableError } from "inngest";
 import Handlebars from "handlebars";
 import ky from "ky";
@@ -49,7 +49,7 @@ export const notionExecutor: NodeExecutor<NotionNodeData> = async ({
 
   // 3. Decrypt token and resolve Handlebars vars
   const accessToken = await readCredentialValue(credential.value, userId);
-  const databaseId = renderEscapedTemplate(data.databaseId, context).trim();
+  const databaseId = renderTemplate(data.databaseId, context).trim();
 
   const headers = {
     Authorization: `Bearer ${accessToken}`,
@@ -62,16 +62,17 @@ export const notionExecutor: NodeExecutor<NotionNodeData> = async ({
       const result = await step.run(
         `notion-${nodeId}-create-page`,
         async () => {
-          const rawProperties = renderEscapedTemplate(data.propertiesJson || "{}", context);
+          // Values as they are, unless one would change the JSON's structure
+          // (see renderJsonTemplate)
+          const parsed = renderJsonTemplate(data.propertiesJson || "{}", context);
 
-          let propertiesPayload: Record<string, unknown>;
-          try {
-            propertiesPayload = JSON.parse(rawProperties);
-          } catch {
+          if (parsed === null || typeof parsed !== "object" || Array.isArray(parsed)) {
             throw new NonRetriableError(
               "Notion node: Invalid JSON in Properties field"
             );
           }
+
+          const propertiesPayload = parsed as Record<string, unknown>;
 
           const response: any = await ky
             .post("https://api.notion.com/v1/pages", {

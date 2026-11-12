@@ -1,5 +1,5 @@
 import type { NodeExecutor } from "@/features/executions/types";
-import { renderEscapedTemplate } from "@/features/executions/lib/templates";
+import { renderTemplate } from "@/features/executions/lib/templates";
 import { NonRetriableError } from "inngest";
 import Handlebars from "handlebars";
 import dayjs, { ManipulateType, OpUnitType } from "dayjs";
@@ -41,7 +41,7 @@ export const dateTimeExecutor: NodeExecutor<DateTimeData> = async ({
   // ==========================================
   
   // Resolve input date (if empty, defaults to current time)
-  const rawInput = data.inputDate ? renderEscapedTemplate(data.inputDate, context) : undefined;
+  const rawInput = data.inputDate ? renderTemplate(data.inputDate, context) : undefined;
   
   // Determine base date locked to the requested timezone
   const baseDate = rawInput ? dayjs(rawInput).tz(tz) : dayjs().tz(tz);
@@ -83,7 +83,7 @@ export const dateTimeExecutor: NodeExecutor<DateTimeData> = async ({
 
         case "compare":
           if (!data.compareDate) throw new Error("Compare Date is missing");
-          const rawCompare = renderEscapedTemplate(data.compareDate, context);
+          const rawCompare = renderTemplate(data.compareDate, context);
           const compareTarget = dayjs(rawCompare).tz(tz);
           
           if (!compareTarget.isValid()) throw new Error(`Invalid compare date -> ${rawCompare}`);

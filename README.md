@@ -130,6 +130,16 @@ Both syntaxes work in every node field, side by side.
 
 Differences from n8n: `$json` is the whole set of workflow variables (not the previous node's output) unless the node is running for an item; `$('name')` looks up a variable name; `$now` is a plain date with `toISO()`, not a Luxon object.
 
+**How values are inserted.** A value arrives as it is (`O'Brien & Sons`, not `O&#x27;Brien &amp; Sons`), except where the format it goes into needs escaping:
+
+| Where | What happens to `{{values}}` |
+| ----- | ---------------------------- |
+| AI prompts (Gemini, OpenAI, Anthropic), Calculator, Date & Time, Text Formatter, Google Calendar | As they are |
+| Email (SMTP) | A body with HTML tags of its own (`<p>`, `<br>`, `<a>`) is sent as HTML, with the values HTML-escaped so data cannot add links or markup. Any other body is sent as plain text, as written, with its line breaks |
+| Telegram | Parse Mode HTML: values HTML-escaped. MarkdownV2: the reserved characters in values get a backslash. None: as they are. The text you type keeps its own markup |
+| Notion Properties (JSON) | As they are, unless a value would change the JSON's structure (a quote that closes its string and adds a property); then that render escapes values, as before. Use `{{json x}}` to insert a value as a JSON string |
+| Slack, Discord | As they are |
+
 ---
 
 # 📜 Execution Logs & Monitoring
