@@ -13,8 +13,8 @@ type AuthLinkProps = Omit<ComponentProps<typeof Link>, "href"> & {
 };
 
 /**
- * A link of the public pages that depends on the session: "Start free
- * trial" for a visitor, the app for someone who is signed in. The page
+ * A link of the public pages that depends on the session: "Start for
+ * free" for a visitor, the app for someone who is signed in. The page
  * itself is static; only this asks who is looking.
  */
 export const AuthLink = ({

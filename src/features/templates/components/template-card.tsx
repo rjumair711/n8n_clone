@@ -3,7 +3,6 @@
 import { memo, type KeyboardEvent, type ReactNode } from "react";
 import { EyeOffIcon, LanguagesIcon, LockIcon } from "lucide-react";
 import { getNodeLabel } from "@/config/node-labels";
-import { cn } from "@/lib/utils";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -37,24 +36,19 @@ export type GalleryTemplate = {
 const HIDDEN_CHIP_TYPES = new Set(["MANUAL_TRIGGER", "INITIAL", "SET_VARIABLE", "MERGE"]);
 const MAX_CHIPS = 4;
 
-// One colour per plan, readable in light and dark mode
-const PLAN_BADGE_CLASSES: Record<string, string> = {
-    FREE: "border-emerald-500/30 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300",
-    BEGINNER: "border-sky-500/30 bg-sky-500/10 text-sky-700 dark:text-sky-300",
-    INTERMEDIATE: "border-violet-500/30 bg-violet-500/10 text-violet-700 dark:text-violet-300",
-    PRO: "border-amber-500/40 bg-amber-500/10 text-amber-800 dark:text-amber-300",
-};
-
-export const PlanBadge = ({ plan, locked }: { plan: string; locked: boolean }) => (
-    <Badge
-        variant="outline"
-        className={cn("gap-1", PLAN_BADGE_CLASSES[plan])}
-        title={locked ? `Needs the ${PLAN_NAMES[plan] ?? plan} plan` : undefined}
-    >
-        {locked && <LockIcon className="size-3" aria-label="Locked" />}
-        {PLAN_NAMES[plan] ?? plan}
-    </Badge>
-);
+// There are no plans: a badge only for a template that needs a server of
+// your own (it has an SSH node, on the hosted app)
+export const PlanBadge = ({ plan, locked }: { plan: string; locked: boolean }) =>
+    locked ? (
+        <Badge
+            variant="outline"
+            className="gap-1 border-amber-500/40 bg-amber-500/10 text-amber-800 dark:text-amber-300"
+            title="Needs a self-hosted or managed RXJ server"
+        >
+            <LockIcon className="size-3" aria-label="Locked" />
+            {PLAN_NAMES[plan] ?? "Own server"}
+        </Badge>
+    ) : null;
 
 // "اردو (Urdu)" -> "Urdu"
 const languageName = (language: string) => {
@@ -86,7 +80,7 @@ type UseButtonProps = {
     className?: string;
 };
 
-// "Use template", or "Upgrade" when the user's plan is too low
+// "Use template", or "Own server" when a node needs a server of your own
 const UseButton = ({ template, pending, onUse, onUpgrade, className }: UseButtonProps) =>
     template.locked ? (
         <Button
@@ -98,7 +92,7 @@ const UseButton = ({ template, pending, onUse, onUpgrade, className }: UseButton
             }}
         >
             <LockIcon className="size-4" />
-            Upgrade
+            Own server
         </Button>
     ) : (
         <Button
@@ -254,8 +248,8 @@ export const TemplateDetailsSheet = ({
                         <div className="flex-1 space-y-6 overflow-y-auto p-4">
                             {template.locked && (
                                 <p className="rounded-md border border-amber-500/40 bg-amber-500/5 p-3 text-sm">
-                                    This template uses nodes from the {PLAN_NAMES[template.minPlan]} plan.
-                                    Upgrade to use it.
+                                    This template uses a node that only runs on a self-hosted or
+                                    managed RXJ server, such as SSH.
                                 </p>
                             )}
 

@@ -49,8 +49,8 @@ export const SETTINGS_GROUPS: SettingsGroup[] = [
       },
       {
         slug: "usage",
-        title: "Usage & plan",
-        description: "This workspace's plan, what it has used this month, and its limits.",
+        title: "Usage",
+        description: "What this workspace has used this month, and its limits.",
       },
       {
         slug: "audit-log",

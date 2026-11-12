@@ -1,7 +1,7 @@
 import { ExecutionStatus, type Prisma } from "@prisma/client";
 import prisma from "@/lib/db";
 import { sendWorkflowExecution } from "@/inngest/utils";
-import { PLAN_LIMITS } from "@/config/plans";
+import { PLAN_LIMITS, monthlyRunLimitMessage } from "@/config/plans";
 import { NotFoundError, assertOwnership } from "@/lib/ownership";
 import { getExecutionsThisMonth } from "@/lib/subscription/usage-counts";
 
@@ -91,7 +91,7 @@ export const retryExecution = async (executionId: string, userId: string) => {
 
     if (executionsThisMonth >= limit) {
         throw new RetryError(
-            `Monthly execution limit reached. Your plan includes ${limit} executions per month.`,
+            monthlyRunLimitMessage(limit),
             "limit"
         );
     }

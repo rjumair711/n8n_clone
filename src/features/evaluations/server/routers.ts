@@ -386,7 +386,7 @@ export const evaluationsRouter = createTRPCRouter({
             if (executionsThisMonth + rows.length > executionLimit) {
                 throw new TRPCError({
                     code: "FORBIDDEN",
-                    message: `This evaluation needs ${rows.length} executions, and your plan has ${Math.max(executionLimit - executionsThisMonth, 0)} of its ${executionLimit} left this month.`,
+                    message: `This evaluation needs ${rows.length} executions, and this account has ${Math.max(executionLimit - executionsThisMonth, 0)} of its ${executionLimit} monthly runs left (the limit counts every run).`,
                 });
             }
 

@@ -108,7 +108,7 @@ export const DocsPage = () => (
               {section.id === "plans" && (
                 <p className="mt-5 text-sm">
                   <Link href="/pricing" className="m-link">
-                    See the plans and prices
+                    See the managed private server
                   </Link>
                 </p>
               )}
@@ -119,15 +119,14 @@ export const DocsPage = () => (
             <div>
               <h2 className="m-h3">Ready to build?</h2>
               <p className="mt-1 text-sm text-m-muted">
-                Seven days with the plan-locked nodes open. No credit card
-                required.
+                Every node and template, free. No credit card required.
               </p>
             </div>
             <AuthLink
               className="m-btn m-btn-primary shrink-0"
               signedInLabel="Go to dashboard"
             >
-              Start free trial
+              Start for free
               <ArrowRightIcon className="size-4" aria-hidden="true" />
             </AuthLink>
           </div>

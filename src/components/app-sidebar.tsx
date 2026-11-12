@@ -74,7 +74,7 @@ const NAV_GROUPS: { title: string; items: NavItem[] }[] = [
 // The account menu, in order; Sign out comes after them
 const ACCOUNT_ITEMS: NavItem[] = [
     { title: "Settings", icon: SettingsIcon, url: "/settings" },
-    { title: "Usage & plan", icon: GaugeIcon, url: "/settings/usage" },
+    { title: "Usage", icon: GaugeIcon, url: "/settings/usage" },
     { title: "Billing", icon: CreditCardIcon, url: "/billing" },
     { title: "API Keys", icon: Code2Icon, url: "/settings/api-keys" },
     { title: "Docs", icon: BookOpenIcon, url: "/docs" },

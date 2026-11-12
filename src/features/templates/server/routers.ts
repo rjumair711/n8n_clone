@@ -4,7 +4,7 @@ import { TRPCError } from "@trpc/server";
 import z from "zod";
 import prisma from "@/lib/db";
 import { createTRPCRouter, protectedProcedure, viewerProcedure, builderProcedure } from "@/trpc/init";
-import { PLAN_LIMITS } from "@/config/plans";
+import { PLAN_LIMITS, unavailableMessage } from "@/config/plans";
 import {
     ADMIN_TWO_FACTOR_MESSAGE,
     canUseAdminActions,
@@ -12,7 +12,6 @@ import {
 } from "@/lib/admin";
 import { assertOwnership } from "@/lib/ownership";
 import {
-    PLAN_NAMES,
     canUseTemplate,
     getTemplateMinPlan,
     instantiateTemplate,
@@ -153,7 +152,7 @@ export const templatesRouter = createTRPCRouter({
             if (!canUseTemplate({ minPlan: template.minPlan, nodeTypes }, user.plan, user.trialEndsAt)) {
                 throw new TRPCError({
                     code: "FORBIDDEN",
-                    message: `This template requires the ${PLAN_NAMES[getTemplateMinPlan(template.minPlan, nodeTypes)]} plan.`,
+                    message: unavailableMessage("This template has a node that"),
                 });
             }
 

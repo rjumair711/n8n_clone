@@ -1,7 +1,6 @@
 "use client";
 
 import { useState } from "react";
-import Link from "next/link";
 import { useQuery } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -95,7 +94,7 @@ export const AiCreditsCard = () => {
                             />
                         </div>
                         <p className="mt-1 text-xs text-muted-foreground">
-                            Plan credits start again on the 1st of each month (UTC) and do not
+                            Monthly credits start again on the 1st of each month (UTC) and do not
                             carry over. Bought credits are used after them and do not expire.
                         </p>
                     </div>
@@ -104,10 +103,7 @@ export const AiCreditsCard = () => {
                         <p className="rounded-md border border-destructive/40 bg-destructive/5 p-3 text-sm">
                             You have no AI credits left, so nodes that use{" "}
                             {INCLUDED_CREDENTIAL_NAME} stop with an error.{" "}
-                            <Link href="/pricing" className="underline">
-                                Upgrade your plan
-                            </Link>
-                            {data.packs.length > 0 ? ", buy credits below," : ""} or pick your own
+                            {data.packs.length > 0 ? "Buy credits below, or pick" : "Pick"} your own
                             API key credential on the node.
                         </p>
                     )}
@@ -116,11 +112,8 @@ export const AiCreditsCard = () => {
                         <p className="text-sm font-medium">More credits</p>
                         {data.packs.length === 0 ? (
                             <p className="text-xs text-muted-foreground">
-                                A higher plan has more credits every month.{" "}
-                                <Link href="/pricing" className="underline">
-                                    See the plans
-                                </Link>
-                                .
+                                No credit packs are on sale. Your own API key credential on a
+                                node has no credit limit.
                             </p>
                         ) : (
                             <>
@@ -141,11 +134,7 @@ export const AiCreditsCard = () => {
                                 </div>
                                 <p className="text-xs text-muted-foreground">
                                     The price is shown at the checkout. The credits are added
-                                    when the payment is confirmed, usually within a minute.{" "}
-                                    <Link href="/pricing" className="underline">
-                                        A higher plan
-                                    </Link>{" "}
-                                    has more credits every month.
+                                    when the payment is confirmed, usually within a minute.
                                 </p>
                             </>
                         )}

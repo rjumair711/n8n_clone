@@ -7,16 +7,11 @@ import { UsageCard } from "@/components/subscription/usage-card";
 import { AiSpendCard } from "@/features/ai-usage/components/ai-spend-card";
 import { AiCreditsCard } from "@/features/ai-credits/components/ai-credits-card";
 import { useCurrentPlan } from "@/features/subscription/hook/use-current-plan";
-import { getTrialDaysLeft } from "@/lib/subscription/get-trial-days-left";
 
 export default function BillingPage() {
   const queryClient = useQueryClient(); // 2. Access the query client cache
   // Billing is the user's own account, whatever workspace they work in
   const { data, isLoading } = useCurrentPlan({ own: true });
-
-  const trialDaysLeft = getTrialDaysLeft(
-    data?.trialEndsAt ?? null
-  );
 
   // 3. Invalidate both query keys globally on mount
   useEffect(() => {
@@ -39,51 +34,35 @@ export default function BillingPage() {
     <div className="container mx-auto max-w-5xl py-10">
       <div>
         <h1 className="text-3xl font-bold">
-          Billing & Subscription
+          Billing
         </h1>
 
         <p className="mt-2 text-muted-foreground">
-          Manage your subscription,
-          usage, and billing settings.
+          AI credits, invoices and payments.
         </p>
       </div>
 
       <div className="mt-8 grid gap-6 lg:grid-cols-3">
         <div className="lg:col-span-2 space-y-6">
+          {/* There are no plans: every account has every node and feature */}
           <div className="rounded-2xl border p-6">
-            <div className="flex items-start justify-between">
-              <div>
-                <p className="text-sm text-muted-foreground">
-                  Current Plan
-                </p>
+            <h2 className="text-lg font-semibold">
+              Every feature, on every account
+            </h2>
 
-                <h2 className="mt-1 text-2xl font-semibold uppercase tracking-wider">
-                  {data?.plan}
-                </h2>
-              </div>
+            <p className="mt-2 text-sm text-muted-foreground">
+              RXJ has no plans. Every account can use every node and template, within
+              the same monthly limits. A managed private server has no limits at all.
+            </p>
 
-              <button
-                onClick={() => {
-                  window.location.href =
-                    "/pricing";
-                }}
-                className="rounded-xl border px-4 py-2 text-sm hover:bg-muted"
-              >
-                Upgrade Plan
-              </button>
-            </div>
-
-            <div className="mt-6">
-              <p className="text-sm text-muted-foreground">
-                Trial Status
-              </p>
-
-              <p className="mt-1 text-sm">
-                {trialDaysLeft > 0
-                  ? `${trialDaysLeft} days remaining`
-                  : "Trial expired"}
-              </p>
-            </div>
+            <button
+              onClick={() => {
+                window.location.href = "/pricing";
+              }}
+              className="mt-6 rounded-xl border px-4 py-2 text-sm hover:bg-muted"
+            >
+              See the managed private server
+            </button>
           </div>
 
           <div className="rounded-2xl border p-6">
@@ -92,9 +71,9 @@ export default function BillingPage() {
             </h3>
 
             <p className="mt-2 text-sm text-muted-foreground">
-              Manage subscriptions,
-              payment methods, invoices,
-              and cancellations.
+              Invoices, payment methods, and any subscription you have, such as a
+              managed private server or a plan from before plans ended (cancel it
+              here).
             </p>
 
             <button

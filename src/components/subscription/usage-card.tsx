@@ -36,7 +36,7 @@ export const UsageCard = ({
                         <span>Workflows</span>
 
                         <span>
-                            {workflowsUsed} / {workflowLimit}
+                            {workflowsUsed} / {Number.isFinite(workflowLimit) ? workflowLimit : "Unlimited"}
                         </span>
                     </div>
 
@@ -58,7 +58,7 @@ export const UsageCard = ({
 
                         <span>
                             {executionsUsed} /{" "}
-                            {executionLimit}
+                            {Number.isFinite(executionLimit) ? executionLimit.toLocaleString("en-US") : "Unlimited"}
                         </span>
                     </div>
 
