@@ -48,6 +48,20 @@ import productDescriptionsThreeLanguages from "../seed/product-descriptions-thre
 import cancelledOrderAlert from "../seed/cancelled-order-alert.json";
 import documentSummaryByEmail from "../seed/document-summary-by-email.json";
 import invoiceGenerator from "../seed/invoice-generator.json";
+// AI support, lead and email templates
+import whatsappSupportBot from "../seed/whatsapp-support-bot.json";
+import websiteLeadFormAi from "../seed/website-lead-form-ai.json";
+import aiEmailTriage from "../seed/ai-email-triage.json";
+// The rest of the AI and automation templates
+import whatsappLeadQualifier from "../seed/whatsapp-lead-qualifier.json";
+import telegramAiAssistant from "../seed/telegram-ai-assistant.json";
+import supportTicketRouting from "../seed/support-ticket-routing.json";
+import bookingWithReminder from "../seed/booking-with-reminder.json";
+import socialPostsForReview from "../seed/social-posts-for-review.json";
+import dailyBusinessDigest from "../seed/daily-business-digest.json";
+import shopifyShippedWhatsapp from "../seed/shopify-shipped-whatsapp.json";
+import woocommerceUnpaidReminder from "../seed/woocommerce-unpaid-reminder.json";
+import meetingRecordingSummary from "../seed/meeting-recording-summary.json";
 import {
   TEMPLATE_LANGUAGES,
   type TemplateLanguage,
@@ -111,6 +125,18 @@ export const STARTER_SEEDS: StarterSeed[] = [
   cancelledOrderAlert,
   documentSummaryByEmail,
   invoiceGenerator,
+  whatsappSupportBot,
+  websiteLeadFormAi,
+  aiEmailTriage,
+  whatsappLeadQualifier,
+  telegramAiAssistant,
+  supportTicketRouting,
+  bookingWithReminder,
+  socialPostsForReview,
+  dailyBusinessDigest,
+  shopifyShippedWhatsapp,
+  woocommerceUnpaidReminder,
+  meetingRecordingSummary,
 ];
 
 const TEXT_MARKER = "@text:";

@@ -1,0 +1,110 @@
+{
+  "key": "social_posts_for_review",
+  "category": "Marketing",
+  "minPlan": "FREE",
+  "nodes": [
+    {
+      "id": "form",
+      "type": "FORM_TRIGGER",
+      "position": { "x": 0, "y": 0 },
+      "data": {
+        "formTitle": "@text:formTitle",
+        "formDescription": "@text:formDescription",
+        "formFields": "@text:formFields",
+        "submitLabel": "@text:submitLabel",
+        "afterSubmit": "message",
+        "thankYouMessage": "@text:thankYouMessage",
+        "captcha": "true"
+      }
+    },
+    {
+      "id": "linkedin",
+      "type": "GEMINI",
+      "position": { "x": 320, "y": 0 },
+      "data": {
+        "variableName": "linkedinPost",
+        "systemPrompt": "@text:linkedinPrompt",
+        "userPrompt": "@text:userPrompt"
+      }
+    },
+    {
+      "id": "instagram",
+      "type": "GEMINI",
+      "position": { "x": 640, "y": 0 },
+      "data": {
+        "variableName": "instagramPost",
+        "systemPrompt": "@text:instagramPrompt",
+        "userPrompt": "@text:userPrompt"
+      }
+    },
+    {
+      "id": "x",
+      "type": "GEMINI",
+      "position": { "x": 960, "y": 0 },
+      "data": {
+        "variableName": "xPost",
+        "systemPrompt": "@text:xPrompt",
+        "userPrompt": "@text:userPrompt"
+      }
+    },
+    {
+      "id": "save",
+      "type": "AIRTABLE",
+      "position": { "x": 1280, "y": 0 },
+      "data": {
+        "variableName": "savedPosts",
+        "operation": "create_record",
+        "baseId": "",
+        "table": "Posts",
+        "fieldsJson": "{\"Topic\": {{json form.topic}}, \"LinkedIn\": {{json linkedinPost.text}}, \"Instagram\": {{json instagramPost.text}}, \"X\": {{json xPost.text}}, \"Status\": \"Draft\"}"
+      }
+    }
+  ],
+  "connections": [
+    { "fromNodeId": "form", "toNodeId": "linkedin", "fromOutput": "source-1", "toInput": "target-1" },
+    { "fromNodeId": "linkedin", "toNodeId": "instagram", "fromOutput": "source-1", "toInput": "target-1" },
+    { "fromNodeId": "instagram", "toNodeId": "x", "fromOutput": "source-1", "toInput": "target-1" },
+    { "fromNodeId": "x", "toNodeId": "save", "fromOutput": "source-1", "toInput": "target-1" }
+  ],
+  "text": {
+    "en": {
+      "name": "Social media posts drafted by AI, saved for review",
+      "description": "Type a topic on a form and Gemini writes three drafts in your brand voice: a LinkedIn post, an Instagram caption with hashtags and a short post for X. They are saved as one Airtable record with the status Draft, so you can edit and approve them before posting. Nothing is published. Set up: create an Airtable base with a table Posts and the fields Topic, LinkedIn, Instagram, X (long text) and Status; pick credentials on Airtable (and its Base ID) and the three Gemini nodes; describe your business and voice in each Gemini System Prompt; keep the Form URL private.",
+      "formTitle": "New social media posts",
+      "formDescription": "Give a topic and we will draft posts for LinkedIn, Instagram and X.",
+      "formFields": "[{\"label\":\"Topic\",\"type\":\"text\",\"required\":true,\"options\":\"\"},{\"label\":\"Audience\",\"type\":\"text\",\"required\":false,\"options\":\"\"},{\"label\":\"Tone\",\"type\":\"dropdown\",\"required\":true,\"options\":\"Friendly, Professional, Exciting, Informative\"}]",
+      "submitLabel": "Write drafts",
+      "thankYouMessage": "The drafts are being written and will be in Airtable in a minute.",
+      "userPrompt": "Topic: {{form.topic}}\nAudience: {{form.audience}}\nTone: {{form.tone}}",
+      "linkedinPrompt": "You write LinkedIn posts for a small business (replace with your own: Your Business, a bakery in Your City known for fresh cakes and quick delivery). Write one post in English of 80 to 150 words: a strong first line, two or three short paragraphs, and a closing question or call to action. No more than three hashtags, at the end. Do not make up prices, offers, dates or numbers that are not in the topic. Write only the post.",
+      "instagramPrompt": "You write Instagram captions for a small business (replace with your own: Your Business, a bakery in Your City known for fresh cakes and quick delivery). Write one caption in English of 30 to 70 words, warm and easy to read, with a few emojis and 5 to 8 relevant hashtags on the last line. Do not make up prices, offers, dates or numbers that are not in the topic. Write only the caption.",
+      "xPrompt": "You write posts for X for a small business (replace with your own: Your Business, a bakery in Your City known for fresh cakes and quick delivery). Write one post in English of at most 260 characters, punchy and clear, with at most two hashtags. Do not make up prices, offers, dates or numbers that are not in the topic. Write only the post."
+    },
+    "ur": {
+      "name": "AI سے لکھی گئی سوشل میڈیا پوسٹس، جائزے کے لیے محفوظ",
+      "description": "فارم پر موضوع لکھیں اور Gemini آپ کے انداز میں تین مسودے لکھتا ہے: LinkedIn پوسٹ، ہیش ٹیگز کے ساتھ Instagram کیپشن اور X کے لیے مختصر پوسٹ۔ یہ Airtable میں ایک ریکارڈ کے طور پر Draft حالت میں محفوظ ہوتے ہیں تاکہ آپ پوسٹ کرنے سے پہلے ترمیم اور منظوری دے سکیں۔ کچھ بھی شائع نہیں ہوتا۔ سیٹ اپ: Airtable میں Posts نام کی ٹیبل بنائیں جس میں Topic، LinkedIn، Instagram، X (long text) اور Status فیلڈز ہوں؛ Airtable (اور اس کا Base ID) اور تینوں Gemini نوڈز پر credentials چنیں؛ ہر Gemini کے System Prompt میں اپنے کاروبار اور انداز کا تعارف لکھیں؛ Form URL صرف اپنے پاس رکھیں۔",
+      "formTitle": "نئی سوشل میڈیا پوسٹس",
+      "formDescription": "موضوع لکھیں، ہم LinkedIn، Instagram اور X کے لیے پوسٹس کا مسودہ بنائیں گے۔",
+      "formFields": "[{\"label\":\"موضوع (Topic)\",\"type\":\"text\",\"required\":true,\"options\":\"\"},{\"label\":\"ناظرین (Audience)\",\"type\":\"text\",\"required\":false,\"options\":\"\"},{\"label\":\"انداز (Tone)\",\"type\":\"dropdown\",\"required\":true,\"options\":\"دوستانہ, پیشہ ورانہ, پرجوش, معلوماتی\"}]",
+      "submitLabel": "مسودے لکھیں",
+      "thankYouMessage": "مسودے لکھے جا رہے ہیں اور ایک منٹ میں Airtable میں ہوں گے۔",
+      "userPrompt": "موضوع: {{form.topic}}\nناظرین: {{form.audience}}\nانداز: {{form.tone}}",
+      "linkedinPrompt": "آپ ایک چھوٹے کاروبار کے لیے LinkedIn پوسٹس لکھتے ہیں (اپنی معلومات سے بدلیں: آپ کا کاروبار، آپ کے شہر کی ایک بیکری جو تازہ کیک اور جلد ڈیلیوری کے لیے مشہور ہے)۔ اردو میں 80 سے 150 الفاظ کی ایک پوسٹ لکھیں: مضبوط پہلی سطر، دو یا تین مختصر پیراگراف، اور آخر میں ایک سوال یا دعوتِ عمل۔ آخر میں زیادہ سے زیادہ تین ہیش ٹیگز۔ ایسی قیمت، پیشکش، تاریخ یا عدد نہ بنائیں جو موضوع میں نہیں۔ صرف پوسٹ لکھیں۔",
+      "instagramPrompt": "آپ ایک چھوٹے کاروبار کے لیے Instagram کیپشن لکھتے ہیں (اپنی معلومات سے بدلیں: آپ کا کاروبار، آپ کے شہر کی ایک بیکری جو تازہ کیک اور جلد ڈیلیوری کے لیے مشہور ہے)۔ اردو میں 30 سے 70 الفاظ کا ایک کیپشن لکھیں، گرمجوش اور آسان، چند ایموجی کے ساتھ، اور آخری سطر میں 5 سے 8 متعلقہ ہیش ٹیگز۔ ایسی قیمت، پیشکش، تاریخ یا عدد نہ بنائیں جو موضوع میں نہیں۔ صرف کیپشن لکھیں۔",
+      "xPrompt": "آپ ایک چھوٹے کاروبار کے لیے X کی پوسٹس لکھتے ہیں (اپنی معلومات سے بدلیں: آپ کا کاروبار، آپ کے شہر کی ایک بیکری جو تازہ کیک اور جلد ڈیلیوری کے لیے مشہور ہے)۔ اردو میں زیادہ سے زیادہ 260 حروف کی ایک جاندار اور واضح پوسٹ لکھیں، زیادہ سے زیادہ دو ہیش ٹیگز کے ساتھ۔ ایسی قیمت، پیشکش، تاریخ یا عدد نہ بنائیں جو موضوع میں نہیں۔ صرف پوسٹ لکھیں۔"
+    },
+    "ar": {
+      "name": "منشورات تواصل اجتماعي يكتبها الذكاء الاصطناعي وتُحفظ للمراجعة",
+      "description": "اكتب موضوعاً في النموذج ويكتب Gemini ثلاث مسودات بأسلوب علامتك: منشور LinkedIn، وتعليق Instagram مع وسوم، ومنشور قصير لـ X. تُحفظ سجلاً واحداً في Airtable بالحالة Draft لتعدّلها وتعتمدها قبل النشر. لا يُنشر شيء. الإعداد: أنشئ في Airtable جدولاً باسم Posts بالحقول Topic وLinkedIn وInstagram وX (long text) وStatus؛ اختر credentials في Airtable (مع Base ID) وعقد Gemini الثلاث؛ صف نشاطك وأسلوبك في System Prompt لكل Gemini؛ احتفظ بـ Form URL لنفسك.",
+      "formTitle": "منشورات جديدة للتواصل الاجتماعي",
+      "formDescription": "اكتب موضوعاً وسنكتب مسودات لـ LinkedIn وInstagram وX.",
+      "formFields": "[{\"label\":\"الموضوع (Topic)\",\"type\":\"text\",\"required\":true,\"options\":\"\"},{\"label\":\"الجمهور (Audience)\",\"type\":\"text\",\"required\":false,\"options\":\"\"},{\"label\":\"الأسلوب (Tone)\",\"type\":\"dropdown\",\"required\":true,\"options\":\"ودّي, مهني, حماسي, معلوماتي\"}]",
+      "submitLabel": "اكتب المسودات",
+      "thankYouMessage": "تُكتب المسودات الآن وستكون في Airtable خلال دقيقة.",
+      "userPrompt": "الموضوع: {{form.topic}}\nالجمهور: {{form.audience}}\nالأسلوب: {{form.tone}}",
+      "linkedinPrompt": "تكتب منشورات LinkedIn لنشاط تجاري صغير (استبدلها بمعلوماتك: نشاطك التجاري، مخبز في مدينتك معروف بالكعك الطازج والتوصيل السريع). اكتب منشوراً واحداً بالعربية من 80 إلى 150 كلمة: سطر أول قوي، وفقرتان أو ثلاث قصيرة، وسؤال أو دعوة للتفاعل في النهاية. ثلاثة وسوم على الأكثر في النهاية. لا تخترع أسعاراً أو عروضاً أو تواريخ أو أرقاماً ليست في الموضوع. اكتب المنشور فقط.",
+      "instagramPrompt": "تكتب تعليقات Instagram لنشاط تجاري صغير (استبدلها بمعلوماتك: نشاطك التجاري، مخبز في مدينتك معروف بالكعك الطازج والتوصيل السريع). اكتب تعليقاً واحداً بالعربية من 30 إلى 70 كلمة، دافئاً وسهل القراءة، مع بعض الرموز التعبيرية و5 إلى 8 وسوم مناسبة في السطر الأخير. لا تخترع أسعاراً أو عروضاً أو تواريخ أو أرقاماً ليست في الموضوع. اكتب التعليق فقط.",
+      "xPrompt": "تكتب منشورات X لنشاط تجاري صغير (استبدلها بمعلوماتك: نشاطك التجاري، مخبز في مدينتك معروف بالكعك الطازج والتوصيل السريع). اكتب منشوراً واحداً بالعربية لا يتجاوز 260 حرفاً، قوياً وواضحاً، مع وسمين على الأكثر. لا تخترع أسعاراً أو عروضاً أو تواريخ أو أرقاماً ليست في الموضوع. اكتب المنشور فقط."
+    }
+  }
+}

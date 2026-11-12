@@ -727,6 +727,65 @@ const main = async () => {
     assert.equal(renderEscapedTemplate("{{html}}", data), "&lt;b&gt;x&lt;/b&gt;");
   });
 
+  await test("values reach each node as typed: escaped only where the format needs it", async () => {
+    const templates = await import("@/features/executions/lib/templates");
+    const { readFileSync } = await import("node:fs");
+    const { textFormatterExecutor } = await import("@/features/executions/components/textFormatter/executor");
+    const person = { form: { name: "O'Brien & Sons <Ltd>", note: "Hi.\nA [link](x) #1 - done!" } };
+
+    // HTML: the email's own tags count, never the ones in the data
+    assert.equal(templates.isHtmlTemplate("<p>Hi {{form.name}}</p>"), true);
+    assert.equal(templates.isHtmlTemplate("Hi {{form.name}},\n\nThanks!"), false);
+    assert.equal(templates.isHtmlTemplate("Total < 5 and > 2"), false);
+    assert.equal(templates.isHtmlTemplate("Line one<br/>Line two"), true);
+    assert.equal(templates.isHtmlTemplate("{{form.name}}"), false);
+
+    // MarkdownV2: values get backslashes, the template's own markup stays
+    assert.equal(
+      templates.renderTemplateEscapingValues("*Note:* {{form.note}}", person, templates.escapeTelegramMarkdownV2),
+      "*Note:* Hi\\.\nA \\[link\\]\\(x\\) \\#1 \\- done\\!"
+    );
+    assert.equal(templates.escapeTelegramMarkdownV2("a_b*c\\d"), "a\\_b\\*c\\\\d");
+
+    // JSON (Notion): values as typed, unless they would add keys
+    const json = '{"Name": {"title": [{"text": {"content": "{{form.name}}"}}]}}';
+    assert.deepEqual(templates.renderJsonTemplate(json, person), {
+      Name: { title: [{ text: { content: "O'Brien & Sons <Ltd>" } }] },
+    });
+    // Unescaped, this is valid JSON with a second property, Status
+    const sneaky = { form: { name: 'x"}}]}, "Status": {"a": [{"b": {"c": "y' } };
+    assert.deepEqual(
+      Object.keys(JSON.parse(templates.renderTemplate(json, sneaky))),
+      ["Name", "Status"]
+    );
+    const guarded = templates.renderJsonTemplate(json, sneaky) as Record<string, unknown>;
+    assert.deepEqual(Object.keys(guarded), ["Name"]);
+    assert.match(JSON.stringify(guarded), /&quot;/);
+    // {{json x}} and raw JSON values work, invalid JSON is null
+    assert.deepEqual(templates.renderJsonTemplate('{"a": {{json form.name}}}', person), { a: "O'Brien & Sons <Ltd>" });
+    assert.deepEqual(templates.renderJsonTemplate('{"tags": {{list}}}', { list: '["a","b"]' }), { tags: ["a", "b"] });
+    assert.equal(templates.renderJsonTemplate('{"a": ', person), null);
+
+    // A node that runs here: Text Formatter no longer sees &#x27;
+    const upper = await textFormatterExecutor({
+      ...baseParams,
+      data: { variableName: "t", operation: "uppercase", inputText: "{{form.name}}" },
+      context: person,
+    } as never);
+    assert.equal((upper as { t: { result: string } }).t.result, "O'BRIEN & SONS <LTD>");
+
+    // The nodes whose values are plain text render without escaping; the
+    // ones that keep it do so only for HTML
+    const source = (file: string) => readFileSync(`src/features/executions/components/${file}/executor.ts`, "utf8");
+    for (const file of ["anthropic", "openai", "gemini", "calculator", "daytime", "textFormatter", "googleCalender", "notion"]) {
+      assert.equal(/renderEscapedTemplate/.test(source(file)), false, file);
+    }
+    assert.match(source("email"), /bodyIsHtml\s*\?\s*renderEscapedTemplate\(data\.body, context\)\s*:\s*renderTemplate\(data\.body, context\)/);
+    assert.match(source("email"), /\.\.\.\(bodyIsHtml \? \{ html: body \} : \{ text: body \}\)/);
+    assert.match(source("telegram"), /data\.parseMode === "HTML"\s*\?\s*renderEscapedTemplate\(data\.text, context\)/);
+    assert.match(source("notion"), /renderJsonTemplate\(data\.propertiesJson/);
+  });
+
   await test("expressions are sandboxed and bounded", () => {
     assert.throws(() => renderTemplate("{{ $json.user.nope.deeper }}", data), /Expression .* failed/);
     assert.throws(() => renderTemplate("{{ $json && process.env }}", data), /process/);
@@ -12816,15 +12875,16 @@ pour()</code></pre>
   });
 
   await test("every starter template is there in English, Urdu and Arabic", () => {
-    // The first five, then the 35 added with the template gallery
+    // The first five, the 35 added with the template gallery, then the AI
+    // support bot, lead form and email triage
     assert.deepEqual(
       starterTemplates.STARTER_SEEDS.slice(0, 5).map((seed) => seed.key),
       ["clinic_appointment_bot", "school_fee_reminder", "shop_order_bot", "real_estate_lead_bot", "support_faq_bot"]
     );
-    assert.equal(starterTemplates.STARTER_SEEDS.length, 40);
-    assert.equal(new Set(starterTemplates.STARTER_SEEDS.map((seed) => seed.key)).size, 40);
-    assert.equal(allStarters.length, 120);
-    assert.equal(new Set(allStarters.map((starter) => starter.id)).size, 120);
+    assert.equal(starterTemplates.STARTER_SEEDS.length, 52);
+    assert.equal(new Set(starterTemplates.STARTER_SEEDS.map((seed) => seed.key)).size, 52);
+    assert.equal(allStarters.length, 156);
+    assert.equal(new Set(allStarters.map((starter) => starter.id)).size, 156);
 
     for (const seed of starterTemplates.STARTER_SEEDS) {
       assert.match(seed.key, /^[a-z_]+$/);
@@ -13084,6 +13144,314 @@ pour()</code></pre>
     assert.equal(widget.public, true);
     assert.equal(widget.title, "سپورٹ");
     assert.equal(widget.direction, "rtl");
+  });
+
+  await test("AI email triage: each category takes its own branch, and a reply is only sent once approved", async () => {
+    const { parseCategories } = await import("@/features/executions/lib/ai-fields");
+
+    for (const starter of allStarters.filter((entry) => entry.key === "ai_email_triage")) {
+      const label = `${starter.key} (${starter.language})`;
+      const local = (id: string) => id.slice(starter.id.length + 1);
+      const node = (seedId: string) => starter.nodes.find((entry) => local(entry.id) === seedId)!;
+      const classifier = node("classify");
+
+      // The categories are the output ids, so they stay English in every language
+      const categories = parseCategories(String(classifier.data.categories));
+      assert.deepEqual(
+        categories.map((category) => category.id),
+        ["category-urgent", "category-sales", "category-support", "category-invoice", "category-spam"],
+        label
+      );
+      const leaving = starter.connections
+        .filter((conn) => conn.fromNodeId === classifier.id && conn.toInput === "target-1")
+        .map((conn) => conn.fromOutput)
+        .sort();
+      assert.deepEqual(leaving, categories.map((category) => category.id).sort(), label);
+
+      // The only node that answers the customer comes after the approval
+      const send = node("send");
+      assert.equal(send.data.operation, "reply");
+      assert.deepEqual(
+        starter.connections
+          .filter((conn) => conn.toNodeId === send.id)
+          .map((conn) => `${local(conn.fromNodeId)}:${conn.fromOutput}`),
+        ["approve:approved"],
+        label
+      );
+      // The invoice copy and the alert go to an address or chat the user types in
+      assert.equal(node("forward").data.to, "");
+      assert.equal(node("alert").data.chatId, "");
+
+      const graph = buildGraph(starter.nodes, starter.connections);
+      const run = async (category: string | null, approved: boolean) => {
+        const ran: string[] = [];
+
+        await runWorkflowGraph({
+          graph,
+          trigger: "GMAIL_TRIGGER",
+          context: { gmail: { id: "m1", from: "a@example.com", subject: "Hi", text: "Hello" } },
+          runNode: async (entry, current) => {
+            ran.push(local(entry.id));
+
+            if (entry.type === "TEXT_CLASSIFIER") {
+              return { ...current, triage: { category }, matchedBranch: category ? `category-${category}` : "other" };
+            }
+            if (entry.type === "APPROVAL") return { ...current, approval: { approved } };
+
+            return current;
+          },
+        });
+
+        return ran;
+      };
+
+      assert.deepEqual(await run("urgent", true), ["mail", "classify", "alert", "draft", "approve", "send"], label);
+      assert.deepEqual(await run("sales", true), ["mail", "classify", "draft", "approve", "send"], label);
+      assert.deepEqual(await run("support", false), ["mail", "classify", "draft", "approve"], label);
+      assert.deepEqual(await run("invoice", true), ["mail", "classify", "forward"], label);
+      assert.deepEqual(await run("spam", true), ["mail", "classify", "junk"], label);
+      // Mail that fits no category is left alone in the inbox
+      assert.deepEqual(await run(null, true), ["mail", "classify"], label);
+    }
+  });
+
+  await test("website lead form: summary, sheet row, owner alert, then a reply to the person", async () => {
+    for (const starter of allStarters.filter((entry) => entry.key === "website_lead_form_ai")) {
+      const label = `${starter.key} (${starter.language})`;
+      const local = (id: string) => id.slice(starter.id.length + 1);
+      const node = (seedId: string) => starter.nodes.find((entry) => local(entry.id) === seedId)!;
+
+      // The sheet splits a row at commas: the free-text message stays out of
+      // it, and what the model writes into it is asked for without commas
+      const row = String(node("save").data.rowData);
+      assert.equal(row.includes("form.message"), false, label);
+      const attributes = String(node("extract").data.attributes).split("\n");
+      for (const line of attributes) {
+        if (!row.includes(`lead.output.${line.split(":")[0]}`)) continue;
+        assert.match(line, /without commas|one of [a-z, ]+$/, `${label}: ${line}`);
+      }
+
+      assert.equal(node("alert").data.to, "", label);
+      assert.equal(node("reply").data.to, "{{form.email}}", label);
+      assert.equal(node("reply").data.message, "{{replyDraft.text}}", label);
+
+      const graph = buildGraph(starter.nodes, starter.connections);
+      const ran: string[] = [];
+      await runWorkflowGraph({
+        graph,
+        trigger: "FORM_TRIGGER",
+        context: { form: { name: "Sara", email: "sara@example.com", message: "A quote please" } },
+        runNode: async (entry, current) => {
+          ran.push(local(entry.id));
+          return current;
+        },
+      });
+      assert.deepEqual(ran, ["form", "extract", "save", "alert", "write", "reply"], label);
+    }
+  });
+
+  await test("WhatsApp support bot: answers from memory per number and hands off by email, not by guessing", () => {
+    for (const starter of allStarters.filter((entry) => entry.key === "whatsapp_support_bot")) {
+      const label = `${starter.key} (${starter.language})`;
+      const agent = starter.nodes.find((node) => node.type === "AI_AGENT")!;
+      const tools = starter.connections
+        .filter((conn) => conn.toNodeId === agent.id && conn.toInput === "sub-tools")
+        .map((conn) => starter.nodes.find((node) => node.id === conn.fromNodeId)!);
+
+      // An email reaches the owner at any time; a WhatsApp message the
+      // business starts would need an approved template
+      assert.deepEqual(tools.map((tool) => `${tool.type}:${tool.data.operation}`), ["GMAIL:send_email"], label);
+      assert.equal(tools[0].data.to, "", label);
+      assert.match(String(tools[0].data.message), /\{\{whatsapp\.from\}\}/);
+      assert.match(String(tools[0].data.message), /\{\{\$fromAI "summary"/);
+
+      const memory = starter.nodes.find((node) => node.type === "BUFFER_MEMORY")!;
+      assert.equal(memory.data.sessionId, "{{sessionId}}");
+      assert.ok(String(agent.data.systemMessage).includes("notify_owner"), label);
+    }
+  });
+
+  // The rest of the AI and automation templates: their logic runs through
+  // the real Date & Time, IF, Switch, Text Formatter and Code nodes
+  const { dateTimeExecutor } = await import("@/features/executions/components/daytime/executor");
+  const { switchExecutor } = await import("@/features/executions/components/switch/executor");
+  const { textFormatterExecutor } = await import("@/features/executions/components/textFormatter/executor");
+  const { runInSandbox: runTemplateCode } = await import("@/features/executions/lib/code-sandbox");
+  const { renderTemplate: renderForTest } = await import("@/features/executions/lib/templates");
+  const seedNode = (starter: (typeof allStarters)[number], seedId: string) =>
+    starter.nodes.find((node) => node.id === `${starter.id}_${seedId}`)!;
+  const runIf = async (data: unknown, context: Record<string, unknown>) =>
+    ((await chatbotIfExecutor({ ...baseParams, data, context } as never)) as { ifResult?: boolean }).ifResult;
+
+  await test("booking with reminder: one email 24 hours before, only when that is ahead and within the Wait limit", async () => {
+    for (const starter of allStarters.filter((entry) => entry.key === "booking_with_reminder")) {
+      const label = `${starter.key} (${starter.language})`;
+      const startTime = String(seedNode(starter, "reminderAt").data.inputDate);
+      const offset = /([+-])(\d\d):(\d\d)$/.exec(startTime)!;
+      const offsetMs = (offset[1] === "-" ? -1 : 1) * (Number(offset[2]) * 60 + Number(offset[3])) * 60_000;
+
+      // The form's date and time for an appointment at a given moment
+      const formAt = (time: number) => {
+        const local = new Date(time + offsetMs).toISOString();
+        return { name: "Sara", email: "sara@example.com", date: local.slice(0, 10), time: local.slice(11, 16) };
+      };
+
+      const remindsAt = async (hoursAhead: number) => {
+        let context: Record<string, unknown> = { form: formAt(Math.floor((Date.now() + hoursAhead * 3_600_000) / 60_000) * 60_000) };
+        for (const seedId of ["reminderAt", "check"]) {
+          context = await dateTimeExecutor({ ...baseParams, data: seedNode(starter, seedId).data, context } as never);
+        }
+        return runIf(seedNode(starter, "soon").data, context);
+      };
+
+      assert.equal(await remindsAt(72), true, `${label}: in 3 days`);
+      assert.equal(await remindsAt(30), true, `${label}: in 30 hours`);
+      assert.equal(await remindsAt(12), false, `${label}: the reminder time has passed`);
+      assert.equal(await remindsAt(24 * 10), false, `${label}: more than the 7-day Wait limit away`);
+
+      assert.deepEqual(seedNode(starter, "wait").data, { variableName: "wait", operation: "until", dateTime: "{{reminderAt.iso}}" });
+      assert.ok(
+        starter.connections.some(
+          (conn) => conn.fromNodeId === seedNode(starter, "soon").id && conn.fromOutput === "true" && conn.toNodeId === seedNode(starter, "wait").id
+        ),
+        label
+      );
+    }
+  });
+
+  await test("support tickets: the category is lower-cased and routed to its team, anything else to the owner", async () => {
+    for (const starter of allStarters.filter((entry) => entry.key === "support_ticket_routing")) {
+      const label = `${starter.key} (${starter.language})`;
+      const routeTo = async (category: string) => {
+        let context: Record<string, unknown> = { ticket: { output: { category } } };
+        context = await textFormatterExecutor({ ...baseParams, data: seedNode(starter, "lower").data, context } as never);
+        context = await switchExecutor({ ...baseParams, data: seedNode(starter, "route").data, context } as never);
+        const branch = context.matchedBranch;
+        const target = starter.connections.find(
+          (conn) => conn.fromNodeId === seedNode(starter, "route").id && conn.fromOutput === branch
+        );
+        return target ? target.toNodeId.slice(starter.id.length + 1) : null;
+      };
+
+      assert.equal(await routeTo("Billing"), "billing", label);
+      assert.equal(await routeTo(" technical "), "technical", label);
+      assert.equal(await routeTo("DELIVERY"), "delivery", label);
+      assert.equal(await routeTo("other"), "owner", label);
+      assert.equal(await routeTo(""), "owner", label);
+
+      // The Slack nodes carry no webhook: the user pastes their own
+      for (const seedId of ["billing", "technical"]) {
+        assert.equal(seedNode(starter, seedId).type, "SLACK");
+        assert.equal("webhookUrl" in seedNode(starter, seedId).data, false);
+      }
+      assert.equal(seedNode(starter, "ack").data.to, "{{form.email}}");
+    }
+  });
+
+  await test("unpaid WooCommerce orders: each order is reminded once, a day after it was placed", async () => {
+    for (const starter of allStarters.filter((entry) => entry.key === "woocommerce_unpaid_reminder")) {
+      const label = `${starter.key} (${starter.language})`;
+      assert.equal(seedNode(starter, "unpaid").data.status, "pending");
+      assert.equal(seedNode(starter, "unpaid").data.createdAfter, "{{since.iso}}");
+      assert.equal(seedNode(starter, "each").data.inputPath, seedNode(starter, "unpaid").data.variableName);
+
+      let context: Record<string, unknown> = {};
+      for (const seedId of ["since", "cutoff"]) {
+        context = await dateTimeExecutor({ ...baseParams, data: seedNode(starter, seedId).data, context } as never);
+      }
+      // WooCommerce gives the time in UTC without a "Z"
+      const placed = (hoursAgo: number) => new Date(Date.now() - hoursAgo * 3_600_000).toISOString().slice(0, 19);
+      const due = async (item: Record<string, unknown>) => {
+        const withItem = await dateTimeExecutor({ ...baseParams, data: seedNode(starter, "age").data, context: { ...context, item } } as never);
+        return runIf(seedNode(starter, "due").data, withItem);
+      };
+
+      assert.equal(await due({ date_created_gmt: placed(30), billing: { phone: "+923001234567" } }), true, label);
+      assert.equal(await due({ date_created_gmt: placed(10), billing: { phone: "+923001234567" } }), false, label);
+      assert.equal(await due({ date_created_gmt: placed(30), billing: { phone: "" } }), false, label);
+    }
+  });
+
+  await test("social posts: three drafts become one Airtable record, whatever the posts contain", () => {
+    for (const starter of allStarters.filter((entry) => entry.key === "social_posts_for_review")) {
+      const save = seedNode(starter, "save");
+      const post = 'Line one, with "quotes"\nand a second line #hashtag';
+      const fields = JSON.parse(
+        renderForTest(String(save.data.fieldsJson), {
+          form: { topic: "Eid sale, 20% off" },
+          linkedinPost: { text: post },
+          instagramPost: { text: post },
+          xPost: { text: post },
+        })
+      );
+      assert.deepEqual(fields, { Topic: "Eid sale, 20% off", LinkedIn: post, Instagram: post, X: post, Status: "Draft" });
+      // Nothing is published
+      assert.equal(starter.nodes.some((node) => node.type === "SOCIAL_POST"), false);
+    }
+  });
+
+  await test("daily digest: the numbers are counted by code, only yesterday's orders", async () => {
+    const [english] = allStarters.filter((entry) => entry.key === "daily_business_digest");
+    const result = await runTemplateCode(String(seedNode(english, "numbers").data.code), {
+      yesterday: { result: "2026-11-11" },
+      orders: {
+        items: [
+          { name: "#1001", created_at: "2026-11-11T10:00:00+05:00", total_price: "1500.00", currency: "PKR", financial_status: "paid", fulfillment_status: "fulfilled" },
+          { name: "#1002", created_at: "2026-11-11T12:00:00+05:00", total_price: "2500.50", currency: "PKR", financial_status: "pending", fulfillment_status: null },
+          { name: "#1003", created_at: "2026-11-11T18:00:00+05:00", total_price: "900.00", currency: "PKR", financial_status: "paid", fulfillment_status: null, cancelled_at: "2026-11-11T19:00:00+05:00" },
+          { name: "#1004", created_at: "2026-11-12T09:00:00+05:00", total_price: "99999.00", currency: "PKR", financial_status: "paid", fulfillment_status: null },
+        ],
+      },
+    });
+
+    assert.equal(result.success, true);
+    assert.deepEqual((result as { data: unknown }).data, {
+      date: "2026-11-11",
+      currency: "PKR",
+      count: 3,
+      total: "4900.50",
+      paidCount: 2,
+      paidTotal: "2400.00",
+      pendingCount: 1,
+      pendingTotal: "2500.50",
+      cancelledCount: 1,
+      unfulfilledCount: 1,
+      biggest: "#1002: 2500.50\n#1001: 1500.00\n#1003: 900.00",
+    });
+  });
+
+  await test("the other new templates: lead qualifier, Telegram assistant, shipped update, meeting summary", () => {
+    for (const starter of allStarters) {
+      const label = `${starter.key} (${starter.language})`;
+
+      if (starter.key === "whatsapp_lead_qualifier") {
+        const types = starter.connections
+          .filter((conn) => conn.toInput === "sub-tools")
+          .map((conn) => starter.nodes.find((node) => node.id === conn.fromNodeId)!.type)
+          .sort();
+        assert.deepEqual(types, ["GMAIL", "GOOGLE_SHEETS"], label);
+      }
+
+      if (starter.key === "telegram_ai_assistant") {
+        assert.equal(seedNode(starter, "reply").data.chatId, "{{telegram.message.chat.id}}");
+        assert.equal(seedNode(starter, "reply").data.text, "{{aiAgentOutput.output}}");
+      }
+
+      if (starter.key === "shopify_shipped_whatsapp") {
+        // Approved template only: the business starts this conversation
+        assert.equal(seedNode(starter, "notify").data.operation, "send_template");
+        const params = renderForTest(String(seedNode(starter, "notify").data.templateParamsJson), {
+          shopify: { customerName: "Ali", order: { name: "#1001", fulfillments: [{ tracking_company: "TCS", tracking_url: "https://t.example/1" }] } },
+        });
+        assert.deepEqual(JSON.parse(params), ["Ali", "#1001", "TCS", "https://t.example/1"]);
+      }
+
+      if (starter.key === "meeting_recording_summary") {
+        assert.equal(seedNode(starter, "transcribe").data.file, "form.recording");
+        assert.equal(seedNode(starter, "send").data.attachments, `${seedNode(starter, "file").data.variableName}.file`);
+        assert.equal(seedNode(starter, "transcribe").data.language, starter.language);
+      }
+    }
   });
 
   await test("the fee reminder messages only parents who have not paid, in the template's language", async () => {

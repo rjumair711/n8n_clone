@@ -1,5 +1,5 @@
 import type { NodeExecutor } from "@/features/executions/types";
-import { renderEscapedTemplate } from "@/features/executions/lib/templates";
+import { renderTemplate } from "@/features/executions/lib/templates";
 import { NonRetriableError } from "inngest";
 import Handlebars from "handlebars";
 
@@ -23,7 +23,7 @@ export const calculatorExecutor: NodeExecutor<CalculatorNodeData> = async ({
     const operation = data.operation || "add";
 
     // Interpolate potential variables in the inputs
-    const rawInputA = renderEscapedTemplate(data.inputA, context);
+    const rawInputA = renderTemplate(data.inputA, context);
     const numA = parseFloat(rawInputA);
 
     if (isNaN(numA)) {
@@ -35,7 +35,7 @@ export const calculatorExecutor: NodeExecutor<CalculatorNodeData> = async ({
 
     if (isBinaryOperation) {
         if (!data.inputB) throw new NonRetriableError("Calculator node: Value B is required for this operation");
-        const rawInputB = renderEscapedTemplate(data.inputB, context);
+        const rawInputB = renderTemplate(data.inputB, context);
         numB = parseFloat(rawInputB);
         
         if (isNaN(numB)) {

@@ -2,7 +2,11 @@
 
 import { readCredentialValue } from "@/lib/external-secrets";
 import { EMAIL_CHANNEL_NAME, emailChannel } from "@/inngest/channels/email";
-import { renderEscapedTemplate } from "@/features/executions/lib/templates";
+import {
+  isHtmlTemplate,
+  renderEscapedTemplate,
+  renderTemplate,
+} from "@/features/executions/lib/templates";
 import { NodeExecutor } from "../../types";
 import { NonRetriableError } from "inngest";
 import nodemailer from "nodemailer";
@@ -90,9 +94,15 @@ export const emailExecutor: NodeExecutor<EmailData> = async ({
   const { host, port, user, pass, fromName } = smtpConfig;
 
   // Parse variables
-  const recipient = renderEscapedTemplate(data.recipient, context);
-  const subject = renderEscapedTemplate(data.subject, context);
-  const body = renderEscapedTemplate(data.body, context);
+  const recipient = renderTemplate(data.recipient, context).trim();
+  const subject = renderTemplate(data.subject, context);
+  // A body with HTML tags is sent as HTML, its values escaped so data from a
+  // form cannot add links or markup; any other body is sent as plain text,
+  // as written, with its line breaks
+  const bodyIsHtml = isHtmlTemplate(data.body);
+  const body = bodyIsHtml
+    ? renderEscapedTemplate(data.body, context)
+    : renderTemplate(data.body, context);
   const attachmentIds = resolveFileIds("Email", context, data.attachments);
 
   // Create transporter
@@ -113,7 +123,7 @@ export const emailExecutor: NodeExecutor<EmailData> = async ({
       from: `"${fromName || "RXJ"}" <${user}>`,
       to: recipient,
       subject,
-      html: body,
+      ...(bodyIsHtml ? { html: body } : { text: body }),
       attachments: (await loadFiles("Email", attachmentIds, userId)).map(
         (file) => ({
           filename: file.fileName,
