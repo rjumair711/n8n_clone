@@ -48,6 +48,10 @@ import productDescriptionsThreeLanguages from "../seed/product-descriptions-thre
 import cancelledOrderAlert from "../seed/cancelled-order-alert.json";
 import documentSummaryByEmail from "../seed/document-summary-by-email.json";
 import invoiceGenerator from "../seed/invoice-generator.json";
+// AI support, lead and email templates
+import whatsappSupportBot from "../seed/whatsapp-support-bot.json";
+import websiteLeadFormAi from "../seed/website-lead-form-ai.json";
+import aiEmailTriage from "../seed/ai-email-triage.json";
 import {
   TEMPLATE_LANGUAGES,
   type TemplateLanguage,
@@ -111,6 +115,9 @@ export const STARTER_SEEDS: StarterSeed[] = [
   cancelledOrderAlert,
   documentSummaryByEmail,
   invoiceGenerator,
+  whatsappSupportBot,
+  websiteLeadFormAi,
+  aiEmailTriage,
 ];
 
 const TEXT_MARKER = "@text:";
