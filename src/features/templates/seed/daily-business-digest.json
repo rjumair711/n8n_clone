@@ -1,0 +1,156 @@
+{
+  "key": "daily_business_digest",
+  "category": "Reports",
+  "minPlan": "FREE",
+  "nodes": [
+    {
+      "id": "schedule",
+      "type": "SCHEDULE_TRIGGER",
+      "position": {
+        "x": 0,
+        "y": 0
+      },
+      "data": {
+        "variableName": "scheduleTrigger",
+        "cronExpression": "@text:cronExpression"
+      }
+    },
+    {
+      "id": "yesterday",
+      "type": "DATE_TIME",
+      "position": {
+        "x": 300,
+        "y": 0
+      },
+      "data": {
+        "variableName": "yesterday",
+        "operation": "manipulate",
+        "timezone": "@text:timezone",
+        "formatString": "YYYY-MM-DD",
+        "action": "subtract",
+        "amount": 1,
+        "unit": "days"
+      }
+    },
+    {
+      "id": "orders",
+      "type": "SHOPIFY",
+      "position": {
+        "x": 600,
+        "y": 0
+      },
+      "data": {
+        "variableName": "orders",
+        "operation": "list_orders",
+        "shopDomain": "",
+        "status": "any",
+        "createdAfter": "{{yesterday.result}}",
+        "limit": "250",
+        "fields": "id, name, created_at, total_price, currency, financial_status, fulfillment_status, cancelled_at"
+      }
+    },
+    {
+      "id": "numbers",
+      "type": "CODE",
+      "position": {
+        "x": 900,
+        "y": 0
+      },
+      "data": {
+        "variableName": "digest",
+        "code": "// Yesterday's Shopify orders, counted here so the AI never adds up numbers\nconst day = context.yesterday.result;\nconst orders = (context.orders.items || []).filter((order) => String(order.created_at || \"\").startsWith(day));\nconst sum = (list) => list.reduce((total, order) => total + Number(order.total_price || 0), 0);\nconst paid = orders.filter((order) => order.financial_status === \"paid\");\nconst pending = orders.filter((order) => order.financial_status === \"pending\");\nconst cancelled = orders.filter((order) => order.cancelled_at);\nconst unfulfilled = orders.filter((order) => !order.cancelled_at && !order.fulfillment_status);\nconst biggest = [...orders].sort((a, b) => Number(b.total_price || 0) - Number(a.total_price || 0)).slice(0, 5);\nreturn {\n  date: day,\n  currency: orders[0] ? orders[0].currency : \"\",\n  count: orders.length,\n  total: sum(orders).toFixed(2),\n  paidCount: paid.length,\n  paidTotal: sum(paid).toFixed(2),\n  pendingCount: pending.length,\n  pendingTotal: sum(pending).toFixed(2),\n  cancelledCount: cancelled.length,\n  unfulfilledCount: unfulfilled.length,\n  biggest: biggest.map((order) => order.name + \": \" + order.total_price).join(\"\\n\") || \"-\",\n};",
+        "timeoutSeconds": 10
+      }
+    },
+    {
+      "id": "write",
+      "type": "GEMINI",
+      "position": {
+        "x": 1200,
+        "y": 0
+      },
+      "data": {
+        "variableName": "summary",
+        "systemPrompt": "@text:systemPrompt",
+        "userPrompt": "Date: {{digest.date}}\nOrders: {{digest.count}}, total {{digest.total}} {{digest.currency}}\nPaid: {{digest.paidCount}} ({{digest.paidTotal}})\nPayment pending: {{digest.pendingCount}} ({{digest.pendingTotal}})\nCancelled: {{digest.cancelledCount}}\nNot yet fulfilled: {{digest.unfulfilledCount}}\nBiggest orders:\n{{digest.biggest}}"
+      }
+    },
+    {
+      "id": "send",
+      "type": "GMAIL",
+      "position": {
+        "x": 1500,
+        "y": 0
+      },
+      "data": {
+        "variableName": "digestEmail",
+        "operation": "send_email",
+        "to": "",
+        "subject": "@text:emailSubject",
+        "emailType": "text",
+        "message": "@text:emailMessage"
+      }
+    }
+  ],
+  "connections": [
+    {
+      "fromNodeId": "schedule",
+      "toNodeId": "yesterday",
+      "fromOutput": "source-1",
+      "toInput": "target-1"
+    },
+    {
+      "fromNodeId": "yesterday",
+      "toNodeId": "orders",
+      "fromOutput": "source-1",
+      "toInput": "target-1"
+    },
+    {
+      "fromNodeId": "orders",
+      "toNodeId": "numbers",
+      "fromOutput": "source-1",
+      "toInput": "target-1"
+    },
+    {
+      "fromNodeId": "numbers",
+      "toNodeId": "write",
+      "fromOutput": "source-1",
+      "toInput": "target-1"
+    },
+    {
+      "fromNodeId": "write",
+      "toNodeId": "send",
+      "fromOutput": "source-1",
+      "toInput": "target-1"
+    }
+  ],
+  "text": {
+    "en": {
+      "name": "Daily business digest with an AI summary",
+      "description": "Every morning at 08:00 (Pakistan time) you get one email about yesterday's Shopify orders: how many, the total, paid and pending payments, cancellations, orders still to ship and the biggest orders, with a short summary written by Gemini that points out what needs attention. The numbers are counted by the workflow, not by the AI. Set up: type your shop domain and pick your Shopify credential; pick credentials on Gemini and Gmail and type your email in To; change the cron expression for another time (it is in UTC).",
+      "cronExpression": "0 3 * * *",
+      "timezone": "Asia/Karachi",
+      "systemPrompt": "You write a short morning digest for the owner of an online shop. From the numbers given, write 3 to 5 short lines in English: how yesterday went, and what needs attention today (payments still pending, orders not yet shipped, cancellations). Use only the numbers given and do not calculate new ones. No greeting and no sign-off.",
+      "emailSubject": "Yesterday ({{digest.date}}): {{digest.count}} orders, {{digest.total}} {{digest.currency}}",
+      "emailMessage": "{{summary.text}}\n\n---\nOrders: {{digest.count}}\nTotal: {{digest.total}} {{digest.currency}}\nPaid: {{digest.paidCount}} ({{digest.paidTotal}})\nPayment pending: {{digest.pendingCount}} ({{digest.pendingTotal}})\nCancelled: {{digest.cancelledCount}}\nNot yet fulfilled: {{digest.unfulfilledCount}}\n\nBiggest orders:\n{{digest.biggest}}"
+    },
+    "ur": {
+      "name": "روزانہ کاروباری خلاصہ، AI کے تبصرے کے ساتھ",
+      "description": "ہر صبح 8 بجے (پاکستانی وقت) آپ کو کل کے Shopify آرڈرز کے بارے میں ایک ای میل ملتی ہے: کتنے آرڈر، کل رقم، ادا شدہ اور باقی ادائیگیاں، منسوخیاں، بھیجنے کے لیے باقی آرڈر اور سب سے بڑے آرڈر، ساتھ میں Gemini کا مختصر خلاصہ کہ کس چیز پر توجہ دینی ہے۔ اعداد ورک فلو گنتا ہے، AI نہیں۔ سیٹ اپ: اپنی دکان کا ڈومین لکھیں اور Shopify credential چنیں؛ Gemini اور Gmail پر credentials چنیں اور To میں اپنا ای میل لکھیں؛ کسی اور وقت کے لیے cron expression بدلیں (یہ UTC میں ہے)۔",
+      "cronExpression": "0 3 * * *",
+      "timezone": "Asia/Karachi",
+      "systemPrompt": "آپ ایک آن لائن دکان کے مالک کے لیے صبح کا مختصر خلاصہ لکھتے ہیں۔ دیے گئے اعداد سے اردو میں 3 سے 5 مختصر سطریں لکھیں: کل کا دن کیسا رہا، اور آج کس چیز پر توجہ دینی ہے (باقی ادائیگیاں، نہ بھیجے گئے آرڈر، منسوخیاں)۔ صرف دیے گئے اعداد استعمال کریں اور نئے حساب نہ لگائیں۔ سلام اور اختتامی جملہ نہ لکھیں۔",
+      "emailSubject": "کل ({{digest.date}}): {{digest.count}} آرڈر، {{digest.total}} {{digest.currency}}",
+      "emailMessage": "{{summary.text}}\n\n---\nآرڈر: {{digest.count}}\nکل رقم: {{digest.total}} {{digest.currency}}\nادا شدہ: {{digest.paidCount}} ({{digest.paidTotal}})\nادائیگی باقی: {{digest.pendingCount}} ({{digest.pendingTotal}})\nمنسوخ: {{digest.cancelledCount}}\nابھی نہیں بھیجے گئے: {{digest.unfulfilledCount}}\n\nسب سے بڑے آرڈر:\n{{digest.biggest}}"
+    },
+    "ar": {
+      "name": "ملخص يومي للنشاط مع تعليق بالذكاء الاصطناعي",
+      "description": "كل صباح الساعة 08:00 (بتوقيت السعودية) يصلك بريد واحد عن طلبات Shopify أمس: عددها، والإجمالي، والمدفوع والمعلّق، والإلغاءات، والطلبات التي لم تُشحن بعد، وأكبر الطلبات، مع ملخص قصير يكتبه Gemini يشير إلى ما يحتاج إلى متابعة. يحسب سير العمل الأرقام وليس الذكاء الاصطناعي. الإعداد: اكتب نطاق متجرك واختر Shopify credential؛ اختر credentials في Gemini وGmail واكتب بريدك في To؛ غيّر cron expression لوقت آخر (بتوقيت UTC).",
+      "cronExpression": "0 5 * * *",
+      "timezone": "Asia/Riyadh",
+      "systemPrompt": "تكتب ملخصاً صباحياً قصيراً لصاحب متجر إلكتروني. من الأرقام المعطاة اكتب من 3 إلى 5 أسطر قصيرة بالعربية: كيف كان يوم أمس، وما الذي يحتاج إلى متابعة اليوم (مدفوعات معلّقة، طلبات لم تُشحن، إلغاءات). استخدم الأرقام المعطاة فقط ولا تحسب أرقاماً جديدة. بلا تحية ولا خاتمة.",
+      "emailSubject": "أمس ({{digest.date}}): {{digest.count}} طلب، {{digest.total}} {{digest.currency}}",
+      "emailMessage": "{{summary.text}}\n\n---\nالطلبات: {{digest.count}}\nالإجمالي: {{digest.total}} {{digest.currency}}\nالمدفوع: {{digest.paidCount}} ({{digest.paidTotal}})\nبانتظار الدفع: {{digest.pendingCount}} ({{digest.pendingTotal}})\nالملغاة: {{digest.cancelledCount}}\nلم تُشحن بعد: {{digest.unfulfilledCount}}\n\nأكبر الطلبات:\n{{digest.biggest}}"
+    }
+  }
+}

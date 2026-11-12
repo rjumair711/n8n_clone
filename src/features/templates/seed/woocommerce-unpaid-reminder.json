@@ -1,0 +1,127 @@
+{
+  "key": "woocommerce_unpaid_reminder",
+  "category": "E-commerce",
+  "minPlan": "FREE",
+  "nodes": [
+    {
+      "id": "schedule",
+      "type": "SCHEDULE_TRIGGER",
+      "position": { "x": 0, "y": 0 },
+      "data": { "variableName": "scheduleTrigger", "cronExpression": "@text:cronExpression" }
+    },
+    {
+      "id": "since",
+      "type": "DATE_TIME",
+      "position": { "x": 280, "y": 0 },
+      "data": {
+        "variableName": "since",
+        "operation": "manipulate",
+        "timezone": "UTC",
+        "action": "subtract",
+        "amount": 2,
+        "unit": "days"
+      }
+    },
+    {
+      "id": "cutoff",
+      "type": "DATE_TIME",
+      "position": { "x": 560, "y": 0 },
+      "data": {
+        "variableName": "cutoff",
+        "operation": "manipulate",
+        "timezone": "UTC",
+        "action": "subtract",
+        "amount": 1,
+        "unit": "days"
+      }
+    },
+    {
+      "id": "unpaid",
+      "type": "WOOCOMMERCE",
+      "position": { "x": 840, "y": 0 },
+      "data": {
+        "variableName": "unpaid",
+        "operation": "list_orders",
+        "storeUrl": "",
+        "status": "pending",
+        "createdAfter": "{{since.iso}}",
+        "limit": "100",
+        "fields": "id, number, status, total, currency, date_created_gmt, payment_url, billing"
+      }
+    },
+    {
+      "id": "each",
+      "type": "SPLIT_OUT",
+      "position": { "x": 1120, "y": 0 },
+      "data": { "variableName": "order", "inputPath": "unpaid", "field": "", "include": "none" }
+    },
+    {
+      "id": "age",
+      "type": "DATE_TIME",
+      "position": { "x": 1400, "y": 0 },
+      "data": {
+        "variableName": "age",
+        "operation": "compare",
+        "timezone": "UTC",
+        "inputDate": "{{item.date_created_gmt}}Z",
+        "compareDate": "{{cutoff.iso}}",
+        "unit": "hours"
+      }
+    },
+    {
+      "id": "due",
+      "type": "IF",
+      "position": { "x": 1680, "y": 0 },
+      "data": {
+        "combinator": "and",
+        "conditions": [
+          { "inputKey": "age.isBefore", "operator": "equals", "value": "true" },
+          { "inputKey": "item.billing.phone", "operator": "exists", "value": "" }
+        ]
+      }
+    },
+    {
+      "id": "remind",
+      "type": "WHATSAPP",
+      "position": { "x": 1960, "y": 0 },
+      "data": {
+        "variableName": "paymentReminder",
+        "operation": "send_template",
+        "phoneNumberId": "",
+        "to": "{{item.billing.phone}}",
+        "templateName": "payment_reminder",
+        "languageCode": "@text:languageCode",
+        "templateParamsJson": "[{{json item.billing.first_name}}, {{json item.number}}, {{json item.total}}, {{json item.payment_url}}]"
+      }
+    }
+  ],
+  "connections": [
+    { "fromNodeId": "schedule", "toNodeId": "since", "fromOutput": "source-1", "toInput": "target-1" },
+    { "fromNodeId": "since", "toNodeId": "cutoff", "fromOutput": "source-1", "toInput": "target-1" },
+    { "fromNodeId": "cutoff", "toNodeId": "unpaid", "fromOutput": "source-1", "toInput": "target-1" },
+    { "fromNodeId": "unpaid", "toNodeId": "each", "fromOutput": "source-1", "toInput": "target-1" },
+    { "fromNodeId": "each", "toNodeId": "age", "fromOutput": "source-1", "toInput": "target-1" },
+    { "fromNodeId": "age", "toNodeId": "due", "fromOutput": "source-1", "toInput": "target-1" },
+    { "fromNodeId": "due", "toNodeId": "remind", "fromOutput": "true", "toInput": "target-1" }
+  ],
+  "text": {
+    "en": {
+      "name": "Unpaid WooCommerce order reminder on WhatsApp",
+      "description": "Once a day, finds WooCommerce orders still waiting for payment that were placed one to two days ago, and sends each customer one WhatsApp reminder with the order number, the total and the payment link. Cash-on-delivery orders are not included (they are Processing, not Pending payment). Set up: create and get approval for a WhatsApp template payment_reminder with 4 variables (name, order, total, payment link); type your store URL and pick your WooCommerce credential; pick your WhatsApp credential and type your Phone Number ID; billing phone numbers must include the country code.",
+      "cronExpression": "0 6 * * *",
+      "languageCode": "en_US"
+    },
+    "ur": {
+      "name": "WooCommerce کے غیر ادا شدہ آرڈر کی واٹس ایپ یاد دہانی",
+      "description": "دن میں ایک بار آپ کے WooCommerce اسٹور کے وہ آرڈر ڈھونڈتا ہے جن کی ادائیگی ابھی باقی ہے اور جو ایک سے دو دن پہلے کیے گئے، اور ہر گاہک کو آرڈر نمبر، کل رقم اور ادائیگی کے لنک کے ساتھ ایک واٹس ایپ یاد دہانی بھیجتا ہے۔ کیش آن ڈیلیوری آرڈر شامل نہیں (وہ Processing ہوتے ہیں، Pending payment نہیں)۔ سیٹ اپ: 4 متغیرات (نام، آرڈر، رقم، ادائیگی کا لنک) کے ساتھ payment_reminder نام کا واٹس ایپ ٹیمپلیٹ بنا کر منظور کروائیں؛ اسٹور کا URL لکھیں اور WooCommerce credential چنیں؛ WhatsApp credential چنیں اور Phone Number ID لکھیں؛ بلنگ فون نمبر میں ملک کا کوڈ ہونا چاہیے۔",
+      "cronExpression": "0 6 * * *",
+      "languageCode": "ur"
+    },
+    "ar": {
+      "name": "تذكير بطلبات WooCommerce غير المدفوعة عبر واتساب",
+      "description": "مرة يومياً، يجد طلبات متجر WooCommerce التي ما زالت بانتظار الدفع وأُنشئت قبل يوم إلى يومين، ويرسل لكل عميل تذكيراً واحداً على واتساب برقم الطلب والإجمالي ورابط الدفع. لا تُشمل طلبات الدفع عند الاستلام (حالتها Processing وليست Pending payment). الإعداد: أنشئ قالب واتساب باسم payment_reminder بأربعة متغيرات (الاسم، الطلب، الإجمالي، رابط الدفع) واحصل على موافقته؛ اكتب رابط المتجر واختر WooCommerce credential؛ اختر WhatsApp credential واكتب Phone Number ID؛ يجب أن تتضمن أرقام هواتف الفواتير رمز الدولة.",
+      "cronExpression": "0 7 * * *",
+      "languageCode": "ar"
+    }
+  }
+}

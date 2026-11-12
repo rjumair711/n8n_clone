@@ -12769,10 +12769,10 @@ pour()</code></pre>
       starterTemplates.STARTER_SEEDS.slice(0, 5).map((seed) => seed.key),
       ["clinic_appointment_bot", "school_fee_reminder", "shop_order_bot", "real_estate_lead_bot", "support_faq_bot"]
     );
-    assert.equal(starterTemplates.STARTER_SEEDS.length, 43);
-    assert.equal(new Set(starterTemplates.STARTER_SEEDS.map((seed) => seed.key)).size, 43);
-    assert.equal(allStarters.length, 129);
-    assert.equal(new Set(allStarters.map((starter) => starter.id)).size, 129);
+    assert.equal(starterTemplates.STARTER_SEEDS.length, 52);
+    assert.equal(new Set(starterTemplates.STARTER_SEEDS.map((seed) => seed.key)).size, 52);
+    assert.equal(allStarters.length, 156);
+    assert.equal(new Set(allStarters.map((starter) => starter.id)).size, 156);
 
     for (const seed of starterTemplates.STARTER_SEEDS) {
       assert.match(seed.key, /^[a-z_]+$/);
@@ -13156,6 +13156,189 @@ pour()</code></pre>
       const memory = starter.nodes.find((node) => node.type === "BUFFER_MEMORY")!;
       assert.equal(memory.data.sessionId, "{{sessionId}}");
       assert.ok(String(agent.data.systemMessage).includes("notify_owner"), label);
+    }
+  });
+
+  // The rest of the AI and automation templates: their logic runs through
+  // the real Date & Time, IF, Switch, Text Formatter and Code nodes
+  const { dateTimeExecutor } = await import("@/features/executions/components/daytime/executor");
+  const { switchExecutor } = await import("@/features/executions/components/switch/executor");
+  const { textFormatterExecutor } = await import("@/features/executions/components/textFormatter/executor");
+  const { runInSandbox: runTemplateCode } = await import("@/features/executions/lib/code-sandbox");
+  const { renderTemplate: renderForTest } = await import("@/features/executions/lib/templates");
+  const seedNode = (starter: (typeof allStarters)[number], seedId: string) =>
+    starter.nodes.find((node) => node.id === `${starter.id}_${seedId}`)!;
+  const runIf = async (data: unknown, context: Record<string, unknown>) =>
+    ((await chatbotIfExecutor({ ...baseParams, data, context } as never)) as { ifResult?: boolean }).ifResult;
+
+  await test("booking with reminder: one email 24 hours before, only when that is ahead and within the Wait limit", async () => {
+    for (const starter of allStarters.filter((entry) => entry.key === "booking_with_reminder")) {
+      const label = `${starter.key} (${starter.language})`;
+      const startTime = String(seedNode(starter, "reminderAt").data.inputDate);
+      const offset = /([+-])(\d\d):(\d\d)$/.exec(startTime)!;
+      const offsetMs = (offset[1] === "-" ? -1 : 1) * (Number(offset[2]) * 60 + Number(offset[3])) * 60_000;
+
+      // The form's date and time for an appointment at a given moment
+      const formAt = (time: number) => {
+        const local = new Date(time + offsetMs).toISOString();
+        return { name: "Sara", email: "sara@example.com", date: local.slice(0, 10), time: local.slice(11, 16) };
+      };
+
+      const remindsAt = async (hoursAhead: number) => {
+        let context: Record<string, unknown> = { form: formAt(Math.floor((Date.now() + hoursAhead * 3_600_000) / 60_000) * 60_000) };
+        for (const seedId of ["reminderAt", "check"]) {
+          context = await dateTimeExecutor({ ...baseParams, data: seedNode(starter, seedId).data, context } as never);
+        }
+        return runIf(seedNode(starter, "soon").data, context);
+      };
+
+      assert.equal(await remindsAt(72), true, `${label}: in 3 days`);
+      assert.equal(await remindsAt(30), true, `${label}: in 30 hours`);
+      assert.equal(await remindsAt(12), false, `${label}: the reminder time has passed`);
+      assert.equal(await remindsAt(24 * 10), false, `${label}: more than the 7-day Wait limit away`);
+
+      assert.deepEqual(seedNode(starter, "wait").data, { variableName: "wait", operation: "until", dateTime: "{{reminderAt.iso}}" });
+      assert.ok(
+        starter.connections.some(
+          (conn) => conn.fromNodeId === seedNode(starter, "soon").id && conn.fromOutput === "true" && conn.toNodeId === seedNode(starter, "wait").id
+        ),
+        label
+      );
+    }
+  });
+
+  await test("support tickets: the category is lower-cased and routed to its team, anything else to the owner", async () => {
+    for (const starter of allStarters.filter((entry) => entry.key === "support_ticket_routing")) {
+      const label = `${starter.key} (${starter.language})`;
+      const routeTo = async (category: string) => {
+        let context: Record<string, unknown> = { ticket: { output: { category } } };
+        context = await textFormatterExecutor({ ...baseParams, data: seedNode(starter, "lower").data, context } as never);
+        context = await switchExecutor({ ...baseParams, data: seedNode(starter, "route").data, context } as never);
+        const branch = context.matchedBranch;
+        const target = starter.connections.find(
+          (conn) => conn.fromNodeId === seedNode(starter, "route").id && conn.fromOutput === branch
+        );
+        return target ? target.toNodeId.slice(starter.id.length + 1) : null;
+      };
+
+      assert.equal(await routeTo("Billing"), "billing", label);
+      assert.equal(await routeTo(" technical "), "technical", label);
+      assert.equal(await routeTo("DELIVERY"), "delivery", label);
+      assert.equal(await routeTo("other"), "owner", label);
+      assert.equal(await routeTo(""), "owner", label);
+
+      // The Slack nodes carry no webhook: the user pastes their own
+      for (const seedId of ["billing", "technical"]) {
+        assert.equal(seedNode(starter, seedId).type, "SLACK");
+        assert.equal("webhookUrl" in seedNode(starter, seedId).data, false);
+      }
+      assert.equal(seedNode(starter, "ack").data.to, "{{form.email}}");
+    }
+  });
+
+  await test("unpaid WooCommerce orders: each order is reminded once, a day after it was placed", async () => {
+    for (const starter of allStarters.filter((entry) => entry.key === "woocommerce_unpaid_reminder")) {
+      const label = `${starter.key} (${starter.language})`;
+      assert.equal(seedNode(starter, "unpaid").data.status, "pending");
+      assert.equal(seedNode(starter, "unpaid").data.createdAfter, "{{since.iso}}");
+      assert.equal(seedNode(starter, "each").data.inputPath, seedNode(starter, "unpaid").data.variableName);
+
+      let context: Record<string, unknown> = {};
+      for (const seedId of ["since", "cutoff"]) {
+        context = await dateTimeExecutor({ ...baseParams, data: seedNode(starter, seedId).data, context } as never);
+      }
+      // WooCommerce gives the time in UTC without a "Z"
+      const placed = (hoursAgo: number) => new Date(Date.now() - hoursAgo * 3_600_000).toISOString().slice(0, 19);
+      const due = async (item: Record<string, unknown>) => {
+        const withItem = await dateTimeExecutor({ ...baseParams, data: seedNode(starter, "age").data, context: { ...context, item } } as never);
+        return runIf(seedNode(starter, "due").data, withItem);
+      };
+
+      assert.equal(await due({ date_created_gmt: placed(30), billing: { phone: "+923001234567" } }), true, label);
+      assert.equal(await due({ date_created_gmt: placed(10), billing: { phone: "+923001234567" } }), false, label);
+      assert.equal(await due({ date_created_gmt: placed(30), billing: { phone: "" } }), false, label);
+    }
+  });
+
+  await test("social posts: three drafts become one Airtable record, whatever the posts contain", () => {
+    for (const starter of allStarters.filter((entry) => entry.key === "social_posts_for_review")) {
+      const save = seedNode(starter, "save");
+      const post = 'Line one, with "quotes"\nand a second line #hashtag';
+      const fields = JSON.parse(
+        renderForTest(String(save.data.fieldsJson), {
+          form: { topic: "Eid sale, 20% off" },
+          linkedinPost: { text: post },
+          instagramPost: { text: post },
+          xPost: { text: post },
+        })
+      );
+      assert.deepEqual(fields, { Topic: "Eid sale, 20% off", LinkedIn: post, Instagram: post, X: post, Status: "Draft" });
+      // Nothing is published
+      assert.equal(starter.nodes.some((node) => node.type === "SOCIAL_POST"), false);
+    }
+  });
+
+  await test("daily digest: the numbers are counted by code, only yesterday's orders", async () => {
+    const [english] = allStarters.filter((entry) => entry.key === "daily_business_digest");
+    const result = await runTemplateCode(String(seedNode(english, "numbers").data.code), {
+      yesterday: { result: "2026-11-11" },
+      orders: {
+        items: [
+          { name: "#1001", created_at: "2026-11-11T10:00:00+05:00", total_price: "1500.00", currency: "PKR", financial_status: "paid", fulfillment_status: "fulfilled" },
+          { name: "#1002", created_at: "2026-11-11T12:00:00+05:00", total_price: "2500.50", currency: "PKR", financial_status: "pending", fulfillment_status: null },
+          { name: "#1003", created_at: "2026-11-11T18:00:00+05:00", total_price: "900.00", currency: "PKR", financial_status: "paid", fulfillment_status: null, cancelled_at: "2026-11-11T19:00:00+05:00" },
+          { name: "#1004", created_at: "2026-11-12T09:00:00+05:00", total_price: "99999.00", currency: "PKR", financial_status: "paid", fulfillment_status: null },
+        ],
+      },
+    });
+
+    assert.equal(result.success, true);
+    assert.deepEqual((result as { data: unknown }).data, {
+      date: "2026-11-11",
+      currency: "PKR",
+      count: 3,
+      total: "4900.50",
+      paidCount: 2,
+      paidTotal: "2400.00",
+      pendingCount: 1,
+      pendingTotal: "2500.50",
+      cancelledCount: 1,
+      unfulfilledCount: 1,
+      biggest: "#1002: 2500.50\n#1001: 1500.00\n#1003: 900.00",
+    });
+  });
+
+  await test("the other new templates: lead qualifier, Telegram assistant, shipped update, meeting summary", () => {
+    for (const starter of allStarters) {
+      const label = `${starter.key} (${starter.language})`;
+
+      if (starter.key === "whatsapp_lead_qualifier") {
+        const types = starter.connections
+          .filter((conn) => conn.toInput === "sub-tools")
+          .map((conn) => starter.nodes.find((node) => node.id === conn.fromNodeId)!.type)
+          .sort();
+        assert.deepEqual(types, ["GMAIL", "GOOGLE_SHEETS"], label);
+      }
+
+      if (starter.key === "telegram_ai_assistant") {
+        assert.equal(seedNode(starter, "reply").data.chatId, "{{telegram.message.chat.id}}");
+        assert.equal(seedNode(starter, "reply").data.text, "{{aiAgentOutput.output}}");
+      }
+
+      if (starter.key === "shopify_shipped_whatsapp") {
+        // Approved template only: the business starts this conversation
+        assert.equal(seedNode(starter, "notify").data.operation, "send_template");
+        const params = renderForTest(String(seedNode(starter, "notify").data.templateParamsJson), {
+          shopify: { customerName: "Ali", order: { name: "#1001", fulfillments: [{ tracking_company: "TCS", tracking_url: "https://t.example/1" }] } },
+        });
+        assert.deepEqual(JSON.parse(params), ["Ali", "#1001", "TCS", "https://t.example/1"]);
+      }
+
+      if (starter.key === "meeting_recording_summary") {
+        assert.equal(seedNode(starter, "transcribe").data.file, "form.recording");
+        assert.equal(seedNode(starter, "send").data.attachments, `${seedNode(starter, "file").data.variableName}.file`);
+        assert.equal(seedNode(starter, "transcribe").data.language, starter.language);
+      }
     }
   });
 
