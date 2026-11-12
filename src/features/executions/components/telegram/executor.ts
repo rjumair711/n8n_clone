@@ -1,6 +1,11 @@
 import { readCredentialValue } from "@/lib/external-secrets";
 import type { NodeExecutor } from "@/features/executions/types";
-import { renderEscapedTemplate } from "@/features/executions/lib/templates";
+import {
+  escapeTelegramMarkdownV2,
+  renderEscapedTemplate,
+  renderTemplate,
+  renderTemplateEscapingValues,
+} from "@/features/executions/lib/templates";
 import { NonRetriableError } from "inngest";
 import Handlebars from "handlebars";
 import prisma from "@/lib/db";
@@ -43,8 +48,16 @@ export const telegramExecutor: NodeExecutor<TelegramData> = async ({
   if (!data.chatId) throw new NonRetriableError("Telegram node: Target destination Chat ID identifier required");
   if (!data.text) throw new NonRetriableError("Telegram node: Dispatched target string text structural body required");
 
-  const targetChatId = renderEscapedTemplate(data.chatId, context);
-  const messageText = renderEscapedTemplate(data.text, context);
+  const targetChatId = renderTemplate(data.chatId, context).trim();
+  // Values are escaped for the parse mode, so data cannot add markup or
+  // break the message: HTML entities for HTML, backslashes for MarkdownV2,
+  // nothing for plain text. The text typed in the template is kept as is.
+  const messageText =
+    data.parseMode === "HTML"
+      ? renderEscapedTemplate(data.text, context)
+      : data.parseMode === "MarkdownV2"
+        ? renderTemplateEscapingValues(data.text, context, escapeTelegramMarkdownV2)
+        : renderTemplate(data.text, context);
   const documentId = data.file?.trim()
     ? resolveFileId("Telegram", context, data.file)
     : null;

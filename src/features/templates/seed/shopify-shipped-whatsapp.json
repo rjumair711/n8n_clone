@@ -1,0 +1,61 @@
+{
+  "key": "shopify_shipped_whatsapp",
+  "category": "E-commerce",
+  "minPlan": "FREE",
+  "nodes": [
+    {
+      "id": "fulfilled",
+      "type": "SHOPIFY_TRIGGER",
+      "position": { "x": 0, "y": 0 },
+      "data": { "event": "orders/fulfilled" }
+    },
+    {
+      "id": "hasPhone",
+      "type": "FILTER",
+      "position": { "x": 300, "y": 0 },
+      "data": { "inputKey": "shopify.phone", "operator": "exists", "value": "" }
+    },
+    {
+      "id": "hasTracking",
+      "type": "FILTER",
+      "position": { "x": 600, "y": 0 },
+      "data": { "inputKey": "shopify.order.fulfillments.0.tracking_url", "operator": "exists", "value": "" }
+    },
+    {
+      "id": "notify",
+      "type": "WHATSAPP",
+      "position": { "x": 900, "y": 0 },
+      "data": {
+        "variableName": "shippedMessage",
+        "operation": "send_template",
+        "phoneNumberId": "",
+        "to": "{{shopify.phone}}",
+        "templateName": "order_shipped",
+        "languageCode": "@text:languageCode",
+        "templateParamsJson": "[{{json shopify.customerName}}, {{json shopify.order.name}}, {{json shopify.order.fulfillments.0.tracking_company}}, {{json shopify.order.fulfillments.0.tracking_url}}]"
+      }
+    }
+  ],
+  "connections": [
+    { "fromNodeId": "fulfilled", "toNodeId": "hasPhone", "fromOutput": "source-1", "toInput": "target-1" },
+    { "fromNodeId": "hasPhone", "toNodeId": "hasTracking", "fromOutput": "source-1", "toInput": "target-1" },
+    { "fromNodeId": "hasTracking", "toNodeId": "notify", "fromOutput": "source-1", "toInput": "target-1" }
+  ],
+  "text": {
+    "en": {
+      "name": "Shopify order shipped: WhatsApp tracking update",
+      "description": "When a Shopify order is fulfilled with a tracking link, the customer gets a WhatsApp message with their order number, the courier and the link. Orders without a phone number or tracking link are skipped. Set up: create and get approval for a WhatsApp template order_shipped with 4 variables (name, order, courier, tracking link); put your signing secret on the Shopify Trigger and create the Order fulfillment webhook in Shopify; pick your WhatsApp credential and type your Phone Number ID; customers' phone numbers must include the country code (+92...).",
+      "languageCode": "en_US"
+    },
+    "ur": {
+      "name": "Shopify آرڈر روانہ: واٹس ایپ پر ٹریکنگ کی اطلاع",
+      "description": "جب Shopify آرڈر ٹریکنگ لنک کے ساتھ روانہ ہوتا ہے تو گاہک کو واٹس ایپ پیغام ملتا ہے جس میں آرڈر نمبر، کورئیر اور لنک ہوتا ہے۔ جن آرڈرز میں فون نمبر یا ٹریکنگ لنک نہ ہو وہ چھوڑ دیے جاتے ہیں۔ سیٹ اپ: 4 متغیرات (نام، آرڈر، کورئیر، ٹریکنگ لنک) کے ساتھ order_shipped نام کا واٹس ایپ ٹیمپلیٹ بنا کر منظور کروائیں؛ Shopify Trigger پر signing secret لکھیں اور Shopify میں Order fulfillment webhook بنائیں؛ WhatsApp credential چنیں اور Phone Number ID لکھیں؛ گاہکوں کے فون نمبر میں ملک کا کوڈ (‎+92‎...) ہونا چاہیے۔",
+      "languageCode": "ur"
+    },
+    "ar": {
+      "name": "شحن طلب Shopify: تحديث التتبع عبر واتساب",
+      "description": "عندما يُشحن طلب Shopify مع رابط تتبع، يتلقى العميل رسالة واتساب برقم الطلب وشركة الشحن والرابط. تُتجاوز الطلبات التي ليس فيها رقم هاتف أو رابط تتبع. الإعداد: أنشئ قالب واتساب باسم order_shipped بأربعة متغيرات (الاسم، الطلب، شركة الشحن، رابط التتبع) واحصل على موافقته؛ أدخل signing secret في Shopify Trigger وأنشئ Order fulfillment webhook في Shopify؛ اختر WhatsApp credential واكتب Phone Number ID؛ يجب أن تتضمن أرقام العملاء رمز الدولة (‎+966‎...).",
+      "languageCode": "ar"
+    }
+  }
+}

@@ -130,6 +130,16 @@ Both syntaxes work in every node field, side by side.
 
 Differences from n8n: `$json` is the whole set of workflow variables (not the previous node's output) unless the node is running for an item; `$('name')` looks up a variable name; `$now` is a plain date with `toISO()`, not a Luxon object.
 
+**How values are inserted.** A value arrives as it is (`O'Brien & Sons`, not `O&#x27;Brien &amp; Sons`), except where the format it goes into needs escaping:
+
+| Where | What happens to `{{values}}` |
+| ----- | ---------------------------- |
+| AI prompts (Gemini, OpenAI, Anthropic), Calculator, Date & Time, Text Formatter, Google Calendar | As they are |
+| Email (SMTP) | A body with HTML tags of its own (`<p>`, `<br>`, `<a>`) is sent as HTML, with the values HTML-escaped so data cannot add links or markup. Any other body is sent as plain text, as written, with its line breaks |
+| Telegram | Parse Mode HTML: values HTML-escaped. MarkdownV2: the reserved characters in values get a backslash. None: as they are. The text you type keeps its own markup |
+| Notion Properties (JSON) | As they are, unless a value would change the JSON's structure (a quote that closes its string and adds a property); then that render escapes values, as before. Use `{{json x}}` to insert a value as a JSON string |
+| Slack, Discord | As they are, except mentions: in a Slack incoming webhook `&`, `<` and `>` in values stay escaped (so `<!channel>` or a link from data is text), and Discord only lets the kinds of mention typed in the message notify anyone |
+
 ---
 
 # 📜 Execution Logs & Monitoring
@@ -1244,7 +1254,7 @@ The **Templates** page is a gallery of ready-made workflows. "Use template" copi
 * **No plans:** every template is open to every account (`canUseTemplate` in `src/features/templates/lib/template-data.ts`), except one with a node only a self-hosted server runs (SSH, on the hosted app). **Use template** checks that on the server, from the nodes that will be copied. The plan an admin once stored on a template row no longer counts.
 * Workflows already made from a template do not change when the template is edited or deleted.
 * **Languages.** Every template has a language: English, Urdu or Arabic (templates made before the field existed are English). The gallery has a language filter next to the search; Urdu and Arabic names and descriptions are shown right to left. An admin picks the language under **New template** and in the edit dialog.
-* **Starter templates** ship with the app as JSON seed data in `src/features/templates/seed/`, each in English, Urdu and Arabic: 40 templates, 120 in all. They are not in the gallery until an admin adds them: **Templates → Starter templates**, tick the ones wanted, and add them hidden (to read them first) or published. Adding them again changes nothing: one that is already there, also one edited since, is left alone.
+* **Starter templates** ship with the app as JSON seed data in `src/features/templates/seed/`, each in English, Urdu and Arabic: 52 templates, 156 in all. They are not in the gallery until an admin adds them: **Templates → Starter templates**, tick the ones wanted, and add them hidden (to read them first) or published. Adding them again changes nothing: one that is already there, also one edited since, is left alone.
 
   | Starter template | What it does | Who |
   | ---------------- | ------------ | ---- |
@@ -1288,11 +1298,23 @@ The **Templates** page is a gallery of ready-made workflows. "Use template" copi
   | Cancelled order alert from WooCommerce | When an order in your WooCommerce store is cancelled, your team gets a Telegram message with the order, customer, phone and total, so someone can call and save the sale or stop the parcel. | Everyone |
   | PDF summary by email | Upload a PDF (a contract, a report, a tender, a circular) on a form and get a short summary with the key points by email a minute later. | Everyone |
   | Invoice generator: PDF by email and to Google Drive | Fill in a short form and get a numbered PDF invoice: it is emailed to your customer and a copy is saved to a Google Drive folder. | Everyone |
+  | WhatsApp AI customer support with hand-off | Answers customers on WhatsApp from your FAQ, prices and hours, with a memory per phone number. When someone asks for a person, or the answer is not in your facts, it emails you a summary instead of guessing. | Everyone |
+  | Website lead form with AI summary, alert and reply | A hosted enquiry form: Gemini sorts and summarises each enquiry, it becomes a Google Sheets row, you get an email alert at once and the person gets a short personal reply. | Everyone |
+  | AI email triage with replies you approve | Sorts new email into urgent, sales, support, invoice or spam: urgent mail pings you on Telegram, replies for urgent, sales and support are drafted and only sent after your approval, invoices are copied to your accountant, spam is marked as read. | Everyone |
+  | WhatsApp lead qualifier to Google Sheets | Asks people who message you on WhatsApp for their name, need, budget and timeline, one question at a time, and saves each lead as a sheet row; emails you when someone wants a person. | Everyone |
+  | Telegram AI assistant with memory | A Telegram bot that answers from your business facts and remembers each chat, so follow-up questions make sense. | Everyone |
+  | Support tickets sorted by AI and sent to the right team | A support form: Gemini sets the category and priority, the ticket is logged in Google Sheets, the customer gets an acknowledgement, and billing and technical tickets go to their Slack channels, delivery to your dispatch email, the rest to you. | Everyone |
+  | Booking form to Google Calendar with a reminder the day before | Like the booking form above, plus a reminder email 24 hours before the appointment (for bookings up to 8 days ahead, the Wait node's limit). | Everyone |
+  | Social media posts drafted by AI, saved for review | Type a topic and Gemini drafts a LinkedIn post, an Instagram caption and a post for X, saved as one Airtable record with the status Draft. Nothing is published. | Everyone |
+  | Daily business digest with an AI summary | Every morning, yesterday's Shopify orders counted by code (total, paid, pending, cancelled, not yet shipped, biggest orders) with a short Gemini summary of what needs attention, by email. | Everyone |
+  | Shopify order shipped: WhatsApp tracking update | When an order is fulfilled with a tracking link, the customer gets an approved WhatsApp template with the order, courier and link. | Everyone |
+  | Unpaid WooCommerce order reminder on WhatsApp | Once a day, each order still waiting for payment one to two days after it was placed gets one WhatsApp reminder with its payment link. | Everyone |
+  | Meeting recording to summary and action items | Upload a recording on a form and get the summary, decisions and action items by email, with the transcript attached (files up to 10 MB). | Everyone |
 
   Every starter is open to every account. The agent's instructions and example details (clinic, menu, FAQ) are written in the template's language and are meant to be replaced. A seed file holds the workflow once and its texts per language; a setting written `@text:<key>` takes that text. To add a template or a translation, edit the JSON: the tests check that every language has every text.
 
   More about the seeds:
-  * **Open to everyone.** No starter has an SSH node, so all 40 run on every account. The seeds still carry the plan they were written for; it no longer counts, and the tests check that every starter is open.
+  * **Open to everyone.** No starter has an SSH node, so all 52 run on every account. The seeds still carry the plan they were written for; it no longer counts, and the tests check that every starter is open.
   * **Description.** Each one is a summary for the card, then `Set up:` (`سیٹ اپ:`, `الإعداد:`) and the steps separated by semicolons; the details panel shows them as a numbered list. At most 600 characters.
   * **Forms.** A form field's name (`{{form.<name>}}`) is made from the Latin letters of its label, so Urdu and Arabic labels end with the English word in brackets, for example `نام (Name)`. The tests check that a template's fields have the same names in all three languages and that every `{{form.x}}` it reads is one of its fields.
   * **Times.** Schedules run in UTC. A starter that runs at a local time has its cron per language: 18:00 is `0 13 * * *` in the English and Urdu versions (Pakistan) and `0 15 * * *` in the Arabic one (Saudi Arabia). Booking times carry the offset (`+05:00` / `+03:00`).
