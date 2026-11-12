@@ -111,11 +111,11 @@ export const SlackDialog = ({
                                         />
                                     </FormControl>
                                     <FormDescription>
-                                        Get this from Slack: Workspace Settings →
-                                        Workflows → Webhooks
-                                    </FormDescription>
-                                    <FormDescription>
-                                        Make sure the content is variable
+                                        An incoming webhook (a Slack app with
+                                        Incoming Webhooks: https://hooks.slack.com/services/...),
+                                        or a Workflow Builder webhook
+                                        (https://hooks.slack.com/triggers/...) with a text
+                                        variable named content.
                                     </FormDescription>
                                     <FormMessage />
                                 </FormItem>

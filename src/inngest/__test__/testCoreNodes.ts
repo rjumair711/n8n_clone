@@ -727,6 +727,42 @@ const main = async () => {
     assert.equal(renderEscapedTemplate("{{html}}", data), "&lt;b&gt;x&lt;/b&gt;");
   });
 
+  await test("Slack and Discord: the right field for each webhook, and no mentions from data", async () => {
+    const { buildSlackPayload, discordAllowedMentions, isSlackIncomingWebhook } = await import(
+      "@/features/executions/components/slack/payload"
+    );
+    const { readFileSync } = await import("node:fs");
+    const incoming = "https://hooks.slack.com/services/T0/B0/xyz";
+    const workflow = "https://hooks.slack.com/triggers/T0/123/abc";
+    const note = { form: { note: "O'Brien & Sons <!channel> <https://evil.example|here>" } };
+    const rendered = renderEscapedTemplate("<!here> New: {{form.note}}", note);
+
+    // Incoming webhook: "text"; the template's <!here> works, the value's
+    // <!channel> and link stay text; quotes come back as typed
+    assert.equal(isSlackIncomingWebhook(incoming), true);
+    assert.deepEqual(buildSlackPayload(incoming, rendered), {
+      text: "<!here> New: O'Brien &amp; Sons &lt;!channel&gt; &lt;https://evil.example|here&gt;",
+    });
+    // Workflow Builder webhook: "content", plain, as before
+    assert.deepEqual(buildSlackPayload(workflow, rendered), {
+      content: "<!here> New: O'Brien & Sons <!channel> <https://evil.example|here>",
+    });
+    // Another service: both names
+    assert.deepEqual(Object.keys(buildSlackPayload("https://chat.example.com/hooks/1", rendered)).sort(), ["content", "text"]);
+
+    // Discord: only what the template itself mentions
+    assert.deepEqual(discordAllowedMentions("Note: {{form.note}}"), { parse: [] });
+    assert.deepEqual(discordAllowedMentions("@everyone {{form.note}}"), { parse: ["everyone"] });
+    assert.deepEqual(discordAllowedMentions("<@123> and <@&456>: {{form.note}}"), { parse: ["users", "roles"] });
+    // A mention typed inside a block is still the author's own
+    assert.deepEqual(discordAllowedMentions("{{#if urgent}}@here {{/if}}{{form.note}}"), { parse: ["everyone"] });
+
+    const slack = readFileSync("src/features/executions/components/slack/executor.ts", "utf8");
+    const discord = readFileSync("src/features/executions/components/discord/executor.ts", "utf8");
+    assert.match(slack, /json: payload,/);
+    assert.match(discord, /allowed_mentions: discordAllowedMentions\(data\.content\)/);
+  });
+
   await test("expressions are sandboxed and bounded", () => {
     assert.throws(() => renderTemplate("{{ $json.user.nope.deeper }}", data), /Expression .* failed/);
     assert.throws(() => renderTemplate("{{ $json && process.env }}", data), /process/);

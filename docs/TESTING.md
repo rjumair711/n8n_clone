@@ -1542,6 +1542,17 @@ Needs the `instagram_messenger` migration applied, a public `NEXT_PUBLIC_APP_URL
 
 Delete the test posts afterwards.
 
+**Slack and Discord webhooks.** No migration. Use a test Slack workspace and a test Discord server. Put a Form Trigger with one field Note before the node.
+
+| Node | Settings | Expect |
+|------|----------|--------|
+| Slack | An incoming webhook URL (`https://hooks.slack.com/services/...`), Message `New note: {{form.note}}`; submit `O'Brien & Sons` | the message arrives as typed (before this fix Slack answered `no_text` and the node failed) |
+| Slack | Same, submit `<!channel> click <https://example.com|here>` | the text is shown as typed; nobody is notified and there is no link |
+| Slack | Message `<!here> {{form.note}}` | the @here typed in the message notifies the channel |
+| Slack | A Workflow Builder webhook (`https://hooks.slack.com/triggers/...`) whose workflow has a text variable `content` | the workflow runs with the message in `content`, as before |
+| Discord | Message `Note: {{form.note}}`; submit `@everyone free stuff` | posted as text; nobody is pinged |
+| Discord | Message `@everyone {{form.note}}` | the @everyone typed in the message pings, as before |
+
 ## T18. Google (reconnect the Google Account credential first)
 
 | Node | Test | Expect |

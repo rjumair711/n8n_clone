@@ -887,8 +887,8 @@ Two store nodes and two triggers. The nodes can also be AI Agent tools: reading 
 
 | Integration | Description         |
 | ----------- | ------------------- |
-| Discord     | Discord automation  |
-| Slack       | Slack notifications |
+| Discord     | Discord automation. Only the kinds of mention typed in the message itself (@everyone or @here, <@user>, <@&role>) notify anyone; a mention inside a {{value}} is posted as text |
+| Slack       | Slack notifications through an incoming webhook (hooks.slack.com/services/..., sent as text) or a Workflow Builder webhook (hooks.slack.com/triggers/..., sent as the variable content). In an incoming webhook, <!channel>, <@user> or a link inside a {{value}} is shown as text; the ones typed in the message work |
 | Telegram    | Bot messaging: text, or a file with a caption, and the Telegram Trigger for incoming messages |
 | WhatsApp    | Text, template and file messages via the WhatsApp Business Cloud API, and the WhatsApp Trigger |
 | Messenger   | Text and picture replies to people who wrote to your Facebook Page, and the Messenger Trigger |
