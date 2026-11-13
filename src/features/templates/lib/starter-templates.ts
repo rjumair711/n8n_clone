@@ -1,11 +1,12 @@
-// Starter templates: seed data for an admin to add to the gallery, each in
-// English, Urdu and Arabic. A seed file (../seed/*.json) holds one workflow
-// once and its texts per language; a setting whose value is "@text:<key>"
-// takes the text of that key in the template's language.
+// Starter templates: built-in templates of the gallery, each in English,
+// Urdu and Arabic. A seed file (../seed/*.json) holds one workflow once and
+// its texts per language; a setting whose value is "@text:<key>" takes the
+// text of that key in the template's language.
 //
-// Nothing here touches the database. Adding them to the gallery is an admin
-// action (templates router, addStarters); they are not put there by a
-// migration, so an admin decides which ones the gallery gets and when.
+// Nothing here touches the database. A migration puts them in the gallery,
+// published, for every account: its INSERT statements are printed by
+// scripts/print-builtin-template-sql.ts starters. A new seed needs a new
+// migration (see CLAUDE.md), or it never reaches the gallery.
 
 import clinicAppointmentBot from "../seed/clinic-appointment-bot.json";
 import realEstateLeadBot from "../seed/real-estate-lead-bot.json";
@@ -67,10 +68,12 @@ import {
   type TemplateLanguage,
 } from "./template-languages";
 import {
+  getTemplateMinPlan,
   toTemplateData,
   type TemplateConnection,
   type TemplateNode,
 } from "./template-data";
+import { BUILTIN_TEMPLATE_AUTHOR, quoteSql } from "./builtin-templates";
 
 export type StarterSeed = {
   // Lower case with underscores: part of the template's id
@@ -257,3 +260,18 @@ export const buildStarterTemplates = (seeds: StarterSeed[] = STARTER_SEEDS): Sta
   seeds.flatMap((seed) =>
     TEMPLATE_LANGUAGES.map((language) => buildStarterTemplate(seed, language.value))
   );
+
+/**
+ * The INSERT statements of a migration that puts starter templates in the
+ * gallery, published. Each can be run twice: a row that is already there
+ * (also one an admin has edited or hidden since) is left as it is.
+ */
+export const buildStarterSeedSql = (starters: StarterTemplate[] = buildStarterTemplates()) =>
+  starters
+    .map(
+      (starter) =>
+        `INSERT INTO "workflow_template" ("id", "name", "description", "category", "language", "minPlan", "published", "nodes", "connections", "nodeTypes", "useCount", "createdById", "createdAt", "updatedAt")\n` +
+        `VALUES (${quoteSql(starter.id)}, ${quoteSql(starter.name)}, ${quoteSql(starter.description)}, ${quoteSql(starter.category)}, ${quoteSql(starter.language)}, ${quoteSql(getTemplateMinPlan(starter.minPlan, starter.nodeTypes))}, true, ${quoteSql(JSON.stringify(starter.nodes))}::jsonb, ${quoteSql(JSON.stringify(starter.connections))}::jsonb, ARRAY[${starter.nodeTypes.map(quoteSql).join(", ")}]::text[], 0, ${quoteSql(BUILTIN_TEMPLATE_AUTHOR)}, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)\n` +
+        `ON CONFLICT ("id") DO NOTHING;`
+    )
+    .join("\n\n");

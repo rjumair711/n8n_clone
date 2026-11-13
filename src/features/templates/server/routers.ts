@@ -25,7 +25,6 @@ import {
     DEFAULT_TEMPLATE_LANGUAGE,
     TEMPLATE_LANGUAGE_CODES,
 } from "../lib/template-languages";
-import { buildStarterTemplates } from "../lib/starter-templates";
 import { describeAuditTarget } from "@/lib/audit-actions";
 import { recordAudit } from "@/lib/audit-log";
 import { countWorkflows } from "@/lib/subscription/usage-counts";
@@ -366,81 +365,6 @@ export const templatesRouter = createTRPCRouter({
             });
 
             return { saved: true as const, ...template };
-        }),
-
-    // ADMIN: the starter templates that ship with the app (English, Urdu
-    // and Arabic), and which of them the gallery already has
-    getStarters: adminProcedure.query(async () => {
-        const starters = buildStarterTemplates();
-
-        const existing = new Set(
-            (
-                await prisma.workflowTemplate.findMany({
-                    where: { id: { in: starters.map((starter) => starter.id) } },
-                    select: { id: true },
-                })
-            ).map((template) => template.id)
-        );
-
-        return starters.map((starter) => ({
-            id: starter.id,
-            key: starter.key,
-            language: starter.language,
-            name: starter.name,
-            category: starter.category,
-            minPlan: getTemplateMinPlan(starter.minPlan, starter.nodeTypes),
-            nodeTypes: starter.nodeTypes,
-            inGallery: existing.has(starter.id),
-        }));
-    }),
-
-    // ADMIN: adds starter templates to the gallery. One that is already
-    // there (also one that was edited since) is left as it is.
-    addStarters: adminProcedure
-        .input(
-            z.object({
-                // 40 starters in 3 languages, with room for more
-                ids: z.array(z.string().max(120)).min(1).max(300),
-                published: z.boolean(),
-            })
-        )
-        .mutation(async ({ ctx, input }) => {
-            const wanted = new Set(input.ids);
-            const starters = buildStarterTemplates().filter((starter) => wanted.has(starter.id));
-
-            if (starters.length === 0) {
-                throw new TRPCError({
-                    code: "BAD_REQUEST",
-                    message: "Pick at least one starter template.",
-                });
-            }
-
-            const created = await prisma.workflowTemplate.createMany({
-                data: starters.map((starter) => ({
-                    id: starter.id,
-                    name: starter.name,
-                    description: starter.description,
-                    category: starter.category,
-                    language: starter.language,
-                    minPlan: getTemplateMinPlan(starter.minPlan, starter.nodeTypes),
-                    published: input.published,
-                    nodes: starter.nodes as unknown as Prisma.InputJsonValue,
-                    connections: starter.connections as unknown as Prisma.InputJsonValue,
-                    nodeTypes: starter.nodeTypes,
-                    createdById: ctx.auth.user.id,
-                })),
-                skipDuplicates: true,
-            });
-
-            if (created.count > 0) {
-                await recordAudit({
-                    userId: ctx.auth.user.id,
-                    action: "template.published",
-                    target: `${created.count} starter template${created.count === 1 ? "" : "s"}${input.published ? "" : ", hidden"}`,
-                });
-            }
-
-            return { added: created.count, skipped: starters.length - created.count };
         }),
 
     // ADMIN: workflows already made from the template are not affected
