@@ -350,7 +350,8 @@ export const toSeedRows = (templates: BuiltinTemplate[] = BUILTIN_TEMPLATES) =>
     };
   });
 
-const quote = (value: string) => `'${value.replace(/'/g, "''")}'`;
+// A text as an SQL string literal
+export const quoteSql = (value: string) => `'${value.replace(/'/g, "''")}'`;
 
 /**
  * The INSERT statements of the migration. Each can be run twice: a row
@@ -362,7 +363,7 @@ export const buildSeedSql = (templates: BuiltinTemplate[] = BUILTIN_TEMPLATES) =
     .map(
       (row) =>
         `INSERT INTO "workflow_template" ("id", "name", "description", "category", "minPlan", "published", "nodes", "connections", "nodeTypes", "useCount", "createdById", "createdAt", "updatedAt")\n` +
-        `VALUES (${quote(row.id)}, ${quote(row.name)}, ${quote(row.description)}, ${quote(row.category)}, 'FREE', true, ${quote(JSON.stringify(row.nodes))}::jsonb, ${quote(JSON.stringify(row.connections))}::jsonb, ARRAY[${row.nodeTypes.map(quote).join(", ")}]::text[], 0, ${quote(BUILTIN_TEMPLATE_AUTHOR)}, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)\n` +
+        `VALUES (${quoteSql(row.id)}, ${quoteSql(row.name)}, ${quoteSql(row.description)}, ${quoteSql(row.category)}, 'FREE', true, ${quoteSql(JSON.stringify(row.nodes))}::jsonb, ${quoteSql(JSON.stringify(row.connections))}::jsonb, ARRAY[${row.nodeTypes.map(quoteSql).join(", ")}]::text[], 0, ${quoteSql(BUILTIN_TEMPLATE_AUTHOR)}, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)\n` +
         `ON CONFLICT ("id") DO NOTHING;`
     )
     .join("\n\n");

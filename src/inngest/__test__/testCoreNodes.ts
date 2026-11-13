@@ -13449,34 +13449,47 @@ pour()</code></pre>
     }
   });
 
-  await test("only an admin adds starter templates, and adding them twice adds them once", async () => {
-    const { readFileSync } = await import("node:fs");
+  await test("every starter template is built in: a migration publishes it for everyone, safe to run twice", async () => {
+    const { readFileSync, readdirSync } = await import("node:fs");
     const router = readFileSync("src/features/templates/server/routers.ts", "utf8");
 
-    assert.match(router, /getStarters: adminProcedure\.query\(/);
-    assert.match(router, /addStarters: adminProcedure\s+\.input\(/);
+    // No admin step any more: nothing to pick, nothing to add
+    assert.equal(/getStarters|addStarters|buildStarterTemplates/.test(router), false);
+    assert.equal(
+      /getStarters|addStarters/.test(readFileSync("src/features/templates/components/templates.tsx", "utf8")),
+      false
+    );
 
-    const add = router.slice(router.indexOf("addStarters: adminProcedure"), router.indexOf("// ADMIN: workflows already made"));
-    // Only templates the app ships: an id that is not a starter adds nothing
-    assert.match(add, /buildStarterTemplates\(\)\.filter\(\(starter\) => wanted\.has\(starter\.id\)\)/);
-    assert.match(add, /skipDuplicates: true,/);
-    assert.match(add, /language: starter\.language,/);
-    assert.match(add, /published: input\.published,/);
-    assert.match(add, /createdById: ctx\.auth\.user\.id,/);
-    assert.match(add, /action: "template\.published",/);
-    // An existing row is never overwritten
-    assert.equal(/upsert|\.update\(|deleteMany|\.delete\(/.test(add), false);
-
-    // They are seed data for an admin, not rows a migration inserts
-    const { readdirSync } = await import("node:fs");
+    // Every starter the app ships, in every language, is inserted by some
+    // migration: a new seed without one would never reach the gallery
+    const inserted = new Set<string>();
     for (const folder of readdirSync("prisma/migrations")) {
       if (folder.endsWith(".toml")) continue;
-      assert.equal(
-        readFileSync(`prisma/migrations/${folder}/migration.sql`, "utf8").includes("tpl_starter_"),
-        false,
-        folder
-      );
+      const sql = readFileSync(`prisma/migrations/${folder}/migration.sql`, "utf8");
+      for (const match of sql.matchAll(/VALUES \('(tpl_starter_[a-z0-9_]+)'/g)) inserted.add(match[1]);
     }
+    for (const starter of allStarters) assert.ok(inserted.has(starter.id), `${starter.id}: no migration inserts it`);
+
+    // The migration: published rows in their language, for everyone,
+    // nothing destructive, and a row already there is left alone
+    const folder = readdirSync("prisma/migrations").find((name) => name.endsWith("_starter_templates_built_in"));
+    assert.ok(folder, "migration");
+    const sql = readFileSync(`prisma/migrations/${folder}/migration.sql`, "utf8").replace(/\r\n/g, "\n");
+    assert.equal(sql.match(/INSERT INTO "workflow_template"/g)?.length, allStarters.length);
+    assert.equal(sql.match(/ON CONFLICT \("id"\) DO NOTHING;/g)?.length, allStarters.length);
+    assert.equal(sql.match(/, 'FREE', true, '/g)?.length, allStarters.length);
+    const statements = sql.replace(/'(?:[^']|'')*'/g, "''");
+    assert.equal(/\b(DROP|DELETE|TRUNCATE|UPDATE|RENAME|ALTER)\b/i.test(statements), false);
+
+    // The builder writes what the migration holds: id, language, author
+    const one = starterTemplates.buildStarterSeedSql([allStarters[0]]);
+    assert.ok(one.startsWith(`INSERT INTO "workflow_template" ("id", "name", "description", "category", "language",`));
+    assert.ok(one.includes(`VALUES ('${allStarters[0].id}', `));
+    assert.ok(one.includes(`, '${allStarters[0].language}', 'FREE', true, `));
+    assert.ok(one.includes(`, 0, 'system', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)\nON CONFLICT ("id") DO NOTHING;`));
+    // A quote in a text cannot end the SQL string
+    const quoted = starterTemplates.buildStarterSeedSql([{ ...allStarters[0], name: "Ali's shop" }]);
+    assert.ok(quoted.includes("'Ali''s shop'"));
   });
 
   // -------------------------------------- PINNED DATA AND PARTIAL RUNS

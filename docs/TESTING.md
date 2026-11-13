@@ -630,19 +630,19 @@ Repeat with Title `رسید نمبر 42` and Content `محترم علی خان،
 | 5 | Put `sk-proj-AbCdEfGhIjKlMnOp_QrStUv-123` in an AI Agent's System Message and `postgresql://app:s3cr3t@db.example.com/main` in any text field, save, publish as a new template | both nodes are listed, each with its field and kind ("an \"sk-\" API key", "a password in a URL") |
 | 6 | After a block, pick a different workflow in the dialog | the red box disappears until the next save attempt |
 
-**Languages and starter templates.** Needs the `template_language` migration applied.
+**Languages and starter templates.** Needs the `template_language` and `starter_templates_built_in` migrations applied.
 
 | # | Do | Expect |
 |---|----|--------|
-| 1 | As admin open **Templates** | a **Starter templates** button next to **New template** |
-| 2 | **Starter templates** | 156 lines: 52 templates, each in English, Urdu and Arabic, with its language and plan. Urdu and Arabic names read right to left |
-| 3 | **Select all**, leave "Publish right away" off, **Add 156 to the gallery** | "156 starter templates added". They are in the gallery marked Hidden |
-| 4 | Open **Starter templates** again | every line is ticked, disabled and says "In the gallery" |
+| 1 | As admin open **Templates** | only **New template**; there is no Starter templates button |
+| 2 | As any account open **Templates** | the 52 starter templates in English, Urdu and Arabic (156 cards) are there, published and none locked. Urdu and Arabic names read right to left |
+| 3 | `npx prisma migrate status` after the deploy | up to date; running the migration again would add nothing (each insert is `ON CONFLICT DO NOTHING`) |
+| 4 | As admin, hide one starter template | it disappears for other accounts; a later deploy does not bring it back |
 | 5 | Pick **اردو (Urdu)** in the language filter | only the 52 Urdu templates, right to left, each with an "Urdu" badge. **All languages** shows everything again |
 | 6 | Combine the filter with a category (WhatsApp bots) and with the search | the three work together |
 | 7 | Edit an Urdu template | Language shows اردو (Urdu). Switch **Published** on and save: "Template saved" |
-| 8 | Delete one starter template, then add it again from **Starter templates** | it can be ticked again and comes back as shipped |
-| 9 | As the second account | hidden starters are not listed; the published one is, and the language filter works. No Starter templates button |
+| 8 | Delete one starter template | it is gone for everyone; workflows made from it stay. It does not come back on its own (only a new migration would add it again) |
+| 9 | As the second account | hidden starters are not listed; the published ones are, and the language filter works |
 | 10 | As the second account, **Use template** on "واٹس ایپ کلینک اپائنٹمنٹ بوٹ" | the workflow opens: WhatsApp Trigger → AI Agent → WhatsApp, with Gemini, Memory and Google Sheets under the agent. The agent's System Message is in Urdu; its tool is `book_appointment`. WhatsApp Trigger, Gemini, Google Sheets and WhatsApp are marked Not Configured |
 | 11 | Set that workflow up (Verify Token, App Secret, credentials, Spreadsheet ID), activate it and message the number in Urdu | the bot answers in Urdu, asks for the missing details one at a time and, after you confirm, adds a row to the sheet |
 | 12 | **Use template** on the English "School fee reminder on WhatsApp" | Schedule Trigger → Google Drive → Extract from File → IF → WhatsApp (Send Template, `fee_reminder`, `en_US`). The Arabic copy has language code `ar`, the Urdu one `ur` |
@@ -666,7 +666,7 @@ Repeat with Title `رسید نمبر 42` and Content `محترم علی خان،
 | 11 | As admin, **New template** from a workflow with a Gmail node, plan **Free** | saved; the gallery shows it as **Intermediate** |
 | 12 | DevTools → Network on the Templates page, wait a minute | no repeating requests; hovering cards and the Security link fetches nothing |
 
-**The 35 starter templates added with the gallery.** No migration. First run `npx tsx scripts/check-starter-templates.ts`: **Expect** "120 starter templates checked ... All valid." Then, as admin, add them (step 3 above) and use a test account for the runs; nothing here touches real customers.
+**The 35 starter templates added with the gallery.** No migration. First run `npx tsx scripts/check-starter-templates.ts`: **Expect** "120 starter templates checked ... All valid." They are in the gallery once the `starter_templates_built_in` migration is applied; use a test account for the runs; nothing here touches real customers.
 
 | # | Do | Expect |
 |---|----|--------|
@@ -683,7 +683,7 @@ Repeat with Title `رسید نمبر 42` and Content `محترم علی خان،
 | 11 | **Use template** on "Order status on WhatsApp"; send an order number from the number that placed it, then from another number | the first gets the status in their language; the second gets "could not find that order for this WhatsApp number" |
 | 12 | As any account | every starter template is open and can be used |
 
-**AI support bot, lead form and email triage (3 starters).** No migration. `npx tsx scripts/check-starter-templates.ts` lists 129 starter templates and none of these three among the problems. Add them as admin (step 3 above), and use a test WhatsApp number, a test Gmail account, a test sheet and a test Telegram bot; nothing here touches real customers.
+**AI support bot, lead form and email triage (3 starters).** No migration. `npx tsx scripts/check-starter-templates.ts` lists 129 starter templates and none of these three among the problems. They come with the `starter_templates_built_in` migration; use a test WhatsApp number, a test Gmail account, a test sheet and a test Telegram bot; nothing here touches real customers.
 
 | # | Do | Expect |
 |---|----|--------|
@@ -700,7 +700,7 @@ Repeat with Title `رسید نمبر 42` and Content `محترم علی خان،
 | 11 | Send an obvious marketing mail ("Buy cheap followers now") | it is marked as read in the test inbox; nothing else |
 | 12 | Leave an approval untouched for 24 hours (or set the timeout to 1 minute) | it expires as rejected; nothing is sent |
 
-**Nine more AI and automation starters.** No migration. `npx tsx scripts/check-starter-templates.ts` lists 156 starter templates and none of these nine among the problems. Add them as admin (step 3 above) and use test accounts, a test sheet, a test Airtable base, a test store and test WhatsApp and Telegram numbers; nothing here touches real customers.
+**Nine more AI and automation starters.** No migration. `npx tsx scripts/check-starter-templates.ts` lists 156 starter templates and none of these nine among the problems. They come with the `starter_templates_built_in` migration; use test accounts, a test sheet, a test Airtable base, a test store and test WhatsApp and Telegram numbers; nothing here touches real customers.
 
 | # | Do | Expect |
 |---|----|--------|
