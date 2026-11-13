@@ -1,10 +1,12 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import { useEffect, useMemo, useRef } from "react";
+import { useQuery } from "@tanstack/react-query";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { cn } from "@/lib/utils";
-import { SETTINGS_GROUPS, SETTINGS_SECTIONS, settingsHref } from "../lib/sections";
+import { useTRPC } from "@/trpc/client";
+import { SETTINGS_GROUPS, settingsHref } from "../lib/sections";
 
 const isActive = (pathname: string, slug: string) => pathname === settingsHref(slug);
 
@@ -15,6 +17,21 @@ const isActive = (pathname: string, slug: string) => pathname === settingsHref(s
 export const SettingsNav = () => {
     const pathname = usePathname();
     const tabs = useRef<HTMLDivElement>(null);
+    const trpc = useTRPC();
+    // The platform's admin sections are only listed for its admins (the
+    // pages say so themselves to anyone who opens them by address)
+    const { data: security } = useQuery(trpc.settings.getSecurity.queryOptions());
+    const isAdmin = !!security?.isAdmin;
+
+    const groups = useMemo(
+        () =>
+            SETTINGS_GROUPS.map((group) => ({
+                ...group,
+                sections: group.sections.filter((section) => isAdmin || !section.adminOnly),
+            })).filter((group) => group.sections.length > 0),
+        [isAdmin]
+    );
+    const sections = useMemo(() => groups.flatMap((group) => group.sections), [groups]);
 
     // The open tab is scrolled into view on phones
     useEffect(() => {
@@ -26,7 +43,7 @@ export const SettingsNav = () => {
         <>
             <nav aria-label="Settings" className="hidden w-52 shrink-0 md:block">
                 <div className="sticky top-6 space-y-5">
-                    {SETTINGS_GROUPS.map((group) => (
+                    {groups.map((group) => (
                         <div key={group.title}>
                             <p className="px-3 pb-1.5 text-xs font-medium text-muted-foreground">
                                 {group.title}
@@ -64,7 +81,7 @@ export const SettingsNav = () => {
                 aria-label="Settings"
                 className="-mx-4 flex gap-1 overflow-x-auto border-b px-4 md:hidden"
             >
-                {SETTINGS_SECTIONS.map((section) => {
+                {sections.map((section) => {
                     const active = isActive(pathname, section.slug);
 
                     return (

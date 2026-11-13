@@ -30,6 +30,8 @@ export const AUDIT_ACTIONS = {
   "included_ai.saved": "Included AI provider saved",
   "included_ai.deleted": "Included AI provider deleted",
   "auth.sign_in": "Signed in",
+  "account.name_changed": "Name changed",
+  "account.password_changed": "Password changed",
   "two_factor.enabled": "Two-factor authentication turned on",
   "two_factor.disabled": "Two-factor authentication turned off",
   "two_factor.backup_codes_regenerated": "New backup codes made",
@@ -156,6 +158,14 @@ export const getAuthAuditEvent = ({
   const userId = priorSession?.user?.id;
   if (!userId) return null;
 
+  // Settings → Profile and Security. Only the fact is kept: never the
+  // name itself here, and never a password
+  if (path === "/update-user") {
+    return { userId, action: "account.name_changed", target: null };
+  }
+  if (path === "/change-password") {
+    return { userId, action: "account.password_changed", target: null };
+  }
   if (path === "/two-factor/disable") {
     return { userId, action: "two_factor.disabled", target: null };
   }

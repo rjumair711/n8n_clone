@@ -14,7 +14,6 @@ import {
   UserCheckIcon,
   UsersIcon,
 } from "lucide-react";
-import { PLAN_AI_CREDITS } from "@/config/ai-credits";
 import { getNodeLabel } from "@/config/node-labels";
 import { PLAN_LIMITS } from "@/config/plans";
 
@@ -192,8 +191,8 @@ export const SECURITY = [
   },
   {
     icon: KeyRoundIcon,
-    title: "Two-factor and SSO",
-    text: "Authenticator-app codes with backup codes, sign-in lockout, and single sign-on with OpenID Connect.",
+    title: "Two-factor sign-in",
+    text: "Authenticator-app codes with backup codes, sign-in lockout, and a list of signed-in devices you can sign out.",
   },
   {
     icon: ScrollTextIcon,
@@ -212,7 +211,7 @@ const free = PLAN_LIMITS.FREE;
 export const FAQ = [
   {
     question: "Do I need my own API keys?",
-    answer: `You can bring your own: connect a key for OpenAI, Anthropic, Gemini, DeepSeek, Kimi, Qwen or any OpenAI-compatible provider and pay that provider directly. Where "RXJ AI (included)" is offered, you can also run selected low-cost models without a key and pay with AI credits: every account gets ${number(PLAN_AI_CREDITS.FREE)} a month. 1,000 credits are one US dollar of model cost.`,
+    answer: `You can bring your own: connect a key for OpenAI, Anthropic, Gemini, DeepSeek, Kimi, Qwen or any OpenAI-compatible provider and pay that provider directly. Where "RXJ AI (included)" is offered, you can also run selected low-cost models without a key and pay with AI credits you buy under Billing. 1,000 credits are one US dollar of model cost.`,
   },
   {
     question: "Is it free? Are there plans?",

@@ -174,11 +174,10 @@ Every workflow keeps its earlier versions, so a change can be looked at and undo
 
 * **Sidebar.** The logo and the workspace switcher at the top; **Build** (Workflows, Templates, Chatbots) and **Operate** (Executions, Approvals, Credentials); and at the bottom your account button (initials, name, email), which opens **Settings**, **Usage**, **Billing**, **API Keys**, **Docs** and **Sign out**. It shows no usage numbers, and fits a 1366 × 768 window without scrolling. Collapsed, it shows the icons with tooltips; on a phone it opens as a sheet.
 * **Settings** has its own menu (tabs on a phone) and one page per section, `/settings/<section>`; `/settings` opens Profile, and the old `/api-keys` opens Settings → API Keys.
-  * **Account:** Profile, Security (two-factor authentication, sessions), API Keys.
+  * **Account:** Profile (change your name), Security (change your password, two-factor authentication, sessions), API Keys. An account that signs in with Google or GitHub has no password; **Forgot your password?** on the login page gives it one. Name and password changes are in the audit log, without the values.
   * **Workspace:** General (name, invitations for you, leaving), Members & roles, Usage, Audit log (your account's sign-ins and changes).
-  * **AI:** Model prices and RXJ AI included (platform admins), AI budgets (this month's spend; the budget is set by the workspace's owner and admins).
-  * **Enterprise:** Git sync, External secrets (both need an owner or admin), SSO.
-  * A section your role or plan cannot use says so ("Owners and admins only", "Requires Pro", "Admins only") instead of showing its controls. The server checks the same rules.
+  * **AI:** AI budgets (this month's spend; the budget is set by the workspace's owner and admins). Model prices and RXJ AI included are the platform admins' settings and are only in their menu; anyone else who opens them by address reads "Admins only".
+  * A section your role cannot use says so ("Owners and admins only", "Admins only") instead of showing its controls. The server checks the same rules.
 
 ## Teams and roles
 
@@ -202,46 +201,11 @@ Every account has a **workspace**, and can be a member of other people's. Workfl
 * **How it is stored.** A workspace's data is kept under its owner's account: a workflow a member creates has the owner's user id and the workspace's id. That is why running a workflow, its credentials and its limits work the same for every member. Which workspace a request is for comes from a cookie that only picks among the workspaces the user is a member of; the membership and the role are read from the database on every request.
 * **Not there yet.** One workspace per account: a second workspace, moving a workflow between workspaces and handing a workspace to another owner are not possible. An API key works in its owner's own workspace. The pages do not hide what a role cannot do; the server refuses it with a message that says which role it needs.
 
-## Enterprise features
+## Removed: Git sync, external secrets and SSO
 
-Three things for companies, under **Settings → Enterprise** (Git sync, External secrets, SSO). Git sync and external secrets belong to the workspace and are set up by its admins. Every account has them.
+They were for large companies and nobody used them, so there are no settings, server procedures or "Sign in with SSO" button any more. Their tables (`workspace_git`, `secret_store`, `sso_provider`) and the workspace's `environment` column stay until a later task drops them (see CLAUDE.md). Every workspace is a development workspace. A credential value is still read through `src/lib/external-secrets.ts`: without a secret store it is simply the saved value.
 
-### Environments and Git sync
-
-A workspace's workflows can be kept as JSON files in a GitHub repository, one file per workflow (`workflows/<id>.json`).
-
-* **Set up.** Pick the repository (`owner/name`), a branch that exists, a folder, and a **GitHub credential** of the workspace whose token can reach the repository ("Contents: read and write" to push). Say whether the workspace is **development** or **production**.
-* **Push** (development only) writes every workflow of the workspace to the branch as one commit, and removes the files of workflows that are gone. Nothing is committed when the branch already holds the same. A push is never forced: when the branch moved in the meantime GitHub refuses it.
-* **Pull** makes the workspace's workflows what the files say: a file of a workflow the workspace has replaces its nodes and connections (kept in version history, so it can be undone), any other file becomes a new, inactive workflow. A workflow whose file is not in the branch is left as it is and listed. The plan's workflow limit applies.
-* **Production** workspaces only pull. Their workflows cannot be created, edited, renamed, deleted or restored by hand ("This workspace is a production environment..."); they can still be run and turned on and off, and their credentials are managed as usual. A typical setup is two accounts' workspaces, one development and one production, on two branches or one, with the team as members of both.
-* **Credentials are never in the repository.** A file names the credential a node uses by type and name. The workspace that pulls links a credential of the same type and name; when it has none, the pull says which is needed and the node is left without one.
-* **Secrets typed into nodes stop a push.** A workflow with an API key in a header or a token in a URL is not written to a repository; the push says which workflow and what kind of secret. Move it to a credential.
-* **Ids.** A workflow keeps the id it was first pushed with. In another workspace its nodes get ids of their own, the same on every pull, so executions and pinned data stay with their node. A node that runs another workflow of the same pull is pointed at the local copy.
-* **Limits.** GitHub only (its API, with a token). Up to 300 workflows and 1 MB per file. Workflow names, the Active switch, settings, AI budgets, pinned data and evaluation datasets are not synced, only nodes and connections (and the name).
-
-### External secrets
-
-A credential can read its value from **HashiCorp Vault** (KV engine, version 1 or 2) or **AWS Secrets Manager** instead of storing it.
-
-* Add a store under **Settings → External secrets** with a name (`vault`, `aws`...), and what reaches it: for Vault the address, a token, the KV mount and optionally a namespace; for AWS a region and an access key. These are stored encrypted and never shown again. Use a token or key that can only read the secrets that are needed.
-* In a credential's field, write a reference instead of the secret: the store's name, the secret's path or name, and after `#` the field, in double curly braces starting with `$secrets.`. The External secrets settings show an example. For Vault a field is always named; an AWS secret that is one text is used whole when no field is named. A credential that is JSON (an SMTP server) can use references in any of its fields.
-* The value is read when the credential is used, kept in the server's memory for 5 minutes (`EXTERNAL_SECRETS_CACHE_SECONDS`), and never saved. A rotated secret is picked up after that time. Values that were read are removed from what is stored about a run, like every credential value.
-* **Test** on a store reads one secret and shows the names of its fields, never a value.
-* A reference only reaches the stores of the credential's own workspace. Vault is called at the address that was saved, without following redirects; an address in a private network is refused unless the operator allowed it (`PRIVATE_NETWORK_ALLOWLIST`). AWS is called at Amazon's own address for the region.
-* Not supported: "Google account" and Salesforce credentials made by signing in (they hold tokens the app refreshes), AWS binary secrets, and Vault login methods other than a token.
-
-### Single sign-on (SSO)
-
-People of a company can sign in through its identity provider with **OpenID Connect (OIDC)**: Okta, Microsoft Entra ID, Google Workspace, Keycloak and others. On the login page they type their work email and press **Sign in with SSO**.
-
-* **Register a provider** under **Settings → SSO**: a short id, the email domain, the provider's issuer URL, a client ID and a client secret. At the provider, register the redirect URI the card shows. An account can register providers (3), or 10 when it is a platform admin with two-factor on.
-* **The operator has to allow the provider's address first**: its origin (for example the Okta or Entra address) must be in `TRUSTED_ORIGINS`, or registering fails with "not trusted".
-* **The domain has to be proved.** After registering, the card shows a DNS TXT record. Add it at the domain and press **Verify domain**. Until then the provider signs nobody in. This is what makes it safe: only who controls a domain's DNS can have its addresses signed in through their provider.
-* **Accounts.** Someone who signs in through a provider for the first time gets an account, and joins the workspace of whoever registered the provider as a **Viewer**. Someone who already has an account with that address is signed in to it. Two-factor codes of RXJ are not asked for after an SSO sign-in: the provider is trusted to do that.
-* **SAML is not available yet.** The plugin's SAML support in the Better Auth version this app is on depends on a library version with known high-severity advisories; the fixed one needs Better Auth 1.7.7. Until that upgrade the server refuses every SAML request and no SAML provider can be registered.
-* The provider's client secret is stored by the sign-on plugin in its own table, not encrypted with `ENCRYPTION_KEY` like credentials are.
-
-**Dependencies.** `better-auth`, `@better-auth/sso`, `@better-auth/core`, `@better-auth/utils`, `@better-fetch/fetch` and `better-call` are pinned to exact versions that belong together. Upgrade them together.
+**Dependencies.** `better-auth`, `@better-auth/core`, `@better-auth/utils`, `@better-fetch/fetch` and `better-call` are pinned to exact versions that belong together. Upgrade them together. `@better-auth/sso` is still installed but no longer used.
 
 ## Agent evaluations
 
@@ -1138,7 +1102,7 @@ There are no Beginner, Intermediate or Pro plans and no free trial (`src/config/
 | Workflows and credentials | No limit | No limit |
 | Workflow runs | 2,000 a month (`HOSTED_MONTHLY_EXECUTIONS`) | No limit |
 | Messages | The daily caps under "Limits against abuse" | No limit |
-| RXJ AI (included) | 1,000 credits a month, then bought credits | Its owner's own keys |
+| RXJ AI (included) | Bought credits only | Its owner's own keys |
 | SSH | Not available: anyone who signs up could use the server's address against other people's servers | Yes |
 
 * The `plan` and `trialEndsAt` columns stay in the database for older rows; every plan name now means the same limits, and new accounts get no trial. The functions that callers use (`getRequiredPlanForNode`, `canUseTemplate`, `PLAN_LIMITS[...]`) keep their names.
@@ -1197,11 +1161,11 @@ The amounts are estimates for keeping an eye on spend. You pay your providers di
 A user can run cheap models without an API key of their own. The platform's provider keys do the calling and the user pays with **AI credits**.
 
 * **Credits.** One credit is a tenth of a US cent of model cost: 1,000 credits are one dollar. A call's cost comes from the price table above ("AI token usage and cost"), at the price set when the call is made.
-* **Monthly credits:** every account gets **1,000** a month (one US dollar of model cost; calendar month, UTC; they do not carry over). The number is `MONTHLY_AI_CREDITS` in `src/config/ai-credits.ts`; the platform's keys pay for these calls, so it is what one account can cost you in AI each month before credits it bought.
+* **No free credits.** New and existing accounts get no monthly credits: RXJ AI (included) only runs on credits bought under **Billing**. The number is `MONTHLY_AI_CREDITS` in `src/config/ai-credits.ts` (0). Set above 0, every account would get that many a month (calendar month, UTC, not carried over), paid by the platform's keys, and Billing and Usage would show them again.
 * **Setting it up (admins).** Under **Settings → RXJ AI (included)** an admin with two-factor on adds a provider (one of the Chat Model presets that has its own address, for example Zhipu GLM or DeepSeek), its API key and the model IDs users may pick. The key is stored encrypted, is never shown again, and is covered by the key rotation script. A provider can be switched off without removing it. **Every included model needs a row in the price table**: without one it cannot be used, because it would cost no credits; the card says which models are missing a price. Saving and removing a provider is in the audit log. Until a provider is added, users do not see any of this.
 * **Using it.** On a **Chat Model** node the credential list has **RXJ AI (included)**. With it, Provider and Model have to be one of the included ones (the dialog says which, and "Load models" lists them). It works wherever a Chat Model node works: as a step, as the model of an AI Agent, Text Classifier, Information Extractor, Analyze Image / Document or Guardrails, as a fallback model and behind a Model Router. **Build with AI** offers it in its credential list too. The platform's key is only ever sent to the provider's own address, never to a Base URL typed into the node.
 * **What is charged.** Each included call is written down like any other (the execution's AI usage table, the Billing page) and its cost is taken from the month's plan credits first, then from bought credits.
-* **Hard stop.** With no monthly credits and no bought credits left, a node that uses RXJ AI (included) fails before it calls anything, with: "RXJ AI (included) credits are used up: every account gets 1,000 credits a month and you have no bought credits left. Buy credits at `<app>/billing`, or pick your own API key credential on the node. The monthly credits start again on the 1st (UTC)." Build with AI shows the same message. The check is made before a node runs, not during it, so the last node (an agent with many steps, for example) can use more than was left; bought credits never go below zero.
+* **Hard stop.** With no bought credits left, a node that uses RXJ AI (included) fails before it calls anything, with: "You have no RXJ AI (included) credits: it runs on credits you buy. Buy credits at `<app>/billing`, or pick your own API key credential on the node." Build with AI shows the same message. The check is made before a node runs, not during it, so the last node (an agent with many steps, for example) can use more than was left; bought credits never go below zero.
 * **Billing page.** The **AI credits** card shows what is left of the month's credits and of bought credits, and has the buttons to buy more.
 * **Buying credits (Polar credit packs).** A pack is a one-time product in Polar. `POLAR_CREDIT_PACKS` lists the packs on sale as `<product id>:<credits>`, comma-separated, for example `prod_abc:5000,prod_def:25000`; the price is whatever the product costs in Polar. "Buy 5,000 credits" opens Polar's checkout. When Polar reports the order as paid (`order.paid` on the Polar webhook), the credits are added. Each order is counted once, however often Polar sends the event. Bought credits do not expire and are used after the month's plan credits. Without `POLAR_CREDIT_PACKS` there are no buy buttons, only the link to the plans.
 * **AI budgets** still apply: an included call has a cost, so it counts towards the account's and the workflow's monthly AI budget and appears in "AI spend this month" (where the note about paying your provider does not apply to it).
@@ -1483,7 +1447,7 @@ Anyone can run RXJ on their own VPS with Docker: [`docs/SELF_HOSTING.md`](docs/S
 | `ENCRYPTION_KEY` | Encrypts stored credentials and OAuth tokens. A long random value |
 | `ENCRYPTION_KEY_PREVIOUS` | Only while changing `ENCRYPTION_KEY`: the old key, so values written with it can still be read. See "Credential encryption and key rotation" |
 | `NEXT_PUBLIC_APP_URL` | Public address of the app; used for webhook URLs, OAuth redirects and trusted origins |
-| `TRUSTED_ORIGINS` | Extra origins allowed to sign in, comma-separated. Also where the address of every SSO identity provider has to be listed before it can be registered |
+| `TRUSTED_ORIGINS` | Extra origins allowed to sign in, comma-separated. |
 | `EXTERNAL_SECRETS_CACHE_SECONDS` | How long a secret read from Vault or AWS Secrets Manager is used before it is read again, default 300. 0: read every time |
 | `ADMIN_EMAILS` | Who may publish, edit and delete workflow templates, comma-separated. The account's email must also be verified |
 | `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` | Google sign-in and the "Google account" credential. Add `<app URL>/api/oauth/google/callback` as an authorised redirect URI |

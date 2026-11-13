@@ -1,16 +1,72 @@
 "use client";
 
+import { useState } from "react";
+import { toast } from "sonner";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import { getInitials } from "@/lib/initials";
 import { authClient } from "@/lib/auth-client";
+import { MAX_NAME_LENGTH } from "@/lib/profile";
 import { SectionSkeleton } from "../settings-section";
 
 const formatDate = (value: Date | string) =>
     new Date(value).toLocaleDateString("en-US", { year: "numeric", month: "long", day: "numeric" });
 
-/** Settings → Account → Profile: who the user is signed in as. */
+/**
+ * The name field: saved through Better Auth's own update-user endpoint,
+ * which only changes the name (and picture) of the signed-in account. The
+ * session refreshes itself, so the sidebar shows the new name at once.
+ */
+const NameForm = ({ current }: { current: string }) => {
+    const [name, setName] = useState(current);
+    const [saving, setSaving] = useState(false);
+
+    const trimmed = name.trim();
+    const unchanged = trimmed === current.trim();
+
+    const save = async (event: React.FormEvent) => {
+        event.preventDefault();
+        if (!trimmed || unchanged) return;
+
+        setSaving(true);
+        const { error } = await authClient.updateUser({ name: trimmed });
+        setSaving(false);
+
+        if (error) {
+            toast.error(error.message || "Your name could not be saved");
+            return;
+        }
+
+        setName(trimmed);
+        toast.success("Name saved");
+    };
+
+    return (
+        <form onSubmit={save} className="space-y-2">
+            <Label htmlFor="profile-name">Name</Label>
+            <div className="flex flex-col gap-2 sm:flex-row">
+                <Input
+                    id="profile-name"
+                    value={name}
+                    maxLength={MAX_NAME_LENGTH}
+                    autoComplete="name"
+                    onChange={(event) => setName(event.target.value)}
+                    className="sm:max-w-sm"
+                />
+                <Button type="submit" disabled={saving || !trimmed || unchanged}>
+                    {saving ? "Saving..." : "Save"}
+                </Button>
+            </div>
+            {!trimmed && <p className="text-xs text-destructive">Your name cannot be empty.</p>}
+        </form>
+    );
+};
+
+/** Settings → Account → Profile: the user's name, and who they are signed in as. */
 export const ProfileSection = () => {
     const { data, isPending } = authClient.useSession();
 
@@ -31,6 +87,7 @@ export const ProfileSection = () => {
                         <p className="truncate text-sm text-muted-foreground">{user.email}</p>
                     </div>
                 </div>
+                <NameForm key={user.id} current={user.name ?? ""} />
                 <dl className="grid gap-4 text-sm sm:grid-cols-2">
                     <div>
                         <dt className="text-xs text-muted-foreground">Email</dt>

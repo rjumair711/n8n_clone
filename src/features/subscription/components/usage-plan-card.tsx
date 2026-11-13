@@ -187,9 +187,11 @@ export const UsagePlanCard = () => {
                     value={creditsSetUp ? formatCredits(credits.availableUsd) : "—"}
                     detail={
                         creditsSetUp
-                            ? `${formatCredits(credits.allowanceLeftUsd)} of this month's ${formatCredits(credits.allowanceUsd)} included${
-                                credits.purchasedUsd > 0 ? `, ${formatCredits(credits.purchasedUsd)} bought` : ""
-                            }`
+                            ? credits.allowanceUsd > 0
+                                ? `${formatCredits(credits.allowanceLeftUsd)} of this month's ${formatCredits(credits.allowanceUsd)} free${
+                                    credits.purchasedUsd > 0 ? `, ${formatCredits(credits.purchasedUsd)} bought` : ""
+                                }`
+                                : "Bought credits for RXJ AI (included). Buy them under Billing."
                             : "RXJ AI (included) is not set up on this server."
                     }
                 />
