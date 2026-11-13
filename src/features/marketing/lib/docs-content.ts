@@ -161,7 +161,7 @@ export const DOCS_SECTIONS: DocsSection[] = [
       },
       {
         term: "RXJ AI (included)",
-        text: "Where it is offered, selected low-cost models run without a key of your own and are paid with your plan's monthly AI credits.",
+        text: "Where it is offered, selected low-cost models run without a key of your own and are paid with AI credits you buy under Billing.",
       },
       {
         term: "Tools",

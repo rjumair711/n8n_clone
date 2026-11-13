@@ -24,7 +24,7 @@ import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
 import {
     INCLUDED_CREDENTIAL_NAME,
-    PLAN_AI_CREDITS,
+    MONTHLY_AI_CREDITS,
     parseIncludedModels,
 } from "@/config/ai-credits";
 import { useTRPC } from "@/trpc/client";
@@ -93,12 +93,12 @@ export const IncludedAiCard = () => {
                     Provider keys of the platform that every account can use without a key
                     of its own, on a Chat Model node and in Build with AI. A call costs the
                     user AI credits, worked out from the price table below: a model
-                    without a price there cannot be used. Per month the plans include{" "}
-                    {Object.entries(PLAN_AI_CREDITS)
-                        .map(([plan, credits]) => `${plan} ${credits.toLocaleString("en-US")}`)
-                        .join(", ")}{" "}
-                    credits (1,000 credits are one US dollar). The platform pays the
-                    provider: offer cheap models only.
+                    without a price there cannot be used.{" "}
+                    {MONTHLY_AI_CREDITS > 0
+                        ? `Every account gets ${MONTHLY_AI_CREDITS.toLocaleString("en-US")} free credits a month, then uses credits it bought`
+                        : "There are no free credits: accounts use credits they bought"}{" "}
+                    (1,000 credits are one US dollar). The platform pays the provider: offer
+                    cheap models only.
                 </CardDescription>
             </CardHeader>
             <CardContent className="space-y-6">

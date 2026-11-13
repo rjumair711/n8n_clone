@@ -11,7 +11,7 @@ const Layout = async ({ children }: { children: React.ReactNode }) => {
             <div>
                 <h1 className="text-lg font-semibold md:text-xl">Settings</h1>
                 <p className="text-sm text-muted-foreground">
-                    Your account, the workspace you work in, AI and enterprise features.
+                    Your account, the workspace you work in, and AI.
                 </p>
             </div>
             <div className="flex flex-col gap-4 md:flex-row md:gap-10">

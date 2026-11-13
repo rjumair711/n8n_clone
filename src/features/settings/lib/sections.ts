@@ -6,6 +6,8 @@ export type SettingsSection = {
   slug: string;
   title: string;
   description: string;
+  // Set up by the platform's admins: left out of the menu for everyone else
+  adminOnly?: boolean;
 };
 
 export type SettingsGroup = {
@@ -20,12 +22,12 @@ export const SETTINGS_GROUPS: SettingsGroup[] = [
       {
         slug: "profile",
         title: "Profile",
-        description: "Who you are signed in as.",
+        description: "Your name, and who you are signed in as.",
       },
       {
         slug: "security",
         title: "Security",
-        description: "Two-factor authentication and the devices signed in to your account.",
+        description: "Your password, two-factor authentication and the devices signed in to your account.",
       },
       {
         slug: "api-keys",
@@ -66,36 +68,18 @@ export const SETTINGS_GROUPS: SettingsGroup[] = [
         slug: "model-prices",
         title: "Model prices",
         description: "What each model costs per million tokens, for AI spend and budgets.",
+        adminOnly: true,
       },
       {
         slug: "rxj-ai",
         title: "RXJ AI included",
-        description: "The platform's own model provider and the credits each plan includes.",
+        description: "The platform's own model provider, paid for with bought AI credits.",
+        adminOnly: true,
       },
       {
         slug: "ai-budgets",
         title: "AI budgets",
         description: "This month's AI spend and the workspace's monthly AI budget.",
-      },
-    ],
-  },
-  {
-    title: "Enterprise",
-    sections: [
-      {
-        slug: "git-sync",
-        title: "Git sync",
-        description: "Environments, and the workflows kept in a GitHub repository.",
-      },
-      {
-        slug: "secrets",
-        title: "External secrets",
-        description: "Secret stores that credentials can read their values from.",
-      },
-      {
-        slug: "sso",
-        title: "SSO",
-        description: "Sign-in through your company's identity provider.",
       },
     ],
   },

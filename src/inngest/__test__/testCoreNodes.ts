@@ -3416,6 +3416,50 @@ const main = async () => {
     }
   });
 
+  await test("Settings: a name can be changed and a password too; both are in the audit log, never their values", async () => {
+    const { getAuthAuditEvent } = await import("@/lib/audit-actions");
+    const { getNameProblem, MAX_NAME_LENGTH } = await import("@/lib/profile");
+    const { readFileSync } = await import("node:fs");
+    const read = (file: string) => readFileSync(file, "utf8").replace(/\r\n/g, "\n");
+    const prior = { user: { id: "user_1", twoFactorEnabled: false }, session: { id: "s1" } };
+
+    // The name: checked by the auth hook, whatever the form let through
+    assert.equal(MAX_NAME_LENGTH, 80);
+    assert.equal(getNameProblem({ name: "Ayesha Khan" }), null);
+    assert.equal(getNameProblem({ name: "عائشہ" }), null);
+    assert.equal(getNameProblem({ image: "x" }), null, "no name in the request: nothing to check");
+    assert.equal(getNameProblem(undefined), null);
+    assert.equal(getNameProblem({ name: "   " }), "Your name cannot be empty.");
+    assert.equal(getNameProblem({ name: 42 }), "Your name cannot be empty.");
+    assert.equal(getNameProblem({ name: "x".repeat(81) }), "Use at most 80 characters for your name.");
+    assert.equal(getNameProblem({ name: "a\nb" }), "Your name has to be on one line.");
+    const auth = read("src/lib/auth.ts");
+    assert.match(auth, /if \(ctx\.path === "\/update-user"\) \{\s+const problem = getNameProblem\(ctx\.body\)\s+if \(problem\) throw new APIError\("BAD_REQUEST", \{ message: problem \}\)/);
+
+    // The audit log says it happened, with no name or password in it
+    assert.deepEqual(
+      getAuthAuditEvent({ path: "/update-user", returned: { status: true }, priorSession: prior }),
+      { userId: "user_1", action: "account.name_changed", target: null }
+    );
+    assert.deepEqual(
+      getAuthAuditEvent({ path: "/change-password", returned: { token: null }, priorSession: prior }),
+      { userId: "user_1", action: "account.password_changed", target: null }
+    );
+    // A wrong current password changes nothing, and is not logged as a change
+    assert.equal(getAuthAuditEvent({ path: "/change-password", returned: { statusCode: 400 }, priorSession: prior }), null);
+    assert.equal(getAuthAuditEvent({ path: "/change-password", returned: { token: null } }), null);
+
+    // The forms use Better Auth's own endpoints, which check the current
+    // password and the length again on the server
+    const password = read("src/features/settings/components/password-card.tsx");
+    assert.match(password, /authClient\.changePassword\(\{\s+currentPassword: current,\s+newPassword: next,\s+revokeOtherSessions: signOutOthers,\s+\}\)/);
+    assert.match(password, /export const MIN_PASSWORD_LENGTH = 8;/);
+    // Google and GitHub accounts have no password: they are sent to "Forgot your password?"
+    assert.match(password, /!security\?\.hasPassword \? \([\s\S]*?href="\/forgot-password"/);
+    assert.match(read("src/features/settings/components/sections/security-section.tsx"), /<PasswordCard \/>\s+<TwoFactorCard \/>\s+<SessionsCard \/>/);
+    assert.match(read("src/features/settings/components/sections/profile-section.tsx"), /authClient\.updateUser\(\{ name: trimmed \}\)/);
+  });
+
   await test("sign-ins and two-factor changes are told apart for the audit log", async () => {
     const { getAuthAuditEvent } = await import("@/lib/audit-actions");
     const user = { id: "user_1", twoFactorEnabled: false };
@@ -5440,7 +5484,20 @@ const main = async () => {
     const read = (file: string) => fs.readFileSync(path.join(process.cwd(), file), "utf8");
     const settingsDir = "src/app/(dashboard)/(rest)/settings";
 
-    assert.deepEqual(SETTINGS_GROUPS.map((group) => group.title), ["Account", "Workspace", "AI", "Enterprise"]);
+    assert.deepEqual(SETTINGS_GROUPS.map((group) => group.title), ["Account", "Workspace", "AI"]);
+    // No enterprise sections: Git sync, external secrets and SSO are gone
+    for (const slug of ["git-sync", "secrets", "sso"]) {
+      assert.equal(fs.existsSync(path.join(process.cwd(), `${settingsDir}/${slug}`)), false, slug);
+    }
+    // The platform's own settings are only in an admin's menu
+    assert.deepEqual(
+      SETTINGS_SECTIONS.filter((section) => section.adminOnly).map((section) => section.slug),
+      ["model-prices", "rxj-ai"]
+    );
+    assert.match(
+      read("src/features/settings/components/settings-nav.tsx"),
+      /sections: group\.sections\.filter\(\(section\) => isAdmin \|\| !section\.adminOnly\),/
+    );
     const slugs = SETTINGS_SECTIONS.map((section) => section.slug);
     assert.equal(new Set(slugs).size, slugs.length, "section slugs are unique");
     for (const slug of slugs) {
@@ -12164,42 +12221,37 @@ pour()</code></pre>
 
   const credits = await import("@/config/ai-credits");
 
-  await test("every account gets the same monthly credits; bought credits are used after them", () => {
+  await test("there are no free monthly credits: RXJ AI (included) runs on bought credits only", () => {
     assert.equal(credits.CREDITS_PER_USD, 1000);
-    assert.equal(credits.MONTHLY_AI_CREDITS, 1_000);
-    assert.deepEqual(credits.PLAN_AI_CREDITS, { FREE: 1_000, BEGINNER: 1_000, INTERMEDIATE: 1_000, PRO: 1_000 });
+    assert.equal(credits.MONTHLY_AI_CREDITS, 0);
+    assert.deepEqual(credits.PLAN_AI_CREDITS, { FREE: 0, BEGINNER: 0, INTERMEDIATE: 0, PRO: 0 });
     // Whatever the plan column of an older row says
-    for (const plan of ["FREE", "PRO", "NO_SUCH_PLAN"]) assert.equal(credits.getPlanAllowanceUsd(plan), 1, plan);
+    for (const plan of ["FREE", "PRO", "NO_SUCH_PLAN"]) assert.equal(credits.getPlanAllowanceUsd(plan), 0, plan);
     assert.equal(credits.usdToCredits(0.0375), 37.5);
     assert.equal(credits.formatCredits(1.25), "1,250");
     assert.equal(credits.formatCredits(0.0004), "0.4");
     assert.equal(credits.formatCredits(null), "0");
 
-    // Nothing used yet
-    assert.deepEqual(credits.buildCreditStatus({ plan: "BEGINNER", usedUsd: 0, purchasedUsd: 0 }), {
-      plan: "BEGINNER", allowanceUsd: 1, usedUsd: 0, allowanceLeftUsd: 1, purchasedUsd: 0, availableUsd: 1,
+    // A new account: nothing to spend
+    assert.deepEqual(credits.buildCreditStatus({ plan: "FREE", usedUsd: 0, purchasedUsd: 0 }), {
+      plan: "FREE", allowanceUsd: 0, usedUsd: 0, allowanceLeftUsd: 0, purchasedUsd: 0, availableUsd: 0,
     });
-    // Part of the month's allowance used, and a pack bought
-    const partly = credits.buildCreditStatus({ plan: "BEGINNER", usedUsd: 0.75, purchasedUsd: 5 });
-    assert.deepEqual([partly.allowanceLeftUsd, partly.purchasedUsd, partly.availableUsd], [0.25, 5, 5.25]);
-    // Past the allowance: only bought credits are left; the allowance never goes negative
-    const past = credits.buildCreditStatus({ plan: "FREE", usedUsd: 1.4, purchasedUsd: 2 });
-    assert.deepEqual([past.allowanceLeftUsd, past.availableUsd], [0, 2]);
-    // The hard stop: nothing left at all
-    assert.equal(credits.buildCreditStatus({ plan: "FREE", usedUsd: 1, purchasedUsd: 0 }).availableUsd, 0);
+    // A pack bought: that is all there is, whatever was used this month
+    const bought = credits.buildCreditStatus({ plan: "FREE", usedUsd: 0.75, purchasedUsd: 5 });
+    assert.deepEqual([bought.allowanceLeftUsd, bought.purchasedUsd, bought.availableUsd], [0, 5, 5]);
     assert.equal(credits.buildCreditStatus({ plan: "FREE", usedUsd: 3, purchasedUsd: -1 }).availableUsd, 0);
 
-    // What a call takes from bought credits: only what the allowance does not cover
+    // Every call is paid from bought credits: there is no allowance left
+    assert.equal(credits.getPurchasedCharge(0.05, bought.allowanceLeftUsd), 0.05);
+    // The rule itself still uses an allowance first, should one come back
     assert.equal(credits.getPurchasedCharge(0.02, 1), 0);
-    assert.equal(credits.getPurchasedCharge(0.02, 0.02), 0);
     assert.equal(Number(credits.getPurchasedCharge(0.05, 0.02).toFixed(10)), 0.03);
-    assert.equal(credits.getPurchasedCharge(0.05, 0), 0.05);
     assert.equal(credits.getPurchasedCharge(0.05, -3), 0.05);
 
     const message = credits.creditsUsedUpMessage({ plan: "FREE", appUrl: "https://rxj.example.com" });
     assert.equal(
       message,
-      "RXJ AI (included) credits are used up: every account gets 1,000 credits a month and you have no bought credits left. Buy credits at https://rxj.example.com/billing, or pick your own API key credential on the node. The monthly credits start again on the 1st (UTC)."
+      "You have no RXJ AI (included) credits: it runs on credits you buy. Buy credits at https://rxj.example.com/billing, or pick your own API key credential on the node."
     );
     assert.equal(credits.creditsUsedUpMessage({ plan: "PRO", appUrl: "https://rxj.example.com" }), message);
 
@@ -14575,11 +14627,9 @@ pour()</code></pre>
   });
 
   // -------------------------------------------------- ENTERPRISE
-  console.log("Enterprise: external secrets, Git sync, SSO");
+  console.log("External secrets (no settings screen; credentials still resolve them)");
 
   const secretRefs = await import("@/lib/secret-refs");
-  const workflowFiles = await import("@/features/enterprise/lib/workflow-files");
-  const ssoConfig = await import("@/lib/sso-config");
 
   await test("a credential names a secret of a store, and the value takes its place", () => {
     assert.deepEqual(
@@ -14685,232 +14735,20 @@ pour()</code></pre>
     assert.notEqual(sign('{"SecretId":"prod/other"}').headers.authorization, signed.headers.authorization);
   });
 
-  await test("a workflow is a file in the repository, without credentials, and a file is a workflow again", () => {
-    const file = workflowFiles.toWorkflowFile({
-      id: "wf1",
-      name: "Order desk",
-      nodes: [
-        { id: "n2", type: "HTTP_REQUEST", position: { x: 5, y: 6 }, data: { z: 1, a: 2, credentialId: "c1" }, credentialId: "c1" },
-        { id: "n1", type: "MANUAL_TRIGGER", position: null, data: null },
-      ],
-      connections: [{ fromNodeId: "n1", toNodeId: "n2", fromOutput: "main", toInput: "main" }],
-      credentials: new Map([["c1", { name: "API", type: "HTTP_HEADER" }]]),
-    });
-
-    // In a fixed order, and the credential by name and type: its id (and
-    // of course its value) is not in the file
-    assert.deepEqual(file.nodes.map((node) => node.id), ["n1", "n2"]);
-    assert.deepEqual(file.nodes[1], {
-      id: "n2",
-      type: "HTTP_REQUEST",
-      position: { x: 5, y: 6 },
-      data: { a: 2, z: 1 },
-      credential: { name: "API", type: "HTTP_HEADER" },
-    });
-    const text = workflowFiles.serializeWorkflowFile(file);
-    assert.equal(text.includes("c1"), false);
-    assert.equal(text.endsWith("}\n"), true);
-    assert.equal(workflowFiles.workflowFilePath("workflows", "wf1"), "workflows/wf1.json");
-
-    // The same workflow, saved in another order, is the same text: a
-    // commit shows only what changed
-    const again = workflowFiles.toWorkflowFile({
-      id: "wf1",
-      name: "Order desk",
-      nodes: [
-        { id: "n1", type: "MANUAL_TRIGGER", position: { x: 0, y: 0 }, data: {} },
-        { id: "n2", type: "HTTP_REQUEST", position: { y: 6, x: 5 }, data: { a: 2, z: 1 }, credentialId: "c1" },
-      ],
-      connections: [{ toInput: "main", fromOutput: "main", toNodeId: "n2", fromNodeId: "n1" }],
-      credentials: new Map([["c1", { name: "API", type: "HTTP_HEADER" }]]),
-    });
-    assert.equal(workflowFiles.serializeWorkflowFile(again), text);
-
-    const parsed = workflowFiles.parseWorkflowFile(text);
-    assert.equal(parsed.ok, true);
-    assert.deepEqual(workflowFiles.parseWorkflowFile("{}").ok, false);
-    assert.deepEqual(workflowFiles.parseWorkflowFile("not json"), { ok: false, error: "it is not JSON" });
-    assert.match(
-      (workflowFiles.parseWorkflowFile(JSON.stringify({ ...file, connections: [{ fromNodeId: "n1", toNodeId: "gone" }] })) as { error: string }).error,
-      /points at a node that is not in the file/
-    );
-
-    // Pulled into another workspace: ids of its own (the same on every
-    // pull), and the credential of the same type and name
-    const pull = () =>
-      workflowFiles.fromWorkflowFile({
-        file,
-        workspaceId: "ws-prod",
-        keepNodeIds: false,
-        nodeTypes: new Set(["MANUAL_TRIGGER", "HTTP_REQUEST"]),
-        credentials: new Map([["HTTP_HEADER\nAPI", "c9"]]),
-        workflowIds: new Map(),
-      });
-    const imported = pull();
-    assert.deepEqual(imported, pull());
-    assert.equal(imported.nodes.every((node) => /^g[0-9a-f]{31}$/.test(node.id)), true);
-    assert.notEqual(imported.nodes[0].id, imported.nodes[1].id);
-    assert.equal(imported.nodes[1].credentialId, "c9");
-    assert.equal(imported.nodes[1].data.credentialId, "c9");
-    assert.deepEqual(imported.connections, [
-      { fromNodeId: imported.nodes[0].id, toNodeId: imported.nodes[1].id, fromOutput: "main", toInput: "main" },
-    ]);
-    assert.deepEqual(imported.warnings, []);
-    // Another workspace gets other ids
-    assert.notEqual(workflowFiles.importedNodeId("ws-prod", "wf1", "n1"), workflowFiles.importedNodeId("ws-dev", "wf1", "n1"));
-
-    // Pulled where it was made: the ids it has. A credential that is not
-    // there and a node type this app does not have are said, not guessed
-    const home = workflowFiles.fromWorkflowFile({
-      file: { ...file, nodes: [...file.nodes, { id: "n3", type: "FROM_THE_FUTURE", position: { x: 0, y: 0 }, data: {}, credential: null }] },
-      workspaceId: "ws-dev",
-      keepNodeIds: true,
-      nodeTypes: new Set(["MANUAL_TRIGGER", "HTTP_REQUEST"]),
-      credentials: new Map(),
-      workflowIds: new Map(),
-    });
-    assert.deepEqual(home.nodes.map((node) => node.id), ["n1", "n2"]);
-    assert.equal(home.nodes[1].credentialId, null);
-    assert.deepEqual(home.warnings, [
-      "left out 1 node of a type this app does not have (FROM_THE_FUTURE)",
-      'needs a HTTP_HEADER credential named "API"',
-    ]);
-
-    // A node that runs another workflow of the same pull names the local one
-    const caller = workflowFiles.fromWorkflowFile({
-      file: { ...file, nodes: [{ id: "n1", type: "EXECUTE_WORKFLOW", position: { x: 0, y: 0 }, data: { workflowId: "wf-child" }, credential: null }], connections: [] },
-      workspaceId: "ws-prod",
-      keepNodeIds: false,
-      nodeTypes: new Set(["EXECUTE_WORKFLOW"]),
-      credentials: new Map(),
-      workflowIds: new Map([["wf-child", "local-child"]]),
-    });
-    assert.equal(caller.nodes[0].data.workflowId, "local-child");
-
-    // A secret typed into a node keeps the workflow out of the repository
-    assert.deepEqual(workflowFiles.findFileSecrets(file), []);
-    assert.equal(
-      workflowFiles.findFileSecrets({
-        ...file,
-        nodes: [{ ...file.nodes[1], data: { headers: "Authorization: Bearer sk-abcdefghijklmnopqrstuvwxyz123456" } }],
-      }).length,
-      1
-    );
-
-    assert.equal(workflowFiles.isRepoName("acme/flows"), true);
-    for (const repo of ["acme", "acme/flows/x", "acme/flows?x", "../etc", "acme/..", "acme/.", "-acme/x", "/x"]) assert.equal(workflowFiles.isRepoName(repo), false, repo);
-    assert.equal(workflowFiles.isBranchName("release/1.0"), true);
-    for (const branch of ["a..b", "/main", "main/", "a b", "x.lock"]) assert.equal(workflowFiles.isBranchName(branch), false, branch);
-    assert.equal(workflowFiles.isFolderPath("flows/prod"), true);
-    for (const folder of ["../x", "a//b", "/a", "a/./b"]) assert.equal(workflowFiles.isFolderPath(folder), false, folder);
-  });
-
-  await test("an identity provider is registered for a domain, and signs nobody in before the domain is proved", async () => {
-    const oidc = ssoConfig.buildSsoRegistration(
-      { providerId: "Acme-Okta", domain: " Acme.com, acme.org ", issuer: "https://acme.okta.com/", clientId: "id", clientSecret: "sec" },
-      "https://app.example.com/"
-    );
-    assert.ok("body" in oidc);
-    assert.deepEqual(oidc.body, {
-      providerId: "acme-okta",
-      domain: "acme.com,acme.org",
-      issuer: "https://acme.okta.com",
-      oidcConfig: { clientId: "id", clientSecret: "sec", pkce: true },
-    });
-    assert.equal(oidc.urls.oidcRedirect, "https://app.example.com/api/auth/sso/callback/acme-okta");
-
-    const bad = (changes: Partial<Parameters<typeof ssoConfig.buildSsoRegistration>[0]>) =>
-      "error" in
-      ssoConfig.buildSsoRegistration(
-        { providerId: "acme", domain: "acme.com", issuer: "https://idp.acme.com", clientId: "id", clientSecret: "s", ...changes },
-        "https://app.example.com"
-      );
-    assert.equal(bad({}), false);
-    assert.equal(bad({ providerId: "x" }), true);
-    assert.equal(bad({ providerId: "acme/../x" }), true);
-    assert.equal(bad({ domain: "acme" }), true);
-    assert.equal(bad({ domain: "" }), true);
-    assert.equal(bad({ issuer: "http://idp.acme.com" }), true);
-    assert.equal(bad({ clientSecret: " " }), true);
-
-    // SAML is switched off: none of its addresses answers, and a provider
-    // cannot be given a SAML configuration
-    assert.equal(ssoConfig.isSamlRequest("/sso/saml2/sp/acs/:providerId", undefined), true);
-    assert.equal(ssoConfig.isSamlRequest("/sso/saml2/callback/:providerId", {}), true);
-    assert.equal(ssoConfig.isSamlRequest("/sso/saml2/sp/metadata", undefined), true);
-    assert.equal(ssoConfig.isSamlRequest("/sso/register", { providerId: "a", samlConfig: { entryPoint: "https://idp" } }), true);
-    assert.equal(ssoConfig.isSamlRequest("/sso/update-provider", { samlConfig: {} }), true);
-    assert.equal(ssoConfig.isSamlRequest("/sso/register", oidc.body), false);
-    assert.equal(ssoConfig.isSamlRequest("/sso/callback/:providerId", undefined), false);
-    assert.equal(ssoConfig.isSamlRequest("/sign-in/sso", { email: "a@acme.com" }), false);
-    assert.equal(ssoConfig.isSamlRequest(undefined, { samlConfig: {} }), false);
-
-    assert.deepEqual(ssoConfig.getSsoDnsRecord("acme", "acme.com,acme.org", "tok"), {
-      type: "TXT",
-      host: "_better-auth-token-acme.acme.com",
-      value: "_better-auth-token-acme=tok",
-    });
-
-    const { readFileSync } = await import("node:fs");
+  await test("Git sync, secret stores and SSO are gone; credentials still read through external secrets", async () => {
+    const { existsSync, readFileSync, readdirSync, statSync } = await import("node:fs");
     const { join } = await import("node:path");
     const read = (path: string) => readFileSync(join(process.cwd(), path), "utf8").replace(/\r\n/g, "\n");
 
-    // The plugin: registration only for who may, the domain proved by DNS
-    // before a provider signs anyone in, and SAML answers only to a
-    // sign-in that was started here
-    const authSource = read("src/lib/auth.ts");
-    assert.match(authSource, /sso\(\{[\s\S]*?providersLimit: getSsoProviderLimit,[\s\S]*?domainVerification: \{ enabled: true \},/);
-    // Refused before anything else of the request is looked at
-    assert.match(authSource, /before: createAuthMiddleware\(async \(ctx\) => \{\s+(\/\/.*\s+)*if \(isSamlRequest\(ctx\.path, ctx\.body\)\) \{\s+throw new APIError\("BAD_REQUEST", \{ message: SAML_UNAVAILABLE \}\)/);
-    assert.match(authSource, /allowIdpInitiated: false,/);
-    assert.match(authSource, /algorithms: \{ onDeprecated: "reject" \},/);
-    assert.equal(/trustEmailVerified/.test(authSource), false);
-
-    // Who may register: a platform admin with two-factor, or an account
-    // whose plan includes the enterprise features. Everyone else: 0.
-    const ssoSource = read("src/lib/sso.ts");
-    assert.match(ssoSource, /if \(!user\) return 0/);
-    assert.match(ssoSource, /if \(canUseAdminActions\(user\)\) return SSO_ADMIN_PROVIDER_LIMIT/);
-    assert.match(ssoSource, /return PLAN_LIMITS\[user\.plan\]\?\.features\.enterprise \? SSO_PLAN_PROVIDER_LIMIT : 0/);
-    // An account made through a provider joins with the least role, and
-    // a role someone already has is not changed
-    assert.equal(ssoConfig.SSO_JOIN_ROLE, "VIEWER");
-    assert.match(ssoSource, /update: \{\},\s+create: \{ workspaceId: workspace\.id, userId, role: SSO_JOIN_ROLE \},/);
-
-    const plans = await import("@/config/plans");
-    // There are no plans: every account has the enterprise features
-    for (const plan of ["FREE", "BEGINNER", "INTERMEDIATE", "PRO"] as const) {
-      assert.equal(plans.PLAN_LIMITS[plan].features.enterprise, true, plan);
-      assert.equal(plans.getRequiredPlanForFeature("enterprise", plan, null), null, plan);
+    // Removed: no router, no settings pages, no SSO plugin or login button.
+    // The tables stay until a later task drops them (see CLAUDE.md).
+    for (const gone of ["src/features/enterprise", "src/lib/sso.ts", "src/lib/sso-config.ts"]) {
+      assert.equal(existsSync(join(process.cwd(), gone)), false, gone);
     }
-  });
-
-  await test("enterprise settings are for a workspace's admins; secrets and tokens stay on the server", async () => {
-    const { readFileSync, readdirSync, statSync } = await import("node:fs");
-    const { join } = await import("node:path");
-    const read = (path: string) => readFileSync(join(process.cwd(), path), "utf8").replace(/\r\n/g, "\n");
-
-    const router = read("src/features/enterprise/server/routers.ts");
-    const procedures = new Map(
-      [...router.matchAll(/\n    (\w+): (\w+Procedure)/g)].map((match) => [match[1], match[2]] as const)
-    );
-    for (const name of ["saveGit", "removeGit", "pushGit", "pullGit", "saveSecretStore", "removeSecretStore", "testSecret"]) {
-      assert.equal(procedures.get(name), "workspaceAdminProcedure", name);
-    }
-    // Changing something needs the plan; what is there keeps working without
-    for (const name of ["saveGit", "pushGit", "pullGit", "saveSecretStore"]) {
-      const body = router.slice(router.indexOf(`${name}: workspaceAdminProcedure`));
-      assert.match(body.slice(0, 1500), /await assertPlan\(ctx\.workspace\.ownerId\);/, name);
-    }
-    // A store's settings are encrypted, never selected for the browser,
-    // and only reached inside the caller's workspace
-    assert.match(router, /config: encrypt\(JSON\.stringify\(config\)\),/);
-    const listed = router.slice(router.indexOf("getSecretStores: viewerProcedure"), router.indexOf("saveSecretStore: workspaceAdminProcedure"));
-    assert.equal(/config/.test(listed), false);
-    assert.equal((router.match(/where: \{ id: input\.id, workspaceId: ctx\.workspace\.id \},/g) ?? []).length, 3);
-    assert.match(router, /where: \{ id: input\.credentialId, userId: ctx\.workspace\.ownerId, type: "GITHUB" \},/);
-    assert.match(router, /if \(ctx\.workspace\.environment === "production"\) \{\s+refuse\("A production workspace only pulls/);
-    assert.match(read("src/trpc/routers/_app.ts"), /enterprise: enterpriseRouter,/);
+    assert.equal(/enterprise/.test(read("src/trpc/routers/_app.ts")), false);
+    assert.equal(/@better-auth\/sso|\bsso\(/.test(read("src/lib/auth.ts")), false);
+    assert.equal(/ssoClient/.test(read("src/lib/auth-client.ts")), false);
+    assert.equal(/signIn\.sso|Sign in with SSO/.test(read("src/features/auth/components/login-form.tsx")), false);
 
     // A production workspace's workflows are not built by hand
     const init = read("src/trpc/init.ts");
@@ -14956,19 +14794,6 @@ pour()</code></pre>
       "src/lib/google-oauth.ts: encryptedValue",
       "src/lib/salesforce-oauth.ts: encryptedValue",
     ]);
-
-    // Git sync: only GitHub's API is called, never forced, and the token
-    // is cleaned out of anything that is said about a failure
-    const git = read("src/features/enterprise/server/git.ts");
-    assert.match(git, /const GITHUB_API = "https:\/\/api\.github\.com";/);
-    assert.match(git, /fetch\(`\$\{GITHUB_API\}\/repos\/\$\{target\.repo\}\$\{path\}`, \{/);
-    assert.equal(/force: true/.test(git), false);
-    assert.match(git, /redactString\(String\(\(error as Error\)\?\.message \?\? error\), \{ secrets: \[target\.token\] \}\)/);
-    assert.ok(git.indexOf("const withSecrets = files.flatMap(") < git.indexOf('"POST", "/git/trees"'));
-    assert.match(git, /where: \{ id: settings\.credentialId, userId: ownerId, type: "GITHUB" \},/);
-    // Pulled workflows are the workspace's, new ones inactive, within the plan
-    assert.match(git, /if \(existing\.length \+ toCreate\.length > limit\) \{/);
-    assert.equal(/active: true/.test(git), false);
 
     // The migration only adds: tables, a nullable column, a column with a default
     const folder = readdirSync("prisma/migrations").find((name) => name.endsWith("_enterprise"));

@@ -18,11 +18,12 @@ export const isIncludedCredential = (credentialId: string | null | undefined) =>
 // price table (Settings, admins). 1,000 credits are one dollar.
 export const CREDITS_PER_USD = 1000;
 
-// Credits every account gets each calendar month (UTC). They do not carry
-// over. There are no plans: the number is the same for everyone. The
-// platform's provider keys pay for them, so this is what one account can
-// cost the owner in AI each month, before credits it bought.
-export const MONTHLY_AI_CREDITS = 1_000;
+// Free credits every account gets each calendar month (UTC), used before
+// bought ones; they do not carry over. 0: there are none, and RXJ AI
+// (included) only runs on bought credits. The platform's provider keys pay
+// for these calls, so this is what one account can cost the owner in AI
+// each month before it buys any.
+export const MONTHLY_AI_CREDITS = 0;
 
 // Kept by plan name for older callers: all the same
 export const PLAN_AI_CREDITS: Record<string, number> = {
@@ -122,7 +123,9 @@ export const creditsUsedUpMessage = ({
   plan?: string;
   appUrl: string;
 }) =>
-  `${INCLUDED_CREDENTIAL_NAME} credits are used up: every account gets ${MONTHLY_AI_CREDITS.toLocaleString("en-US")} credits a month and you have no bought credits left. Buy credits at ${appUrl}/billing, or pick your own API key credential on the node. The monthly credits start again on the 1st (UTC).`;
+  MONTHLY_AI_CREDITS > 0
+    ? `${INCLUDED_CREDENTIAL_NAME} credits are used up: every account gets ${MONTHLY_AI_CREDITS.toLocaleString("en-US")} credits a month and you have no bought credits left. Buy credits at ${appUrl}/billing, or pick your own API key credential on the node. The monthly credits start again on the 1st (UTC).`
+    : `You have no ${INCLUDED_CREDENTIAL_NAME} credits: it runs on credits you buy. Buy credits at ${appUrl}/billing, or pick your own API key credential on the node.`;
 
 export type CreditPack = {
   // The Polar product (a one-time purchase)

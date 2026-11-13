@@ -71,17 +71,19 @@ export const AiCreditsCard = () => {
                             {formatCredits(data.availableUsd)}
                         </p>
                         <p className="mt-1 text-xs text-muted-foreground">
-                            credits left: {formatCredits(data.allowanceLeftUsd)} of this month&apos;s{" "}
-                            {formatCredits(data.allowanceUsd)} from your plan
-                            {data.purchasedUsd > 0
-                                ? `, and ${formatCredits(data.purchasedUsd)} bought`
-                                : ""}
+                            {data.allowanceUsd > 0
+                                ? `credits left: ${formatCredits(data.allowanceLeftUsd)} of this month's ${formatCredits(data.allowanceUsd)} free${
+                                    data.purchasedUsd > 0 ? `, and ${formatCredits(data.purchasedUsd)} bought` : ""
+                                }`
+                                : "bought credits left. Bought credits do not expire."}
                         </p>
                     </div>
 
+                    {/* Only when accounts get free monthly credits (MONTHLY_AI_CREDITS) */}
+                    {data.allowanceUsd > 0 && (
                     <div>
                         <div className="mb-1 flex items-center justify-between text-xs">
-                            <span>This month&apos;s plan credits</span>
+                            <span>This month&apos;s free credits</span>
                             <span className="tabular-nums">
                                 {formatCredits(Math.min(data.usedUsd, data.allowanceUsd))} /{" "}
                                 {formatCredits(data.allowanceUsd)} used
@@ -98,6 +100,7 @@ export const AiCreditsCard = () => {
                             carry over. Bought credits are used after them and do not expire.
                         </p>
                     </div>
+                    )}
 
                     {isEmpty && (
                         <p className="rounded-md border border-destructive/40 bg-destructive/5 p-3 text-sm">

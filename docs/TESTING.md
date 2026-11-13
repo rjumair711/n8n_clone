@@ -459,61 +459,14 @@ Needs the `workspaces` migration applied. Use two accounts, A and B, in two brow
 
 **After the migration ran on a copy of real data**, check the backfill: `SELECT count(*) FROM "user"` equals `SELECT count(*) FROM "workspace"`, and `SELECT count(*) FROM "Workflow" WHERE "workspaceId" IS NULL` and the same for `"Credential"` are 0.
 
-## T6g. Enterprise: Git sync, external secrets, SSO
-
-Needs the `enterprise` migration applied, and the workspace's owner on the **Pro** plan (set `plan` to `PRO` on a test account's row).
-
-**Git sync.** Needs an empty GitHub repository with one commit on `main` (a README), a fine-grained token for it with "Contents: read and write", saved as a **GitHub** credential. Two accounts: D (development) and P (production), each on Pro, each with that credential under the same name.
+## T6g. Git sync, external secrets and SSO are gone
 
 | # | Do | Expect |
 |---|----|--------|
-| 1 | As any account open Settings → Environments and Git sync and press Save | it saves: every account has the enterprise features |
-| 2 | As D save: the repository, branch `main`, folder `workflows`, the credential, Development | "Git sync saved"; Push and Pull appear |
-| 3 | As D build two workflows (one with a node that uses a credential), press **Push to Git** | "Pushed 2 workflows (commit …)". On GitHub: one commit with `workflows/<id>.json` for each. The files name the credential by name and type; no credential id or value is in them |
-| 4 | Press Push again without changing anything | "Nothing to push"; no new commit |
-| 5 | In a workflow type `Authorization: Bearer ` and a long made-up token into an HTTP Request header, save, Push | refused: names the workflow and "a secret typed into a node". Nothing is committed |
-| 6 | Remove that, delete one workflow, Push | one commit: the changed file, and the deleted workflow's file removed |
-| 7 | As P save the same repository and branch as **Production**, press **Pull from Git** | "Pulled: 1 new, 0 updated"; the workflow is there, inactive, with its nodes linked to P's credential of that name |
-| 8 | As P, with a credential missing | the pull lists `needs a … credential named "…"`; the node is "Not Configured" |
-| 9 | As P open the pulled workflow, change it and Save; try to create, rename, delete a workflow, use a template | each refused: "This workspace is a production environment..." |
-| 10 | As P turn the workflow on and run it | works |
-| 11 | As P press Push | disabled; calling `enterprise.pushGit` is refused: "A production workspace only pulls." |
-| 12 | As D change the workflow, Push; as P Pull | "0 new, 1 updated"; P's workflow has the change, its executions list is intact, History shows a new version |
-| 13 | Edit a file on GitHub so it is not valid JSON, Pull | that file is listed under "Not applied", the others are pulled |
-| 14 | Set the branch to one that does not exist, Push | 'The branch "…" was not found...' |
-| 15 | Replace the credential's token by a wrong one, Push | "GitHub refused the token..." The token is in no message |
-| 16 | As an editor (not admin) of the workspace press Save or Push | refused: needs Admin |
-| 17 | **Remove** | the settings are gone, the workspace is Development again, nothing is deleted here or on GitHub |
-
-**External secrets.** Needs a Vault you can reach (for a local one: `vault server -dev`, and `127.0.0.1:8200` in `PRIVATE_NETWORK_ALLOWLIST`) with a KV v2 secret, for example `vault kv put secret/team/openai api_key=<a real OpenAI key>`; or an AWS account with a secret in Secrets Manager and an access key that may read it.
-
-| # | Do | Expect |
-|---|----|--------|
-| 18 | Settings → External secrets: add a store `vault` with the address and token | listed. Reload: the token is shown nowhere |
-| 19 | **Test** with `team/openai` | "Found. Fields: api_key". With `team/nothing`: 'has no secret "team/nothing"' |
-| 20 | Create an OpenAI credential whose value is the reference the card shows for `vault`, `team/openai`, `api_key`; use it in an OpenAI node and run | the node answers. The execution's node data, and the Credential row in the database, hold the reference or `[REDACTED]`, never the key |
-| 21 | Change the credential's reference to a field that does not exist, run | the node fails with 'has no field "…"'; no value of the secret is in the message |
-| 22 | Change the secret in Vault, run again within 5 minutes, then after | the old value until the cache time is over, then the new one |
-| 23 | Stop Vault, wait for the cache time, run | the node fails with 'Secret store "vault" could not be reached...' |
-| 24 | Add a store whose address is `http://169.254.169.254` | refused: the address cannot be used |
-| 25 | An AWS store with region `eu-west-1.evil.com` | refused: "Enter an AWS region..." |
-| 26 | As a second account create a credential with the first account's reference | the node fails: "this workspace has none by that name" |
-| 27 | Delete the store, run the workflow | the node fails with that message |
-
-**SSO (OIDC).** Needs an identity provider you control (Keycloak, Okta developer, Entra) and a domain whose DNS you can edit; the provider's origin in `TRUSTED_ORIGINS`.
-
-| # | Do | Expect |
-|---|----|--------|
-| 28 | Settings → Single sign-on on any account | a provider can be registered (up to 3) |
-| 29 | On a Pro account register: id `acme`, domain, issuer URL, client ID and secret | "Provider registered"; a TXT record is shown; the provider is "Domain not verified: off" |
-| 30 | Without `TRUSTED_ORIGINS` listing the provider | registering fails: the discovery endpoint "is not trusted" |
-| 31 | On the login page type an address of that domain, press **Sign in with SSO** | refused: the provider's domain has not been verified |
-| 32 | Add the TXT record, press **Verify domain** | "… is verified". Before the record exists: "Unable to verify domain ownership" |
-| 33 | Sign in with SSO as a person who has no RXJ account | signed in after the provider's own login; the new account is a Viewer of the registrant's workspace, and has its own workspace too |
-| 34 | Sign in with SSO as a person who already has an account with that address | signed in to that account |
-| 35 | Sign in with SSO with an address of another domain | "Single sign-on is not set up for this email's domain" |
-| 36 | `POST /api/auth/sso/register` with a `samlConfig`, or open `/api/auth/sso/saml2/sp/metadata?providerId=acme` | refused: "SAML sign-on is not available yet..." |
-| 37 | Delete the provider, sign in with SSO again | as in 35 |
+| 1 | Open Settings | the menu has Account, Workspace and AI; no Enterprise group |
+| 2 | Open `/settings/git-sync`, `/settings/secrets` and `/settings/sso` | "not found" |
+| 3 | Open the login page | Continue with GitHub, Continue with Google and the email form; no **Sign in with SSO** |
+| 4 | Run a workflow whose nodes use ordinary credentials (OpenAI, Gmail, Telegram) | they run as before |
 
 ## T7. Sub-workflows
 
@@ -1217,7 +1170,7 @@ Needs the `ai_credits` migration applied, an admin account with two-factor on, a
 | # | Do | Expect |
 |---|----|--------|
 | 7 | Trigger manually → **Chat Model**: Credential **RXJ AI (included)**, User Prompt `Say hello`. Save and run | Provider and Model were filled in with an included pair; the node answers. The execution's AI usage table has the call with its cost |
-| 8 | Open **Billing** | an **AI credits** card: credits left, "x / 100 used" (Free), and the plan link |
+| 8 | Open **Billing** with a new account | an **AI credits** card with **0** "bought credits left", no monthly bar, the red note to buy credits or pick your own key, and the buy buttons |
 | 9 | Set Model to something that is not included and save the dialog | "Not part of RXJ AI (included). Included: ..." under Model |
 | 10 | Type a Base URL of your own (a request catcher) with an included provider and model, run | the request goes to the provider's own address; nothing arrives at your URL |
 | 11 | Chat Trigger → AI Agent with that Chat Model node on its Chat Model port; chat | the agent answers; its calls cost credits |
@@ -1225,24 +1178,24 @@ Needs the `ai_credits` migration applied, an admin account with two-factor on, a
 | 13 | As admin remove the model's price, run step 7 again | the node fails: `the included model "..." has no price yet, so it cannot be used` |
 | 14 | As admin switch the provider off (**Edit**, Offered to users off) | the node fails with "is not part of RXJ AI (included)"; new nodes no longer offer it |
 
-**Hard stop.** Give the included model a high price (for example 1000 per million output tokens) so a few calls use up the 100 Free credits, or set the test user's month of usage past the allowance.
+**Hard stop.** There are no free monthly credits (`MONTHLY_AI_CREDITS` is 0), so a new account without bought credits is already at the stop. For steps 7 to 14 buy a pack first (step 20), or give the test account credits in the database.
 
 | # | Do | Expect |
 |---|----|--------|
-| 15 | Run step 7 until the credits are gone | the next run fails before calling the model: "RXJ AI (included) credits are used up: every account gets 1,000 credits a month and you have no bought credits left. Buy credits at ..." |
+| 15 | Run step 7 on an account with no bought credits, or until they are gone | the run fails before calling the model: "You have no RXJ AI (included) credits: it runs on credits you buy. Buy credits at ..." |
 | 16 | Open **Billing** | 0 credits left, a red note that says to buy credits or pick your own API key credential |
 | 17 | Build with AI with RXJ AI (included) | a toast with the same message; no model call |
 | 18 | Switch the node to a credential of your own | it runs: the stop only concerns included calls |
-| 19 | Change the test user's plan to BEGINNER in the database | 1,000 credits a month: the node runs again |
+| 19 | Change the test user's plan to BEGINNER in the database | nothing changes: still no free credits |
 
 **Credit packs (Polar sandbox).** Create a one-time product in the Polar sandbox, set `POLAR_CREDIT_PACKS=<its id>:5000` and restart. The Polar webhook has to deliver `order.paid` to this app.
 
 | # | Do | Expect |
 |---|----|--------|
 | 20 | **Billing** → **Buy 5,000 credits** | Polar's checkout opens for that product |
-| 21 | Pay with a sandbox card | within a minute Billing shows "... and 5,000 bought"; with the month's credits used up, the node of step 15 runs again |
+| 21 | Pay with a sandbox card | within a minute Billing shows 5,000 "bought credits left"; the node of step 15 runs again |
 | 22 | In Polar, send the `order.paid` event again | the balance does not change |
-| 23 | Use more than the month's credits | "bought" goes down by what the plan credits did not cover; it never goes below 0 |
+| 23 | Run included calls | the bought credits go down by each call's cost; they never go below 0 |
 | 24 | Ask the checkout for a product that is not a pack: `fetch("/api/subscription/checkout", {method:"POST", headers:{"Content-Type":"application/json"}, body: JSON.stringify({creditPack:"prod_other"})})` | 400 "Invalid plan selection or product configuration missing" |
 | 25 | Remove `POLAR_CREDIT_PACKS` and restart | no buy buttons, only the link to the plans |
 
@@ -1989,8 +1942,12 @@ Use a browser window of 1366 × 768 (or DevTools → device toolbar at 1366 × 6
 4. **Phone.** At 375 pixels wide the toggle opens the sidebar as a sheet; picking a page closes it. Settings shows its sections as tabs that scroll sideways; the open one is underlined. No horizontal scroll bar on the page.
 5. **Settings routes.** Open `/settings`: **expect** `/settings/profile`. Old links still work: `/api-keys` opens Settings → API Keys. Each menu item has its own address, and DevTools → Network shows only that section's requests (for example Usage asks for the limits, credentials, AI credits and AI spend; Profile asks for nothing new).
 6. **Usage.** "Usage this month", no plan name and no trial; Workflows, Executions (this month) and Credentials each as used / limit with a bar: blue, amber above 80 %, red at the limit. AI credits left and AI spend this month. **Manage billing** opens `/billing`. In someone else's workspace the text says the numbers are that workspace's, not your account's.
-7. **Notes instead of controls.** As an Editor or Viewer in someone else's workspace: General and Members & roles say "Owners and admins only" instead of the rename and invite controls, AI budgets says only owners and admins set the budget, and Git sync and External secrets say "Owners and admins only". On a plan without enterprise features they say "Requires Pro". Model prices and RXJ AI included say "Admins only" unless your email is in `ADMIN_EMAILS`.
-8. **Nothing lost.** Two-factor, sessions, API keys, the workspace name, invitations, members, roles, leaving a workspace, the audit log, model prices, RXJ AI included, the AI budget, Git sync, external secrets and SSO all work as before, each in its section.
+7. **Notes instead of controls.** As an Editor or Viewer in someone else's workspace: General and Members & roles say "Owners and admins only" instead of the rename and invite controls, and AI budgets says only owners and admins set the budget. **Admin-only sections.** Model prices and RXJ AI included are in the AI group only when your email is in `ADMIN_EMAILS`; anyone else does not see them in the menu (desktop or phone tabs), and opening `/settings/model-prices` or `/settings/rxj-ai` by address says "Admins only".
+8. **Nothing lost.** Two-factor, sessions, API keys, the workspace name, invitations, members, roles, leaving a workspace, the audit log, model prices, RXJ AI included and the AI budget all work as before, each in its section.
+10. **Change your name.** Settings → Profile: change the name, **Save**. **Expect** "Name saved"; the sidebar's account button shows the new name without a reload; the Audit log has "Name changed" (without the name). Save is disabled while the name is unchanged or empty. `fetch("/api/auth/update-user", {method:"POST", headers:{"Content-Type":"application/json"}, body: JSON.stringify({name: "x".repeat(81)})})` is refused with "Use at most 80 characters for your name."
+11. **Change your password.** With the test account (email and password): Settings → Security → Password. A wrong current password: "Your current password is not right". A new password under 8 characters, or two that differ, keeps the button disabled with a red line. A right one with "Sign out of all other sessions" ticked: "Password changed. Other sessions are signed out."; another browser signed in to the account is signed out; the Audit log has "Password changed". Sign out and sign in with the new password.
+12. **No password yet.** With an account that signs in with Google or GitHub, Security → Password says it has no password and links to **Forgot your password?**. Following the email's link sets one; then email sign-in works and the Password card has the form.
+
 9. **Loading.** Switch between sections: a skeleton shows in the section area while it loads, and the menu next to it does not move.
 
 ## T25. Self-hosting
@@ -2076,7 +2033,7 @@ Every account gets every node, template and feature, with the same limits. Use t
 | 3 | Pick the SSH node (hosted app) | "SSH is only available on a self-hosted or managed RXJ server (see Pricing)"; the dialog's button opens `/pricing` |
 | 4 | Templates gallery | no plan badges or plan filter; every starter opens with **Use template** |
 | 5 | Create 10 workflows and 5 credentials | all are created |
-| 6 | Settings → API Keys, Environments and Git sync, External secrets, SSO | all are open |
+| 6 | Settings → API Keys | open |
 | 7 | Send 21 emails in a day | all are sent (the daily cap is 1,000) |
 | 8 | Billing | no "Current plan", "Upgrade" or trial; the billing portal is still there |
 | 9 | Landing page, Docs and the FAQ | "Start for free"; no "free trial", "Pro plan" or plan prices |
