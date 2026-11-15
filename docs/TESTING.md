@@ -2127,6 +2127,25 @@ Use the test account, a WhatsApp test number and your own phone (message the num
 | 7 | Send a voice note to both | `voice` works exactly as before |
 | 8 | Executions → open the run → the file | it opens and is removed after the file retention period |
 
+## T34. Workflow export and import
+
+Use the test account and, for steps 6 to 8, a second test account.
+
+| # | Do | Expect |
+| - | -- | ------ |
+| 1 | Open a saved workflow with a WhatsApp Trigger (verify token, app secret), a Slack node (webhook URL) and a Gmail node; gear → **Download as JSON** | a `.json` file named after the workflow downloads |
+| 2 | Open the file | `"format": "rxj-workflow"`; the Gmail node has its `credentialId`; no verify token, app secret or Slack webhook URL anywhere |
+| 3 | Workflows → **Import** → that file | a new workflow with the same name opens; nodes and connections are the same; the original is unchanged |
+| 4 | Its Gmail node | the same credential is selected |
+| 5 | Its WhatsApp Trigger | verify token and app secret are empty; the webhook URL has the new workflow's id |
+| 6 | Sign in as the second account and import the file | the toast says how many credentials must be selected again; Gmail shows no credential; nothing of the first account's is reachable |
+| 7 | Import an n8n workflow file | "This is an n8n workflow..." and nothing is created |
+| 8 | Import a `.txt` renamed to `.json`, or a 3 MB file | "not valid JSON" / "larger than 2 MB" |
+| 9 | Import with the workflow limit reached | the limit dialog; nothing is created |
+| 10 | As a viewer in a workspace | Download works; Import fails with the role error |
+
+Delete the imported workflows afterwards.
+
 # When something fails
 
 Note the node, the exact values you entered, and the error text from the

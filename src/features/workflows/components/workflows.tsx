@@ -11,6 +11,7 @@ import { useWorkflowsParams } from "../hooks/use-workflows-params"
 import { useEntitySearch } from "../../../hooks/use-entity-search"
 import { WorkflowIcon } from "lucide-react"
 import { BuildWithAiButton } from "@/features/ai-builder/components/build-with-ai-button"
+import { ImportWorkflowButton } from "./import-workflow-button"
 
 type Workflow = {
     id: string
@@ -77,7 +78,7 @@ export const WorkflowsHeader = ({ disabled }: { disabled?: boolean }) => {
                 newButtonLabel="New workflow"
                 disabled={disabled}
                 isCreating={createWorkflow.isPending}
-                actions={<BuildWithAiButton />}
+                actions={<><ImportWorkflowButton disabled={disabled} /><BuildWithAiButton /></>}
             />
         </>
     )
