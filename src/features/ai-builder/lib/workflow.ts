@@ -605,7 +605,8 @@ export const describeCurrentWorkflow = (
   nodes: EditorNode[],
   edges: EditorEdge[]
 ) => {
-  const kept = nodes.filter((node) => node.type !== "INITIAL");
+  // Sticky notes are for people; the model is not told about them
+  const kept = nodes.filter((node) => node.type !== "INITIAL" && node.type !== "STICKY_NOTE");
   const aliasById = new Map(kept.map((node, index) => [node.id, `n${index + 1}`]));
 
   return {

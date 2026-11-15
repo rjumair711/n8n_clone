@@ -163,6 +163,7 @@ Two ways to test one part of a workflow in the editor without running the rest a
 
 * **Duplicate workflow:** a workflow's menu on the Workflows page, or editor → Workflow settings → **Duplicate**. The copy is called "<name> (copy)" (then "(copy 2)"...), has new node ids, the same nodes, connections, credentials, secrets, settings (input/output saving, AI budget, time zone), folder and tags, and is **inactive**. The workflow limit applies.
 * **Undo and redo:** the arrows at the top left of the canvas, or Ctrl+Z / Cmd+Z and Ctrl+Shift+Z / Cmd+Shift+Z (Ctrl+Y). Adding, deleting, moving (a whole drag is one step), connecting and saving a node's settings can be undone, up to 50 steps. Not while typing in a field or a dialog. The history lasts until the page is left; **Save** is still what stores the workflow.
+* **Sticky notes:** the note button next to the arrows adds one in the middle of the screen. Double-click to write, drag a corner to resize, pick one of five colours when it is selected. Notes sit behind nodes, are saved, versioned, exported and copied with the workflow, and **never run**: the engine leaves them out, so they start nothing and use no executions. Build with AI does not see them.
 
 ## Workflow export and import (JSON)
 

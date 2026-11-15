@@ -11653,7 +11653,8 @@ pour()</code></pre>
     const selector = read("src/components/node-selector.tsx");
 
     for (const { type, component } of registry) {
-      if (type === "INITIAL") continue;
+      // The empty canvas's placeholder, and canvas notes, which do nothing
+      if (type === "INITIAL" || type === "STICKY_NOTE") continue;
 
       // Its settings: a config the catalogue reads, or a hand-written spec
       const fromConfig = new RegExp(`export const ${component} = createIntegrationNode\\(`).test(nodeFiles);
@@ -16108,6 +16109,38 @@ pour()</code></pre>
     assert.equal(key("z", { typing: true }), null);
     assert.equal(key("z", { ctrlKey: false }), null);
     assert.equal(key("c"), null);
+  });
+
+  await test("sticky notes: on the canvas, never run", async () => {
+    const sticky = await import("@/features/editor/lib/sticky-notes");
+    const { buildGraph, getStartNodeIds } = await import("@/inngest/engine");
+    const graph = buildGraph(
+      [
+        { id: "note", type: "STICKY_NOTE", data: { text: "Remember" } },
+        { id: "t", type: "MANUAL_TRIGGER" },
+        { id: "x", type: "SET_VARIABLE" },
+      ],
+      [
+        { fromNodeId: "t", toNodeId: "x", fromOutput: "main", toInput: "main" },
+        // A hand-made connection to a note is ignored too
+        { fromNodeId: "note", toNodeId: "x", fromOutput: "main", toInput: "main" },
+      ],
+    );
+    assert.deepEqual(graph.order, ["t", "x"]);
+    assert.deepEqual(getStartNodeIds(graph), ["t"]);
+    // A workflow of only notes runs nothing
+    assert.deepEqual(buildGraph([{ id: "n", type: "STICKY_NOTE" }], []).order, []);
+
+    assert.deepEqual(sticky.stickySize({}), sticky.STICKY_DEFAULT_SIZE);
+    assert.deepEqual(sticky.stickySize({ width: 10, height: 99999 }), { width: sticky.STICKY_MIN_SIZE.width, height: sticky.STICKY_MAX_SIZE.height });
+    assert.equal(sticky.stickyColor("pink").value, "pink");
+    assert.equal(sticky.stickyColor("nope").value, "yellow");
+
+    const { NODE_COUNT } = await import("@/features/marketing/lib/content");
+    const { NodeType } = await import("@prisma/client");
+    assert.equal(NODE_COUNT, Object.values(NodeType).length - 2);
+    const { readFileSync } = await import("node:fs");
+    assert.match(readFileSync("src/features/ai-builder/lib/catalogue.ts", "utf8"), /HIDDEN_TYPES = new Set\(\["INITIAL", "STICKY_NOTE"\]\)/);
   });
 
   console.log(`\n${passed} checks passed`);

@@ -37,7 +37,9 @@ import { useExecutionSubscription } from "@/features/executions/hooks/use-execut
 import { EditorBuildWithAi } from "@/features/ai-builder/components/editor-build-with-ai";
 import { usePinNode } from "@/features/executions/components/node-test-actions";
 import { Button } from "@/components/ui/button";
-import { Redo2Icon, Undo2Icon } from "lucide-react";
+import { Redo2Icon, StickyNoteIcon, Undo2Icon } from "lucide-react";
+import { createId } from "@paralleldrive/cuid2";
+import { newStickyNote, STICKY_DEFAULT_SIZE } from "../lib/sticky-notes";
 import {
     emptyHistory,
     historyShortcut,
@@ -96,7 +98,12 @@ export const Editor = ({ workflowId }: { workflowId: string }) => {
     // WORKFLOW
     // =====================================
     const { data: workflow } = useSuspenseWorkflow(workflowId);
-    const [nodes, setNodes] = useState<Node[]>(workflow.nodes);
+    // Sticky notes sit behind the nodes they describe (zIndex is not saved)
+    const [nodes, setNodes] = useState<Node[]>(() =>
+        workflow.nodes.map((node) =>
+            node.type === NodeType.STICKY_NOTE ? { ...node, zIndex: -1 } : node
+        )
+    );
     const [edges, setEdges] = useState<Edge[]>(workflow.edges);
 
     // 2. Added State to manage active dialog config targets
@@ -244,6 +251,35 @@ export const Editor = ({ workflowId }: { workflowId: string }) => {
     }, [restore]);
 
     // =====================================
+    // STICKY NOTES
+    // =====================================
+    // Only what placing a note needs, so the editor's own node types fit
+    const flowRef = useRef<{ screenToFlowPosition: (point: { x: number; y: number }) => { x: number; y: number } } | null>(null);
+    const addStickyNote = useCallback(() => {
+        remember();
+        // In the middle of what is on screen
+        const pane = document.querySelector(".react-flow")?.getBoundingClientRect();
+        const center = flowRef.current && pane
+            ? flowRef.current.screenToFlowPosition({ x: pane.left + pane.width / 2, y: pane.top + pane.height / 2 })
+            : { x: 0, y: 0 };
+        setNodes((current) => [
+            ...current.map((node) => ({ ...node, selected: false })),
+            {
+                id: createId(),
+                type: NodeType.STICKY_NOTE,
+                position: {
+                    x: Math.round(center.x - STICKY_DEFAULT_SIZE.width / 2),
+                    y: Math.round(center.y - STICKY_DEFAULT_SIZE.height / 2),
+                },
+                data: newStickyNote(),
+                selected: true,
+                // Behind the nodes it describes
+                zIndex: -1,
+            },
+        ]);
+    }, [remember]);
+
+    // =====================================
     // NODE CHANGES
     // =====================================
     const onNodesChange = useCallback(
@@ -368,7 +404,10 @@ export const Editor = ({ workflowId }: { workflowId: string }) => {
                     onConnect={onConnect}
                     onNodeClick={onNodeClick} 
                     nodeTypes={nodeComponents}
-                    onInit={setEditor}
+                    onInit={(instance) => {
+                        flowRef.current = instance;
+                        setEditor(instance as unknown as Parameters<typeof setEditor>[0]);
+                    }}
                     fitView
                     snapGrid={[10, 10]}
                     snapToGrid
@@ -402,6 +441,16 @@ export const Editor = ({ workflowId }: { workflowId: string }) => {
                                 onClick={() => restore("redo")}
                             >
                                 <Redo2Icon className="size-4" />
+                            </Button>
+                            <Button
+                                size="icon"
+                                variant="ghost"
+                                className="size-8"
+                                title="Add a sticky note"
+                                aria-label="Add a sticky note"
+                                onClick={addStickyNote}
+                            >
+                                <StickyNoteIcon className="size-4" />
                             </Button>
                         </div>
                     </Panel>

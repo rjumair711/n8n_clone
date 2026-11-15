@@ -33,7 +33,7 @@ export type GalleryTemplate = {
 };
 
 // Triggers and plumbing say little about what a template does
-const HIDDEN_CHIP_TYPES = new Set(["MANUAL_TRIGGER", "INITIAL", "SET_VARIABLE", "MERGE"]);
+const HIDDEN_CHIP_TYPES = new Set(["MANUAL_TRIGGER", "INITIAL", "SET_VARIABLE", "MERGE", "STICKY_NOTE"]);
 const MAX_CHIPS = 4;
 
 // There are no plans: a badge only for a template that needs a server of

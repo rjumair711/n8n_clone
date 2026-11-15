@@ -2227,6 +2227,20 @@ Use a brand-new test account.
 | 7 | Undo, then make a new change | Redo greys out |
 | 8 | Undo something, press Save, reload | the saved state is the undone one |
 
+## T41. Sticky notes
+
+| # | Do | Expect |
+| - | -- | ------ |
+| 1 | Press the note button at the top left | a yellow note in the middle of the screen, selected |
+| 2 | Double-click, type two lines, click outside | the text shows with its line break |
+| 3 | Drag a corner, pick Blue | the size and colour change |
+| 4 | Drag a node over the note | the note stays behind the node |
+| 5 | Save, reload | the note is there with its text, size and colour |
+| 6 | Execute the workflow | the note shows in no log and starts nothing |
+| 7 | A workflow with only a note, activate it | nothing runs |
+| 8 | Delete the note, undo | it is back |
+| 9 | Download as JSON, import | the note comes along |
+
 # When something fails
 
 Note the node, the exact values you entered, and the error text from the

@@ -1,6 +1,7 @@
 import toposort from "toposort";
 import type { WorkflowContext } from "@/features/executions/types";
 import { ALL_OUTPUTS, type NodeRunResult, type StreamItem } from "./items";
+import { CANVAS_ONLY_TYPES } from "@/features/editor/lib/sticky-notes";
 
 // Structural types so the engine can be exercised without Prisma rows
 export type EngineNode = {
@@ -87,9 +88,11 @@ export type WorkflowGraph<N extends EngineNode, C extends EngineConnection> = {
  * (model / memory / tools), then sorts the main flow topologically.
  */
 export const buildGraph = <N extends EngineNode, C extends EngineConnection>(
-  nodes: N[],
+  allNodes: N[],
   connections: C[]
 ): WorkflowGraph<N, C> => {
+  // Sticky notes are only on the canvas: they never run and start nothing
+  const nodes = allNodes.filter((node) => !CANVAS_ONLY_TYPES.has(node.type));
   const nodeById = new Map(nodes.map((node) => [node.id, node]));
 
   const isSupplyEdge = (conn: C) => {

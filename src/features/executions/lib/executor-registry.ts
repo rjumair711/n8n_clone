@@ -208,7 +208,7 @@ const baseExecutors: Record<NodeType, NodeExecutor<any>> = {
   [NodeType.DATA_TABLE]: async ({ context }) => context,
   // Placeholder until its node is added
   [NodeType.IMAGE_GENERATION]: async ({ context }) => context,
-  // Placeholder until its node is added
+  // Never reached: the engine leaves sticky notes out of the graph
   [NodeType.STICKY_NOTE]: async ({ context }) => context,
   [NodeType.TYPEFORM_TRIGGER]: contextTriggerExecutor,
   [NodeType.SHOPIFY]: shopifyExecutor,

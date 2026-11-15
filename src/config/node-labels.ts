@@ -1,6 +1,7 @@
 // Display names for node types whose name is not just the type in title case
 const NODE_LABELS: Record<string, string> = {
     INITIAL: "Start",
+    STICKY_NOTE: "Sticky Note",
     HTTP_REQUEST: "HTTP Request",
     AI_AGENT: "AI Agent",
     AI_AGENT_TOOL: "AI Agent Tool",

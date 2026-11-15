@@ -111,8 +111,11 @@ import {
     PdfGeneratorNode,
 } from '@/features/executions/components/files/nodes';
 
+import { StickyNoteNode } from '@/components/react-flow/sticky-note-node';
+
 export const nodeComponents: NodeTypes = {
     [NodeType.INITIAL]: InitialNode,
+    [NodeType.STICKY_NOTE]: StickyNoteNode,
     [NodeType.HTTP_REQUEST]: HttpRequestNode,
     [NodeType.MANUAL_TRIGGER]: ManualTriggerNode,
     [NodeType.GOOGLE_FORM_TRIGGER]: GoogleFormTrigger,
