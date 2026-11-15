@@ -2146,6 +2146,38 @@ Use the test account and, for steps 6 to 8, a second test account.
 
 Delete the imported workflows afterwards.
 
+## T35. Workflow time zone
+
+Use the test account. Note the current UTC time.
+
+| # | Do | Expect |
+| - | -- | ------ |
+| 1 | Open an existing workflow with a Schedule Trigger | gear menu says "Time zone: UTC"; the Schedule dialog says "Runs on UTC time" with the next three runs |
+| 2 | Gear → Time zone → pick `Asia/Karachi` → Save | toast "... now runs its schedules in Asia/Karachi"; the menu shows it; the dialog shows "UTC+05:00 · it is ... there now" |
+| 3 | Schedule Trigger `0 9 * * *` | the dialog lists the next runs at 09:00 |
+| 4 | Set the cron to the next minute in Pakistan time (e.g. `25 21 * * *` at 21:24 PKT), activate, wait | a run starts at that minute (Executions, source Schedule) |
+| 5 | Same cron with Time zone UTC | no run at 21:25 PKT; it runs at 21:25 UTC |
+| 6 | Type `Mars/Base` | Save is disabled; the hint asks for a name like Asia/Karachi |
+| 7 | **Reset to UTC** → Save | the menu shows UTC again |
+| 8 | A viewer of the workspace changes it | the role error |
+
+## T36. Failure emails
+
+Needs `RESEND_API_KEY`. Use the test account (its email must receive mail).
+
+| # | Do | Expect |
+| - | -- | ------ |
+| 1 | Settings → Profile | "Email me when a workflow fails", switched on |
+| 2 | An active workflow with a Webhook trigger and an HTTP Request to `https://httpstat.us/500`; call the webhook | one email "Workflow failed: ..." with the node, the error and working links to the execution and the workflow |
+| 3 | Call the webhook again three times within the hour | the runs fail; no more emails |
+| 4 | Run the same workflow with **Execute workflow** in the editor | no email |
+| 5 | Add a workflow with an Error Trigger (scope: this workflow's failures, or "all") and fail another run an hour later | the error workflow runs; no email |
+| 6 | Switch the setting off, wait an hour, fail a run | no email |
+| 7 | Without `RESEND_API_KEY` | the setting says no email service is set up; runs fail as before |
+| 8 | A workflow name with `<b>` in it | the email shows the text, not bold |
+
+Switch the setting back on and delete the test workflows afterwards.
+
 # When something fails
 
 Note the node, the exact values you entered, and the error text from the

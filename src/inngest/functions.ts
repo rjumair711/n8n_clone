@@ -3,7 +3,8 @@ import { calculatorChannel } from './channels/calculator';
 import { geminiChannel } from "./channels/gemini";
 import { inngest } from "./client";
 import { NonRetriableError } from "inngest";
-import { CronExpressionParser } from "cron-parser";
+import { isCronDue } from "@/lib/schedule-due";
+import { sendFailureAlert } from "@/lib/failure-alerts";
 import {
   PARTIAL_RUN_MODES,
   RERUN_UPSTREAM_TYPES,
@@ -778,6 +779,41 @@ export const executeWorkflow =
             });
           }
 
+          // An email to the owner (on by default, at most one an hour per
+          // workflow), unless an Error Trigger already handles this
+          // workflow's failures. See src/lib/failure-alerts.ts
+          await step.run(`failure-alert-${node.id}`, async () => {
+            const [run, listeners] = await Promise.all([
+              prisma.execution.findUnique({
+                where: { id: execution.id },
+                select: { triggerSource: true },
+              }),
+              prisma.node.findMany({
+                where: { type: NodeType.ERROR_TRIGGER, workflow: { userId } },
+                select: { workflowId: true, data: true },
+              }),
+            ]);
+
+            const handledByErrorTrigger =
+              event.data.trigger !== NodeType.ERROR_TRIGGER &&
+              listeners.some(
+                (listener) =>
+                  listener.workflowId === workflowId ||
+                  (listener.data as { scope?: string } | null)?.scope === "all"
+              );
+
+            return sendFailureAlert({
+              userId,
+              workflowId,
+              workflowName,
+              executionId: execution.id,
+              nodeLabel: node.type,
+              errorMessage: savedErrorMessage,
+              triggerSource: run?.triggerSource,
+              handledByErrorTrigger,
+            });
+          });
+
           throw new NonRetriableError(
             `Node ${node.id} failed: ${savedErrorMessage}`
           );
@@ -943,13 +979,9 @@ export const workflowCronHeartbeat = inngest.createFunction(
 
       let isDue = false;
       try {
-        // Look 1 second backward from the top of the minute to find the next target execution
-        const oneSecondBefore = new Date(currentMinute.getTime() - 1000);
-        const interval = CronExpressionParser.parse(cronExpression, { currentDate: oneSecondBefore });
-        const nextExecution = interval.next().toDate();
-
-        // Is the very next scheduled execution supposed to happen EXACTLY this minute?
-        isDue = nextExecution.getTime() === currentMinute.getTime();
+        // Read on the workflow's clock (Workflow settings → Time zone);
+        // none set is UTC, as before
+        isDue = isCronDue(cronExpression, currentMinute, workflow.timezone);
       } catch (err) {
         console.error(`Invalid cron calculation on workflow ${workflow.id}: ${cronExpression}`);
         continue;

@@ -17,6 +17,26 @@ export const useSuspenseWorkflows = () => {
 
 
 /**
+ * Sets the time zone a workflow's schedules run in (null: UTC)
+ */
+export const useSetWorkflowTimezone = () => {
+    const queryClient = useQueryClient()
+    const trpc = useTRPC()
+
+    return useMutation(trpc.workflows.setTimezone.mutationOptions({
+        onSuccess: (data) => {
+            toast.success(`"${data.name}" now runs its schedules in ${data.timezone ?? "UTC"}`)
+            queryClient.invalidateQueries(
+                trpc.workflows.getOne.queryOptions({ id: data.id })
+            )
+        },
+        onError: (error) => {
+            toast.error(`Failed to set the time zone: ${error.message}`)
+        }
+    }))
+}
+
+/**
  * Downloads a workflow as a JSON file (without its secrets)
  */
 export const useExportWorkflow = () => {

@@ -37,6 +37,8 @@ import {
     WorkflowImportError,
 } from "../lib/workflow-json";
 
+import { isValidTimeZone } from "@/lib/time-zones";
+
 const NODE_TYPE_SET = new Set<string>(Object.values(NodeType));
 
 // Every procedure that takes a workflow id starts here: a workflow that does
@@ -492,6 +494,28 @@ export const workflowsRouter = createTRPCRouter({
             })
         }),
 
+    // TIME ZONE: the clock this workflow's schedules read. Null is UTC
+    setTimezone: editorProcedure
+        .input(z.object({ id: z.string(), timezone: z.string().max(64).nullable() }))
+        .mutation(async ({ ctx, input }) => {
+            await getOwnedWorkflow(input.id, ctx.workspace.ownerId);
+
+            const timezone = input.timezone?.trim() || null;
+            if (timezone !== null && !isValidTimeZone(timezone)) {
+                throw new TRPCError({
+                    code: "BAD_REQUEST",
+                    message: `"${timezone}" is not a time zone. Use a name like Asia/Karachi or Asia/Riyadh`,
+                });
+            }
+
+            return prisma.workflow.update({
+                where: { id: input.id, userId: ctx.workspace.ownerId },
+                // UTC is the default, so it is stored as none
+                data: { timezone: timezone === "UTC" ? null : timezone },
+                select: { id: true, name: true, timezone: true },
+            })
+        }),
+
     // ACTIVATE / DEACTIVATE WORKFLOW
     // Only active workflows run from schedules and webhooks. Manual runs and
     // the chat panel always work, so a workflow can be tested while inactive.
@@ -914,6 +938,7 @@ export const workflowsRouter = createTRPCRouter({
                 name: workflow.name,
                 active: workflow.active,
                 saveExecutionData: workflow.saveExecutionData,
+                timezone: workflow.timezone,
                 nodes,
                 edges
             }

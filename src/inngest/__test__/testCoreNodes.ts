@@ -15890,6 +15890,99 @@ pour()</code></pre>
     assert.match(router.slice(router.indexOf("importJson:")), /countWorkflows\(ownerId\)\) >= workflowLimit/);
   });
 
+  await test("schedules run on the workflow's time zone; none is UTC as before", async () => {
+    const tz = await import("@/lib/time-zones");
+    const { isCronDue, nextCronRuns } = await import("@/lib/schedule-due");
+
+    assert.equal(tz.isValidTimeZone("Asia/Karachi"), true);
+    assert.equal(tz.isValidTimeZone("UTC"), true);
+    for (const bad of ["Mars/Base", "", "PKT", 5, null, "a".repeat(70)]) assert.equal(tz.isValidTimeZone(bad), false, String(bad));
+    assert.equal(tz.effectiveTimeZone(null), "UTC");
+    assert.equal(tz.effectiveTimeZone("Not/AZone"), "UTC");
+    assert.equal(tz.effectiveTimeZone("Asia/Riyadh"), "Asia/Riyadh");
+    assert.equal(tz.formatUtcOffset("Asia/Karachi", new Date("2026-11-15T00:00:00Z")), "UTC+05:00");
+    assert.equal(tz.formatUtcOffset("UTC"), "UTC+00:00");
+    const zones = tz.listTimeZones();
+    assert.equal(zones[0], "Asia/Karachi");
+    assert.equal(new Set(zones).size, zones.length);
+
+    // 9:00 every day: 04:00 UTC in Karachi, 06:00 UTC in Riyadh, 09:00 UTC without a zone
+    const at = (iso: string) => new Date(iso);
+    assert.equal(isCronDue("0 9 * * *", at("2026-11-16T04:00:00Z"), "Asia/Karachi"), true);
+    assert.equal(isCronDue("0 9 * * *", at("2026-11-16T09:00:00Z"), "Asia/Karachi"), false);
+    assert.equal(isCronDue("0 9 * * *", at("2026-11-16T06:00:00Z"), "Asia/Riyadh"), true);
+    assert.equal(isCronDue("0 9 * * *", at("2026-11-16T09:00:00Z"), null), true);
+    assert.equal(isCronDue("0 9 * * *", at("2026-11-16T09:00:00Z"), "Bad/Zone"), true);
+    // Seconds into the minute do not matter
+    assert.equal(isCronDue("*/5 * * * *", at("2026-11-16T04:05:37Z"), "Asia/Karachi"), true);
+    // Weekdays are the zone's: Monday 00:30 in Karachi is Sunday 19:30 UTC
+    assert.equal(isCronDue("30 0 * * 1", at("2026-11-15T19:30:00Z"), "Asia/Karachi"), true);
+    assert.equal(isCronDue("30 0 * * 1", at("2026-11-15T19:30:00Z"), null), false);
+    // Daylight saving: 9:00 in London is 09:00 UTC in winter, 08:00 UTC in summer
+    assert.equal(isCronDue("0 9 * * *", at("2026-01-15T09:00:00Z"), "Europe/London"), true);
+    assert.equal(isCronDue("0 9 * * *", at("2026-07-15T08:00:00Z"), "Europe/London"), true);
+    assert.throws(() => isCronDue("not a cron", new Date(), null));
+
+    const runs = nextCronRuns("0 9 * * *", 2, "Asia/Karachi", at("2026-11-16T05:00:00Z"));
+    assert.deepEqual(runs.map((run) => run.toISOString()), ["2026-11-17T04:00:00.000Z", "2026-11-18T04:00:00.000Z"]);
+
+    const { readFileSync } = await import("node:fs");
+    const functions = readFileSync("src/inngest/functions.ts", "utf8");
+    assert.match(functions, /isDue = isCronDue\(cronExpression, currentMinute, workflow\.timezone\);/);
+    const router = readFileSync("src/features/workflows/server/routers.ts", "utf8");
+    assert.match(router, /setTimezone: editorProcedure/);
+    assert.match(router, /!isValidTimeZone\(timezone\)/);
+    // The column is nullable, so the running app is unaffected until it uses it
+    assert.match(readFileSync("prisma/schema.prisma", "utf8"), /^\s*timezone\s+String\?/m);
+  });
+
+  await test("failure alert emails: who gets one, and what it says", async () => {
+    const alerts = await import("@/lib/failure-alerts");
+    for (const source of ["manual", "manual-test", "evaluation"]) assert.equal(alerts.shouldAlertForSource(source), false, source);
+    for (const source of ["schedule", "webhook", "whatsapp", "chat", "error", null]) assert.equal(alerts.shouldAlertForSource(source), true, String(source));
+
+    const email = alerts.buildFailureAlertEmail({
+      workflowName: "Order <bot>\nsecond line",
+      workflowId: "wf1",
+      executionId: "ex 1",
+      nodeLabel: "GOOGLE_SHEETS",
+      errorMessage: `Sheet "Orders" not found <script>${"x".repeat(2000)}`,
+      failedAt: new Date("2026-11-15T10:20:30Z"),
+      appUrl: "https://app.example.com",
+    });
+    assert.equal(email.subject, "Workflow failed: Order <bot> second line");
+    assert.match(email.text, /failed at 2026-11-15 10:20 UTC/);
+    assert.match(email.text, /https:\/\/app\.example\.com\/executions\/ex%201/);
+    assert.match(email.text, /https:\/\/app\.example\.com\/settings\/profile/);
+    assert.ok(email.text.length < 2000);
+    // Nothing from the workflow or the error becomes markup
+    assert.equal(email.html.includes("<script>"), false);
+    assert.equal(email.html.includes("<bot>"), false);
+    assert.match(email.html, /&lt;script&gt;/);
+
+    // Never sent when an Error Trigger handles it, for a test run, or without an email service
+    const base = { userId: "u", workflowId: "w", workflowName: "n", executionId: "e", nodeLabel: "N", errorMessage: "m" };
+    assert.deepEqual(await alerts.sendFailureAlert({ ...base, triggerSource: "schedule", handledByErrorTrigger: true }), { sent: false, reason: "error-trigger" });
+    assert.deepEqual(await alerts.sendFailureAlert({ ...base, triggerSource: "manual", handledByErrorTrigger: false }), { sent: false, reason: "source" });
+    const key = process.env.RESEND_API_KEY;
+    delete process.env.RESEND_API_KEY;
+    try {
+      assert.deepEqual(await alerts.sendFailureAlert({ ...base, triggerSource: "schedule", handledByErrorTrigger: false }), { sent: false, reason: "no-email-service" });
+    } finally {
+      if (key !== undefined) process.env.RESEND_API_KEY = key;
+    }
+
+    const { readFileSync } = await import("node:fs");
+    const functions = readFileSync("src/inngest/functions.ts", "utf8");
+    assert.match(functions, /step\.run\(`failure-alert-\$\{node\.id\}`/);
+    const source = readFileSync("src/lib/failure-alerts.ts", "utf8");
+    // One email per workflow an hour, claimed in one statement
+    assert.match(source, /"failure-alert:\$\{workflowId\}"|`failure-alert:\$\{workflowId\}`/);
+    assert.match(source, /ON CONFLICT \("key"\) DO UPDATE/);
+    // On by default for every account, old and new
+    assert.match(readFileSync("prisma/schema.prisma", "utf8"), /failureAlertEmails\s+Boolean\s+@default\(true\)/);
+  });
+
   console.log(`\n${passed} checks passed`);
 };
 
