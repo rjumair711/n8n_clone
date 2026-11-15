@@ -15661,6 +15661,41 @@ pour()</code></pre>
     assert.equal(getToolRisk("GOOGLE_SHEETS" as never, { operation: "update" }), "write");
   });
 
+  await test("Google Calendar List Events: range, free/busy and shape", async () => {
+    const cal = await import("@/features/executions/components/googleCalender/list-events");
+    assert.equal(cal.toIsoTime("Start", "2026-12-31T10:00:00+05:00"), "2026-12-31T05:00:00.000Z");
+    assert.equal(cal.toIsoTime("Start", "  "), undefined);
+    assert.throws(() => cal.toIsoTime("Start of range", "tomorrow at 5"), /Start of range "tomorrow at 5" is not a date/);
+    assert.throws(() => cal.checkRange("2026-12-31T10:00:00Z", "2026-12-31T10:00:00Z"), /must be after/);
+    cal.checkRange("2026-12-31T10:00:00Z", "2026-12-31T10:30:00Z");
+
+    assert.equal(cal.clampMaxResults(""), 50);
+    assert.equal(cal.clampMaxResults("1000"), 250);
+    assert.equal(cal.clampMaxResults("10"), 10);
+    assert.equal(cal.clampMaxResults("-3"), 50);
+
+    const free = cal.summarizeEvents([
+      { id: "a", summary: "Lunch", status: "confirmed", transparency: "transparent", start: { dateTime: "2026-12-31T10:00:00Z" }, end: { dateTime: "2026-12-31T11:00:00Z" } },
+      { id: "b", status: "cancelled", start: { date: "2026-12-31" }, end: { date: "2027-01-01" } },
+    ], false);
+    assert.equal(free.isFree, true);
+    assert.equal(free.count, 2);
+    assert.equal(free.events[1].allDay, true);
+    assert.equal(free.events[1].summary, "");
+    assert.equal("truncated" in free, false);
+
+    const busy = cal.summarizeEvents([
+      { id: "c", summary: "Haircut", status: "confirmed", attendees: [{ email: "a@example.com", responseStatus: "accepted" }], start: { dateTime: "2026-12-31T10:00:00Z" }, end: { dateTime: "2026-12-31T10:30:00Z" } },
+    ], true);
+    assert.equal(busy.isFree, false);
+    assert.equal(busy.busyCount, 1);
+    assert.equal(busy.truncated, true);
+    assert.deepEqual(busy.events[0].attendees, [{ email: "a@example.com", responseStatus: "accepted" }]);
+
+    const { getToolRisk } = await import("@/features/executions/lib/agent-tools");
+    assert.equal(getToolRisk("GOOGLE_CALENDAR", { operation: "list" }), "read");
+  });
+
   console.log(`\n${passed} checks passed`);
 };
 

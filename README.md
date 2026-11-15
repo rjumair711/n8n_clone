@@ -636,6 +636,16 @@ The Google Sheets node has five operations, like n8n's. Row 1 of the tab holds t
 * Get Rows returns at most 3 MB of rows, then says `truncated: true` with a warning; filter to get fewer.
 * Nodes saved before these operations existed keep appending exactly as before. As an AI Agent tool, Get Rows and Lookup count as Read tools; the others as Write.
 
+## Google Calendar: List Events
+
+The Google Calendar node's **List Events** operation, like n8n's "Get Many" with a time range.
+
+* **Fields:** Calendar ID (`primary` by default), Start of range and End of range (required, ISO date and time such as `2026-12-31T10:00:00+05:00`; expressions work), optional Search text and Max Events (50 by default, at most 250).
+* **Output:** `{ events, count, busyCount, isFree }`. Every event that overlaps the range is listed in start order, and recurring events are expanded into their occurrences. Each event is `{ id, summary, description, location, start, end, allDay, status, busy, htmlLink, attendees }`.
+* **Is the slot free?** `isFree` is `true` when no event in the range blocks the time. Cancelled events and events set to "Free" in Google Calendar do not block it. A booking flow: List Events for the requested slot → IF `{{calendar.isFree}}` → Create Event, otherwise reply with another time.
+* More events than Max Events adds `truncated: true`.
+* A range that is not a date, or that ends before it starts, fails before anything is sent to Google. As an AI Agent tool, List Events is a Read tool.
+
 ## Duplicate deliveries and retry
 
 Providers re-send an event when they are unsure it arrived. Each trigger remembers the events it accepted for 7 days and ignores a repeat:
@@ -825,7 +835,7 @@ Actions: `goto` (url), `click` (selector), `type` (selector, text), `select` (se
 | Node             | Description                                                               |
 | ---------------- | ------------------------------------------------------------------------- |
 | Google Sheets    | Append Row, Get Rows (with an optional filter), Lookup Row, Update Row and Append or Update Row (upsert by a key column). Google account or service account. See "Google Sheets rows" |
-| Google Calendar  | Create, update and delete events (Google account or service account)      |
+| Google Calendar  | Create, update, delete and list events (Google account or service account). **List Events** returns every event between two times and `isFree`, so a booking bot can check a slot before it books it. See "Google Calendar: List Events" |
 | Google Drive     | Search, upload, download, create folder, delete. Google Docs and Slides download as PDF, Sheets as CSV |
 | Gmail            | Send (with file attachments), reply, search, get and mark messages as read. A reply stays in the thread: to a message you received it goes to its sender, to a message you sent yourself (a follow-up) it goes to the people that message was sent to, with its CC only when **CC of a Message You Sent** is set to Keep |
 | Notion           | Create pages, query databases                                             |
