@@ -16011,6 +16011,26 @@ pour()</code></pre>
     assert.ok(readFileSync("src/app/(dashboard)/(rest)/settings/contact-memory/page.tsx", "utf8").includes('slug="contact-memory"'));
   });
 
+  await test("onboarding checklist: four steps from the account's own data", async () => {
+    const { buildChecklist, readOnboardingState } = await import("@/features/onboarding/lib/checklist");
+    const empty = buildChecklist({ credentials: 0, executions: 0, activeWorkflows: 0 }, {});
+    assert.deepEqual(empty.steps.map((step) => step.id), ["credential", "template", "run", "activate"]);
+    assert.equal(empty.completed, 0);
+    assert.equal(empty.visible, true);
+    const half = buildChecklist({ credentials: 2, executions: 1, activeWorkflows: 0 }, { usedTemplate: false });
+    assert.equal(half.completed, 2);
+    const done = buildChecklist({ credentials: 1, executions: 5, activeWorkflows: 1 }, { usedTemplate: true });
+    assert.equal(done.completed, 4);
+    assert.equal(done.visible, false);
+    assert.equal(buildChecklist({ credentials: 0, executions: 0, activeWorkflows: 0 }, { dismissed: true }).visible, false);
+    assert.deepEqual(readOnboardingState({ usedTemplate: true, dismissed: "yes", other: 1 }), { usedTemplate: true });
+    assert.deepEqual(readOnboardingState(null), {});
+    assert.deepEqual(readOnboardingState([1]), {});
+
+    const { readFileSync } = await import("node:fs");
+    assert.match(readFileSync("src/features/templates/server/routers.ts", "utf8"), /markOnboarding\(ctx\.auth\.user\.id, \{ usedTemplate: true \}\)\.catch/);
+  });
+
   console.log(`\n${passed} checks passed`);
 };
 

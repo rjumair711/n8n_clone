@@ -180,6 +180,17 @@ Every workflow keeps its earlier versions, so a change can be looked at and undo
 * **Executions record their version.** Each execution's page shows "Workflow version: Version 12": the saved workflow that run used. The number stays on the execution after the version itself was removed. Executions from before this feature say "Not recorded".
 * **What a version holds.** A copy of the nodes and connections as they are stored, including anything typed into a node's fields. It is only readable by the workflow's owner, like the workflow itself, and the list of versions does not carry the nodes.
 
+## Onboarding checklist
+
+New accounts see **Get started with RXJ** above the workflows list: four steps with a button each, the next one highlighted, and a progress bar.
+
+1. **Connect an account:** done when the account has a credential.
+2. **Start from a template:** done once a template from the gallery was used (stored in `User.onboarding`).
+3. **Run a workflow:** done when any of the account's workflows has an execution.
+4. **Turn it on:** done when a workflow is active.
+
+The steps are read from the account's own data, so an account that already did them never sees the list. It disappears when all four are done, or for good with its ✕.
+
 ## Sidebar and Settings
 
 * **Sidebar.** The logo and the workspace switcher at the top; **Build** (Workflows, Templates, Chatbots) and **Operate** (Executions, Approvals, Credentials); and at the bottom your account button (initials, name, email), which opens **Settings**, **Usage**, **Billing**, **API Keys**, **Docs** and **Sign out**. It shows no usage numbers, and fits a 1366 × 768 window without scrolling. Collapsed, it shows the icons with tooltips; on a phone it opens as a sheet.

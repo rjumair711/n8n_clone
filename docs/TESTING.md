@@ -2190,6 +2190,19 @@ Use the test account and a workflow with an AI Agent and a Postgres Memory node 
 | 4 | **Delete all** on the contact, confirm | the contact disappears |
 | 5 | As a viewer of the workspace | the list shows, without delete buttons |
 
+## T38. Onboarding checklist
+
+Use a brand-new test account.
+
+| # | Do | Expect |
+| - | -- | ------ |
+| 1 | Open Workflows | "Get started with RXJ", 0 of 4, "Connect an account" highlighted |
+| 2 | Add any credential, come back | 1 of 4, that step crossed out |
+| 3 | Templates → use one | "Start from a template" done |
+| 4 | Run the workflow with Execute | "Run a workflow" done |
+| 5 | Switch a workflow to Active | 4 of 4: the checklist is gone |
+| 6 | Another new account: press ✕ | gone, and still gone after a reload |
+
 # When something fails
 
 Note the node, the exact values you entered, and the error text from the
