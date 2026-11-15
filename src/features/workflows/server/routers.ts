@@ -25,6 +25,21 @@ import {
 } from "@/features/executions/server/test-data";
 import { getExecutionsThisMonth } from "@/lib/subscription/usage-counts";
 import { countWorkflows } from "@/lib/subscription/usage-counts";
+import { createId } from "@paralleldrive/cuid2";
+import { unavailableMessage } from "@/config/plans";
+import {
+    buildWorkflowExport,
+    describeImportReport,
+    exportFileName,
+    MAX_IMPORT_BYTES,
+    parseWorkflowFile,
+    prepareWorkflowImport,
+    WorkflowImportError,
+} from "../lib/workflow-json";
+
+import { isValidTimeZone } from "@/lib/time-zones";
+
+const NODE_TYPE_SET = new Set<string>(Object.values(NodeType));
 
 // Every procedure that takes a workflow id starts here: a workflow that does
 // not exist and one that belongs to someone else are the same "not found"
@@ -244,6 +259,115 @@ export const workflowsRouter = createTRPCRouter({
         return workflow;
     }),
 
+    // EXPORT: the workflow as a JSON file, without its secrets (see
+    // lib/workflow-json.ts)
+    exportJson: viewerProcedure
+        .input(z.object({ id: z.string() }))
+        .mutation(async ({ ctx, input }) => {
+            const workflow = assertOwnership(
+                await prisma.workflow.findUnique({
+                    where: { id: input.id },
+                    include: { nodes: true, connections: true },
+                }),
+                ctx.workspace.ownerId,
+                "Workflow"
+            );
+
+            const file = buildWorkflowExport(workflow);
+            return { fileName: exportFileName(workflow.name), json: JSON.stringify(file, null, 2) };
+        }),
+
+    // IMPORT: a new workflow from an exported file. Same limits as creating
+    // one; references to credentials and workflows this account does not
+    // own are removed, so nothing points at another account
+    importJson: builderProcedure
+        .input(z.object({ json: z.string().max(MAX_IMPORT_BYTES * 2) }))
+        .mutation(async ({ ctx, input }) => {
+            let file;
+            try {
+                file = parseWorkflowFile(input.json);
+            } catch (error) {
+                if (error instanceof WorkflowImportError) {
+                    throw new TRPCError({ code: "BAD_REQUEST", message: error.message });
+                }
+                throw error;
+            }
+
+            const ownerId = ctx.workspace.ownerId;
+            const user = await prisma.user.findUniqueOrThrow({ where: { id: ownerId } });
+
+            const workflowLimit = PLAN_LIMITS[user.plan].activeWorkflows;
+            if ((await countWorkflows(ownerId)) >= workflowLimit) {
+                throw new TRPCError({
+                    code: "FORBIDDEN",
+                    message: `Workflow limit reached. Your current plan allows up to ${workflowLimit} workflows.`,
+                });
+            }
+
+            // A node the hosted app does not offer (SSH) cannot be imported
+            // into it, the same rule as a template
+            const lockedType = file.nodes
+                .map((node) => node.type)
+                .find((type) => NODE_TYPE_SET.has(type) && getRequiredPlanForNode(type as NodeType, user.plan, user.trialEndsAt));
+            if (lockedType) {
+                throw new TRPCError({
+                    code: "FORBIDDEN",
+                    message: unavailableMessage(`This workflow's ${lockedType} node`),
+                });
+            }
+
+            const [credentials, workflows] = await Promise.all([
+                prisma.credential.findMany({ where: { userId: ownerId }, select: { id: true } }),
+                prisma.workflow.findMany({ where: { userId: ownerId }, select: { id: true } }),
+            ]);
+
+            const prepared = prepareWorkflowImport(file, {
+                knownTypes: NODE_TYPE_SET,
+                ownedCredentialIds: new Set(credentials.map((credential) => credential.id)),
+                ownedWorkflowIds: new Set(workflows.map((workflow) => workflow.id)),
+                createId,
+            });
+
+            const workflow = await prisma.$transaction(async (tx) => {
+                const created = await tx.workflow.create({
+                    data: { name: prepared.name.slice(0, 200), userId: ownerId, workspaceId: ctx.workspace.id },
+                });
+
+                if (prepared.nodes.length === 0) {
+                    await tx.node.create({
+                        data: {
+                            workflowId: created.id,
+                            type: NodeType.INITIAL,
+                            name: NodeType.INITIAL,
+                            position: { x: 0, y: 0 },
+                        },
+                    });
+                } else {
+                    await tx.node.createMany({
+                        data: prepared.nodes.map((node) => ({
+                            id: node.id,
+                            workflowId: created.id,
+                            name: node.type,
+                            type: node.type as NodeType,
+                            position: node.position as Prisma.InputJsonValue,
+                            data: node.data as Prisma.InputJsonValue,
+                        })),
+                    });
+                    await tx.connection.createMany({
+                        data: prepared.connections.map((conn) => ({ ...conn, workflowId: created.id })),
+                    });
+                }
+
+                return created;
+            });
+
+            return {
+                id: workflow.id,
+                name: workflow.name,
+                notes: describeImportReport(prepared.report),
+            };
+        }),
+
     // PINNED DATA
     // The nodes of a workflow that have pinned data, for the editor
     getPinnedNodes: viewerProcedure
@@ -367,6 +491,28 @@ export const workflowsRouter = createTRPCRouter({
                 },
                 data: { saveExecutionData: input.save },
                 select: { id: true, name: true, saveExecutionData: true },
+            })
+        }),
+
+    // TIME ZONE: the clock this workflow's schedules read. Null is UTC
+    setTimezone: editorProcedure
+        .input(z.object({ id: z.string(), timezone: z.string().max(64).nullable() }))
+        .mutation(async ({ ctx, input }) => {
+            await getOwnedWorkflow(input.id, ctx.workspace.ownerId);
+
+            const timezone = input.timezone?.trim() || null;
+            if (timezone !== null && !isValidTimeZone(timezone)) {
+                throw new TRPCError({
+                    code: "BAD_REQUEST",
+                    message: `"${timezone}" is not a time zone. Use a name like Asia/Karachi or Asia/Riyadh`,
+                });
+            }
+
+            return prisma.workflow.update({
+                where: { id: input.id, userId: ctx.workspace.ownerId },
+                // UTC is the default, so it is stored as none
+                data: { timezone: timezone === "UTC" ? null : timezone },
+                select: { id: true, name: true, timezone: true },
             })
         }),
 
@@ -792,6 +938,7 @@ export const workflowsRouter = createTRPCRouter({
                 name: workflow.name,
                 active: workflow.active,
                 saveExecutionData: workflow.saveExecutionData,
+                timezone: workflow.timezone,
                 nodes,
                 edges
             }

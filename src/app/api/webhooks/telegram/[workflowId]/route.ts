@@ -52,7 +52,10 @@ export async function POST(
         const text: string | undefined =
             update.message?.text ??
             update.edited_message?.text ??
-            update.callback_query?.data;
+            update.callback_query?.data ??
+            // A photo or file with a caption: the caption is the text
+            update.message?.caption ??
+            update.edited_message?.caption;
         const chatId = message?.chat?.id;
 
         await startWorkflowExecution({

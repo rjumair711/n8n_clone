@@ -16,6 +16,8 @@ export const whatsappConfig: IntegrationConfig = {
     { value: "send_text", label: "Send Text Message" },
     { value: "send_template", label: "Send Template Message" },
     { value: "send_document", label: "Send File (Document, Image, Video, Audio)" },
+    { value: "send_buttons", label: "Send Reply Buttons" },
+    { value: "send_list", label: "Send List Menu" },
   ],
   fields: [
     {
@@ -41,7 +43,50 @@ export const whatsappConfig: IntegrationConfig = {
       description:
         "Free text only reaches users who messaged you in the last 24 hours; otherwise send a template.",
       required: true,
-      operations: ["send_text"],
+      operations: ["send_text", "send_buttons", "send_list"],
+    },
+    {
+      name: "header",
+      label: "Header (Optional)",
+      placeholder: "Book an appointment",
+      description: "Bold text above the message, 60 characters at most.",
+      operations: ["send_buttons", "send_list"],
+    },
+    {
+      name: "buttons",
+      label: "Buttons",
+      type: "textarea",
+      placeholder: "yes | Yes, book it\nno | No thanks\nhuman | Talk to a person",
+      description:
+        "Up to 3, one per line: id | title (20 characters). The tapped button arrives at the WhatsApp Trigger as {{whatsapp.text}} (title) and {{whatsapp.replyId}} (id). A line with only a title gets an id made from it.",
+      required: true,
+      operations: ["send_buttons"],
+    },
+    {
+      name: "listButton",
+      label: "Menu Button",
+      placeholder: "See menu",
+      defaultValue: "Choose",
+      description: "The button that opens the list, 20 characters at most.",
+      required: true,
+      operations: ["send_list"],
+    },
+    {
+      name: "sections",
+      label: "Rows",
+      type: "textarea",
+      placeholder: "# Pizzas\nmargherita | Margherita | Rs 1,200\npepperoni | Pepperoni | Rs 1,500\n# Drinks\ncola | Cola",
+      description:
+        "Up to 10 rows, one per line: id | title (24 characters) | description (72, optional). A line starting with # opens a section with that title; with several sections each needs one. The choice arrives as {{whatsapp.text}} and {{whatsapp.replyId}}.",
+      required: true,
+      operations: ["send_list"],
+    },
+    {
+      name: "footer",
+      label: "Footer (Optional)",
+      placeholder: "Reply within 24 hours",
+      description: "Small grey text under the message, 60 characters at most.",
+      operations: ["send_buttons", "send_list"],
     },
     {
       name: "file",

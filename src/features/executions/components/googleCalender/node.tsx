@@ -7,13 +7,18 @@ import { useNodeStatus } from "../../hooks/use-node-status";
 // UPDATED: Added operation and eventId for full CRUD support
 export type GoogleCalendarNodeData = {
   credentialId?: string;
-  operation?: "create" | "update" | "delete"; // The new dropdown!
+  operation?: "create" | "update" | "delete" | "list";
   calendarId?: string;
   eventId?: string; // Needed to find which event to update/delete
   summary?: string;
   description?: string;
   startTime?: string;
   endTime?: string;
+  // List Events
+  timeMin?: string;
+  timeMax?: string;
+  query?: string;
+  maxResults?: string;
   variableName?: string;
 };
 
@@ -48,7 +53,7 @@ export const GoogleCalendarNode = memo((props: NodeProps<GoogleCalendarNodeType>
     : "Create";
   // Without a credential it cannot run, whatever else is filled in
   const description = props.data?.credentialId
-    ? `${operationLabel} Event: ${props.data?.calendarId || "Not configured"}`
+    ? `${operationLabel} ${props.data?.operation === "list" ? "Events" : "Event"}: ${props.data?.calendarId || "Not configured"}`
     : "Not Configured";
 
   return (

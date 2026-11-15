@@ -49,6 +49,9 @@ model User {
   hasCompletedOnboarding Boolean          @default(false)
   // "Execution data retention": 7, 30 or 90 days
   executionRetentionDays Int              @default(30)
+  // An email to the owner when a workflow run fails (at most one an hour
+  // per workflow). On unless switched off in Settings
+  failureAlertEmails     Boolean          @default(true)
   // Set by Better Auth's two-factor plugin once a code has been verified
   twoFactorEnabled       Boolean?         @default(false)
   twoFactors             TwoFactor[]
@@ -329,6 +332,8 @@ model Workflow {
   saveExecutionData Boolean @default(true)
   // Optional monthly AI budget of this workflow in US cents. Null: none
   aiBudgetCents Int?
+  // IANA time zone its schedules run in ("Asia/Karachi"). Null: UTC
+  timezone    String?
   // The owner of the workspace the workflow belongs to
   userId      String
   user        User         @relation(fields: [userId], references: [id], onDelete: Cascade)

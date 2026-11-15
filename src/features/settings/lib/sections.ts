@@ -22,7 +22,7 @@ export const SETTINGS_GROUPS: SettingsGroup[] = [
       {
         slug: "profile",
         title: "Profile",
-        description: "Your name, and who you are signed in as.",
+        description: "Your name, who you are signed in as, and the emails RXJ sends you.",
       },
       {
         slug: "security",

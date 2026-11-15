@@ -8345,7 +8345,12 @@ pour()</code></pre>
 
     // Stored like every other workflow file, for the workflow's owner
     assert.match(source, /file: await saveWorkflowFile\(\{/);
-    assert.match(source, /if \(bytes\.length > MAX_FILE_BYTES\) throw new Error\(TOO_LARGE\);/);
+    assert.match(source, /if \(bytes\.length > MAX_FILE_BYTES\) throw new Error\(tooLarge\(what\)\);/);
+    // Voice keeps the step ids it had before images were added, so runs
+    // that were waiting resume where they were
+    assert.match(source, /stepId: `\$\{nodeId\}-get-\$\{kind\}-credential`/);
+    assert.match(source, /step\.run\(`\$\{nodeId\}-download-\$\{kind\}`/);
+    assert.match(source, /const kind = media\.kind \?\? "voice";/);
     // The bot token is in Telegram's download address: no failure of that
     // request is ever passed on
     const telegram = source.slice(source.indexOf("const downloadTelegramFile"), source.indexOf("const GRAPH_API_VERSION"));
@@ -12197,7 +12202,7 @@ pour()</code></pre>
 
     // A button in the editor and in the workflows list
     assert.match(read("src/features/editor/components/editor.tsx"), /<EditorBuildWithAi \/>/);
-    assert.match(read("src/features/workflows/components/workflows.tsx"), /actions=\{<BuildWithAiButton \/>\}/);
+    assert.match(read("src/features/workflows/components/workflows.tsx"), /actions=\{<><ImportWorkflowButton disabled=\{disabled\} \/><BuildWithAiButton \/><\/>\}/);
     // The editor applies the result to the canvas and leaves saving to the user
     const editorDialog = read("src/features/ai-builder/components/editor-build-with-ai.tsx");
     assert.match(editorDialog, /setEdges\(graph\.edges\);/);
@@ -15609,6 +15614,373 @@ pour()</code></pre>
     for (const href of ["/terms", "/privacy", "/contact"]) assert.ok(footer.includes(`href: "${href}"`));
     // A self-hosted server is not run by RXJ's operator
     assert.match(readFileSync("next.config.ts", "utf8"), /"\/terms", "\/privacy", "\/contact"\]/);
+  });
+
+  await test("Google Sheets rows: headers, matching and Column: value lines", async () => {
+    const rows = await import("@/features/executions/components/googleSheet/rows");
+    const values = [
+      ["Order ID", "Name", "", "Name", "Status"],
+      ["A1", "Sara", "x", "S", "New"],
+      [],
+      ["", "  ", ""],
+      [" A2 ", "Ali", "", "", "Paid"],
+    ];
+    assert.deepEqual(rows.readHeaders(values), ["Order ID", "Name", "C", "Name_2", "Status"]);
+    const list = rows.valuesToRows(values);
+    // Empty rows are skipped, but row numbers stay those of the sheet
+    assert.deepEqual(list.map((row) => row.row_number), [2, 5]);
+    assert.equal(list[0].Name_2, "S");
+    assert.equal(list[1].Status, "Paid");
+    // Trimmed, exact values; the column name ignores case
+    assert.deepEqual(rows.matchRows(list, rows.readHeaders(values), " order id ", "A2").map((row) => row.row_number), [5]);
+    assert.equal(rows.matchRows(list, rows.readHeaders(values), "Status", "paid").length, 0);
+    assert.throws(() => rows.matchRows(list, rows.readHeaders(values), "Phone", "1"), /no column "Phone".*Order ID, Name/);
+
+    assert.deepEqual(rows.parseColumnValueLines("Status: Paid\r\n\r\nNote: at 10:30: ok"), [
+      { column: "Status", template: "Paid" },
+      { column: "Note", template: "at 10:30: ok" },
+    ]);
+    assert.throws(() => rows.parseColumnValueLines("Status Paid"), /Column: value/);
+
+    const headers = rows.readHeaders(values);
+    const writes = rows.resolveCellWrites(headers, [{ column: "status", value: "Done" }, { column: "Order ID", value: "A9" }]);
+    assert.deepEqual(writes.map((write) => [write.column, write.index]), [["Status", 4], ["Order ID", 0]]);
+    assert.deepEqual(rows.buildRowArray(headers, writes), ["A9", "", "", "", "Done"]);
+    assert.equal(rows.applyWrites(list[0], writes).Status, "Done");
+
+    assert.deepEqual([0, 25, 26, 51, 52, 701, 702].map(rows.columnLetter), ["A", "Z", "AA", "AZ", "BA", "ZZ", "AAA"]);
+    assert.equal(rows.quoteSheetName("Bob's Orders"), "'Bob''s Orders'");
+    assert.equal(rows.normalizeSheetsOperation(undefined), "append");
+    assert.equal(rows.normalizeSheetsOperation("upsert"), "upsert");
+
+    const big = Array.from({ length: 50 }, (_, index) => ({ row_number: index + 2, text: "x".repeat(100) }));
+    const capped = rows.capRows(big as never, 1000);
+    assert.equal(capped.truncated, true);
+    assert.ok(capped.rows.length > 0 && capped.rows.length < 50);
+
+    // Read operations are Read tools for an AI Agent; the rest write
+    const { getToolRisk } = await import("@/features/executions/lib/agent-tools");
+    assert.equal(getToolRisk("GOOGLE_SHEETS" as never, { operation: "get_rows" }), "read");
+    assert.equal(getToolRisk("GOOGLE_SHEETS" as never, { operation: "lookup" }), "read");
+    assert.equal(getToolRisk("GOOGLE_SHEETS" as never, { operation: "upsert" }), "write");
+    assert.equal(getToolRisk("GOOGLE_SHEETS" as never, { operation: "update" }), "write");
+  });
+
+  await test("Google Calendar List Events: range, free/busy and shape", async () => {
+    const cal = await import("@/features/executions/components/googleCalender/list-events");
+    assert.equal(cal.toIsoTime("Start", "2026-12-31T10:00:00+05:00"), "2026-12-31T05:00:00.000Z");
+    assert.equal(cal.toIsoTime("Start", "  "), undefined);
+    assert.throws(() => cal.toIsoTime("Start of range", "tomorrow at 5"), /Start of range "tomorrow at 5" is not a date/);
+    assert.throws(() => cal.checkRange("2026-12-31T10:00:00Z", "2026-12-31T10:00:00Z"), /must be after/);
+    cal.checkRange("2026-12-31T10:00:00Z", "2026-12-31T10:30:00Z");
+
+    assert.equal(cal.clampMaxResults(""), 50);
+    assert.equal(cal.clampMaxResults("1000"), 250);
+    assert.equal(cal.clampMaxResults("10"), 10);
+    assert.equal(cal.clampMaxResults("-3"), 50);
+
+    const free = cal.summarizeEvents([
+      { id: "a", summary: "Lunch", status: "confirmed", transparency: "transparent", start: { dateTime: "2026-12-31T10:00:00Z" }, end: { dateTime: "2026-12-31T11:00:00Z" } },
+      { id: "b", status: "cancelled", start: { date: "2026-12-31" }, end: { date: "2027-01-01" } },
+    ], false);
+    assert.equal(free.isFree, true);
+    assert.equal(free.count, 2);
+    assert.equal(free.events[1].allDay, true);
+    assert.equal(free.events[1].summary, "");
+    assert.equal("truncated" in free, false);
+
+    const busy = cal.summarizeEvents([
+      { id: "c", summary: "Haircut", status: "confirmed", attendees: [{ email: "a@example.com", responseStatus: "accepted" }], start: { dateTime: "2026-12-31T10:00:00Z" }, end: { dateTime: "2026-12-31T10:30:00Z" } },
+    ], true);
+    assert.equal(busy.isFree, false);
+    assert.equal(busy.busyCount, 1);
+    assert.equal(busy.truncated, true);
+    assert.deepEqual(busy.events[0].attendees, [{ email: "a@example.com", responseStatus: "accepted" }]);
+
+    const { getToolRisk } = await import("@/features/executions/lib/agent-tools");
+    assert.equal(getToolRisk("GOOGLE_CALENDAR", { operation: "list" }), "read");
+  });
+
+  await test("WhatsApp reply buttons and list menus", async () => {
+    const wa = await import("@/features/executions/components/whatsapp/interactive");
+
+    const buttons = wa.buildButtonsMessage({ body: "Book for 5 pm?", header: "Salon", footer: "", buttons: "yes | Yes, book it\n\nNo thanks" });
+    assert.deepEqual(buttons, {
+      type: "interactive",
+      interactive: {
+        type: "button",
+        header: { type: "text", text: "Salon" },
+        body: { text: "Book for 5 pm?" },
+        action: {
+          buttons: [
+            { type: "reply", reply: { id: "yes", title: "Yes, book it" } },
+            { type: "reply", reply: { id: "no_thanks", title: "No thanks" } },
+          ],
+        },
+      },
+    });
+    assert.throws(() => wa.parseButtons("a\nb\nc\nd"), /allows 3 reply buttons; there are 4/);
+    assert.throws(() => wa.parseButtons("x | A title that is far too long"), /Button title .* is 28 characters; WhatsApp allows 20/);
+    assert.throws(() => wa.parseButtons("Yes\nyes | Again"), /Two options have the id "yes"/);
+    assert.throws(() => wa.parseButtons(" \n "), /at least one button/);
+    assert.throws(() => wa.buildButtonsMessage({ body: "", buttons: "Yes" }), /Message is required/);
+    // Urdu titles count characters, not bytes
+    assert.equal(wa.parseButtons("ہاں، بک کریں")[0].title, "ہاں، بک کریں");
+
+    const list = wa.buildListMessage({
+      body: "What would you like?",
+      listButton: "",
+      sections: "# Pizzas\nmargherita | Margherita | Rs 1,200\npepperoni | Pepperoni\n# Drinks\nCola",
+    });
+    assert.equal(list.interactive.action.button, "Choose");
+    assert.deepEqual(list.interactive.action.sections, [
+      { title: "Pizzas", rows: [{ id: "margherita", title: "Margherita", description: "Rs 1,200" }, { id: "pepperoni", title: "Pepperoni" }] },
+      { title: "Drinks", rows: [{ id: "cola", title: "Cola" }] },
+    ]);
+    // One section needs no title; several do
+    assert.deepEqual(wa.parseListSections("a | A\nb | B"), [{ rows: [{ id: "a", title: "A" }, { id: "b", title: "B" }] }]);
+    assert.throws(() => wa.parseListSections("a | A\n# Two\nb | B"), /every section needs a title/);
+    assert.throws(() => wa.parseListSections(Array.from({ length: 11 }, (_, i) => `r${i} | Row ${i}`).join("\n")), /allows 10 rows in a list; there are 11/);
+    // Empty sections are dropped
+    assert.equal(wa.parseListSections("# Empty\n# Full\na | A").length, 1);
+
+    assert.equal(wa.replyIdOf({ interactive: { type: "button_reply", button_reply: { id: "yes", title: "Yes" } } }), "yes");
+    assert.equal(wa.replyIdOf({ interactive: { type: "list_reply", list_reply: { id: "cola", title: "Cola" } } }), "cola");
+    assert.equal(wa.replyIdOf({ type: "button", button: { text: "Confirm", payload: "CONFIRM_1" } }), "CONFIRM_1");
+    assert.equal(wa.replyIdOf({ type: "text", text: { body: "hi" } }), undefined);
+
+    const { readFileSync } = await import("node:fs");
+    assert.match(readFileSync("src/app/api/webhooks/whatsapp/[workflowId]/route.ts", "utf8"), /replyId: replyIdOf\(message\)/);
+  });
+
+  await test("Telegram and WhatsApp images are found and given as files", async () => {
+    const voice = await import("@/features/executions/components/apps/voice");
+    const { MAX_FILE_BYTES } = await import("@/lib/workflow-files");
+
+    // Telegram photo: the largest size that fits the file limit
+    const photo = voice.findTelegramImage({
+      message: {
+        caption: "payment",
+        photo: [
+          { file_id: "small", width: 90, height: 90, file_size: 1000 },
+          { file_id: "huge", width: 9000, height: 9000, file_size: MAX_FILE_BYTES + 1 },
+          { file_id: "large", width: 1280, height: 960, file_size: 200000 },
+        ],
+      },
+    });
+    assert.deepEqual(photo, { kind: "image", fileId: "large", mimeType: "image/jpeg", fileName: "photo.jpg", fileSize: 200000 });
+    // A picture sent "as a file"; a PDF is not an image
+    assert.deepEqual(
+      voice.findTelegramImage({ message: { document: { file_id: "doc1", mime_type: "image/png", file_name: "receipt (1).png", file_size: 10 } } }),
+      { kind: "image", fileId: "doc1", mimeType: "image/png", fileName: "receipt_1_.png", fileSize: 10 }
+    );
+    assert.equal(voice.findTelegramImage({ message: { document: { file_id: "d", mime_type: "application/pdf" } } }), null);
+    for (const update of [null, {}, { message: { text: "hi" } }, { message: { photo: [] } }, { message: { photo: [{ file_id: 5 }] } }]) {
+      assert.equal(voice.findTelegramImage(update), null);
+    }
+
+    // WhatsApp: an image message, or a picture sent as a document
+    assert.deepEqual(
+      voice.findWhatsappImage({ type: "image", image: { id: "9876543210", mime_type: "image/jpeg", caption: "receipt" } }),
+      { kind: "image", fileId: "9876543210", mimeType: "image/jpeg", fileName: "image.jpg" }
+    );
+    assert.equal(voice.findWhatsappImage({ type: "document", document: { id: "55", mime_type: "image/webp", filename: "shot" } })?.fileName, "shot.webp");
+    for (const message of [null, { type: "text" }, { image: { id: "../../x" } }, { document: { id: "1", mime_type: "application/pdf" } }]) {
+      assert.equal(voice.findWhatsappImage(message), null);
+    }
+    assert.equal(voice.imageFileName("image/heic"), "image.heic");
+    assert.equal(voice.imageFileName("image/x-unknown"), "image.jpg");
+
+    const baseParams: any = {
+      nodeId: "trigger",
+      userId: "user",
+      executionId: "exec",
+      step: { run: async (_id: string, fn: () => unknown) => fn() },
+    };
+    // Without a credential: the message still arrives, with the reason
+    const whatsapp: any = await voice.whatsappTriggerExecutor({
+      ...baseParams,
+      data: {},
+      context: { whatsapp: { from: "923001234567", text: "receipt", message: { type: "image", image: { id: "9876543210" } } } },
+    });
+    assert.equal(whatsapp.whatsapp.image, undefined);
+    assert.match(whatsapp.whatsapp.imageError, /no credential is selected on the WhatsApp Trigger, so the image could not be downloaded/);
+    assert.equal(whatsapp.whatsapp.voiceError, undefined);
+    assert.equal(whatsapp.whatsapp.text, "receipt");
+
+    // Too large by Telegram's own count: not even fetched
+    const big: any = await voice.telegramTriggerExecutor({
+      ...baseParams,
+      data: { credentialId: "cred" },
+      context: { telegram: { message: { photo: [{ file_id: "huge", width: 9000, height: 9000, file_size: MAX_FILE_BYTES + 1 }] } } },
+    });
+    assert.match(big.telegram.imageError, /the image is larger than/);
+  });
+
+  await test("workflow export and import: no secrets out, no foreign references in", async () => {
+    const wf = await import("@/features/workflows/lib/workflow-json");
+    const exported = wf.buildWorkflowExport(
+      {
+        name: "Order bot",
+        nodes: [
+          { id: "init", type: "INITIAL", position: { x: 0, y: 0 }, data: {} },
+          { id: "t", type: "WHATSAPP_TRIGGER", position: { x: 1, y: 2 }, data: { verifyToken: "vt", appSecret: "as", credentialId: "cred-mine" } },
+          { id: "s", type: "SLACK", position: { x: 3, y: 4 }, data: { webhookUrl: "https://hooks.slack.com/x", text: "hi" } },
+          { id: "a", type: "AI_AGENT", position: { x: 5, y: 6 }, data: { fallbackModels: [{ credentialId: "cred-other", model: "m" }], toolSettings: { s: { name: "notify" } } } },
+        ],
+        connections: [
+          { fromNodeId: "init", toNodeId: "t", fromOutput: "main", toInput: "main" },
+          { fromNodeId: "t", toNodeId: "a", fromOutput: "main", toInput: "main" },
+          { fromNodeId: "s", toNodeId: "a", fromOutput: "main", toInput: "tools" },
+        ],
+      },
+      new Date("2026-11-15T00:00:00Z"),
+    );
+    const text = JSON.stringify(exported);
+    assert.equal(exported.format, "rxj-workflow");
+    assert.equal(exported.exportedAt, "2026-11-15T00:00:00.000Z");
+    assert.deepEqual(exported.nodes.map((node) => node.id), ["t", "s", "a"]);
+    assert.equal(exported.connections.length, 2);
+    for (const secret of ["vt", "\"as\"", "hooks.slack.com"]) assert.equal(text.includes(secret), false, secret);
+    // Which credential a node uses is kept
+    assert.equal(exported.nodes[0].data.credentialId, "cred-mine");
+    assert.equal(wf.exportFileName("Order bot (WhatsApp)"), "order-bot-whatsapp.json");
+    assert.equal(wf.exportFileName("!!!"), "workflow.json");
+
+    // Back in: fresh ids, its own credentials kept, others removed
+    let n = 0;
+    const prepared = wf.prepareWorkflowImport(wf.parseWorkflowFile(JSON.stringify(exported)), {
+      knownTypes: new Set(["WHATSAPP_TRIGGER", "AI_AGENT"]),
+      ownedCredentialIds: new Set(["cred-mine"]),
+      ownedWorkflowIds: new Set(),
+      createId: () => `new${++n}`,
+    });
+    assert.equal(prepared.name, "Order bot");
+    assert.deepEqual(prepared.report, { skippedTypes: ["SLACK"], clearedCredentials: 1, clearedWorkflowLinks: 0 });
+    assert.deepEqual(prepared.nodes.map((node) => node.id), ["new1", "new2"]);
+    assert.equal(prepared.nodes[0].data.credentialId, "cred-mine");
+    assert.deepEqual(prepared.nodes[1].data.fallbackModels, [{ model: "m" }]);
+    // The connection to the left-out Slack node goes with it
+    assert.deepEqual(prepared.connections, [{ fromNodeId: "new1", toNodeId: "new2", fromOutput: "main", toInput: "main" }]);
+    assert.match(wf.describeImportReport(prepared.report).join(". "), /SLACK.*1 node credential must be selected again/);
+
+    // A hand-made file: secrets are still dropped, a foreign workflow link cleared
+    const manual = wf.prepareWorkflowImport(
+      wf.parseWorkflowFile(JSON.stringify({ nodes: [{ id: "x", type: "EXECUTE_WORKFLOW", data: { workflowId: "theirs", secret: "s3" } }] })),
+      { knownTypes: new Set(["EXECUTE_WORKFLOW"]), ownedCredentialIds: new Set(), ownedWorkflowIds: new Set(), createId: () => "id" },
+    );
+    assert.equal(manual.name, "Imported workflow");
+    assert.deepEqual(manual.nodes[0].data, {});
+    assert.deepEqual(manual.nodes[0].position, { x: 0, y: 0 });
+    assert.equal(manual.report.clearedWorkflowLinks, 1);
+
+    assert.throws(() => wf.parseWorkflowFile("{nope"), /not valid JSON/);
+    assert.throws(() => wf.parseWorkflowFile(JSON.stringify({ name: "x" })), /not an RXJ workflow export/);
+    assert.throws(() => wf.parseWorkflowFile(JSON.stringify({ nodes: [{ id: "1", type: "n8n-nodes-base.httpRequest" }], connections: {} })), /This is an n8n workflow/);
+    assert.throws(() => wf.parseWorkflowFile(JSON.stringify({ version: 2, nodes: [] })), /newer version/);
+    assert.throws(() => wf.parseWorkflowFile(JSON.stringify({ nodes: [{ id: "1", type: "A" }, { id: "1", type: "B" }] })), /same id/);
+    assert.throws(() => wf.parseWorkflowFile(" ".repeat(wf.MAX_IMPORT_BYTES + 1)), /larger than 2 MB/);
+
+    const { readFileSync } = await import("node:fs");
+    const router = readFileSync("src/features/workflows/server/routers.ts", "utf8");
+    // Same rules as creating a workflow; only the owner's credentials count
+    assert.match(router, /importJson: builderProcedure/);
+    assert.match(router, /exportJson: viewerProcedure/);
+    assert.match(router, /prisma\.credential\.findMany\(\{ where: \{ userId: ownerId \}/);
+    assert.match(router.slice(router.indexOf("importJson:")), /countWorkflows\(ownerId\)\) >= workflowLimit/);
+  });
+
+  await test("schedules run on the workflow's time zone; none is UTC as before", async () => {
+    const tz = await import("@/lib/time-zones");
+    const { isCronDue, nextCronRuns } = await import("@/lib/schedule-due");
+
+    assert.equal(tz.isValidTimeZone("Asia/Karachi"), true);
+    assert.equal(tz.isValidTimeZone("UTC"), true);
+    for (const bad of ["Mars/Base", "", "PKT", 5, null, "a".repeat(70)]) assert.equal(tz.isValidTimeZone(bad), false, String(bad));
+    assert.equal(tz.effectiveTimeZone(null), "UTC");
+    assert.equal(tz.effectiveTimeZone("Not/AZone"), "UTC");
+    assert.equal(tz.effectiveTimeZone("Asia/Riyadh"), "Asia/Riyadh");
+    assert.equal(tz.formatUtcOffset("Asia/Karachi", new Date("2026-11-15T00:00:00Z")), "UTC+05:00");
+    assert.equal(tz.formatUtcOffset("UTC"), "UTC+00:00");
+    const zones = tz.listTimeZones();
+    assert.equal(zones[0], "Asia/Karachi");
+    assert.equal(new Set(zones).size, zones.length);
+
+    // 9:00 every day: 04:00 UTC in Karachi, 06:00 UTC in Riyadh, 09:00 UTC without a zone
+    const at = (iso: string) => new Date(iso);
+    assert.equal(isCronDue("0 9 * * *", at("2026-11-16T04:00:00Z"), "Asia/Karachi"), true);
+    assert.equal(isCronDue("0 9 * * *", at("2026-11-16T09:00:00Z"), "Asia/Karachi"), false);
+    assert.equal(isCronDue("0 9 * * *", at("2026-11-16T06:00:00Z"), "Asia/Riyadh"), true);
+    assert.equal(isCronDue("0 9 * * *", at("2026-11-16T09:00:00Z"), null), true);
+    assert.equal(isCronDue("0 9 * * *", at("2026-11-16T09:00:00Z"), "Bad/Zone"), true);
+    // Seconds into the minute do not matter
+    assert.equal(isCronDue("*/5 * * * *", at("2026-11-16T04:05:37Z"), "Asia/Karachi"), true);
+    // Weekdays are the zone's: Monday 00:30 in Karachi is Sunday 19:30 UTC
+    assert.equal(isCronDue("30 0 * * 1", at("2026-11-15T19:30:00Z"), "Asia/Karachi"), true);
+    assert.equal(isCronDue("30 0 * * 1", at("2026-11-15T19:30:00Z"), null), false);
+    // Daylight saving: 9:00 in London is 09:00 UTC in winter, 08:00 UTC in summer
+    assert.equal(isCronDue("0 9 * * *", at("2026-01-15T09:00:00Z"), "Europe/London"), true);
+    assert.equal(isCronDue("0 9 * * *", at("2026-07-15T08:00:00Z"), "Europe/London"), true);
+    assert.throws(() => isCronDue("not a cron", new Date(), null));
+
+    const runs = nextCronRuns("0 9 * * *", 2, "Asia/Karachi", at("2026-11-16T05:00:00Z"));
+    assert.deepEqual(runs.map((run) => run.toISOString()), ["2026-11-17T04:00:00.000Z", "2026-11-18T04:00:00.000Z"]);
+
+    const { readFileSync } = await import("node:fs");
+    const functions = readFileSync("src/inngest/functions.ts", "utf8");
+    assert.match(functions, /isDue = isCronDue\(cronExpression, currentMinute, workflow\.timezone\);/);
+    const router = readFileSync("src/features/workflows/server/routers.ts", "utf8");
+    assert.match(router, /setTimezone: editorProcedure/);
+    assert.match(router, /!isValidTimeZone\(timezone\)/);
+    // The column is nullable, so the running app is unaffected until it uses it
+    assert.match(readFileSync("prisma/schema.prisma", "utf8"), /^\s*timezone\s+String\?/m);
+  });
+
+  await test("failure alert emails: who gets one, and what it says", async () => {
+    const alerts = await import("@/lib/failure-alerts");
+    for (const source of ["manual", "manual-test", "evaluation"]) assert.equal(alerts.shouldAlertForSource(source), false, source);
+    for (const source of ["schedule", "webhook", "whatsapp", "chat", "error", null]) assert.equal(alerts.shouldAlertForSource(source), true, String(source));
+
+    const email = alerts.buildFailureAlertEmail({
+      workflowName: "Order <bot>\nsecond line",
+      workflowId: "wf1",
+      executionId: "ex 1",
+      nodeLabel: "GOOGLE_SHEETS",
+      errorMessage: `Sheet "Orders" not found <script>${"x".repeat(2000)}`,
+      failedAt: new Date("2026-11-15T10:20:30Z"),
+      appUrl: "https://app.example.com",
+    });
+    assert.equal(email.subject, "Workflow failed: Order <bot> second line");
+    assert.match(email.text, /failed at 2026-11-15 10:20 UTC/);
+    assert.match(email.text, /https:\/\/app\.example\.com\/executions\/ex%201/);
+    assert.match(email.text, /https:\/\/app\.example\.com\/settings\/profile/);
+    assert.ok(email.text.length < 2000);
+    // Nothing from the workflow or the error becomes markup
+    assert.equal(email.html.includes("<script>"), false);
+    assert.equal(email.html.includes("<bot>"), false);
+    assert.match(email.html, /&lt;script&gt;/);
+
+    // Never sent when an Error Trigger handles it, for a test run, or without an email service
+    const base = { userId: "u", workflowId: "w", workflowName: "n", executionId: "e", nodeLabel: "N", errorMessage: "m" };
+    assert.deepEqual(await alerts.sendFailureAlert({ ...base, triggerSource: "schedule", handledByErrorTrigger: true }), { sent: false, reason: "error-trigger" });
+    assert.deepEqual(await alerts.sendFailureAlert({ ...base, triggerSource: "manual", handledByErrorTrigger: false }), { sent: false, reason: "source" });
+    const key = process.env.RESEND_API_KEY;
+    delete process.env.RESEND_API_KEY;
+    try {
+      assert.deepEqual(await alerts.sendFailureAlert({ ...base, triggerSource: "schedule", handledByErrorTrigger: false }), { sent: false, reason: "no-email-service" });
+    } finally {
+      if (key !== undefined) process.env.RESEND_API_KEY = key;
+    }
+
+    const { readFileSync } = await import("node:fs");
+    const functions = readFileSync("src/inngest/functions.ts", "utf8");
+    assert.match(functions, /step\.run\(`failure-alert-\$\{node\.id\}`/);
+    const source = readFileSync("src/lib/failure-alerts.ts", "utf8");
+    // One email per workflow an hour, claimed in one statement
+    assert.match(source, /"failure-alert:\$\{workflowId\}"|`failure-alert:\$\{workflowId\}`/);
+    assert.match(source, /ON CONFLICT \("key"\) DO UPDATE/);
+    // On by default for every account, old and new
+    assert.match(readFileSync("prisma/schema.prisma", "utf8"), /failureAlertEmails\s+Boolean\s+@default\(true\)/);
   });
 
   console.log(`\n${passed} checks passed`);

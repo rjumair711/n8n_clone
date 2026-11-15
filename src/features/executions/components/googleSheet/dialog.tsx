@@ -6,6 +6,7 @@ import {
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
 import {
   Form, FormField, FormControl,
   FormItem, FormLabel, FormMessage, FormDescription,
@@ -20,19 +21,37 @@ import { z } from "zod";
 import { useEffect } from "react";
 import { CredentialType } from "@prisma/client";
 import { useCredentialsByType } from "@/features/credentials/hooks/use-credentials";
+import { normalizeSheetsOperation, SHEETS_OPERATION_LABELS, SHEETS_OPERATIONS } from "./rows";
 
-const formSchema = z.object({
-  credentialId: z.string().min(1, "Credential is required"),
-  sheetId: z.string().min(1, "Sheet ID is required"),
-  sheetName: z.string().min(1, "Sheet name is required"),
-  rowData: z.string().min(1, "At least one value is required"),
-  variableName: z
-    .string()
-    .min(1, "Variable name is required")
-    .regex(/^[A-Za-z_$][A-Za-z0-9_$]*$/, {
-      message: "Must start with a letter or underscore, letters/numbers/underscores only",
-    }),
-});
+const formSchema = z
+  .object({
+    operation: z.enum(SHEETS_OPERATIONS),
+    credentialId: z.string().min(1, "Credential is required"),
+    sheetId: z.string().min(1, "Sheet ID is required"),
+    sheetName: z.string().min(1, "Sheet name is required"),
+    rowData: z.string().optional(),
+    matchColumn: z.string().optional(),
+    matchValue: z.string().optional(),
+    columnValues: z.string().optional(),
+    variableName: z
+      .string()
+      .min(1, "Variable name is required")
+      .regex(/^[A-Za-z_$][A-Za-z0-9_$]*$/, {
+        message: "Must start with a letter or underscore, letters/numbers/underscores only",
+      }),
+  })
+  .superRefine((values, ctx) => {
+    const required = (path: "rowData" | "matchColumn" | "columnValues", message: string) => {
+      if (!values[path]?.trim()) ctx.addIssue({ code: z.ZodIssueCode.custom, path: [path], message });
+    };
+    if (values.operation === "append") required("rowData", "At least one value is required");
+    if (["lookup", "update", "upsert"].includes(values.operation)) {
+      required("matchColumn", "Column to match on is required");
+    }
+    if (values.operation === "update" || values.operation === "upsert") {
+      required("columnValues", "Write at least one \"Column: value\" line");
+    }
+  });
 
 export type GoogleSheetsFormValues = z.infer<typeof formSchema>;
 
@@ -40,8 +59,16 @@ interface Props {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   onSubmit: (values: GoogleSheetsFormValues) => void;
-  defaultValues?: Partial<GoogleSheetsFormValues>;
+  defaultValues?: Partial<Omit<GoogleSheetsFormValues, "operation">> & { operation?: string };
 }
+
+const OUTPUT_HINT: Record<GoogleSheetsFormValues["operation"], (name: string) => string> = {
+  append: (name) => `{{${name}.updatedRange}}`,
+  get_rows: (name) => `{{${name}.rows}} and {{${name}.count}}; add a Split Out on ${name}.rows to handle each row`,
+  lookup: (name) => `{{${name}.found}} and {{${name}.row.Email}}`,
+  update: (name) => `{{${name}.updated}} and {{${name}.rowNumber}}`,
+  upsert: (name) => `{{${name}.action}} ("updated" or "appended") and {{${name}.row}}`,
+};
 
 export const GoogleSheetsDialog = ({ open, onOpenChange, onSubmit, defaultValues = {} }: Props) => {
   // Either a service account or a Google account connected with OAuth
@@ -53,30 +80,33 @@ export const GoogleSheetsDialog = ({ open, onOpenChange, onSubmit, defaultValues
   ];
   const isLoading = serviceAccounts.isLoading || googleAccounts.isLoading;
 
+  const initialValues = (): GoogleSheetsFormValues => ({
+    operation: normalizeSheetsOperation(defaultValues.operation),
+    credentialId: defaultValues.credentialId || "",
+    sheetId: defaultValues.sheetId || "",
+    sheetName: defaultValues.sheetName || "Sheet1",
+    rowData: defaultValues.rowData || "",
+    matchColumn: defaultValues.matchColumn || "",
+    matchValue: defaultValues.matchValue || "",
+    columnValues: defaultValues.columnValues || "",
+    variableName: defaultValues.variableName || "",
+  });
+
   const form = useForm<GoogleSheetsFormValues>({
     resolver: zodResolver(formSchema),
-    defaultValues: {
-      credentialId: defaultValues.credentialId || "",
-      sheetId: defaultValues.sheetId || "",
-      sheetName: defaultValues.sheetName || "Sheet1",
-      rowData: defaultValues.rowData || "",
-      variableName: defaultValues.variableName || "",
-    },
+    defaultValues: initialValues(),
   });
 
   useEffect(() => {
-    if (open) {
-      form.reset({
-        credentialId: defaultValues.credentialId || "",
-        sheetId: defaultValues.sheetId || "",
-        sheetName: defaultValues.sheetName || "Sheet1",
-        rowData: defaultValues.rowData || "",
-        variableName: defaultValues.variableName || "",
-      });
-    }
+    if (open) form.reset(initialValues());
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, defaultValues, form]);
 
+  const operation = form.watch("operation");
   const watchVariableName = form.watch("variableName") || "sheetsResult";
+  const usesMatch = operation !== "append";
+  const matchRequired = operation !== "append" && operation !== "get_rows";
+  const setsValues = operation === "update" || operation === "upsert";
 
   const handleSubmit = (values: GoogleSheetsFormValues) => {
     onSubmit(values);
@@ -91,6 +121,36 @@ export const GoogleSheetsDialog = ({ open, onOpenChange, onSubmit, defaultValues
         </DialogHeader>
         <Form {...form}>
           <form onSubmit={form.handleSubmit(handleSubmit)} className="space-y-4 mt-2">
+
+            <FormField
+              control={form.control}
+              name="operation"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Operation</FormLabel>
+                  <Select onValueChange={field.onChange} value={field.value}>
+                    <FormControl>
+                      <SelectTrigger className="w-full">
+                        <SelectValue />
+                      </SelectTrigger>
+                    </FormControl>
+                    <SelectContent>
+                      {SHEETS_OPERATIONS.map((value) => (
+                        <SelectItem key={value} value={value}>
+                          {SHEETS_OPERATION_LABELS[value]}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  {usesMatch && (
+                    <FormDescription>
+                      Row 1 of the sheet must hold the column names.
+                    </FormDescription>
+                  )}
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
 
             <FormField
               control={form.control}
@@ -159,23 +219,93 @@ export const GoogleSheetsDialog = ({ open, onOpenChange, onSubmit, defaultValues
               )}
             />
 
-            <FormField
-              control={form.control}
-              name="rowData"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>Row Values (comma separated)</FormLabel>
-                  <FormControl>
-                    <Input placeholder="{{name}}, {{email}}, {{message}}" {...field} />
-                  </FormControl>
-                  <FormDescription>
-                    Comma-separated values to append as a new row. Use{" "}
-                    {"{{variables}}"} from previous nodes.
-                  </FormDescription>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
+            {operation === "append" && (
+              <FormField
+                control={form.control}
+                name="rowData"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Row Values (comma separated)</FormLabel>
+                    <FormControl>
+                      <Input placeholder="{{name}}, {{email}}, {{message}}" {...field} />
+                    </FormControl>
+                    <FormDescription>
+                      Comma-separated values to append as a new row. Use{" "}
+                      {"{{variables}}"} from previous nodes. To fill columns by
+                      name, use Append or Update Row.
+                    </FormDescription>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+            )}
+
+            {usesMatch && (
+              <>
+                <FormField
+                  control={form.control}
+                  name="matchColumn"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>
+                        {operation === "get_rows" ? "Filter Column (optional)" : "Column to Match On"}
+                      </FormLabel>
+                      <FormControl>
+                        <Input placeholder="Order ID" {...field} />
+                      </FormControl>
+                      <FormDescription>
+                        {operation === "get_rows"
+                          ? "Leave empty to get every row."
+                          : "The column name in row 1 that identifies a row, like Order ID or Phone."}
+                      </FormDescription>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+                <FormField
+                  control={form.control}
+                  name="matchValue"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>{matchRequired ? "Value to Match" : "Filter Value"}</FormLabel>
+                      <FormControl>
+                        <Input placeholder="{{whatsapp.from}}" {...field} />
+                      </FormControl>
+                      <FormDescription>
+                        Rows whose cell equals this (spaces at the ends are ignored).
+                        {operation === "update" && " Only the first matching row is updated."}
+                      </FormDescription>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+              </>
+            )}
+
+            {setsValues && (
+              <FormField
+                control={form.control}
+                name="columnValues"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Values to Set</FormLabel>
+                    <FormControl>
+                      <Textarea
+                        rows={4}
+                        className="font-mono text-sm"
+                        placeholder={"Status: Paid\nPaid At: {{$now}}"}
+                        {...field}
+                      />
+                    </FormControl>
+                    <FormDescription>
+                      One <code>Column: value</code> per line. Other columns are left as they are.
+                      {operation === "upsert" && " With no match, a new row is added with these values and the match value."}
+                    </FormDescription>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+            )}
 
             <FormField
               control={form.control}
@@ -187,8 +317,7 @@ export const GoogleSheetsDialog = ({ open, onOpenChange, onSubmit, defaultValues
                     <Input placeholder="sheetsResult" {...field} />
                   </FormControl>
                   <FormDescription>
-                    Reference this result in later nodes:{" "}
-                    {`{{${watchVariableName}.updatedRange}}`}
+                    Reference this result in later nodes: {OUTPUT_HINT[operation](watchVariableName)}
                   </FormDescription>
                   <FormMessage />
                 </FormItem>

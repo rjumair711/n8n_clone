@@ -17,6 +17,71 @@ export const useSuspenseWorkflows = () => {
 
 
 /**
+ * Sets the time zone a workflow's schedules run in (null: UTC)
+ */
+export const useSetWorkflowTimezone = () => {
+    const queryClient = useQueryClient()
+    const trpc = useTRPC()
+
+    return useMutation(trpc.workflows.setTimezone.mutationOptions({
+        onSuccess: (data) => {
+            toast.success(`"${data.name}" now runs its schedules in ${data.timezone ?? "UTC"}`)
+            queryClient.invalidateQueries(
+                trpc.workflows.getOne.queryOptions({ id: data.id })
+            )
+        },
+        onError: (error) => {
+            toast.error(`Failed to set the time zone: ${error.message}`)
+        }
+    }))
+}
+
+/**
+ * Downloads a workflow as a JSON file (without its secrets)
+ */
+export const useExportWorkflow = () => {
+    const trpc = useTRPC()
+
+    return useMutation(trpc.workflows.exportJson.mutationOptions({
+        onSuccess: ({ fileName, json }) => {
+            const url = URL.createObjectURL(new Blob([json], { type: "application/json" }))
+            const link = document.createElement("a")
+            link.href = url
+            link.download = fileName
+            document.body.appendChild(link)
+            link.click()
+            link.remove()
+            URL.revokeObjectURL(url)
+            toast.success(`Downloaded ${fileName}`)
+        },
+        onError: (error) => {
+            toast.error(`Failed to export: ${error.message}`)
+        }
+    }))
+}
+
+/**
+ * Creates a workflow from an exported JSON file
+ */
+export const useImportWorkflow = () => {
+    const queryClient = useQueryClient()
+    const trpc = useTRPC()
+    const invalidateUsage = useInvalidateUsage()
+
+    return useMutation(trpc.workflows.importJson.mutationOptions({
+        onSuccess: (data) => {
+            toast.success(`Workflow "${data.name}" imported`, {
+                description: data.notes.length ? data.notes.join(". ") : undefined,
+            })
+            invalidateUsage()
+            queryClient.invalidateQueries(
+                trpc.workflows.getMany.queryOptions({})
+            )
+        },
+    }))
+}
+
+/**
  * Hook to create a new workflow
  */
 

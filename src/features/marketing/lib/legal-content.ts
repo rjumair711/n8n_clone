@@ -49,7 +49,7 @@ export const PRIVACY_SECTIONS: LegalSection[] = [
     id: "use",
     title: "How we use it",
     paragraphs: [
-      "We use your data to run the service: to sign you in, store and run your workflows, show you your executions, send you account emails (such as verification and password reset), bill your plan, prevent abuse and fix errors.",
+      "We use your data to run the service: to sign you in, store and run your workflows, show you your executions, send you account emails (verification, password reset, and an email when a workflow fails, which you can turn off in Settings), bill your plan, prevent abuse and fix errors.",
       "We do not sell your data, we do not show you advertising, and we do not use your workflows, credentials or execution data to train AI models.",
     ],
   },

@@ -4,6 +4,7 @@ import { secretsMatch } from "@/lib/webhook-security";
 import { rateLimitResponse } from "@/lib/rate-limit";
 import { type NextRequest, NextResponse } from "next/server";
 import { NodeType } from "@prisma/client";
+import { replyIdOf } from "@/features/executions/components/whatsapp/interactive";
 
 type WhatsappTriggerData = {
     verifyToken?: string;
@@ -126,6 +127,8 @@ export async function POST(request: NextRequest, { params }: Params) {
                                 from: message.from,
                                 name: contact?.profile?.name,
                                 text,
+                                // The id of a tapped reply button or list row
+                                replyId: replyIdOf(message),
                                 type: message.type,
                                 messageId: message.id,
                                 timestamp: message.timestamp,

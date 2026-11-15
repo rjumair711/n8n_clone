@@ -159,6 +159,16 @@ Two ways to test one part of a workflow in the editor without running the rest a
 * **What is pinned** is what the node added to the workflow's data in that run (its own variables, and for a router its decision), up to 512 KB per node (`MAX_PINNED_DATA_KB`). For a trigger it is everything the run started with.
 * **Limits.** Inside a Loop, the nodes of the loop body that come before the chosen node give the data of the loop's last round. A Merge set to wait for all inputs does not run in a partial run that covers only one of its branches.
 
+## Workflow export and import (JSON)
+
+Like n8n's Download and Import from File, for backups and for moving a workflow to another account.
+
+* **Export:** editor → Workflow settings (gear) → **Download as JSON**. The file is the **saved** workflow (unsaved changes on the canvas are not in it): its name, nodes, connections and their settings, as `{ format: "rxj-workflow", version: 1, name, exportedAt, nodes, connections }`. The name of the file comes from the workflow's name.
+* **What is never in the file:** stored credentials (only which credential a node uses, by id), webhook and signing secrets, WhatsApp verify tokens and app secrets, and Slack/Discord webhook URLs. Anything typed into ordinary fields (a key pasted into a header, a prompt) is exported as it is, like a template.
+* **Import:** Workflows page → **Import** → pick the file. A new workflow opens; the original is never changed. Every node gets a new id. In the same account the nodes keep their credentials; in another account, references to credentials and to workflows (Execute Workflow) the account does not own are removed and the toast says how many must be selected again. Webhook-type triggers get a new URL with the new workflow, and their secrets must be typed again. The imported workflow is inactive.
+* **Checks:** at most 2 MB and 500 nodes; the workflow limit applies; a node this server does not offer (SSH on the hosted app) is refused with the same message as a template; node types that do not exist are left out and named. An n8n file is recognised and refused with a clear message: n8n's node types are different, so its workflows have to be rebuilt.
+* Workflow settings (Don't save node input/output, retention, AI budget) and version history are not exported. Importing needs the builder role in a workspace; exporting needs only viewer.
+
 ## Workflow version history
 
 Every workflow keeps its earlier versions, so a change can be looked at and undone.
@@ -280,6 +290,25 @@ Realtime workflow updates use:
 * Workflow failure propagation
 * Node-level diagnostics
 * Retry diagnostics
+
+### Failure emails
+
+When a run fails, the workflow's owner gets an email, **on by default** so nobody has to build an Error Trigger workflow first (`src/lib/failure-alerts.ts`).
+
+* **What it says:** the workflow, the failed node, the error (redacted like the execution log, shortened to 1,000 characters) and links to the execution and the workflow.
+* **At most one an hour per workflow.** A schedule that fails every minute sends one email, not sixty. The count is kept in the `rate_limit` table under `failure-alert:<workflowId>`.
+* **Not sent** for test runs from the editor (Manual and "Test run from editor") or evaluation rows, and not for a workflow whose failures an Error Trigger already handles (its own, or one with scope "all"). A failing error workflow does send one.
+* **Turning it off:** Settings → Profile → "Email me when a workflow fails" (`User.failureAlertEmails`, true for every account until switched off).
+* Sent with Resend from `EMAIL_FROM`. Without `RESEND_API_KEY` nothing is sent, and the setting says so. An email that cannot be sent never changes how the run failed.
+
+## Workflow time zone
+
+Schedules used to run on UTC only, so a 9:00 report in Pakistan had to be written as `0 4 * * *`. Now each workflow has a **Time zone** (editor → Workflow settings → Time zone), like n8n's workflow setting.
+
+* An IANA name such as `Asia/Karachi`, `Asia/Riyadh` or `Europe/London`; the picker lists the common ones first with their UTC offset and the time there now. Daylight saving is followed.
+* Every Schedule Trigger in the workflow reads its cron on that clock: `0 9 * * *` in Asia/Karachi runs at 9:00 Pakistan time, and weekdays are that zone's weekdays. The Schedule Trigger dialog shows the zone and the next three runs.
+* **No zone is UTC**, exactly as before, so existing workflows keep their times. Choosing UTC stores none. A stored name that stops being valid falls back to UTC.
+* Stored as `Workflow.timezone`. Only schedules use it; `$now`, the Date & Time node and the timestamps in executions are unchanged.
 
 ---
 
@@ -571,7 +600,7 @@ The Vector Store keeps text in chunks with an embedding each, per user and colle
 
 ### Analyze Image / Document
 
-OCR and vision for a file a workflow has: a Form Trigger upload, an HTTP Request download, a Google Drive or Gmail file.
+OCR and vision for a file a workflow has: a Form Trigger upload, an image sent to a Telegram or WhatsApp bot (`telegram.image`, `whatsapp.image`), an HTTP Request download, a Google Drive or Gmail file.
 
 * **Input:** a file variable (`form.invoice`, `download.file`) that holds an image (JPEG, PNG, WebP, GIF, TIFF) or a PDF.
 * **Modes:**
@@ -597,11 +626,11 @@ OCR and vision for a file a workflow has: a Form Trigger upload, an HTTP Request
 | Trigger             | Description                                                                                                |
 | ------------------- | ---------------------------------------------------------------------------------------------------------- |
 | Manual Trigger      | Manual execution on user demand                                                                            |
-| Schedule Trigger    | Time-based automatic triggers evaluated each minute using custom Cron intervals (e.g., `*/5 * * * *`)       |
+| Schedule Trigger    | Time-based automatic triggers evaluated each minute using custom Cron intervals (e.g., `*/5 * * * *`), read on the workflow's time zone (Workflow settings → Time zone; UTC when none is set). The dialog shows the zone and the next three runs |
 | Webhook Trigger     | Runs on any HTTP request to `/api/webhooks/trigger/<workflowId>`, protected by a per-node secret. Respond immediately, when the last node finishes, or with a Respond to Webhook node |
 | Chat Trigger        | Runs when a message is sent from the editor's chat panel, or (with "Make chat public") from the hosted chat page or the website widget; provides `chatInput` and `sessionId` |
-| Telegram Trigger    | Runs when your bot receives a message. The bot's webhook is registered when the workflow is activated. A voice message is given as a file at `{{telegram.voice}}` |
-| WhatsApp Trigger    | Runs when your WhatsApp Business number receives a message (verify token + signature check). With a WhatsApp credential selected, a voice message is given as a file at `{{whatsapp.voice}}` |
+| Telegram Trigger    | Runs when your bot receives a message. The bot's webhook is registered when the workflow is activated. A voice message is given as a file at `{{telegram.voice}}`, a photo at `{{telegram.image}}` (its caption is `{{chatInput}}`) |
+| WhatsApp Trigger    | Runs when your WhatsApp Business number receives a message (verify token + signature check). With a WhatsApp credential selected, a voice message is given as a file at `{{whatsapp.voice}}` and an image at `{{whatsapp.image}}`. A tapped reply button or list row gives `{{whatsapp.replyId}}` |
 | Gmail Trigger       | Runs when a new email arrives; polls every 1, 5, 15 or 60 minutes with an optional Gmail search filter. One poll starts at most 10 runs, oldest email first; when more arrived, the rest follow at 10 a minute until none are waiting (a burst of up to 500 emails is kept) |
 | Messenger Trigger   | Runs when someone messages your Facebook Page (verify token + signature check; see "Messenger and Instagram") |
 | Instagram Trigger   | Runs when your Instagram professional account receives a direct message (verify token + signature check)    |
@@ -617,6 +646,45 @@ OCR and vision for a file a workflow has: a Form Trigger upload, an HTTP Request
 | When Executed by Another Workflow | Start of a sub-workflow called by an Execute Workflow node or an AI Agent tool               |
 
 Telegram, WhatsApp, Messenger, Instagram, Typeform, Shopify, WooCommerce and Stripe need `NEXT_PUBLIC_APP_URL` to be a public https address. Every webhook route is rate limited per workflow.
+
+## Google Sheets rows
+
+The Google Sheets node has five operations, like n8n's. Row 1 of the tab holds the column names; matching ignores case and spaces at the ends of a column name.
+
+| Operation | Fields | Output |
+| --------- | ------ | ------ |
+| Append Row | Row Values, comma-separated (as before) | `{ updatedRange, updatedRows, updatedCells }` |
+| Get Rows | optional Filter Column and Filter Value | `{ rows, count }`. Each row is an object by column name with `row_number`. Add a Split Out on `sheetsResult.rows` to run the next nodes once per row |
+| Lookup Row | Column to Match On, Value to Match | `{ found, row, rowNumber, matches }`; `row` is `null` when nothing matches |
+| Update Row | Column to Match On, Value to Match, Values to Set | changes the cells of the **first** matching row only and leaves its other columns (and formulas) alone. `{ updated, rowNumber, row, matches }`; `updated: false` when nothing matches (not an error) |
+| Append or Update Row | the same | updates the first match, or appends a new row with the match value and the values set. `{ action: "updated" \| "appended", rowNumber, row }` |
+
+* **Values to Set** is one `Column: value` per line, for example `Status: Paid`. The lines are split before the values are rendered, so data with a colon or a line break in it stays in its column. A column that is not in row 1 is an error that lists the columns there.
+* A value equals when both, trimmed, are the same text as Google Sheets shows it (formatted values).
+* Blank headings are named after their column letter (`C`), a repeated heading gets `_2`. Empty rows are skipped.
+* Get Rows returns at most 3 MB of rows, then says `truncated: true` with a warning; filter to get fewer.
+* Nodes saved before these operations existed keep appending exactly as before. As an AI Agent tool, Get Rows and Lookup count as Read tools; the others as Write.
+
+## Google Calendar: List Events
+
+The Google Calendar node's **List Events** operation, like n8n's "Get Many" with a time range.
+
+* **Fields:** Calendar ID (`primary` by default), Start of range and End of range (required, ISO date and time such as `2026-12-31T10:00:00+05:00`; expressions work), optional Search text and Max Events (50 by default, at most 250).
+* **Output:** `{ events, count, busyCount, isFree }`. Every event that overlaps the range is listed in start order, and recurring events are expanded into their occurrences. Each event is `{ id, summary, description, location, start, end, allDay, status, busy, htmlLink, attendees }`.
+* **Is the slot free?** `isFree` is `true` when no event in the range blocks the time. Cancelled events and events set to "Free" in Google Calendar do not block it. A booking flow: List Events for the requested slot → IF `{{calendar.isFree}}` → Create Event, otherwise reply with another time.
+* More events than Max Events adds `truncated: true`.
+* A range that is not a date, or that ends before it starts, fails before anything is sent to Google. As an AI Agent tool, List Events is a Read tool.
+
+## WhatsApp buttons and list menus
+
+The WhatsApp node's **Send Reply Buttons** and **Send List Menu** operations send Meta's interactive messages, so customers tap a choice instead of typing it.
+
+* **Send Reply Buttons:** Message, up to 3 **Buttons**, one per line as `id | title` (a title is at most 20 characters). An optional Header (60) above and Footer (60) below.
+* **Send List Menu:** Message, the **Menu Button** that opens the list (20 characters, "Choose" by default) and up to 10 **Rows**, one per line as `id | title | description` (24 and 72 characters; the description is optional). A line starting with `#` opens a section with that title; with more than one section each needs a title.
+* A line with only a title gets an id made from it (`Yes, book it` → `yes_book_it`). Ids must be different from each other.
+* **The answer:** when the customer taps, the WhatsApp Trigger runs with the title at `{{whatsapp.text}}` (and `{{chatInput}}`, so an AI Agent reads it like typed text) and the id at `{{whatsapp.replyId}}`. Route on the id with a Switch. A template's quick-reply button gives its payload there too.
+* Like free text, interactive messages only reach someone who wrote to you in the last 24 hours.
+* Text that is too long, too many buttons or rows, or a repeated id fails with a message saying which, before anything is sent.
 
 ## Duplicate deliveries and retry
 
@@ -735,10 +803,12 @@ Two nodes that speak the OpenAI audio API, and voice messages on the two chat tr
 * **Text** up to 4096 characters, a **Model** (`tts-1` on OpenAI when left empty; required for Groq and custom servers), a **Voice** (`alloy` when left empty) and a **Format**: MP3, Opus (an Ogg file, the format of voice messages) or WAV.
 * **Result:** a file reference at `{{speech.file}}`, stored like every other workflow file (same size limit and storage quota, removed after the retention period). Use `speech.file` in a Telegram or WhatsApp node's File field or in an email's Attachments.
 
-**Voice messages on the Telegram and WhatsApp triggers**
+**Voice messages and images on the Telegram and WhatsApp triggers**
 
 * **Telegram Trigger:** a voice message (or audio file) is downloaded with the trigger's bot credential and added to the data as a file: `{{telegram.voice}}`, with its `duration`.
 * **WhatsApp Trigger:** has a new, optional **WhatsApp Credential**. With it selected, a voice message is downloaded and added as `{{whatsapp.voice}}`. Without it everything works as before and text messages need nothing.
+* **Images:** a photo (or a picture sent "as a file") is downloaded the same way and added as `{{telegram.image}}` / `{{whatsapp.image}}`, ready for an **Analyze Image** node's File field, Google Drive upload or an email attachment. Telegram sends a photo in several sizes; the largest one under the file size limit is taken. The caption stays where it was (`{{whatsapp.text}}`, the update's `caption`) and is also `{{chatInput}}`, so an AI Agent reads it. Errors are at `{{telegram.imageError}}` / `{{whatsapp.imageError}}`.
+* **A payment screenshot check:** WhatsApp Trigger → IF `{{whatsapp.image.id}}` is not empty → Analyze Image (File `whatsapp.image`, "Is this a bank transfer receipt? Give the amount and reference") → Google Sheets **Lookup Row** on the order → WhatsApp reply.
 * A voice message that cannot be fetched (no credential, larger than the file size limit, a download error) does not fail the run: the message still arrived, and `{{telegram.voiceError}}` / `{{whatsapp.voiceError}}` says why there is no file.
 * **A voice bot:** Telegram Trigger → Transcribe Audio (File `telegram.voice`) → AI Agent (Source for Prompt "Define below", Prompt `{{transcript.text}}`) → Text to Speech (Text `{{aiAgentOutput.output}}`, Format Opus) → Telegram (File `speech.file`). The Telegram node sends the audio as a file, not as a voice note. A voice message has no text, so `{{chatInput}}` is empty for it: the agent's prompt has to come from the transcript. For a bot that takes both, put an IF on `{{telegram.voice.id}}` first.
 * Transcription and speech are billed by the provider per minute or per character, not per token, so they are not in the AI usage and cost figures. As AI Agent tools both nodes count as Read.
@@ -806,8 +876,8 @@ Actions: `goto` (url), `click` (selector), `type` (selector, text), `select` (se
 
 | Node             | Description                                                               |
 | ---------------- | ------------------------------------------------------------------------- |
-| Google Sheets    | Append rows (Google account or service account)                           |
-| Google Calendar  | Create, update and delete events (Google account or service account)      |
+| Google Sheets    | Append Row, Get Rows (with an optional filter), Lookup Row, Update Row and Append or Update Row (upsert by a key column). Google account or service account. See "Google Sheets rows" |
+| Google Calendar  | Create, update, delete and list events (Google account or service account). **List Events** returns every event between two times and `isFree`, so a booking bot can check a slot before it books it. See "Google Calendar: List Events" |
 | Google Drive     | Search, upload, download, create folder, delete. Google Docs and Slides download as PDF, Sheets as CSV |
 | Gmail            | Send (with file attachments), reply, search, get and mark messages as read. A reply stays in the thread: to a message you received it goes to its sender, to a message you sent yourself (a follow-up) it goes to the people that message was sent to, with its CC only when **CC of a Message You Sent** is set to Keep |
 | Notion           | Create pages, query databases                                             |
@@ -864,7 +934,7 @@ Two store nodes and two triggers. The nodes can also be AI Agent tools: reading 
 | Discord     | Discord automation  |
 | Slack       | Slack notifications |
 | Telegram    | Bot messaging: text, or a file with a caption, and the Telegram Trigger for incoming messages |
-| WhatsApp    | Text, template and file messages via the WhatsApp Business Cloud API, and the WhatsApp Trigger |
+| WhatsApp    | Text, template, file, reply-button and list-menu messages via the WhatsApp Business Cloud API, and the WhatsApp Trigger. See "WhatsApp buttons and list menus" |
 | Messenger   | Text and picture replies to people who wrote to your Facebook Page, and the Messenger Trigger |
 | Instagram   | Text and picture direct messages, the Instagram Trigger, and photo posts (with the Instagram / Facebook Post node) |
 | Twilio      | SMS and WhatsApp messages |
@@ -1454,7 +1524,7 @@ Anyone can run RXJ on their own VPS with Docker: [`docs/SELF_HOSTING.md`](docs/S
 | `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` | Google sign-in and the "Google account" credential. Add `<app URL>/api/oauth/google/callback` as an authorised redirect URI |
 | `GITHUB_CLIENT_ID`, `GITHUB_CLIENT_SECRET` | GitHub sign-in |
 | `SALESFORCE_CLIENT_ID`, `SALESFORCE_CLIENT_SECRET` | The Salesforce connected app behind "Connect Salesforce". Its callback URL is `<app URL>/api/oauth/salesforce/callback`, with the `api` and `refresh_token, offline_access` scopes |
-| `RESEND_API_KEY` | Sends verification and password-reset emails. Email verification is only required when this is set |
+| `RESEND_API_KEY` | Sends verification, password-reset and failure emails. Email verification is only required when this is set |
 | `EMAIL_FROM` | Sender of those emails; must be on a domain verified in Resend |
 | `REQUIRE_EMAIL_VERIFICATION` | Set to `false` to switch verification off |
 | `POLAR_*` | Billing (access token, product IDs, webhook secret, success URL). `POLAR_WEBHOOK_SECRET` is what Polar's webhooks are verified with |
@@ -1530,7 +1600,7 @@ Planned, not built. These are the pieces an agent needs to find link prospects, 
 
 | Planned item | What it needs |
 | ------------ | ------------- |
-| Google Sheets: row operations | Get Rows (with filter), Lookup Row, Update Row, Append or Update (upsert by a key column) and Delete Row; rows come out as a list so Split Out can take them |
+| Google Sheets: Delete Row | Get Rows, Lookup, Update and Append or Update are built (see "Google Sheets rows"); Delete Row is not yet |
 | IMAP Trigger and IMAP node | A trigger for new email in a folder (polling every 1, 5, 15 or 60 minutes, a search filter, duplicate check by Message-ID) and a node with Search, Get Message, Mark as Read and Move to Folder. Needs a new IMAP credential: host, port, TLS, username, app password |
 | Email (SMTP): headers and replies | Custom Headers (for `List-Unsubscribe` and `List-Unsubscribe-Post`), a "Reply To Message" option that sets `In-Reply-To` and `References` and adds "Re:", and the sent Message-ID in the output. The Gmail node returns `messageId` and `threadId` |
 | Per-item approval and "Approve with edits" | Send and Wait for Approval asks once per item, and each item continues through Approved or Rejected. "Approve with edits" makes the subject and body editable on the approval page and returns them as `{{approval.edited.subject}}` / `{{approval.edited.body}}`. Needs default values on Form fields |

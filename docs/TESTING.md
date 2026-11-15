@@ -2055,6 +2055,129 @@ Signed out, no account needed.
 | 7 | Phone width (375 px) on all three pages | no sideways scrolling; the long email address wraps |
 | 8 | Self-hosted image: open `/terms`, `/privacy`, `/contact` | each redirects to `/workflows`; the sign-up form has no Terms line |
 
+## T30. Google Sheets: Get Rows, Lookup, Update, Upsert
+
+Use the test account and a new test spreadsheet shared with its Google credential. Row 1: `Order ID | Name | Status`; rows 2 and 3: `A1 | Sara | New` and `A2 | Ali | New`. Run each node with **Test step**.
+
+| # | Do | Expect |
+| - | -- | ------ |
+| 1 | Open an existing Google Sheets node from before this change | Operation is **Append Row** with its values; it runs and appends as before |
+| 2 | Get Rows, no filter | `rows` has 2 objects with `row_number` 2 and 3, `count` 2 |
+| 3 | Get Rows, Filter Column `status`, Filter Value `New` | the same 2 rows (column name ignores case) |
+| 4 | Get Rows → Split Out on `sheetsResult.rows` → Set | the Set node runs twice, once per row |
+| 5 | Lookup Row, Column `Order ID`, Value `A2` | `found: true`, `row.Name` is Ali, `rowNumber` 3 |
+| 6 | Lookup Row, Value `A9` | `found: false`, `row: null`, no error |
+| 7 | Update Row, `Order ID` = `A1`, Values `Status: Paid` | row 2's Status is Paid in the sheet; Name unchanged; `updated: true` |
+| 8 | Update Row, Value `A9` | nothing changes; `updated: false`, no error |
+| 9 | Append or Update Row, `A2`, `Status: Shipped` | row 3 updated, `action: "updated"` |
+| 10 | Append or Update Row, `A3`, `Name: Zara` + `Status: New` | new row 4 `A3 | Zara | New`, `action: "appended"`, `rowNumber` 4 |
+| 11 | Values to Set `Phone: 123` | fails: `The sheet has no column "Phone". Row 1 has: Order ID, Name, Status` |
+| 12 | Values to Set `Status Paid` (no colon) | fails with the `Column: value` hint |
+| 13 | A tab named `Bob's Orders` | every operation works on it |
+| 14 | AI Agent with a Get Rows tool and an Update Row tool | Get Rows is listed as Read, Update Row as Write |
+
+Delete the test spreadsheet afterwards.
+
+## T31. Google Calendar: List Events
+
+Use the test account's Google credential on a test calendar. Create two events tomorrow: 10:00 to 10:30 "Haircut" (Busy) and 12:00 to 13:00 "Lunch" set to **Free**.
+
+| # | Do | Expect |
+| - | -- | ------ |
+| 1 | List Events, range tomorrow 09:00 to 18:00 (with your offset, e.g. `+05:00`) | `count` 2, in start order; Haircut `busy: true`, Lunch `busy: false`; `isFree: false` |
+| 2 | Range 10:30 to 11:00 | `count` 0, `isFree: true` (an event ending at 10:30 does not overlap) |
+| 3 | Range 12:15 to 12:45 | Lunch only, `isFree: true` |
+| 4 | Search `Haircut` over the whole day | only Haircut |
+| 5 | A weekly recurring event, range over three weeks | three separate occurrences |
+| 6 | Max Events `1` over the whole day | 1 event and `truncated: true` |
+| 7 | Start of range `tomorrow` | fails: "is not a date and time" |
+| 8 | End of range before Start of range | fails: "End of range must be after Start of range" |
+| 9 | List Events → IF `{{calendarResult.isFree}}` → Create Event | the event is created only when the slot is free |
+| 10 | An existing Create, Update or Delete node | unchanged |
+| 11 | As an AI Agent tool | listed as Read |
+
+Delete the test events afterwards.
+
+## T32. WhatsApp reply buttons and list menus
+
+Use the test account, a WhatsApp test number and your own phone (message the number first, so the 24-hour window is open). Workflow: WhatsApp Trigger → Switch on `{{whatsapp.replyId}}` → WhatsApp Send Text.
+
+| # | Do | Expect |
+| - | -- | ------ |
+| 1 | WhatsApp node, **Send Reply Buttons**, Message `Book for 5 pm?`, Header `Salon`, Buttons `yes \| Yes, book it` / `no \| No thanks` | the phone shows the header, message and two buttons |
+| 2 | Tap **Yes, book it** | a new run: `whatsapp.text` is `Yes, book it`, `whatsapp.replyId` is `yes`, `chatInput` is the title; the Switch takes the `yes` branch |
+| 3 | **Send List Menu**, Menu Button `See menu`, Rows `# Pizzas`, `margherita \| Margherita \| Rs 1,200`, `# Drinks`, `cola \| Cola` | a message with a **See menu** button; it opens two titled sections |
+| 4 | Pick **Cola** | `whatsapp.replyId` is `cola` |
+| 5 | Four buttons | the node fails: "WhatsApp allows 3 reply buttons; there are 4" and nothing is sent |
+| 6 | A button title of 25 characters | fails, naming the title and the 20 character limit |
+| 7 | Two sections without `#` titles | fails: "every section needs a title" |
+| 8 | Buttons in Urdu (`ہاں`, `نہیں`) | sent and shown right to left |
+| 9 | An existing Send Text node | unchanged |
+
+## T33. Images from Telegram and WhatsApp as files
+
+| # | Do | Expect |
+| - | -- | ------ |
+| 1 | Send a photo with the caption `receipt` to the Telegram bot | `telegram.image` is a file (`photo.jpg`, image/jpeg) and `chatInput` is `receipt` |
+| 2 | Send a PNG to the bot as a file (paperclip → File) | `telegram.image` is the PNG with its name |
+| 3 | Send a PDF to the bot | no `telegram.image` (not an image); the run still starts |
+| 4 | WhatsApp Trigger with a WhatsApp credential: send a photo with caption `paid` | `whatsapp.image` is a file, `whatsapp.text` and `chatInput` are `paid` |
+| 5 | The same without a credential on the trigger | the run starts; `whatsapp.imageError` says no credential is selected |
+| 6 | Trigger → Analyze Image (File `whatsapp.image`, Describe) | the description of the photo |
+| 7 | Send a voice note to both | `voice` works exactly as before |
+| 8 | Executions → open the run → the file | it opens and is removed after the file retention period |
+
+## T34. Workflow export and import
+
+Use the test account and, for steps 6 to 8, a second test account.
+
+| # | Do | Expect |
+| - | -- | ------ |
+| 1 | Open a saved workflow with a WhatsApp Trigger (verify token, app secret), a Slack node (webhook URL) and a Gmail node; gear → **Download as JSON** | a `.json` file named after the workflow downloads |
+| 2 | Open the file | `"format": "rxj-workflow"`; the Gmail node has its `credentialId`; no verify token, app secret or Slack webhook URL anywhere |
+| 3 | Workflows → **Import** → that file | a new workflow with the same name opens; nodes and connections are the same; the original is unchanged |
+| 4 | Its Gmail node | the same credential is selected |
+| 5 | Its WhatsApp Trigger | verify token and app secret are empty; the webhook URL has the new workflow's id |
+| 6 | Sign in as the second account and import the file | the toast says how many credentials must be selected again; Gmail shows no credential; nothing of the first account's is reachable |
+| 7 | Import an n8n workflow file | "This is an n8n workflow..." and nothing is created |
+| 8 | Import a `.txt` renamed to `.json`, or a 3 MB file | "not valid JSON" / "larger than 2 MB" |
+| 9 | Import with the workflow limit reached | the limit dialog; nothing is created |
+| 10 | As a viewer in a workspace | Download works; Import fails with the role error |
+
+Delete the imported workflows afterwards.
+
+## T35. Workflow time zone
+
+Use the test account. Note the current UTC time.
+
+| # | Do | Expect |
+| - | -- | ------ |
+| 1 | Open an existing workflow with a Schedule Trigger | gear menu says "Time zone: UTC"; the Schedule dialog says "Runs on UTC time" with the next three runs |
+| 2 | Gear → Time zone → pick `Asia/Karachi` → Save | toast "... now runs its schedules in Asia/Karachi"; the menu shows it; the dialog shows "UTC+05:00 · it is ... there now" |
+| 3 | Schedule Trigger `0 9 * * *` | the dialog lists the next runs at 09:00 |
+| 4 | Set the cron to the next minute in Pakistan time (e.g. `25 21 * * *` at 21:24 PKT), activate, wait | a run starts at that minute (Executions, source Schedule) |
+| 5 | Same cron with Time zone UTC | no run at 21:25 PKT; it runs at 21:25 UTC |
+| 6 | Type `Mars/Base` | Save is disabled; the hint asks for a name like Asia/Karachi |
+| 7 | **Reset to UTC** → Save | the menu shows UTC again |
+| 8 | A viewer of the workspace changes it | the role error |
+
+## T36. Failure emails
+
+Needs `RESEND_API_KEY`. Use the test account (its email must receive mail).
+
+| # | Do | Expect |
+| - | -- | ------ |
+| 1 | Settings → Profile | "Email me when a workflow fails", switched on |
+| 2 | An active workflow with a Webhook trigger and an HTTP Request to `https://httpstat.us/500`; call the webhook | one email "Workflow failed: ..." with the node, the error and working links to the execution and the workflow |
+| 3 | Call the webhook again three times within the hour | the runs fail; no more emails |
+| 4 | Run the same workflow with **Execute workflow** in the editor | no email |
+| 5 | Add a workflow with an Error Trigger (scope: this workflow's failures, or "all") and fail another run an hour later | the error workflow runs; no email |
+| 6 | Switch the setting off, wait an hour, fail a run | no email |
+| 7 | Without `RESEND_API_KEY` | the setting says no email service is set up; runs fail as before |
+| 8 | A workflow name with `<b>` in it | the email shows the text, not bold |
+
+Switch the setting back on and delete the test workflows afterwards.
+
 # When something fails
 
 Note the node, the exact values you entered, and the error text from the
