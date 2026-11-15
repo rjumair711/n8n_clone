@@ -571,7 +571,7 @@ The Vector Store keeps text in chunks with an embedding each, per user and colle
 
 ### Analyze Image / Document
 
-OCR and vision for a file a workflow has: a Form Trigger upload, an HTTP Request download, a Google Drive or Gmail file.
+OCR and vision for a file a workflow has: a Form Trigger upload, an image sent to a Telegram or WhatsApp bot (`telegram.image`, `whatsapp.image`), an HTTP Request download, a Google Drive or Gmail file.
 
 * **Input:** a file variable (`form.invoice`, `download.file`) that holds an image (JPEG, PNG, WebP, GIF, TIFF) or a PDF.
 * **Modes:**
@@ -600,8 +600,8 @@ OCR and vision for a file a workflow has: a Form Trigger upload, an HTTP Request
 | Schedule Trigger    | Time-based automatic triggers evaluated each minute using custom Cron intervals (e.g., `*/5 * * * *`)       |
 | Webhook Trigger     | Runs on any HTTP request to `/api/webhooks/trigger/<workflowId>`, protected by a per-node secret. Respond immediately, when the last node finishes, or with a Respond to Webhook node |
 | Chat Trigger        | Runs when a message is sent from the editor's chat panel, or (with "Make chat public") from the hosted chat page or the website widget; provides `chatInput` and `sessionId` |
-| Telegram Trigger    | Runs when your bot receives a message. The bot's webhook is registered when the workflow is activated. A voice message is given as a file at `{{telegram.voice}}` |
-| WhatsApp Trigger    | Runs when your WhatsApp Business number receives a message (verify token + signature check). With a WhatsApp credential selected, a voice message is given as a file at `{{whatsapp.voice}}` |
+| Telegram Trigger    | Runs when your bot receives a message. The bot's webhook is registered when the workflow is activated. A voice message is given as a file at `{{telegram.voice}}`, a photo at `{{telegram.image}}` (its caption is `{{chatInput}}`) |
+| WhatsApp Trigger    | Runs when your WhatsApp Business number receives a message (verify token + signature check). With a WhatsApp credential selected, a voice message is given as a file at `{{whatsapp.voice}}` and an image at `{{whatsapp.image}}`. A tapped reply button or list row gives `{{whatsapp.replyId}}` |
 | Gmail Trigger       | Runs when a new email arrives; polls every 1, 5, 15 or 60 minutes with an optional Gmail search filter. One poll starts at most 10 runs, oldest email first; when more arrived, the rest follow at 10 a minute until none are waiting (a burst of up to 500 emails is kept) |
 | Messenger Trigger   | Runs when someone messages your Facebook Page (verify token + signature check; see "Messenger and Instagram") |
 | Instagram Trigger   | Runs when your Instagram professional account receives a direct message (verify token + signature check)    |
@@ -774,10 +774,12 @@ Two nodes that speak the OpenAI audio API, and voice messages on the two chat tr
 * **Text** up to 4096 characters, a **Model** (`tts-1` on OpenAI when left empty; required for Groq and custom servers), a **Voice** (`alloy` when left empty) and a **Format**: MP3, Opus (an Ogg file, the format of voice messages) or WAV.
 * **Result:** a file reference at `{{speech.file}}`, stored like every other workflow file (same size limit and storage quota, removed after the retention period). Use `speech.file` in a Telegram or WhatsApp node's File field or in an email's Attachments.
 
-**Voice messages on the Telegram and WhatsApp triggers**
+**Voice messages and images on the Telegram and WhatsApp triggers**
 
 * **Telegram Trigger:** a voice message (or audio file) is downloaded with the trigger's bot credential and added to the data as a file: `{{telegram.voice}}`, with its `duration`.
 * **WhatsApp Trigger:** has a new, optional **WhatsApp Credential**. With it selected, a voice message is downloaded and added as `{{whatsapp.voice}}`. Without it everything works as before and text messages need nothing.
+* **Images:** a photo (or a picture sent "as a file") is downloaded the same way and added as `{{telegram.image}}` / `{{whatsapp.image}}`, ready for an **Analyze Image** node's File field, Google Drive upload or an email attachment. Telegram sends a photo in several sizes; the largest one under the file size limit is taken. The caption stays where it was (`{{whatsapp.text}}`, the update's `caption`) and is also `{{chatInput}}`, so an AI Agent reads it. Errors are at `{{telegram.imageError}}` / `{{whatsapp.imageError}}`.
+* **A payment screenshot check:** WhatsApp Trigger → IF `{{whatsapp.image.id}}` is not empty → Analyze Image (File `whatsapp.image`, "Is this a bank transfer receipt? Give the amount and reference") → Google Sheets **Lookup Row** on the order → WhatsApp reply.
 * A voice message that cannot be fetched (no credential, larger than the file size limit, a download error) does not fail the run: the message still arrived, and `{{telegram.voiceError}}` / `{{whatsapp.voiceError}}` says why there is no file.
 * **A voice bot:** Telegram Trigger → Transcribe Audio (File `telegram.voice`) → AI Agent (Source for Prompt "Define below", Prompt `{{transcript.text}}`) → Text to Speech (Text `{{aiAgentOutput.output}}`, Format Opus) → Telegram (File `speech.file`). The Telegram node sends the audio as a file, not as a voice note. A voice message has no text, so `{{chatInput}}` is empty for it: the agent's prompt has to come from the transcript. For a bot that takes both, put an IF on `{{telegram.voice.id}}` first.
 * Transcription and speech are billed by the provider per minute or per character, not per token, so they are not in the AI usage and cost figures. As AI Agent tools both nodes count as Read.
