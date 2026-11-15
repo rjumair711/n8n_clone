@@ -304,6 +304,8 @@ interface EntityItemProps {
     subtitle?: React.ReactNode;
     image?: React.ReactNode;
     actions?: React.ReactNode;
+    // More entries for the row's menu, above Delete
+    menuItems?: React.ReactNode;
     onRemove?: () => void | Promise<void>;
     isRemoving?: boolean;
     className?: string
@@ -316,6 +318,7 @@ export const EntityItem = ({
     subtitle,
     image,
     actions,
+    menuItems,
     onRemove,
     isRemoving,
     className
@@ -377,6 +380,7 @@ export const EntityItem = ({
                                         align="end"
                                         onClick={(e) => e.stopPropagation()}
                                     >
+                                        {menuItems}
                                         <DropdownMenuItem onClick={handleRemove}>
                                             <TrashIcon className="size-4" />
                                             Delete

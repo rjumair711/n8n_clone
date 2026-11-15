@@ -16031,6 +16031,40 @@ pour()</code></pre>
     assert.match(readFileSync("src/features/templates/server/routers.ts", "utf8"), /markOnboarding\(ctx\.auth\.user\.id, \{ usedTemplate: true \}\)\.catch/);
   });
 
+  await test("duplicate workflow: new ids, same settings, connections follow", async () => {
+    const { buildWorkflowCopy, copyName, MAX_WORKFLOW_NAME } = await import("@/features/workflows/lib/workflow-copy");
+    assert.equal(copyName("Orders"), "Orders (copy)");
+    assert.equal(copyName("Orders (copy)"), "Orders (copy 2)");
+    assert.equal(copyName("Orders (copy 2)"), "Orders (copy 3)");
+    assert.equal(copyName("x".repeat(300)).length, MAX_WORKFLOW_NAME);
+
+    let n = 0;
+    const copy = buildWorkflowCopy(
+      {
+        name: "Bot",
+        nodes: [
+          { id: "a", name: "WHATSAPP_TRIGGER", type: "WHATSAPP_TRIGGER", position: { x: 1, y: 2 }, data: { appSecret: "kept", credentialId: "c1" }, credentialId: null },
+          { id: "b", name: "AI_AGENT", type: "AI_AGENT", position: { x: 3, y: 4 }, data: { toolSettings: { a: { name: "t" } } }, credentialId: "c2" },
+        ],
+        connections: [{ fromNodeId: "a", toNodeId: "b", fromOutput: "main", toInput: "main" }],
+      },
+      () => `n${++n}`,
+    );
+    assert.equal(copy.name, "Bot (copy)");
+    assert.deepEqual(copy.nodes.map((node) => node.id), ["n1", "n2"]);
+    // Same account: secrets and credentials stay
+    assert.equal(copy.nodes[0].data.appSecret, "kept");
+    assert.equal(copy.nodes[1].credentialId, "c2");
+    assert.deepEqual(copy.nodes[1].data.toolSettings, { n1: { name: "t" } });
+    assert.deepEqual(copy.connections, [{ fromNodeId: "n1", toNodeId: "n2", fromOutput: "main", toInput: "main" }]);
+
+    const { readFileSync } = await import("node:fs");
+    const router = readFileSync("src/features/workflows/server/routers.ts", "utf8");
+    const duplicate = router.slice(router.indexOf("duplicate: builderProcedure"), router.indexOf("// EXPORT:"));
+    assert.match(duplicate, /countWorkflows\(ownerId\)\) >= workflowLimit/);
+    assert.equal(/active: true/.test(duplicate), false);
+  });
+
   console.log(`\n${passed} checks passed`);
 };
 

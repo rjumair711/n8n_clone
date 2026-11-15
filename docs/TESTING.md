@@ -2203,6 +2203,17 @@ Use a brand-new test account.
 | 5 | Switch a workflow to Active | 4 of 4: the checklist is gone |
 | 6 | Another new account: press ✕ | gone, and still gone after a reload |
 
+## T39. Duplicate workflow
+
+| # | Do | Expect |
+| - | -- | ------ |
+| 1 | Workflows → a workflow's menu → Duplicate | "<name> (copy)" appears, inactive |
+| 2 | Open the copy | the same nodes, connections and credentials; settings (time zone, Don't save input/output) the same |
+| 3 | Duplicate the copy | "<name> (copy 2)" |
+| 4 | Editor → Workflow settings → Duplicate | the copy opens |
+| 5 | A workflow in a folder with tags | the copy is in the same folder with the same tags |
+| 6 | With the workflow limit reached | the limit dialog; nothing is created |
+
 # When something fails
 
 Note the node, the exact values you entered, and the error text from the

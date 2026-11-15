@@ -159,6 +159,10 @@ Two ways to test one part of a workflow in the editor without running the rest a
 * **What is pinned** is what the node added to the workflow's data in that run (its own variables, and for a router its decision), up to 512 KB per node (`MAX_PINNED_DATA_KB`). For a trigger it is everything the run started with.
 * **Limits.** Inside a Loop, the nodes of the loop body that come before the chosen node give the data of the loop's last round. A Merge set to wait for all inputs does not run in a partial run that covers only one of its branches.
 
+## Canvas and organising
+
+* **Duplicate workflow:** a workflow's menu on the Workflows page, or editor → Workflow settings → **Duplicate**. The copy is called "<name> (copy)" (then "(copy 2)"...), has new node ids, the same nodes, connections, credentials, secrets, settings (input/output saving, AI budget, time zone), folder and tags, and is **inactive**. The workflow limit applies.
+
 ## Workflow export and import (JSON)
 
 Like n8n's Download and Import from File, for backups and for moving a workflow to another account.

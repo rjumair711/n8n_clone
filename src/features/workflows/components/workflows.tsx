@@ -3,13 +3,15 @@
 
 import { formatDistanceToNow } from "date-fns"
 import { EmptyView, EntityContainer, EntityHeader, EntityItem, EntityList, EntityPagination, EntitySearch, ErrorView, LoadingView } from "@/components/entity-components"
-import { useCreateWorkflow, useRemoveWorkflow, useSuspenseWorkflows } from "../hooks/use-workflows"
+import { useCreateWorkflow, useDuplicateWorkflow, useRemoveWorkflow, useSuspenseWorkflows } from "../hooks/use-workflows"
+import { DropdownMenuItem } from "@/components/ui/dropdown-menu"
+import { toast } from "sonner"
 import React from "react"
 import { useUpgradeModal } from "@/hooks/use-upgrade-modal"
 import { useRouter } from "next/navigation"
 import { useWorkflowsParams } from "../hooks/use-workflows-params"
 import { useEntitySearch } from "../../../hooks/use-entity-search"
-import { WorkflowIcon } from "lucide-react"
+import { CopyIcon, WorkflowIcon } from "lucide-react"
 import { BuildWithAiButton } from "@/features/ai-builder/components/build-with-ai-button"
 import { ImportWorkflowButton } from "./import-workflow-button"
 
@@ -161,11 +163,22 @@ export const WorkflowItem = ({
     data: Workflow
 }) => {
     const removeWorkflow = useRemoveWorkflow()
+    const duplicateWorkflow = useDuplicateWorkflow()
+    const { handleError, modal } = useUpgradeModal()
     const handleRemove = () => {
         removeWorkflow.mutate({ id: data.id })
     }
+    const handleDuplicate = () => {
+        duplicateWorkflow.mutate({ id: data.id }, {
+            onError: (error) => {
+                if (!handleError(error)) toast.error(`Failed to duplicate: ${error.message}`)
+            },
+        })
+    }
 
     return (
+        <>
+        {modal}
         <EntityItem
             href={`/workflows/${data.id}`}
             title={data.name}
@@ -181,8 +194,21 @@ export const WorkflowItem = ({
                     <WorkflowIcon className="size-5 text-muted-foreground" />
                 </div>
             }
+            menuItems={
+                <DropdownMenuItem
+                    disabled={duplicateWorkflow.isPending}
+                    onClick={(event) => {
+                        event.preventDefault()
+                        handleDuplicate()
+                    }}
+                >
+                    <CopyIcon className="size-4" />
+                    Duplicate
+                </DropdownMenuItem>
+            }
             onRemove={handleRemove}
             isRemoving={removeWorkflow.isPending}
         />
+        </>
     )
 }
