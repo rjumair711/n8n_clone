@@ -2214,6 +2214,19 @@ Use a brand-new test account.
 | 5 | A workflow in a folder with tags | the copy is in the same folder with the same tags |
 | 6 | With the workflow limit reached | the limit dialog; nothing is created |
 
+## T40. Undo and redo
+
+| # | Do | Expect |
+| - | -- | ------ |
+| 1 | Add a node, press Ctrl+Z (Cmd+Z on a Mac) | the node is gone; the Undo arrow greys out when nothing is left |
+| 2 | Ctrl+Shift+Z (or Ctrl+Y) | the node is back |
+| 3 | Drag a node across the canvas, Ctrl+Z | it jumps back to where the drag started (one step) |
+| 4 | Delete a connection, undo | the connection is back |
+| 5 | Change a node's settings and save the dialog, undo | the old settings |
+| 6 | Type in a node's dialog and press Ctrl+Z | the text field undoes; the canvas does not change |
+| 7 | Undo, then make a new change | Redo greys out |
+| 8 | Undo something, press Save, reload | the saved state is the undone one |
+
 # When something fails
 
 Note the node, the exact values you entered, and the error text from the

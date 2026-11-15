@@ -16065,6 +16065,51 @@ pour()</code></pre>
     assert.equal(/active: true/.test(duplicate), false);
   });
 
+  await test("undo and redo: snapshots, drags as one step, shortcuts", async () => {
+    const history = await import("@/features/editor/lib/canvas-history");
+    type S = { nodes: string[]; edges: string[] };
+    const state = (nodes: string[]): S => ({ nodes, edges: [] });
+    let h = history.emptyHistory<string, string>();
+    const s0 = state([]);
+    const s1 = state(["a"]);
+    const s2 = state(["a", "b"]);
+    h = history.recordChange(h, s0);
+    h = history.recordChange(h, s1);
+    // Two handlers for one change record it once
+    h = history.recordChange(h, s1);
+    assert.equal(h.past.length, 2);
+
+    let step = history.undoChange(h, s2);
+    assert.equal(step.snapshot, s1);
+    step = history.undoChange(step.history, s1);
+    assert.equal(step.snapshot, s0);
+    assert.equal(history.undoChange(step.history, s0).snapshot, null);
+    const redo = history.redoChange(step.history, s0);
+    assert.equal(redo.snapshot, s1);
+    // A new change ends redo
+    assert.equal(history.recordChange(redo.history, s1).future.length, 0);
+
+    let long = history.emptyHistory<string, string>();
+    for (let i = 0; i < 70; i++) long = history.recordChange(long, state([String(i)]));
+    assert.equal(long.past.length, history.CANVAS_HISTORY_LIMIT);
+
+    assert.equal(history.isUndoableChange([{ type: "select" }, { type: "dimensions" }], false), false);
+    assert.equal(history.isUndoableChange([{ type: "remove" }], false), true);
+    assert.equal(history.isUndoableChange([{ type: "position", dragging: true }], false), true);
+    assert.equal(history.isUndoableChange([{ type: "position", dragging: true }], true), false);
+    assert.equal(history.isUndoableChange([{ type: "position", dragging: false }], true), false);
+
+    const key = (k: string, extra: Partial<{ ctrlKey: boolean; metaKey: boolean; shiftKey: boolean; typing: boolean }> = {}) =>
+      history.historyShortcut({ key: k, ctrlKey: true, metaKey: false, shiftKey: false, typing: false, ...extra });
+    assert.equal(key("z"), "undo");
+    assert.equal(key("Z", { shiftKey: true }), "redo");
+    assert.equal(key("y"), "redo");
+    assert.equal(key("z", { ctrlKey: false, metaKey: true }), "undo");
+    assert.equal(key("z", { typing: true }), null);
+    assert.equal(key("z", { ctrlKey: false }), null);
+    assert.equal(key("c"), null);
+  });
+
   console.log(`\n${passed} checks passed`);
 };
 

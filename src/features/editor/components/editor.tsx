@@ -3,7 +3,7 @@
 import "@xyflow/react/dist/style.css";
 import { ErrorView, LoadingView } from "@/components/entity-components";
 import { useSuspenseWorkflow } from "@/features/workflows/hooks/use-workflows";
-import { useState, useCallback, useMemo, useEffect } from "react";
+import { useState, useCallback, useMemo, useEffect, useRef } from "react";
 import {
     ReactFlow,
     applyNodeChanges,
@@ -36,6 +36,17 @@ import { useExecutionNodes } from "@/features/executions/hooks/use-execution-nod
 import { useExecutionSubscription } from "@/features/executions/hooks/use-execution-subscription";
 import { EditorBuildWithAi } from "@/features/ai-builder/components/editor-build-with-ai";
 import { usePinNode } from "@/features/executions/components/node-test-actions";
+import { Button } from "@/components/ui/button";
+import { Redo2Icon, Undo2Icon } from "lucide-react";
+import {
+    emptyHistory,
+    historyShortcut,
+    isUndoableChange,
+    recordChange,
+    redoChange,
+    undoChange,
+    type CanvasHistory,
+} from "../lib/canvas-history";
 
 // 1. Import your AI Agent Dialog component
 
@@ -168,27 +179,105 @@ export const Editor = ({ workflowId }: { workflowId: string }) => {
     }));
 
     // =====================================
+    // UNDO / REDO
+    // =====================================
+    // The canvas as it is, for the change handlers (they are created once)
+    const nodesRef = useRef(nodes);
+    const edgesRef = useRef(edges);
+    nodesRef.current = nodes;
+    edgesRef.current = edges;
+    const historyRef = useRef<CanvasHistory<Node, Edge>>(emptyHistory());
+    const dragRef = useRef(false);
+    // Re-renders the Undo / Redo buttons when the history changes
+    const [historySize, setHistorySize] = useState({ past: 0, future: 0 });
+
+    const syncHistory = useCallback(() => {
+        const { past, future } = historyRef.current;
+        setHistorySize({ past: past.length, future: future.length });
+    }, []);
+
+    const remember = useCallback(() => {
+        historyRef.current = recordChange(historyRef.current, {
+            nodes: nodesRef.current,
+            edges: edgesRef.current,
+        });
+        syncHistory();
+    }, [syncHistory]);
+
+    const restore = useCallback((direction: "undo" | "redo") => {
+        const step = direction === "undo" ? undoChange : redoChange;
+        const { history, snapshot } = step(historyRef.current, {
+            nodes: nodesRef.current,
+            edges: edgesRef.current,
+        });
+        if (!snapshot) return;
+        historyRef.current = history;
+        setNodes(snapshot.nodes);
+        setEdges(snapshot.edges);
+        syncHistory();
+    }, [syncHistory]);
+
+    // Ctrl/Cmd+Z and Ctrl/Cmd+Shift+Z (or Ctrl+Y), not while typing in a
+    // field or a dialog
+    useEffect(() => {
+        const onKeyDown = (event: KeyboardEvent) => {
+            const target = event.target as HTMLElement | null;
+            const typing =
+                !!target &&
+                (target.isContentEditable ||
+                    ["INPUT", "TEXTAREA", "SELECT"].includes(target.tagName) ||
+                    !!target.closest("[role=dialog]"));
+            const action = historyShortcut({
+                key: event.key,
+                ctrlKey: event.ctrlKey,
+                metaKey: event.metaKey,
+                shiftKey: event.shiftKey,
+                altKey: event.altKey,
+                typing,
+            });
+            if (!action) return;
+            event.preventDefault();
+            restore(action);
+        };
+        window.addEventListener("keydown", onKeyDown);
+        return () => window.removeEventListener("keydown", onKeyDown);
+    }, [restore]);
+
+    // =====================================
     // NODE CHANGES
     // =====================================
     const onNodesChange = useCallback(
-        (changes: NodeChange[]) => setNodes((nds) => applyNodeChanges(changes, nds)),
-        []
+        (changes: NodeChange[]) => {
+            if (isUndoableChange(changes, dragRef.current)) remember();
+            // A drag is one step: from its first move until it is let go
+            for (const change of changes) {
+                if (change.type === "position") dragRef.current = change.dragging === true;
+            }
+            setNodes((nds) => applyNodeChanges(changes, nds));
+        },
+        [remember]
     );
 
     // =====================================
     // EDGE CHANGES
     // =====================================
     const onEdgesChange = useCallback(
-        (changes: EdgeChange[]) => setEdges((eds) => applyEdgeChanges(changes, eds)),
-        []
+        (changes: EdgeChange[]) => {
+            if (isUndoableChange(changes, false)) remember();
+            setEdges((eds) => applyEdgeChanges(changes, eds));
+        },
+        [remember]
     );
 
     // =====================================
     // CONNECT NODES
     // =====================================
     const onConnect = useCallback(
-        (params: Connection) => setEdges((eds) => addEdge(params, eds)),
-        []
+        (params: Connection) => {
+            remember();
+            setEdges((eds) => addEdge(params, eds));
+        },
+        [remember]
     );
 
     // 3. Catch node selection click events on canvas layout
@@ -289,6 +378,33 @@ export const Editor = ({ workflowId }: { workflowId: string }) => {
                     <Background />
                     <Controls className="rounded-xl border bg-background shadow-md" />
                     <MiniMap pannable zoomable className="rounded-xl border bg-background shadow-md" />
+
+                    <Panel position="top-left">
+                        <div className="flex items-center gap-1 rounded-xl border bg-background p-1 shadow-md">
+                            <Button
+                                size="icon"
+                                variant="ghost"
+                                className="size-8"
+                                title="Undo (Ctrl+Z)"
+                                aria-label="Undo"
+                                disabled={historySize.past === 0}
+                                onClick={() => restore("undo")}
+                            >
+                                <Undo2Icon className="size-4" />
+                            </Button>
+                            <Button
+                                size="icon"
+                                variant="ghost"
+                                className="size-8"
+                                title="Redo (Ctrl+Shift+Z)"
+                                aria-label="Redo"
+                                disabled={historySize.future === 0}
+                                onClick={() => restore("redo")}
+                            >
+                                <Redo2Icon className="size-4" />
+                            </Button>
+                        </div>
+                    </Panel>
 
                     <Panel position="top-right">
                         <div className="flex items-center gap-2">
