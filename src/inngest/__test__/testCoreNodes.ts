@@ -16143,6 +16143,76 @@ pour()</code></pre>
     assert.match(readFileSync("src/features/ai-builder/lib/catalogue.ts", "utf8"), /HIDDEN_TYPES = new Set\(\["INITIAL", "STICKY_NOTE"\]\)/);
   });
 
+  await test("data table: names, keys, row data and limits", async () => {
+    const dt = await import("@/features/executions/lib/data-table");
+    assert.equal(dt.normalizeTableName("  Contacted   Leads "), "Contacted Leads");
+    assert.throws(() => dt.normalizeTableName(" "), /Table Name is required/);
+    assert.throws(() => dt.normalizeTableName("x".repeat(101)), /longer than 100/);
+    assert.equal(dt.normalizeRowKey(" Sara@Example.COM "), "sara@example.com");
+    assert.equal(dt.normalizeRowKey(" +92 300 1234567 "), "+92 300 1234567");
+    assert.throws(() => dt.normalizeRowKey(""), /Key is required/);
+    assert.deepEqual(dt.parseRowData(""), {});
+    assert.deepEqual(dt.parseRowData('{"status":"contacted"}'), { status: "contacted" });
+    for (const bad of ["[1]", "5", "{nope", "null"]) assert.throws(() => dt.parseRowData(bad), /JSON object/, bad);
+    // An update keeps the fields it does not name
+    assert.deepEqual(dt.mergeRowData({ a: 1, b: 2 }, { b: 3, c: 4 }), { a: 1, b: 3, c: 4 });
+    assert.deepEqual(dt.mergeRowData(null, { a: 1 }), { a: 1 });
+    assert.throws(() => dt.mergeRowData({}, { big: "x".repeat(20_000) }), /at most 16 KB/);
+    assert.equal(dt.clampListLimit(""), 100);
+    assert.equal(dt.clampListLimit("5000"), 1000);
+    assert.equal(dt.isDataTableOperation("find_row"), true);
+    assert.equal(dt.isDataTableOperation("drop"), false);
+
+    // As agent tools: reads are Read, writes Write, deleting is Dangerous
+    const { getToolRisk } = await import("@/features/executions/lib/agent-tools");
+    assert.equal(getToolRisk("DATA_TABLE", { operation: "get_row" }), "read");
+    assert.equal(getToolRisk("DATA_TABLE", { operation: "list_rows" }), "read");
+    assert.equal(getToolRisk("DATA_TABLE", { operation: "find_row" }), "read");
+    assert.equal(getToolRisk("DATA_TABLE", { operation: "upsert_row" }), "write");
+    assert.equal(getToolRisk("DATA_TABLE", { operation: "delete_row" }), "dangerous");
+
+    const { readFileSync } = await import("node:fs");
+    const executor = readFileSync("src/features/executions/components/apps/data-table.ts", "utf8");
+    // Every table is looked up in the owner's account
+    assert.match(executor, /userId_name: \{ userId, name: tableName \}/);
+    const router = readFileSync("src/features/data-tables/server/routers.ts", "utf8");
+    assert.match(router, /where: \{ id: input\.id, table: \{ userId: ctx\.workspace\.ownerId \} \}/);
+  });
+
+  await test("image generation: request bodies and answers", async () => {
+    const img = await import("@/features/executions/lib/image-options");
+    assert.deepEqual(img.buildImageRequest({ model: "gpt-image-1", prompt: "cat", size: "1536x1024", quality: "high" }), {
+      model: "gpt-image-1", prompt: "cat", n: 1, size: "1536x1024", quality: "high",
+    });
+    // gpt-image models reject response_format; auto means no size
+    assert.deepEqual(img.buildImageRequest({ model: "gpt-image-1", prompt: "cat", size: "auto", quality: "auto" }), { model: "gpt-image-1", prompt: "cat", n: 1 });
+    assert.deepEqual(img.buildImageRequest({ model: "dall-e-3", prompt: "cat", size: "1024x1536", quality: "high" }), {
+      model: "dall-e-3", prompt: "cat", n: 1, size: "1024x1792", quality: "hd", response_format: "b64_json",
+    });
+    assert.equal(img.buildImageRequest({ model: "dall-e-3", prompt: "cat", size: "auto", quality: "low" }).quality, "standard");
+    assert.throws(() => img.buildImageRequest({ model: "m", prompt: "p", size: "big" }), /must look like 1024x1024/);
+
+    assert.deepEqual(img.readImageResponse({ data: [{ b64_json: "aGk=", revised_prompt: "a cat" }] }), { base64: "aGk=", revisedPrompt: "a cat" });
+    assert.deepEqual(img.readImageResponse({ data: [{ url: "https://cdn.example.com/x.png" }] }), { url: "https://cdn.example.com/x.png", revisedPrompt: undefined });
+    assert.equal(img.readImageResponse({ data: [{ url: "http://insecure/x.png" }] }), null);
+    assert.equal(img.readImageResponse({ data: [] }), null);
+    assert.equal(img.readImageResponse(null), null);
+
+    assert.equal(img.sniffImageType(Uint8Array.from([0x89, 0x50, 0x4e, 0x47])).extension, "png");
+    assert.equal(img.sniffImageType(Uint8Array.from([0xff, 0xd8, 0xff])).mimeType, "image/jpeg");
+    assert.equal(img.sniffImageType(Uint8Array.from([0x52, 0x49, 0x46, 0x46, 0, 0, 0, 0, 0x57, 0x45])).extension, "webp");
+    assert.equal(img.getImageProvider(undefined)?.model, "gpt-image-1");
+    assert.equal(img.resolveImageBaseUrl(img.getImageProvider("custom")!, "ftp://x"), null);
+    assert.equal(img.resolveImageBaseUrl(img.getImageProvider("custom")!, "https://api.example.com/v1/"), "https://api.example.com/v1");
+
+    // The request goes through the SSRF guard, and the file store's limits apply
+    const { readFileSync } = await import("node:fs");
+    const executor = readFileSync("src/features/executions/components/apps/image-generation.ts", "utf8");
+    assert.match(executor, /await safeFetch\(`\$\{baseUrl\}\/images\/generations`/);
+    assert.match(executor, /saveWorkflowFile\(\{/);
+    assert.match(executor, /bytes\.length > MAX_FILE_BYTES/);
+  });
+
   console.log(`\n${passed} checks passed`);
 };
 

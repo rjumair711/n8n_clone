@@ -2241,6 +2241,37 @@ Use a brand-new test account.
 | 8 | Delete the note, undo | it is back |
 | 9 | Download as JSON, import | the note comes along |
 
+## T42. Data Table
+
+Use the test account. Workflow: Manual Trigger → Data Table.
+
+| # | Do | Expect |
+| - | -- | ------ |
+| 1 | Insert or Update Row, Table `test_contacts`, Key `Sara@Example.com`, Row Data `{"status": "contacted"}` | `created: true`; Settings → Workspace → Data tables shows the table with 1 row, key `sara@example.com` |
+| 2 | Same key, Row Data `{"replied": true}` | `created: false`; data has both `status` and `replied` |
+| 3 | Check Row Exists `sara@example.com` | `exists: true`; with another key `false` |
+| 4 | Get Row | `found: true`, the data |
+| 5 | List Rows | `rows` with 1 row, `count` 1 |
+| 6 | Delete Row | `deleted: true`; the row is gone from Settings |
+| 7 | Get Row on a table that does not exist | `found: false`, no error |
+| 8 | Row Data `[1,2]` | fails: "Row Data must be a JSON object" |
+| 9 | AI Agent with Get Row and Delete Row tools | Get Row is Read, Delete Row is Dangerous |
+| 10 | Settings → Data tables → Delete table | gone with its rows |
+
+## T43. Image Generation
+
+Needs an OpenAI key with image access; each run costs a few cents.
+
+| # | Do | Expect |
+| - | -- | ------ |
+| 1 | Image Generation, OpenAI, Prompt `a red apple on a white table`, Square, Quality Low | `image.file` is a PNG; open it from the execution |
+| 2 | Model `dall-e-3`, Portrait, High | a 1024 × 1792 picture; `revisedPrompt` is filled |
+| 3 | → WhatsApp Send File with `image.file` | the picture arrives inline |
+| 4 | → Instagram / Facebook Post with the file | the post has the picture |
+| 5 | Empty prompt | fails: "Prompt is required" |
+| 6 | Custom base URL `http://127.0.0.1` | refused by the SSRF guard |
+| 7 | A wrong API key | fails with OpenAI's message, no key in it |
+
 # When something fails
 
 Note the node, the exact values you entered, and the error text from the

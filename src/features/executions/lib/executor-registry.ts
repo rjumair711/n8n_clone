@@ -68,6 +68,8 @@ import {
   telegramTriggerExecutor,
   whatsappTriggerExecutor,
 } from '../components/apps/voice';
+import { dataTableExecutor } from '../components/apps/data-table';
+import { imageGenerationExecutor } from '../components/apps/image-generation';
 import {
   contextTriggerExecutor,
   executeWorkflowExecutor,
@@ -204,10 +206,8 @@ const baseExecutors: Record<NodeType, NodeExecutor<any>> = {
   [NodeType.BROWSER]: browserExecutor,
   [NodeType.TRANSCRIBE_AUDIO]: transcribeAudioExecutor,
   [NodeType.TEXT_TO_SPEECH]: textToSpeechExecutor,
-  // Placeholder until its node is added
-  [NodeType.DATA_TABLE]: async ({ context }) => context,
-  // Placeholder until its node is added
-  [NodeType.IMAGE_GENERATION]: async ({ context }) => context,
+  [NodeType.DATA_TABLE]: dataTableExecutor,
+  [NodeType.IMAGE_GENERATION]: imageGenerationExecutor,
   // Never reached: the engine leaves sticky notes out of the graph
   [NodeType.STICKY_NOTE]: async ({ context }) => context,
   [NodeType.TYPEFORM_TRIGGER]: contextTriggerExecutor,

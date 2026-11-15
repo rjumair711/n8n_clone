@@ -2,6 +2,8 @@
 const NODE_LABELS: Record<string, string> = {
     INITIAL: "Start",
     STICKY_NOTE: "Sticky Note",
+    DATA_TABLE: "Data Table",
+    IMAGE_GENERATION: "Image Generation",
     HTTP_REQUEST: "HTTP Request",
     AI_AGENT: "AI Agent",
     AI_AGENT_TOOL: "AI Agent Tool",

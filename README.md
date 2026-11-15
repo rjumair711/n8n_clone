@@ -739,6 +739,8 @@ Every execution also keeps the trigger and the data it started with, so it can b
 | Browser          | Open a page in a real browser: Get Page Content (pages that need JavaScript), Take Screenshot, or Run Steps (click, type, select, submit). A hosted browser with your own key, or the self-hosted server's own. Every account |
 | Transcribe Audio | Turn a voice message or audio file into text with OpenAI Whisper, Groq Whisper or any OpenAI-compatible server. See "Audio" |
 | Text to Speech   | Turn text into spoken audio with OpenAI TTS or an OpenAI-compatible server; the result is a file |
+| Image Generation | Create a picture from a prompt with OpenAI (gpt-image-1, DALL·E 3) or an OpenAI-compatible server; the result is a file. See "Image Generation" |
+| Data Table       | Built-in storage: rows by key in a named table, for "already contacted" lists and agent state. No credential. See "Data Table" |
 | Respond to Webhook | Answer the HTTP request that started the workflow (JSON, text, redirect, status code, headers) |
 | Webhook Callback | POST the workflow's data to another URL                                   |
 | Execute Workflow | Run another workflow and use its result; also works as an AI Agent tool   |
@@ -770,6 +772,33 @@ Every execution also keeps the trigger and the data it started with, so it can b
 | Limit             | Keep only the first or last items                                        |
 | Remove Duplicates | Remove items that repeat an earlier item                                 |
 | Summarize         | Count, sum, average, min, max per group, like a pivot table              |
+
+## Data Table
+
+Simple built-in storage, like n8n's Data tables: named tables of rows per account, each row found by its **Key**.
+
+| Operation | Output |
+| --------- | ------ |
+| Insert or Update Row | `{ table, key, created, data }`. **Row Data** is a JSON object; an existing row keeps the fields it does not name |
+| Get Row | `{ found, data, updatedAt }`; `found: false` and `data: null` when there is none |
+| Check Row Exists | `{ exists }`. Put an IF after it to skip people you already contacted |
+| Delete Row | `{ deleted }` |
+| List Rows | `{ rows, count }`, newest change first, up to Limit (100 by default, 1,000 at most) |
+
+* A table is created the first time a row is written; reading one that does not exist is not an error. The same name in another workflow is the same table.
+* Keys are trimmed, and email addresses compared in lower case. Limits: 50 tables per account, 10,000 rows per table, 16 KB per row, 500 characters per key, 100 per table name.
+* **Settings → Workspace → Data tables** lists the tables with their row counts and shows the rows (searchable by key) with a delete button per row and per table.
+* As AI Agent tools: Get Row, Check Row Exists and List Rows are Read, Insert or Update is Write, Delete Row is Dangerous. Agent state: Key `{{sessionId}}`, Row Data `{"step": "asked_budget"}`.
+* Stored in the app's database (`data_table`, `data_table_row`), with the account's other data.
+
+## Image Generation
+
+Creates a picture from a text prompt, for social posts and product images.
+
+* **Providers** (Operation): **OpenAI** with an OpenAI credential (gpt-image-1 when Model is empty; `dall-e-3` works too), or **OpenAI-compatible (custom base URL)** with a Chat Model API Key credential, for any server with `/images/generations`. A custom URL goes through the SSRF guard.
+* **Fields:** Prompt (up to 4,000 characters), Size (square, landscape, portrait or auto; DALL·E 3 gets its nearest size), Quality (auto, low, medium, high; on DALL·E 3 high is "hd"), File Name.
+* **Result:** `{{image.file}}`, a workflow file (PNG, JPEG or WebP, as the API sent it) for the Instagram / Facebook Post node, a WhatsApp or Telegram File field, Google Drive or an email attachment; also `model`, `prompt` and the API's `revisedPrompt` when it gives one. Same size limit and retention as other files.
+* Each picture is billed by the provider per image, not per token, so it is not in the AI usage figures.
 
 ## Files
 
@@ -1623,7 +1652,6 @@ Planned, not built. These are the pieces an agent needs to find link prospects, 
 | Email (SMTP): headers and replies | Custom Headers (for `List-Unsubscribe` and `List-Unsubscribe-Post`), a "Reply To Message" option that sets `In-Reply-To` and `References` and adds "Re:", and the sent Message-ID in the output. The Gmail node returns `messageId` and `threadId` |
 | Per-item approval and "Approve with edits" | Send and Wait for Approval asks once per item, and each item continues through Approved or Rejected. "Approve with edits" makes the subject and body editable on the approval page and returns them as `{{approval.edited.subject}}` / `{{approval.edited.body}}`. Needs default values on Form fields |
 | Delay: random delay and sending window | Random Delay (min–max) per item, and a Sending Window (days, start and end hour, time zone) |
-| Data Table node | A built-in key/value table per workspace with Add, Check Exists, Remove and List, for suppression lists and "already contacted" checks |
 | Mailbox rotation on Gmail / SMTP | Several credentials on one node, picked by Round Robin or Least Used Today, with a daily limit per mailbox that is separate from the plan cap |
 | Text Formatter: more operations | Extract Domain, Extract Root URL, Find Emails in Text, Normalize Email |
 | Integration nodes | Hunter.io (Domain Search, Email Finder, Email Verifier), DataForSEO (SERP, Backlinks, Domain metrics), ZeroBounce / NeverBounce (Verify Email) |

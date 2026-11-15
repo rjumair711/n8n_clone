@@ -16,6 +16,7 @@ import { workspacesRouter } from '@/features/workspaces/server/routers';
 import { subscriptionRouter } from '@/features/subscription/server/routers';
 import { memoryRouter } from '@/features/memory/server/routers';
 import { onboardingRouter } from '@/features/onboarding/server/routers';
+import { dataTablesRouter } from '@/features/data-tables/server/routers';
 
 
 
@@ -37,6 +38,7 @@ export const appRouter = createTRPCRouter({
   subscription: subscriptionRouter,
   memory: memoryRouter,
   onboarding: onboardingRouter,
+  dataTables: dataTablesRouter,
 });
 // export type definition of API
 export type AppRouter = typeof appRouter;
