@@ -166,6 +166,8 @@ const TOOL_LABELS: Record<string, string> = {
   TEXT_TO_SPEECH: "Text to Speech",
   READ_WEB_PAGE: "Read Web Page",
   BROWSER: "Browser",
+  DATA_TABLE: "Data Table",
+  IMAGE_GENERATION: "Image Generation",
   EDIT_FIELDS: "Edit Fields",
   GOOGLE_DRIVE: "Google Drive",
   PDF_GENERATOR: "PDF Generator",

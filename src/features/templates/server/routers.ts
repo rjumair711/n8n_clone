@@ -28,6 +28,7 @@ import {
 import { describeAuditTarget } from "@/lib/audit-actions";
 import { recordAudit } from "@/lib/audit-log";
 import { countWorkflows } from "@/lib/subscription/usage-counts";
+import { markOnboarding } from "@/features/onboarding/server/routers";
 
 // Publishing, editing and deleting templates is for admins: a verified
 // account whose email is in ADMIN_EMAILS
@@ -220,6 +221,10 @@ export const templatesRouter = createTRPCRouter({
 
                 return created;
             });
+
+            // The onboarding checklist's "Start from a template" step. Not
+            // worth failing the copy for
+            await markOnboarding(ctx.auth.user.id, { usedTemplate: true }).catch(() => undefined);
 
             return { id: workflow.id, name: workflow.name };
         }),

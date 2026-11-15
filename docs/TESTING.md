@@ -2178,6 +2178,116 @@ Needs `RESEND_API_KEY`. Use the test account (its email must receive mail).
 
 Switch the setting back on and delete the test workflows afterwards.
 
+## T37. Contact memory
+
+Use the test account and a workflow with an AI Agent and a Postgres Memory node (Long-Term Facts on, Contact ID `{{whatsapp.from}}` or a fixed test value).
+
+| # | Do | Expect |
+| - | -- | ------ |
+| 1 | Chat with the agent: "My name is Sara and I like blue" | Settings → AI → Contact memory lists the contact with its facts |
+| 2 | Search for `blue` | only that contact |
+| 3 | Delete one fact | it is gone from the list; ask the agent and it no longer knows it |
+| 4 | **Delete all** on the contact, confirm | the contact disappears |
+| 5 | As a viewer of the workspace | the list shows, without delete buttons |
+
+## T38. Onboarding checklist
+
+Use a brand-new test account.
+
+| # | Do | Expect |
+| - | -- | ------ |
+| 1 | Open Workflows | "Get started with RXJ", 0 of 4, "Connect an account" highlighted |
+| 2 | Add any credential, come back | 1 of 4, that step crossed out |
+| 3 | Templates → use one | "Start from a template" done |
+| 4 | Run the workflow with Execute | "Run a workflow" done |
+| 5 | Switch a workflow to Active | 4 of 4: the checklist is gone |
+| 6 | Another new account: press ✕ | gone, and still gone after a reload |
+
+## T39. Duplicate workflow
+
+| # | Do | Expect |
+| - | -- | ------ |
+| 1 | Workflows → a workflow's menu → Duplicate | "<name> (copy)" appears, inactive |
+| 2 | Open the copy | the same nodes, connections and credentials; settings (time zone, Don't save input/output) the same |
+| 3 | Duplicate the copy | "<name> (copy 2)" |
+| 4 | Editor → Workflow settings → Duplicate | the copy opens |
+| 5 | A workflow in a folder with tags | the copy is in the same folder with the same tags |
+| 6 | With the workflow limit reached | the limit dialog; nothing is created |
+
+## T40. Undo and redo
+
+| # | Do | Expect |
+| - | -- | ------ |
+| 1 | Add a node, press Ctrl+Z (Cmd+Z on a Mac) | the node is gone; the Undo arrow greys out when nothing is left |
+| 2 | Ctrl+Shift+Z (or Ctrl+Y) | the node is back |
+| 3 | Drag a node across the canvas, Ctrl+Z | it jumps back to where the drag started (one step) |
+| 4 | Delete a connection, undo | the connection is back |
+| 5 | Change a node's settings and save the dialog, undo | the old settings |
+| 6 | Type in a node's dialog and press Ctrl+Z | the text field undoes; the canvas does not change |
+| 7 | Undo, then make a new change | Redo greys out |
+| 8 | Undo something, press Save, reload | the saved state is the undone one |
+
+## T41. Sticky notes
+
+| # | Do | Expect |
+| - | -- | ------ |
+| 1 | Press the note button at the top left | a yellow note in the middle of the screen, selected |
+| 2 | Double-click, type two lines, click outside | the text shows with its line break |
+| 3 | Drag a corner, pick Blue | the size and colour change |
+| 4 | Drag a node over the note | the note stays behind the node |
+| 5 | Save, reload | the note is there with its text, size and colour |
+| 6 | Execute the workflow | the note shows in no log and starts nothing |
+| 7 | A workflow with only a note, activate it | nothing runs |
+| 8 | Delete the note, undo | it is back |
+| 9 | Download as JSON, import | the note comes along |
+
+## T42. Data Table
+
+Use the test account. Workflow: Manual Trigger → Data Table.
+
+| # | Do | Expect |
+| - | -- | ------ |
+| 1 | Insert or Update Row, Table `test_contacts`, Key `Sara@Example.com`, Row Data `{"status": "contacted"}` | `created: true`; Settings → Workspace → Data tables shows the table with 1 row, key `sara@example.com` |
+| 2 | Same key, Row Data `{"replied": true}` | `created: false`; data has both `status` and `replied` |
+| 3 | Check Row Exists `sara@example.com` | `exists: true`; with another key `false` |
+| 4 | Get Row | `found: true`, the data |
+| 5 | List Rows | `rows` with 1 row, `count` 1 |
+| 6 | Delete Row | `deleted: true`; the row is gone from Settings |
+| 7 | Get Row on a table that does not exist | `found: false`, no error |
+| 8 | Row Data `[1,2]` | fails: "Row Data must be a JSON object" |
+| 9 | AI Agent with Get Row and Delete Row tools | Get Row is Read, Delete Row is Dangerous |
+| 10 | Settings → Data tables → Delete table | gone with its rows |
+
+## T43. Image Generation
+
+Needs an OpenAI key with image access; each run costs a few cents.
+
+| # | Do | Expect |
+| - | -- | ------ |
+| 1 | Image Generation, OpenAI, Prompt `a red apple on a white table`, Square, Quality Low | `image.file` is a PNG; open it from the execution |
+| 2 | Model `dall-e-3`, Portrait, High | a 1024 × 1792 picture; `revisedPrompt` is filled |
+| 3 | → WhatsApp Send File with `image.file` | the picture arrives inline |
+| 4 | → Instagram / Facebook Post with the file | the post has the picture |
+| 5 | Empty prompt | fails: "Prompt is required" |
+| 6 | Custom base URL `http://127.0.0.1` | refused by the SSRF guard |
+| 7 | A wrong API key | fails with OpenAI's message, no key in it |
+
+## T44. Folders and tags
+
+| # | Do | Expect |
+| - | -- | ------ |
+| 1 | Workflows → New folder `Sales` | the folder list shows "Sales (0)" and it is picked |
+| 2 | A workflow's menu → Move to folder → Sales | it shows a Sales badge; "Sales (1)"; its "Updated" time is unchanged |
+| 3 | Pick "Not in a folder" | that workflow is not listed |
+| 4 | Edit tags... `WhatsApp, leads` | badges `#whatsapp` `#leads` |
+| 5 | Pick the tag `leads` | only workflows with it |
+| 6 | Rename the folder to `Sales bots` | the badge follows |
+| 7 | Delete the folder | the workflow is still there, without a folder |
+| 8 | Delete the tag `leads` | it is gone from every workflow |
+| 9 | A folder name that exists | "There is already a folder ..." |
+| 10 | 11 tags | "A workflow can have at most 10 tags" |
+| 11 | An empty folder picked | "No workflows here..." (not "You haven't created any workflows") |
+
 # When something fails
 
 Note the node, the exact values you entered, and the error text from the

@@ -13,6 +13,7 @@ import {
 } from "./ui/sheet"
 import { Input } from "@/components/ui/input"
 import { NodeType } from "@prisma/client"
+import { ImageIcon, TableIcon } from "lucide-react"
 import { Braces, BrainCircuit, Lightbulb, ShieldCheck, DatabaseZap, FolderSync, ServerCog, FileInput, FileOutput, FileText, PencilRuler, Plug, Rss, ScanText, Tags } from "lucide-react"
 import { AlertTriangle, ArrowDownUp, CopyMinus, Group, ListEnd, OctagonX, Reply, Sigma, Split, Workflow } from "lucide-react"
 import { Clock, FilterIcon, GlobeIcon, MousePointerIcon, Send, VariableIcon, ChevronDown, ChevronRight, Code2, Bot, MemoryStickIcon, Search, Type, Calculator, GitBranch, GitFork, Merge, Repeat, Webhook, MessageSquare } from "lucide-react"
@@ -503,6 +504,18 @@ const communicationNodes: NodeTypeOption[] = [
         label: "Transcribe Audio",
         description: "Turn a voice message or audio file into text (OpenAI Whisper, Groq, OpenAI-compatible)",
         icon: AudioLines
+    },
+    {
+        type: NodeType.IMAGE_GENERATION,
+        label: "Image Generation",
+        description: "Create a picture from a prompt (OpenAI gpt-image-1, DALL·E 3); the result is a file",
+        icon: ImageIcon
+    },
+    {
+        type: NodeType.DATA_TABLE,
+        label: "Data Table",
+        description: "Built-in storage: rows by key, for \"already contacted\" lists and agent state",
+        icon: TableIcon
     },
     {
         type: NodeType.TEXT_TO_SPEECH,

@@ -50,6 +50,11 @@ export const SETTINGS_GROUPS: SettingsGroup[] = [
         description: "Who works in this workspace, and what each role may do.",
       },
       {
+        slug: "data-tables",
+        title: "Data tables",
+        description: "The rows Data Table nodes keep, to look at and delete.",
+      },
+      {
         slug: "usage",
         title: "Usage",
         description: "What this workspace has used this month, and its limits.",
@@ -75,6 +80,11 @@ export const SETTINGS_GROUPS: SettingsGroup[] = [
         title: "RXJ AI included",
         description: "The platform's own model provider, paid for with bought AI credits.",
         adminOnly: true,
+      },
+      {
+        slug: "contact-memory",
+        title: "Contact memory",
+        description: "What AI agents remember about each contact, and deleting it.",
       },
       {
         slug: "ai-budgets",

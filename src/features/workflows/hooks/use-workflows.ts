@@ -107,6 +107,25 @@ export const useCreateWorkflow = () => {
 
 
 /**
+ * Copies a workflow (new node ids, same settings and credentials, inactive)
+ */
+export const useDuplicateWorkflow = () => {
+    const queryClient = useQueryClient()
+    const trpc = useTRPC()
+    const invalidateUsage = useInvalidateUsage()
+
+    return useMutation(trpc.workflows.duplicate.mutationOptions({
+        onSuccess: (data) => {
+            toast.success(`Created "${data.name}"`)
+            invalidateUsage()
+            queryClient.invalidateQueries(
+                trpc.workflows.getMany.queryOptions({})
+            )
+        },
+    }))
+}
+
+/**
  * Hook to remove a workflow
  */
 

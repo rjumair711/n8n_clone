@@ -159,6 +159,13 @@ Two ways to test one part of a workflow in the editor without running the rest a
 * **What is pinned** is what the node added to the workflow's data in that run (its own variables, and for a router its decision), up to 512 KB per node (`MAX_PINNED_DATA_KB`). For a trigger it is everything the run started with.
 * **Limits.** Inside a Loop, the nodes of the loop body that come before the chosen node give the data of the loop's last round. A Merge set to wait for all inputs does not run in a partial run that covers only one of its branches.
 
+## Canvas and organising
+
+* **Duplicate workflow:** a workflow's menu on the Workflows page, or editor → Workflow settings → **Duplicate**. The copy is called "<name> (copy)" (then "(copy 2)"...), has new node ids, the same nodes, connections, credentials, secrets, settings (input/output saving, AI budget, time zone), folder and tags, and is **inactive**. The workflow limit applies.
+* **Undo and redo:** the arrows at the top left of the canvas, or Ctrl+Z / Cmd+Z and Ctrl+Shift+Z / Cmd+Shift+Z (Ctrl+Y). Adding, deleting, moving (a whole drag is one step), connecting and saving a node's settings can be undone, up to 50 steps. Not while typing in a field or a dialog. The history lasts until the page is left; **Save** is still what stores the workflow.
+* **Sticky notes:** the note button next to the arrows adds one in the middle of the screen. Double-click to write, drag a corner to resize, pick one of five colours when it is selected. Notes sit behind nodes, are saved, versioned, exported and copied with the workflow, and **never run**: the engine leaves them out, so they start nothing and use no executions. Build with AI does not see them.
+* **Folders and tags** on the Workflows page, like n8n's. **New folder** above the list; pick a folder (or "Not in a folder") and a tag to filter, with the number of workflows in each. A workflow's menu has **Move to folder** and **Edit tags...** (comma-separated; a new name becomes a tag, compared in lower case; up to 10 per workflow). With a folder or tag picked, Rename / Delete folder and Delete tag appear. Deleting a folder keeps its workflows outside any folder; deleting a tag removes it from every workflow. Moving a workflow does not change its "Updated" time. Folders are one level deep. Builders make and delete folders and tags; editors file and tag workflows.
+
 ## Workflow export and import (JSON)
 
 Like n8n's Download and Import from File, for backups and for moving a workflow to another account.
@@ -180,13 +187,24 @@ Every workflow keeps its earlier versions, so a change can be looked at and undo
 * **Executions record their version.** Each execution's page shows "Workflow version: Version 12": the saved workflow that run used. The number stays on the execution after the version itself was removed. Executions from before this feature say "Not recorded".
 * **What a version holds.** A copy of the nodes and connections as they are stored, including anything typed into a node's fields. It is only readable by the workflow's owner, like the workflow itself, and the list of versions does not carry the nodes.
 
+## Onboarding checklist
+
+New accounts see **Get started with RXJ** above the workflows list: four steps with a button each, the next one highlighted, and a progress bar.
+
+1. **Connect an account:** done when the account has a credential.
+2. **Start from a template:** done once a template from the gallery was used (stored in `User.onboarding`).
+3. **Run a workflow:** done when any of the account's workflows has an execution.
+4. **Turn it on:** done when a workflow is active.
+
+The steps are read from the account's own data, so an account that already did them never sees the list. It disappears when all four are done, or for good with its ✕.
+
 ## Sidebar and Settings
 
 * **Sidebar.** The logo and the workspace switcher at the top; **Build** (Workflows, Templates, Chatbots) and **Operate** (Executions, Approvals, Credentials); and at the bottom your account button (initials, name, email), which opens **Settings**, **Usage**, **Billing**, **API Keys**, **Docs** and **Sign out**. It shows no usage numbers, and fits a 1366 × 768 window without scrolling. Collapsed, it shows the icons with tooltips; on a phone it opens as a sheet.
 * **Settings** has its own menu (tabs on a phone) and one page per section, `/settings/<section>`; `/settings` opens Profile, and the old `/api-keys` opens Settings → API Keys.
   * **Account:** Profile (change your name), Security (change your password, two-factor authentication, sessions), API Keys. An account that signs in with Google or GitHub has no password; **Forgot your password?** on the login page gives it one. Name and password changes are in the audit log, without the values.
   * **Workspace:** General (name, invitations for you, leaving), Members & roles, Usage, Audit log (your account's sign-ins and changes).
-  * **AI:** AI budgets (this month's spend; the budget is set by the workspace's owner and admins). Model prices and RXJ AI included are the platform admins' settings and are only in their menu; anyone else who opens them by address reads "Admins only".
+  * **AI:** Contact memory (what agents remember about each contact, with delete buttons; see "Persistent memory"), AI budgets (this month's spend; the budget is set by the workspace's owner and admins). Model prices and RXJ AI included are the platform admins' settings and are only in their menu; anyone else who opens them by address reads "Admins only".
   * A section your role cannot use says so ("Owners and admins only", "Admins only") instead of showing its controls. The server checks the same rules.
 
 ## Teams and roles
@@ -422,6 +440,7 @@ A second node for the agent's Memory port, next to the simple Memory node. It ke
 
   What is saved is also shown to the model at the start of every turn, so it does not have to ask first. The two tools only touch the agent's own notes and never ask for approval.
 * **Contact ID** says who the facts are about. Empty means the session. Use something that stays the same for a person, for example `{{whatsapp.from}}` or a customer ID, so the facts are there in the next conversation too.
+* **Seeing and deleting them:** Settings → AI → **Contact memory** lists every contact with facts (newest change first, searchable by contact or fact) with a delete button per fact and **Delete all** per contact, for example when a customer asks to be forgotten. Viewers can look; editors and up can delete. Deleted facts are gone for good: the agent no longer knows them.
 * **Limits:** 50 facts per contact, a key of up to 64 characters (lower case letters, digits and `_`), a value of one line of up to 500 characters.
 * **Facts belong to the account, not to one workflow.** Every agent of the same account that uses the same Contact ID sees and changes the same facts. Another account never does.
 * **What the model wrote is treated as notes.** The summary and the facts are given to the model marked as data, with the instruction not to follow anything written inside them, and a fact cannot contain line breaks or angle brackets. This lowers, but cannot remove, the risk that a user talks the agent into "remembering" an instruction.
@@ -721,6 +740,8 @@ Every execution also keeps the trigger and the data it started with, so it can b
 | Browser          | Open a page in a real browser: Get Page Content (pages that need JavaScript), Take Screenshot, or Run Steps (click, type, select, submit). A hosted browser with your own key, or the self-hosted server's own. Every account |
 | Transcribe Audio | Turn a voice message or audio file into text with OpenAI Whisper, Groq Whisper or any OpenAI-compatible server. See "Audio" |
 | Text to Speech   | Turn text into spoken audio with OpenAI TTS or an OpenAI-compatible server; the result is a file |
+| Image Generation | Create a picture from a prompt with OpenAI (gpt-image-1, DALL·E 3) or an OpenAI-compatible server; the result is a file. See "Image Generation" |
+| Data Table       | Built-in storage: rows by key in a named table, for "already contacted" lists and agent state. No credential. See "Data Table" |
 | Respond to Webhook | Answer the HTTP request that started the workflow (JSON, text, redirect, status code, headers) |
 | Webhook Callback | POST the workflow's data to another URL                                   |
 | Execute Workflow | Run another workflow and use its result; also works as an AI Agent tool   |
@@ -752,6 +773,33 @@ Every execution also keeps the trigger and the data it started with, so it can b
 | Limit             | Keep only the first or last items                                        |
 | Remove Duplicates | Remove items that repeat an earlier item                                 |
 | Summarize         | Count, sum, average, min, max per group, like a pivot table              |
+
+## Data Table
+
+Simple built-in storage, like n8n's Data tables: named tables of rows per account, each row found by its **Key**.
+
+| Operation | Output |
+| --------- | ------ |
+| Insert or Update Row | `{ table, key, created, data }`. **Row Data** is a JSON object; an existing row keeps the fields it does not name |
+| Get Row | `{ found, data, updatedAt }`; `found: false` and `data: null` when there is none |
+| Check Row Exists | `{ exists }`. Put an IF after it to skip people you already contacted |
+| Delete Row | `{ deleted }` |
+| List Rows | `{ rows, count }`, newest change first, up to Limit (100 by default, 1,000 at most) |
+
+* A table is created the first time a row is written; reading one that does not exist is not an error. The same name in another workflow is the same table.
+* Keys are trimmed, and email addresses compared in lower case. Limits: 50 tables per account, 10,000 rows per table, 16 KB per row, 500 characters per key, 100 per table name.
+* **Settings → Workspace → Data tables** lists the tables with their row counts and shows the rows (searchable by key) with a delete button per row and per table.
+* As AI Agent tools: Get Row, Check Row Exists and List Rows are Read, Insert or Update is Write, Delete Row is Dangerous. Agent state: Key `{{sessionId}}`, Row Data `{"step": "asked_budget"}`.
+* Stored in the app's database (`data_table`, `data_table_row`), with the account's other data.
+
+## Image Generation
+
+Creates a picture from a text prompt, for social posts and product images.
+
+* **Providers** (Operation): **OpenAI** with an OpenAI credential (gpt-image-1 when Model is empty; `dall-e-3` works too), or **OpenAI-compatible (custom base URL)** with a Chat Model API Key credential, for any server with `/images/generations`. A custom URL goes through the SSRF guard.
+* **Fields:** Prompt (up to 4,000 characters), Size (square, landscape, portrait or auto; DALL·E 3 gets its nearest size), Quality (auto, low, medium, high; on DALL·E 3 high is "hd"), File Name.
+* **Result:** `{{image.file}}`, a workflow file (PNG, JPEG or WebP, as the API sent it) for the Instagram / Facebook Post node, a WhatsApp or Telegram File field, Google Drive or an email attachment; also `model`, `prompt` and the API's `revisedPrompt` when it gives one. Same size limit and retention as other files.
+* Each picture is billed by the provider per image, not per token, so it is not in the AI usage figures.
 
 ## Files
 
@@ -1605,7 +1653,6 @@ Planned, not built. These are the pieces an agent needs to find link prospects, 
 | Email (SMTP): headers and replies | Custom Headers (for `List-Unsubscribe` and `List-Unsubscribe-Post`), a "Reply To Message" option that sets `In-Reply-To` and `References` and adds "Re:", and the sent Message-ID in the output. The Gmail node returns `messageId` and `threadId` |
 | Per-item approval and "Approve with edits" | Send and Wait for Approval asks once per item, and each item continues through Approved or Rejected. "Approve with edits" makes the subject and body editable on the approval page and returns them as `{{approval.edited.subject}}` / `{{approval.edited.body}}`. Needs default values on Form fields |
 | Delay: random delay and sending window | Random Delay (min–max) per item, and a Sending Window (days, start and end hour, time zone) |
-| Data Table node | A built-in key/value table per workspace with Add, Check Exists, Remove and List, for suppression lists and "already contacted" checks |
 | Mailbox rotation on Gmail / SMTP | Several credentials on one node, picked by Round Robin or Least Used Today, with a daily limit per mailbox that is separate from the plan cap |
 | Text Formatter: more operations | Extract Domain, Extract Root URL, Find Emails in Text, Normalize Email |
 | Integration nodes | Hunter.io (Domain Search, Email Finder, Email Verifier), DataForSEO (SERP, Backlinks, Domain metrics), ZeroBounce / NeverBounce (Verify Email) |

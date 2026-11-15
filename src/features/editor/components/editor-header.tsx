@@ -5,12 +5,14 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { SidebarTrigger } from '@/components/ui/sidebar'
 import { Switch } from '@/components/ui/switch'
-import { useExportWorkflow, useSetSaveExecutionData, useSetWorkflowActive, useSuspenseWorkflow, useUpdateWorkflow, useUpdateWorkflowName } from '@/features/workflows/hooks/use-workflows'
+import { useDuplicateWorkflow, useExportWorkflow, useSetSaveExecutionData, useSetWorkflowActive, useSuspenseWorkflow, useUpdateWorkflow, useUpdateWorkflowName } from '@/features/workflows/hooks/use-workflows'
 import { DropdownMenu, DropdownMenuCheckboxItem, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
 import { WorkflowBudgetDialog } from '@/features/ai-usage/components/workflow-budget-dialog'
 import { useAtomValue } from 'jotai'
 import { FlaskConicalIcon, SaveIcon, SettingsIcon, Workflow } from 'lucide-react'
 import Link from 'next/link'
+import { useRouter } from 'next/navigation'
+import { toast } from 'sonner'
 import { useEffect, useRef, useState } from 'react'
 import { editorAtom } from '../store/atoms'
 import { VersionHistory } from '@/features/workflows/components/version-history'
@@ -54,6 +56,8 @@ export const EditorSettingsMenu = ({ workflowId }: { workflowId: string }) => {
     const { data: workflow } = useSuspenseWorkflow(workflowId)
     const setSaveExecutionData = useSetSaveExecutionData()
     const exportWorkflow = useExportWorkflow()
+    const duplicateWorkflow = useDuplicateWorkflow()
+    const router = useRouter()
     const [budgetOpen, setBudgetOpen] = useState(false)
     const [timezoneOpen, setTimezoneOpen] = useState(false)
 
@@ -103,6 +107,23 @@ export const EditorSettingsMenu = ({ workflowId }: { workflowId: string }) => {
                         <div>Time zone: {workflow.timezone ?? 'UTC'}</div>
                         <p className='text-xs text-muted-foreground'>
                             The clock this workflow&apos;s Schedule Triggers read.
+                        </p>
+                    </div>
+                </DropdownMenuItem>
+                <DropdownMenuItem
+                    onSelect={() =>
+                        duplicateWorkflow.mutate({ id: workflowId }, {
+                            onSuccess: (copy) => router.push(`/workflows/${copy.id}`),
+                            onError: (error) => toast.error(`Failed to duplicate: ${error.message}`),
+                        })
+                    }
+                    disabled={duplicateWorkflow.isPending}
+                    className='items-start pl-8'
+                >
+                    <div className='space-y-1'>
+                        <div>Duplicate</div>
+                        <p className='text-xs text-muted-foreground'>
+                            A copy of the saved workflow, inactive, with the same credentials.
                         </p>
                     </div>
                 </DropdownMenuItem>

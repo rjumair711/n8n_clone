@@ -23,7 +23,7 @@ import { PLAN_LIMITS } from "@/config/plans";
 
 /** How many node types the editor has, counted from the schema's NodeType. */
 export const NODE_COUNT = Object.values(NodeType).filter(
-  (type) => type !== NodeType.INITIAL,
+  (type) => type !== NodeType.INITIAL && type !== NodeType.STICKY_NOTE,
 ).length;
 
 const labels = (...types: NodeType[]) =>

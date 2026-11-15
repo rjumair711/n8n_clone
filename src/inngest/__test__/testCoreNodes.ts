@@ -11653,7 +11653,8 @@ pour()</code></pre>
     const selector = read("src/components/node-selector.tsx");
 
     for (const { type, component } of registry) {
-      if (type === "INITIAL") continue;
+      // The empty canvas's placeholder, and canvas notes, which do nothing
+      if (type === "INITIAL" || type === "STICKY_NOTE") continue;
 
       // Its settings: a config the catalogue reads, or a hand-written spec
       const fromConfig = new RegExp(`export const ${component} = createIntegrationNode\\(`).test(nodeFiles);
@@ -15981,6 +15982,259 @@ pour()</code></pre>
     assert.match(source, /ON CONFLICT \("key"\) DO UPDATE/);
     // On by default for every account, old and new
     assert.match(readFileSync("prisma/schema.prisma", "utf8"), /failureAlertEmails\s+Boolean\s+@default\(true\)/);
+  });
+
+  await test("schema: data tables, folders, tags, onboarding, sticky notes and image nodes are additive", async () => {
+    const { readFileSync, readdirSync } = await import("node:fs");
+    const dir = readdirSync("prisma/migrations").find((name) => name.endsWith("_data_tables_folders_tags_sticky_image"));
+    assert.ok(dir, "migration exists");
+    const sql = readFileSync(`prisma/migrations/${dir}/migration.sql`, "utf8");
+    // Nothing is dropped, renamed or made required on an existing table
+    assert.equal(/\bDROP\b|\bRENAME\b|SET NOT NULL/i.test(sql), false);
+    assert.match(sql, /ALTER TABLE "Workflow" ADD COLUMN\s+"folderId" TEXT;/);
+    assert.match(sql, /ALTER TABLE "user" ADD COLUMN\s+"onboarding" JSONB;/);
+    for (const value of ["DATA_TABLE", "IMAGE_GENERATION", "STICKY_NOTE"]) assert.match(sql, new RegExp(`ADD VALUE '${value}'`));
+    // Deleting a folder keeps its workflows
+    assert.match(sql, /"Workflow_folderId_fkey"[^;]*ON DELETE SET NULL/);
+  });
+
+  await test("contact memory: listed and deleted only within the owner's account", async () => {
+    const { readFileSync } = await import("node:fs");
+    const router = readFileSync("src/features/memory/server/routers.ts", "utf8");
+    assert.match(router, /listContacts: viewerProcedure/);
+    assert.match(router, /deleteFact: editorProcedure/);
+    assert.match(router, /deleteContact: editorProcedure/);
+    // Every query is limited to the workspace owner's facts
+    assert.equal((router.match(/userId: ctx\.workspace\.ownerId|const userId = ctx\.workspace\.ownerId/g) ?? []).length, 3);
+    assert.match(router, /where: \{ id: input\.id, userId: ctx\.workspace\.ownerId \}/);
+    const { SETTINGS_SECTIONS } = await import("@/features/settings/lib/sections");
+    assert.ok(SETTINGS_SECTIONS.some((section) => section.slug === "contact-memory"));
+    assert.ok(readFileSync("src/app/(dashboard)/(rest)/settings/contact-memory/page.tsx", "utf8").includes('slug="contact-memory"'));
+  });
+
+  await test("onboarding checklist: four steps from the account's own data", async () => {
+    const { buildChecklist, readOnboardingState } = await import("@/features/onboarding/lib/checklist");
+    const empty = buildChecklist({ credentials: 0, executions: 0, activeWorkflows: 0 }, {});
+    assert.deepEqual(empty.steps.map((step) => step.id), ["credential", "template", "run", "activate"]);
+    assert.equal(empty.completed, 0);
+    assert.equal(empty.visible, true);
+    const half = buildChecklist({ credentials: 2, executions: 1, activeWorkflows: 0 }, { usedTemplate: false });
+    assert.equal(half.completed, 2);
+    const done = buildChecklist({ credentials: 1, executions: 5, activeWorkflows: 1 }, { usedTemplate: true });
+    assert.equal(done.completed, 4);
+    assert.equal(done.visible, false);
+    assert.equal(buildChecklist({ credentials: 0, executions: 0, activeWorkflows: 0 }, { dismissed: true }).visible, false);
+    assert.deepEqual(readOnboardingState({ usedTemplate: true, dismissed: "yes", other: 1 }), { usedTemplate: true });
+    assert.deepEqual(readOnboardingState(null), {});
+    assert.deepEqual(readOnboardingState([1]), {});
+
+    const { readFileSync } = await import("node:fs");
+    assert.match(readFileSync("src/features/templates/server/routers.ts", "utf8"), /markOnboarding\(ctx\.auth\.user\.id, \{ usedTemplate: true \}\)\.catch/);
+  });
+
+  await test("duplicate workflow: new ids, same settings, connections follow", async () => {
+    const { buildWorkflowCopy, copyName, MAX_WORKFLOW_NAME } = await import("@/features/workflows/lib/workflow-copy");
+    assert.equal(copyName("Orders"), "Orders (copy)");
+    assert.equal(copyName("Orders (copy)"), "Orders (copy 2)");
+    assert.equal(copyName("Orders (copy 2)"), "Orders (copy 3)");
+    assert.equal(copyName("x".repeat(300)).length, MAX_WORKFLOW_NAME);
+
+    let n = 0;
+    const copy = buildWorkflowCopy(
+      {
+        name: "Bot",
+        nodes: [
+          { id: "a", name: "WHATSAPP_TRIGGER", type: "WHATSAPP_TRIGGER", position: { x: 1, y: 2 }, data: { appSecret: "kept", credentialId: "c1" }, credentialId: null },
+          { id: "b", name: "AI_AGENT", type: "AI_AGENT", position: { x: 3, y: 4 }, data: { toolSettings: { a: { name: "t" } } }, credentialId: "c2" },
+        ],
+        connections: [{ fromNodeId: "a", toNodeId: "b", fromOutput: "main", toInput: "main" }],
+      },
+      () => `n${++n}`,
+    );
+    assert.equal(copy.name, "Bot (copy)");
+    assert.deepEqual(copy.nodes.map((node) => node.id), ["n1", "n2"]);
+    // Same account: secrets and credentials stay
+    assert.equal(copy.nodes[0].data.appSecret, "kept");
+    assert.equal(copy.nodes[1].credentialId, "c2");
+    assert.deepEqual(copy.nodes[1].data.toolSettings, { n1: { name: "t" } });
+    assert.deepEqual(copy.connections, [{ fromNodeId: "n1", toNodeId: "n2", fromOutput: "main", toInput: "main" }]);
+
+    const { readFileSync } = await import("node:fs");
+    const router = readFileSync("src/features/workflows/server/routers.ts", "utf8");
+    const duplicate = router.slice(router.indexOf("duplicate: builderProcedure"), router.indexOf("// EXPORT:"));
+    assert.match(duplicate, /countWorkflows\(ownerId\)\) >= workflowLimit/);
+    assert.equal(/active: true/.test(duplicate), false);
+  });
+
+  await test("undo and redo: snapshots, drags as one step, shortcuts", async () => {
+    const history = await import("@/features/editor/lib/canvas-history");
+    type S = { nodes: string[]; edges: string[] };
+    const state = (nodes: string[]): S => ({ nodes, edges: [] });
+    let h = history.emptyHistory<string, string>();
+    const s0 = state([]);
+    const s1 = state(["a"]);
+    const s2 = state(["a", "b"]);
+    h = history.recordChange(h, s0);
+    h = history.recordChange(h, s1);
+    // Two handlers for one change record it once
+    h = history.recordChange(h, s1);
+    assert.equal(h.past.length, 2);
+
+    let step = history.undoChange(h, s2);
+    assert.equal(step.snapshot, s1);
+    step = history.undoChange(step.history, s1);
+    assert.equal(step.snapshot, s0);
+    assert.equal(history.undoChange(step.history, s0).snapshot, null);
+    const redo = history.redoChange(step.history, s0);
+    assert.equal(redo.snapshot, s1);
+    // A new change ends redo
+    assert.equal(history.recordChange(redo.history, s1).future.length, 0);
+
+    let long = history.emptyHistory<string, string>();
+    for (let i = 0; i < 70; i++) long = history.recordChange(long, state([String(i)]));
+    assert.equal(long.past.length, history.CANVAS_HISTORY_LIMIT);
+
+    assert.equal(history.isUndoableChange([{ type: "select" }, { type: "dimensions" }], false), false);
+    assert.equal(history.isUndoableChange([{ type: "remove" }], false), true);
+    assert.equal(history.isUndoableChange([{ type: "position", dragging: true }], false), true);
+    assert.equal(history.isUndoableChange([{ type: "position", dragging: true }], true), false);
+    assert.equal(history.isUndoableChange([{ type: "position", dragging: false }], true), false);
+
+    const key = (k: string, extra: Partial<{ ctrlKey: boolean; metaKey: boolean; shiftKey: boolean; typing: boolean }> = {}) =>
+      history.historyShortcut({ key: k, ctrlKey: true, metaKey: false, shiftKey: false, typing: false, ...extra });
+    assert.equal(key("z"), "undo");
+    assert.equal(key("Z", { shiftKey: true }), "redo");
+    assert.equal(key("y"), "redo");
+    assert.equal(key("z", { ctrlKey: false, metaKey: true }), "undo");
+    assert.equal(key("z", { typing: true }), null);
+    assert.equal(key("z", { ctrlKey: false }), null);
+    assert.equal(key("c"), null);
+  });
+
+  await test("sticky notes: on the canvas, never run", async () => {
+    const sticky = await import("@/features/editor/lib/sticky-notes");
+    const { buildGraph, getStartNodeIds } = await import("@/inngest/engine");
+    const graph = buildGraph(
+      [
+        { id: "note", type: "STICKY_NOTE", data: { text: "Remember" } },
+        { id: "t", type: "MANUAL_TRIGGER" },
+        { id: "x", type: "SET_VARIABLE" },
+      ],
+      [
+        { fromNodeId: "t", toNodeId: "x", fromOutput: "main", toInput: "main" },
+        // A hand-made connection to a note is ignored too
+        { fromNodeId: "note", toNodeId: "x", fromOutput: "main", toInput: "main" },
+      ],
+    );
+    assert.deepEqual(graph.order, ["t", "x"]);
+    assert.deepEqual(getStartNodeIds(graph), ["t"]);
+    // A workflow of only notes runs nothing
+    assert.deepEqual(buildGraph([{ id: "n", type: "STICKY_NOTE" }], []).order, []);
+
+    assert.deepEqual(sticky.stickySize({}), sticky.STICKY_DEFAULT_SIZE);
+    assert.deepEqual(sticky.stickySize({ width: 10, height: 99999 }), { width: sticky.STICKY_MIN_SIZE.width, height: sticky.STICKY_MAX_SIZE.height });
+    assert.equal(sticky.stickyColor("pink").value, "pink");
+    assert.equal(sticky.stickyColor("nope").value, "yellow");
+
+    const { NODE_COUNT } = await import("@/features/marketing/lib/content");
+    const { NodeType } = await import("@prisma/client");
+    assert.equal(NODE_COUNT, Object.values(NodeType).length - 2);
+    const { readFileSync } = await import("node:fs");
+    assert.match(readFileSync("src/features/ai-builder/lib/catalogue.ts", "utf8"), /HIDDEN_TYPES = new Set\(\["INITIAL", "STICKY_NOTE"\]\)/);
+  });
+
+  await test("data table: names, keys, row data and limits", async () => {
+    const dt = await import("@/features/executions/lib/data-table");
+    assert.equal(dt.normalizeTableName("  Contacted   Leads "), "Contacted Leads");
+    assert.throws(() => dt.normalizeTableName(" "), /Table Name is required/);
+    assert.throws(() => dt.normalizeTableName("x".repeat(101)), /longer than 100/);
+    assert.equal(dt.normalizeRowKey(" Sara@Example.COM "), "sara@example.com");
+    assert.equal(dt.normalizeRowKey(" +92 300 1234567 "), "+92 300 1234567");
+    assert.throws(() => dt.normalizeRowKey(""), /Key is required/);
+    assert.deepEqual(dt.parseRowData(""), {});
+    assert.deepEqual(dt.parseRowData('{"status":"contacted"}'), { status: "contacted" });
+    for (const bad of ["[1]", "5", "{nope", "null"]) assert.throws(() => dt.parseRowData(bad), /JSON object/, bad);
+    // An update keeps the fields it does not name
+    assert.deepEqual(dt.mergeRowData({ a: 1, b: 2 }, { b: 3, c: 4 }), { a: 1, b: 3, c: 4 });
+    assert.deepEqual(dt.mergeRowData(null, { a: 1 }), { a: 1 });
+    assert.throws(() => dt.mergeRowData({}, { big: "x".repeat(20_000) }), /at most 16 KB/);
+    assert.equal(dt.clampListLimit(""), 100);
+    assert.equal(dt.clampListLimit("5000"), 1000);
+    assert.equal(dt.isDataTableOperation("find_row"), true);
+    assert.equal(dt.isDataTableOperation("drop"), false);
+
+    // As agent tools: reads are Read, writes Write, deleting is Dangerous
+    const { getToolRisk } = await import("@/features/executions/lib/agent-tools");
+    assert.equal(getToolRisk("DATA_TABLE", { operation: "get_row" }), "read");
+    assert.equal(getToolRisk("DATA_TABLE", { operation: "list_rows" }), "read");
+    assert.equal(getToolRisk("DATA_TABLE", { operation: "find_row" }), "read");
+    assert.equal(getToolRisk("DATA_TABLE", { operation: "upsert_row" }), "write");
+    assert.equal(getToolRisk("DATA_TABLE", { operation: "delete_row" }), "dangerous");
+
+    const { readFileSync } = await import("node:fs");
+    const executor = readFileSync("src/features/executions/components/apps/data-table.ts", "utf8");
+    // Every table is looked up in the owner's account
+    assert.match(executor, /userId_name: \{ userId, name: tableName \}/);
+    const router = readFileSync("src/features/data-tables/server/routers.ts", "utf8");
+    assert.match(router, /where: \{ id: input\.id, table: \{ userId: ctx\.workspace\.ownerId \} \}/);
+  });
+
+  await test("image generation: request bodies and answers", async () => {
+    const img = await import("@/features/executions/lib/image-options");
+    assert.deepEqual(img.buildImageRequest({ model: "gpt-image-1", prompt: "cat", size: "1536x1024", quality: "high" }), {
+      model: "gpt-image-1", prompt: "cat", n: 1, size: "1536x1024", quality: "high",
+    });
+    // gpt-image models reject response_format; auto means no size
+    assert.deepEqual(img.buildImageRequest({ model: "gpt-image-1", prompt: "cat", size: "auto", quality: "auto" }), { model: "gpt-image-1", prompt: "cat", n: 1 });
+    assert.deepEqual(img.buildImageRequest({ model: "dall-e-3", prompt: "cat", size: "1024x1536", quality: "high" }), {
+      model: "dall-e-3", prompt: "cat", n: 1, size: "1024x1792", quality: "hd", response_format: "b64_json",
+    });
+    assert.equal(img.buildImageRequest({ model: "dall-e-3", prompt: "cat", size: "auto", quality: "low" }).quality, "standard");
+    assert.throws(() => img.buildImageRequest({ model: "m", prompt: "p", size: "big" }), /must look like 1024x1024/);
+
+    assert.deepEqual(img.readImageResponse({ data: [{ b64_json: "aGk=", revised_prompt: "a cat" }] }), { base64: "aGk=", revisedPrompt: "a cat" });
+    assert.deepEqual(img.readImageResponse({ data: [{ url: "https://cdn.example.com/x.png" }] }), { url: "https://cdn.example.com/x.png", revisedPrompt: undefined });
+    assert.equal(img.readImageResponse({ data: [{ url: "http://insecure/x.png" }] }), null);
+    assert.equal(img.readImageResponse({ data: [] }), null);
+    assert.equal(img.readImageResponse(null), null);
+
+    assert.equal(img.sniffImageType(Uint8Array.from([0x89, 0x50, 0x4e, 0x47])).extension, "png");
+    assert.equal(img.sniffImageType(Uint8Array.from([0xff, 0xd8, 0xff])).mimeType, "image/jpeg");
+    assert.equal(img.sniffImageType(Uint8Array.from([0x52, 0x49, 0x46, 0x46, 0, 0, 0, 0, 0x57, 0x45])).extension, "webp");
+    assert.equal(img.getImageProvider(undefined)?.model, "gpt-image-1");
+    assert.equal(img.resolveImageBaseUrl(img.getImageProvider("custom")!, "ftp://x"), null);
+    assert.equal(img.resolveImageBaseUrl(img.getImageProvider("custom")!, "https://api.example.com/v1/"), "https://api.example.com/v1");
+
+    // The request goes through the SSRF guard, and the file store's limits apply
+    const { readFileSync } = await import("node:fs");
+    const executor = readFileSync("src/features/executions/components/apps/image-generation.ts", "utf8");
+    assert.match(executor, /await safeFetch\(`\$\{baseUrl\}\/images\/generations`/);
+    assert.match(executor, /saveWorkflowFile\(\{/);
+    assert.match(executor, /bytes\.length > MAX_FILE_BYTES/);
+  });
+
+  await test("folders and tags: names, filters and ownership", async () => {
+    const org = await import("@/features/workflows/lib/workflow-organize");
+    assert.equal(org.normalizeFolderName("  Sales   bots "), "Sales bots");
+    assert.throws(() => org.normalizeFolderName(""), /needs a name/);
+    assert.throws(() => org.normalizeFolderName("x".repeat(61)), /at most 60/);
+    assert.equal(org.normalizeTagName("#WhatsApp"), "whatsapp");
+    assert.deepEqual(org.parseTagList(["Sales", " whatsapp", "sales", ""]), ["sales", "whatsapp"]);
+    assert.throws(() => org.parseTagList(Array.from({ length: 11 }, (_, i) => `t${i}`)), /at most 10 tags/);
+    assert.deepEqual(org.workflowListFilter({}), {});
+    assert.deepEqual(org.workflowListFilter({ folder: "none" }), { folderId: null });
+    assert.deepEqual(org.workflowListFilter({ folder: "f1", tag: "t1" }), { folderId: "f1", tags: { some: { tagId: "t1" } } });
+
+    const { readFileSync } = await import("node:fs");
+    const router = readFileSync("src/features/workflows/server/folders.ts", "utf8");
+    assert.match(router, /createFolder: builderProcedure/);
+    assert.match(router, /moveWorkflow: editorProcedure/);
+    assert.match(router, /setTags: editorProcedure/);
+    // A folder of another account cannot be used
+    assert.match(router, /prisma\.workflowFolder\.findFirst\(\{ where: \{ id: input\.folderId, userId: ownerId \} \}\)/);
+    const workflows = readFileSync("src/features/workflows/server/routers.ts", "utf8");
+    assert.match(workflows, /\.\.\.workflowListFilter\(input\),/);
+    assert.match(workflows, /folderId: source\.folderId,/);
   });
 
   console.log(`\n${passed} checks passed`);

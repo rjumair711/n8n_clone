@@ -6,6 +6,7 @@ import { HydrateClient } from '@/trpc/server'
 import { SearchParams } from 'nuqs/server'
 import { Suspense } from 'react'
 import { ErrorBoundary } from "react-error-boundary"
+import { OnboardingChecklist } from "@/features/onboarding/components/onboarding-checklist"
 
 
 type Props = {
@@ -20,6 +21,7 @@ const Page = async ({ searchParams }: Props) => {
 
   return (
     <WorkflowsContainer>
+      <OnboardingChecklist />
       <HydrateClient>
         <ErrorBoundary fallback={<WorkflowsError />}>
           <Suspense fallback={<WorkflowsLoading />}>

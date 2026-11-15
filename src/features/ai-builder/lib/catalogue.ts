@@ -251,7 +251,8 @@ const fitField = (field: CatalogueField): CatalogueField => ({
 });
 
 // Never offered to the model: the empty canvas's placeholder
-const HIDDEN_TYPES = new Set(["INITIAL"]);
+// and canvas notes, which do nothing
+const HIDDEN_TYPES = new Set(["INITIAL", "STICKY_NOTE"]);
 
 /**
  * The catalogue: one entry per node type in the registry.

@@ -14,6 +14,10 @@ import { chatbotsRouter } from '@/features/chatbots/server/routers';
 import { evaluationsRouter } from '@/features/evaluations/server/routers';
 import { workspacesRouter } from '@/features/workspaces/server/routers';
 import { subscriptionRouter } from '@/features/subscription/server/routers';
+import { memoryRouter } from '@/features/memory/server/routers';
+import { onboardingRouter } from '@/features/onboarding/server/routers';
+import { dataTablesRouter } from '@/features/data-tables/server/routers';
+import { workflowFoldersRouter } from '@/features/workflows/server/folders';
 
 
 
@@ -33,6 +37,10 @@ export const appRouter = createTRPCRouter({
   evaluations: evaluationsRouter,
   workspaces: workspacesRouter,
   subscription: subscriptionRouter,
+  memory: memoryRouter,
+  onboarding: onboardingRouter,
+  dataTables: dataTablesRouter,
+  workflowFolders: workflowFoldersRouter,
 });
 // export type definition of API
 export type AppRouter = typeof appRouter;
