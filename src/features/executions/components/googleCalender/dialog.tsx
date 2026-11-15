@@ -24,13 +24,17 @@ import { useCredentialsByType } from "@/features/credentials/hooks/use-credentia
 // UPDATED: Multi-operation dynamic validation schema
 const formSchema = z.object({
   credentialId: z.string().min(1, "Credential is required"),
-  operation: z.enum(["create", "update", "delete"]),
+  operation: z.enum(["create", "update", "delete", "list"]),
   calendarId: z.string().min(1, "Calendar ID is required"),
   eventId: z.string().optional(),
   summary: z.string().optional(),
   description: z.string().optional(),
   startTime: z.string().optional(),
   endTime: z.string().optional(),
+  timeMin: z.string().optional(),
+  timeMax: z.string().optional(),
+  query: z.string().optional(),
+  maxResults: z.string().optional(),
   variableName: z
     .string()
     .min(1, "Variable name is required")
@@ -48,6 +52,17 @@ const formSchema = z.object({
     }
     if (!data.endTime || data.endTime.trim() === "") {
       ctx.addIssue({ code: z.ZodIssueCode.custom, message: "End time is required", path: ["endTime"] });
+    }
+  }
+  if (data.operation === "list") {
+    if (!data.timeMin?.trim()) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, message: "Start of range is required", path: ["timeMin"] });
+    }
+    if (!data.timeMax?.trim()) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, message: "End of range is required", path: ["timeMax"] });
+    }
+    if (data.maxResults?.trim() && !/^\d+$/.test(data.maxResults.trim())) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, message: "A whole number, up to 250", path: ["maxResults"] });
     }
   }
   // Validate fields for UPDATE or DELETE operations
@@ -88,6 +103,10 @@ export const GoogleCalendarDialog = ({ open, onOpenChange, onSubmit, defaultValu
       description: defaultValues.description || "",
       startTime: defaultValues.startTime || "",
       endTime: defaultValues.endTime || "",
+      timeMin: defaultValues.timeMin || "",
+      timeMax: defaultValues.timeMax || "",
+      query: defaultValues.query || "",
+      maxResults: defaultValues.maxResults || "",
       variableName: defaultValues.variableName || "calendarResult",
     },
   });
@@ -103,6 +122,10 @@ export const GoogleCalendarDialog = ({ open, onOpenChange, onSubmit, defaultValu
         description: defaultValues.description || "",
         startTime: defaultValues.startTime || "",
         endTime: defaultValues.endTime || "",
+        timeMin: defaultValues.timeMin || "",
+        timeMax: defaultValues.timeMax || "",
+        query: defaultValues.query || "",
+        maxResults: defaultValues.maxResults || "",
         variableName: defaultValues.variableName || "calendarResult",
       });
     }
@@ -117,13 +140,18 @@ export const GoogleCalendarDialog = ({ open, onOpenChange, onSubmit, defaultValu
     onOpenChange(false);
   };
 
-  const operationLabel = watchOperation.charAt(0).toUpperCase() + watchOperation.slice(1);
+  const operationLabel = watchOperation === "list"
+    ? "List"
+    : watchOperation.charAt(0).toUpperCase() + watchOperation.slice(1);
+  const resultHint = watchOperation === "list"
+    ? `{{${watchVariableName}.isFree}}, {{${watchVariableName}.count}} and {{${watchVariableName}.events}}`
+    : `{{${watchVariableName}.htmlLink}}`;
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-h-[90vh] overflow-y-auto">
         <DialogHeader>
-          <DialogTitle>{operationLabel} Google Calendar Event</DialogTitle>
+          <DialogTitle>{operationLabel} Google Calendar {watchOperation === "list" ? "Events" : "Event"}</DialogTitle>
         </DialogHeader>
         <Form {...form}>
           <form onSubmit={form.handleSubmit(handleSubmit)} className="space-y-4 mt-2">
@@ -172,6 +200,7 @@ export const GoogleCalendarDialog = ({ open, onOpenChange, onSubmit, defaultValu
                       <SelectItem value="create">Create Event</SelectItem>
                       <SelectItem value="update">Update Event</SelectItem>
                       <SelectItem value="delete">Delete Event</SelectItem>
+                      <SelectItem value="list">List Events</SelectItem>
                     </SelectContent>
                   </Select>
                   <FormMessage />
@@ -212,8 +241,74 @@ export const GoogleCalendarDialog = ({ open, onOpenChange, onSubmit, defaultValu
               />
             )}
 
-            {/* Content inputs - Hidden during Delete operations */}
-            {watchOperation !== "delete" && (
+            {watchOperation === "list" && (
+              <>
+                <div className="grid grid-cols-2 gap-4">
+                  <FormField
+                    control={form.control}
+                    name="timeMin"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Start of range</FormLabel>
+                        <FormControl>
+                          <Input placeholder="{{booking.start}}" {...field} />
+                        </FormControl>
+                        <FormDescription>ISO, e.g. 2026-12-31T10:00:00+05:00</FormDescription>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                  <FormField
+                    control={form.control}
+                    name="timeMax"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>End of range</FormLabel>
+                        <FormControl>
+                          <Input placeholder="{{booking.end}}" {...field} />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                </div>
+                <FormField
+                  control={form.control}
+                  name="query"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Search (Optional)</FormLabel>
+                      <FormControl>
+                        <Input placeholder="Haircut" {...field} />
+                      </FormControl>
+                      <FormDescription>Only events whose title, description, location or guests contain this text.</FormDescription>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+                <FormField
+                  control={form.control}
+                  name="maxResults"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Max Events (Optional)</FormLabel>
+                      <FormControl>
+                        <Input placeholder="50" inputMode="numeric" {...field} />
+                      </FormControl>
+                      <FormDescription>
+                        50 by default, 250 at most. Every event that overlaps the range is listed;
+                        isFree is true when none of them blocks the time (cancelled events and events
+                        marked &quot;Free&quot; do not).
+                      </FormDescription>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+              </>
+            )}
+
+            {/* Content inputs - Hidden during Delete and List operations */}
+            {watchOperation !== "delete" && watchOperation !== "list" && (
               <>
                 <FormField
                   control={form.control}
@@ -286,7 +381,7 @@ export const GoogleCalendarDialog = ({ open, onOpenChange, onSubmit, defaultValu
                     <Input placeholder="calendarResult" {...field} />
                   </FormControl>
                   <FormDescription>
-                    Reference this result later: {`{{${watchVariableName}.htmlLink}}`}
+                    Reference this result later: {resultHint}
                   </FormDescription>
                   <FormMessage />
                 </FormItem>

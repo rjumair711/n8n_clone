@@ -6,6 +6,7 @@ import Handlebars from "handlebars";
 import prisma from "@/lib/db";
 import { getGoogleAuth } from "@/lib/google-oauth";
 import { GoogleCalendarNodeData } from "./node"; // Import your type from node.tsx
+import { checkRange, clampMaxResults, summarizeEvents, toIsoTime } from "./list-events";
 
 export const googleCalendarExecutor: NodeExecutor<GoogleCalendarNodeData> = async ({
     data,
@@ -28,6 +29,10 @@ export const googleCalendarExecutor: NodeExecutor<GoogleCalendarNodeData> = asyn
     } else if (operation === "update" || operation === "delete") {
         if (!data.calendarId || !data.eventId) {
             throw new NonRetriableError(`Google Calendar node (${operation}): Missing Calendar ID or Event ID`);
+        }
+    } else if (operation === "list") {
+        if (!data.timeMin?.trim() || !data.timeMax?.trim()) {
+            throw new NonRetriableError("Google Calendar node (List Events): Start of range and End of range are required");
         }
     }
 
@@ -55,6 +60,20 @@ export const googleCalendarExecutor: NodeExecutor<GoogleCalendarNodeData> = asyn
     const resolvedDescription = compile(data.description);
     const resolvedStartTime = compile(data.startTime);
     const resolvedEndTime = compile(data.endTime);
+
+    // List Events: the range is checked before anything is sent to Google
+    let listRange: { timeMin?: string; timeMax?: string } = {};
+    if (operation === "list") {
+        try {
+            listRange = {
+                timeMin: toIsoTime("Start of range", compile(data.timeMin)),
+                timeMax: toIsoTime("End of range", compile(data.timeMax)),
+            };
+            checkRange(listRange.timeMin, listRange.timeMax);
+        } catch (error: any) {
+            throw new NonRetriableError(`Google Calendar node (List Events): ${error.message}`);
+        }
+    }
 
     try {
         // Run the appropriate Google API step based on the operation selection
@@ -111,6 +130,22 @@ export const googleCalendarExecutor: NodeExecutor<GoogleCalendarNodeData> = asyn
                         eventId: resolvedEventId,
                         status: "deleted",
                     };
+                }
+
+                case "list": {
+                    // Recurring events are expanded, so each occurrence in
+                    // the range is listed with its own start and end
+                    const maxResults = clampMaxResults(data.maxResults);
+                    const response = await calendar.events.list({
+                        calendarId: resolvedCalendarId,
+                        timeMin: listRange.timeMin,
+                        timeMax: listRange.timeMax,
+                        q: compile(data.query).trim() || undefined,
+                        singleEvents: true,
+                        orderBy: "startTime",
+                        maxResults,
+                    });
+                    return summarizeEvents(response.data.items ?? [], !!response.data.nextPageToken);
                 }
 
                 default:

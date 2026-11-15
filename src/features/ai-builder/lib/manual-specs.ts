@@ -516,8 +516,12 @@ export const MANUAL_SPECS: Record<string, ManualSpec> = {
     credential: "GOOGLE_CALENDAR or GOOGLE_OAUTH2",
     variableName: "calendarResult",
     fields: [
-      { name: "operation", type: "select", required: true, options: ["create", "update", "delete"], default: "create" },
+      { name: "operation", type: "select", required: true, options: ["create", "update", "delete", "list"], default: "create" },
       { name: "calendarId", type: "text", required: true, default: "primary" },
+      { name: "timeMin", type: "text", description: "list: start of the range, ISO.", example: "{{booking.start}}" },
+      { name: "timeMax", type: "text", description: "list: end of the range, ISO." },
+      { name: "query", type: "text", description: "list: optional text the events must contain." },
+      { name: "maxResults", type: "text", description: "list: at most this many events (50 by default, 250 at most)." },
       { name: "eventId", type: "text", description: "For update and delete." },
       { name: "summary", type: "text", description: "The event's title." },
       { name: "description", type: "text" },
@@ -525,7 +529,7 @@ export const MANUAL_SPECS: Record<string, ManualSpec> = {
       { name: "endTime", type: "text", description: "ISO date and time." },
       variableName("calendarResult"),
     ],
-    notes: "{{<variableName>.htmlLink}} is the event's link, {{<variableName>.id}} its ID.",
+    notes: "create/update return { eventId, status, htmlLink }. list returns { events, count, busyCount, isFree }: every event overlapping timeMin..timeMax (recurring ones expanded), each { id, summary, start, end, allDay, busy, htmlLink }; isFree is true when none blocks the time. Use list before create to check a booking slot.",
   },
   NOTION: {
     credential: "NOTION",

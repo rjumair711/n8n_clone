@@ -2078,6 +2078,26 @@ Use the test account and a new test spreadsheet shared with its Google credentia
 
 Delete the test spreadsheet afterwards.
 
+## T31. Google Calendar: List Events
+
+Use the test account's Google credential on a test calendar. Create two events tomorrow: 10:00 to 10:30 "Haircut" (Busy) and 12:00 to 13:00 "Lunch" set to **Free**.
+
+| # | Do | Expect |
+| - | -- | ------ |
+| 1 | List Events, range tomorrow 09:00 to 18:00 (with your offset, e.g. `+05:00`) | `count` 2, in start order; Haircut `busy: true`, Lunch `busy: false`; `isFree: false` |
+| 2 | Range 10:30 to 11:00 | `count` 0, `isFree: true` (an event ending at 10:30 does not overlap) |
+| 3 | Range 12:15 to 12:45 | Lunch only, `isFree: true` |
+| 4 | Search `Haircut` over the whole day | only Haircut |
+| 5 | A weekly recurring event, range over three weeks | three separate occurrences |
+| 6 | Max Events `1` over the whole day | 1 event and `truncated: true` |
+| 7 | Start of range `tomorrow` | fails: "is not a date and time" |
+| 8 | End of range before Start of range | fails: "End of range must be after Start of range" |
+| 9 | List Events → IF `{{calendarResult.isFree}}` → Create Event | the event is created only when the slot is free |
+| 10 | An existing Create, Update or Delete node | unchanged |
+| 11 | As an AI Agent tool | listed as Read |
+
+Delete the test events afterwards.
+
 # When something fails
 
 Note the node, the exact values you entered, and the error text from the
