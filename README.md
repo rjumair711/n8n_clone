@@ -646,6 +646,17 @@ The Google Calendar node's **List Events** operation, like n8n's "Get Many" with
 * More events than Max Events adds `truncated: true`.
 * A range that is not a date, or that ends before it starts, fails before anything is sent to Google. As an AI Agent tool, List Events is a Read tool.
 
+## WhatsApp buttons and list menus
+
+The WhatsApp node's **Send Reply Buttons** and **Send List Menu** operations send Meta's interactive messages, so customers tap a choice instead of typing it.
+
+* **Send Reply Buttons:** Message, up to 3 **Buttons**, one per line as `id | title` (a title is at most 20 characters). An optional Header (60) above and Footer (60) below.
+* **Send List Menu:** Message, the **Menu Button** that opens the list (20 characters, "Choose" by default) and up to 10 **Rows**, one per line as `id | title | description` (24 and 72 characters; the description is optional). A line starting with `#` opens a section with that title; with more than one section each needs a title.
+* A line with only a title gets an id made from it (`Yes, book it` → `yes_book_it`). Ids must be different from each other.
+* **The answer:** when the customer taps, the WhatsApp Trigger runs with the title at `{{whatsapp.text}}` (and `{{chatInput}}`, so an AI Agent reads it like typed text) and the id at `{{whatsapp.replyId}}`. Route on the id with a Switch. A template's quick-reply button gives its payload there too.
+* Like free text, interactive messages only reach someone who wrote to you in the last 24 hours.
+* Text that is too long, too many buttons or rows, or a repeated id fails with a message saying which, before anything is sent.
+
 ## Duplicate deliveries and retry
 
 Providers re-send an event when they are unsure it arrived. Each trigger remembers the events it accepted for 7 days and ignores a repeat:
@@ -892,7 +903,7 @@ Two store nodes and two triggers. The nodes can also be AI Agent tools: reading 
 | Discord     | Discord automation  |
 | Slack       | Slack notifications |
 | Telegram    | Bot messaging: text, or a file with a caption, and the Telegram Trigger for incoming messages |
-| WhatsApp    | Text, template and file messages via the WhatsApp Business Cloud API, and the WhatsApp Trigger |
+| WhatsApp    | Text, template, file, reply-button and list-menu messages via the WhatsApp Business Cloud API, and the WhatsApp Trigger. See "WhatsApp buttons and list menus" |
 | Messenger   | Text and picture replies to people who wrote to your Facebook Page, and the Messenger Trigger |
 | Instagram   | Text and picture direct messages, the Instagram Trigger, and photo posts (with the Instagram / Facebook Post node) |
 | Twilio      | SMS and WhatsApp messages |

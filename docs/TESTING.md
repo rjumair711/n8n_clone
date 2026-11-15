@@ -2098,6 +2098,22 @@ Use the test account's Google credential on a test calendar. Create two events t
 
 Delete the test events afterwards.
 
+## T32. WhatsApp reply buttons and list menus
+
+Use the test account, a WhatsApp test number and your own phone (message the number first, so the 24-hour window is open). Workflow: WhatsApp Trigger → Switch on `{{whatsapp.replyId}}` → WhatsApp Send Text.
+
+| # | Do | Expect |
+| - | -- | ------ |
+| 1 | WhatsApp node, **Send Reply Buttons**, Message `Book for 5 pm?`, Header `Salon`, Buttons `yes \| Yes, book it` / `no \| No thanks` | the phone shows the header, message and two buttons |
+| 2 | Tap **Yes, book it** | a new run: `whatsapp.text` is `Yes, book it`, `whatsapp.replyId` is `yes`, `chatInput` is the title; the Switch takes the `yes` branch |
+| 3 | **Send List Menu**, Menu Button `See menu`, Rows `# Pizzas`, `margherita \| Margherita \| Rs 1,200`, `# Drinks`, `cola \| Cola` | a message with a **See menu** button; it opens two titled sections |
+| 4 | Pick **Cola** | `whatsapp.replyId` is `cola` |
+| 5 | Four buttons | the node fails: "WhatsApp allows 3 reply buttons; there are 4" and nothing is sent |
+| 6 | A button title of 25 characters | fails, naming the title and the 20 character limit |
+| 7 | Two sections without `#` titles | fails: "every section needs a title" |
+| 8 | Buttons in Urdu (`ہاں`, `نہیں`) | sent and shown right to left |
+| 9 | An existing Send Text node | unchanged |
+
 # When something fails
 
 Note the node, the exact values you entered, and the error text from the
