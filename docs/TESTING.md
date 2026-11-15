@@ -2040,6 +2040,21 @@ Every account gets every node, template and feature, with the same limits. Use t
 | 10 | A viewer of a workspace tries to change a workflow | the role error is shown as it is, not the managed server dialog |
 | 11 | The same account with plan `PRO` in the database | exactly the same as steps 1 to 8 |
 
+## T29. Terms, Privacy and Contact
+
+Signed out, no account needed.
+
+| # | Do | Expect |
+| - | -- | ------ |
+| 1 | Footer → Company | About, Contact, Terms, Privacy, each opening its page |
+| 2 | Open `/privacy` | "Last updated" date, a table of contents, 12 numbered sections; "Google user data" contains the Limited Use sentence |
+| 3 | Open `/privacy#data-deletion` | the page scrolls to "Deleting your data" with the contact address (the URL for Meta's data deletion field) |
+| 4 | Open `/terms` | 13 sections; "Governing law" says Pakistan |
+| 5 | Open `/contact`, click the address | the mail app opens with the contact address; the links to Terms, Privacy and deletion work |
+| 6 | `/signup` | under **Sign Up**: "By signing up you agree to the Terms and the Privacy Policy", both linked |
+| 7 | Phone width (375 px) on all three pages | no sideways scrolling; the long email address wraps |
+| 8 | Self-hosted image: open `/terms`, `/privacy`, `/contact` | each redirects to `/workflows`; the sign-up form has no Terms line |
+
 # When something fails
 
 Note the node, the exact values you entered, and the error text from the

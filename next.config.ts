@@ -23,7 +23,9 @@ const nextConfig: NextConfig = {
   async redirects() {
     if (!SELF_HOSTED) return [];
 
-    return ["/", "/pricing", "/billing"].map((source) => ({
+    // Terms, Privacy and Contact name the hosted service's operator, so they
+    // do not belong on someone else's server either
+    return ["/", "/pricing", "/billing", "/terms", "/privacy", "/contact"].map((source) => ({
       source,
       destination: "/workflows",
       permanent: false,

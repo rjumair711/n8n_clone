@@ -15587,6 +15587,30 @@ pour()</code></pre>
     assert.equal(/server: "sandbox"/.test(read("src/app/api/subscription/checkout/route.ts")), false);
   });
 
+  await test("legal pages: privacy policy has what Meta and Google review for", async () => {
+    const { LEGAL, PRIVACY_SECTIONS, TERMS_SECTIONS } = await import("@/features/marketing/lib/legal-content");
+    const { readFileSync } = await import("node:fs");
+    const ids = PRIVACY_SECTIONS.map((section) => section.id);
+    const text = (sections: typeof PRIVACY_SECTIONS) =>
+      sections.flatMap((section) => [...section.paragraphs, ...(section.list ?? [])]).join("\n");
+
+    // Meta's "Data deletion instructions URL" points at /privacy#data-deletion
+    assert.ok(ids.includes("data-deletion"));
+    assert.equal(new Set(ids).size, ids.length);
+    // Google's OAuth verification looks for the Limited Use statement
+    assert.match(text(PRIVACY_SECTIONS), /Google API Services User Data Policy, including the Limited Use requirements/);
+    assert.match(text(PRIVACY_SECTIONS), new RegExp(LEGAL.email.replace(/\./g, "\\.")));
+    assert.match(text(TERMS_SECTIONS), new RegExp(`laws of ${LEGAL.country}`));
+
+    for (const page of ["terms", "privacy", "contact"]) {
+      assert.match(readFileSync(`src/app/${page}/page.tsx`, "utf8"), new RegExp(`canonical: "/${page}"`));
+    }
+    const footer = readFileSync("src/features/marketing/components/site-footer.tsx", "utf8");
+    for (const href of ["/terms", "/privacy", "/contact"]) assert.ok(footer.includes(`href: "${href}"`));
+    // A self-hosted server is not run by RXJ's operator
+    assert.match(readFileSync("next.config.ts", "utf8"), /"\/terms", "\/privacy", "\/contact"\]/);
+  });
+
   console.log(`\n${passed} checks passed`);
 };
 
