@@ -14,6 +14,7 @@ import { useEntitySearch } from "../../../hooks/use-entity-search"
 import { CopyIcon, WorkflowIcon } from "lucide-react"
 import { BuildWithAiButton } from "@/features/ai-builder/components/build-with-ai-button"
 import { ImportWorkflowButton } from "./import-workflow-button"
+import { WorkflowOrganizeBadges, WorkflowOrganizeMenuItems, WorkflowTagsDialog, WorkflowsFilterBar } from "./workflow-organize"
 
 type Workflow = {
     id: string
@@ -21,6 +22,9 @@ type Workflow = {
     createdAt: Date
     updatedAt: Date
     userId: string
+    folderId?: string | null
+    folder?: { id: string; name: string } | null
+    tags?: { id: string; name: string }[]
 }
 
 export const WorkflowsSearch = () => {
@@ -41,13 +45,18 @@ export const WorkflowsSearch = () => {
 export const WorkflowsList = () => {
 
     const workflows = useSuspenseWorkflows()
+    const [params] = useWorkflowsParams()
+    // A folder, tag or search that matches nothing is not an empty account
+    const filtered = !!(params.folder || params.tag || params.search)
 
     return (
         <EntityList
             items={workflows.data.items}
             getKey={(workflow) => workflow.id}
             renderItem={(workflow) => <WorkflowItem data={workflow} />}
-            emptyView={< WorkflowsEmpty />}
+            emptyView={filtered
+                ? <p className="py-10 text-center text-sm text-muted-foreground">No workflows here. Pick another folder or tag, or move a workflow here from its menu.</p>
+                : < WorkflowsEmpty />}
         />
     )
 }
@@ -108,7 +117,7 @@ export const WorkflowsContainer = ({
     return (
         <EntityContainer
             header={<WorkflowsHeader />}
-            search={<WorkflowsSearch />}
+            search={<div className="space-y-3"><WorkflowsSearch /><WorkflowsFilterBar /></div>}
             pagination={<WorkflowsPagination />}
         >
             {children}
@@ -165,6 +174,7 @@ export const WorkflowItem = ({
     const removeWorkflow = useRemoveWorkflow()
     const duplicateWorkflow = useDuplicateWorkflow()
     const { handleError, modal } = useUpgradeModal()
+    const [tagsOpen, setTagsOpen] = React.useState(false)
     const handleRemove = () => {
         removeWorkflow.mutate({ id: data.id })
     }
@@ -187,6 +197,7 @@ export const WorkflowItem = ({
                     Updated {formatDistanceToNow(data.updatedAt, { addSuffix: true })}{" "}
                     &bull; Created{" "}
                     {formatDistanceToNow(data.createdAt, { addSuffix: true })}
+                    <WorkflowOrganizeBadges folder={data.folder} tags={data.tags} />
                 </>
             }
             image={
@@ -195,6 +206,12 @@ export const WorkflowItem = ({
                 </div>
             }
             menuItems={
+                <>
+                <WorkflowOrganizeMenuItems
+                    workflowId={data.id}
+                    folderId={data.folderId ?? null}
+                    onEditTags={() => setTagsOpen(true)}
+                />
                 <DropdownMenuItem
                     disabled={duplicateWorkflow.isPending}
                     onClick={(event) => {
@@ -205,9 +222,17 @@ export const WorkflowItem = ({
                     <CopyIcon className="size-4" />
                     Duplicate
                 </DropdownMenuItem>
+                </>
             }
             onRemove={handleRemove}
             isRemoving={removeWorkflow.isPending}
+        />
+        {/* Outside the row's link, so clicks in the dialog do not open the workflow */}
+        <WorkflowTagsDialog
+            workflowId={data.id}
+            tags={data.tags ?? []}
+            open={tagsOpen}
+            onOpenChange={setTagsOpen}
         />
         </>
     )

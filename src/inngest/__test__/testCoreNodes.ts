@@ -16213,6 +16213,30 @@ pour()</code></pre>
     assert.match(executor, /bytes\.length > MAX_FILE_BYTES/);
   });
 
+  await test("folders and tags: names, filters and ownership", async () => {
+    const org = await import("@/features/workflows/lib/workflow-organize");
+    assert.equal(org.normalizeFolderName("  Sales   bots "), "Sales bots");
+    assert.throws(() => org.normalizeFolderName(""), /needs a name/);
+    assert.throws(() => org.normalizeFolderName("x".repeat(61)), /at most 60/);
+    assert.equal(org.normalizeTagName("#WhatsApp"), "whatsapp");
+    assert.deepEqual(org.parseTagList(["Sales", " whatsapp", "sales", ""]), ["sales", "whatsapp"]);
+    assert.throws(() => org.parseTagList(Array.from({ length: 11 }, (_, i) => `t${i}`)), /at most 10 tags/);
+    assert.deepEqual(org.workflowListFilter({}), {});
+    assert.deepEqual(org.workflowListFilter({ folder: "none" }), { folderId: null });
+    assert.deepEqual(org.workflowListFilter({ folder: "f1", tag: "t1" }), { folderId: "f1", tags: { some: { tagId: "t1" } } });
+
+    const { readFileSync } = await import("node:fs");
+    const router = readFileSync("src/features/workflows/server/folders.ts", "utf8");
+    assert.match(router, /createFolder: builderProcedure/);
+    assert.match(router, /moveWorkflow: editorProcedure/);
+    assert.match(router, /setTags: editorProcedure/);
+    // A folder of another account cannot be used
+    assert.match(router, /prisma\.workflowFolder\.findFirst\(\{ where: \{ id: input\.folderId, userId: ownerId \} \}\)/);
+    const workflows = readFileSync("src/features/workflows/server/routers.ts", "utf8");
+    assert.match(workflows, /\.\.\.workflowListFilter\(input\),/);
+    assert.match(workflows, /folderId: source\.folderId,/);
+  });
+
   console.log(`\n${passed} checks passed`);
 };
 

@@ -2272,6 +2272,22 @@ Needs an OpenAI key with image access; each run costs a few cents.
 | 6 | Custom base URL `http://127.0.0.1` | refused by the SSRF guard |
 | 7 | A wrong API key | fails with OpenAI's message, no key in it |
 
+## T44. Folders and tags
+
+| # | Do | Expect |
+| - | -- | ------ |
+| 1 | Workflows → New folder `Sales` | the folder list shows "Sales (0)" and it is picked |
+| 2 | A workflow's menu → Move to folder → Sales | it shows a Sales badge; "Sales (1)"; its "Updated" time is unchanged |
+| 3 | Pick "Not in a folder" | that workflow is not listed |
+| 4 | Edit tags... `WhatsApp, leads` | badges `#whatsapp` `#leads` |
+| 5 | Pick the tag `leads` | only workflows with it |
+| 6 | Rename the folder to `Sales bots` | the badge follows |
+| 7 | Delete the folder | the workflow is still there, without a folder |
+| 8 | Delete the tag `leads` | it is gone from every workflow |
+| 9 | A folder name that exists | "There is already a folder ..." |
+| 10 | 11 tags | "A workflow can have at most 10 tags" |
+| 11 | An empty folder picked | "No workflows here..." (not "You haven't created any workflows") |
+
 # When something fails
 
 Note the node, the exact values you entered, and the error text from the

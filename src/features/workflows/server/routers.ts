@@ -37,6 +37,7 @@ import {
     WorkflowImportError,
 } from "../lib/workflow-json";
 import { buildWorkflowCopy } from "../lib/workflow-copy";
+import { workflowListFilter } from "../lib/workflow-organize";
 
 import { isValidTimeZone } from "@/lib/time-zones";
 
@@ -269,7 +270,7 @@ export const workflowsRouter = createTRPCRouter({
             const source = assertOwnership(
                 await prisma.workflow.findUnique({
                     where: { id: input.id },
-                    include: { nodes: true, connections: true },
+                    include: { nodes: true, connections: true, tags: { select: { tagId: true } } },
                 }),
                 ownerId,
                 "Workflow"
@@ -295,6 +296,9 @@ export const workflowsRouter = createTRPCRouter({
                         saveExecutionData: source.saveExecutionData,
                         aiBudgetCents: source.aiBudgetCents,
                         timezone: source.timezone,
+                        // In the same folder, with the same tags
+                        folderId: source.folderId,
+                        tags: { create: source.tags.map((link) => ({ tagId: link.tagId })) },
                     },
                 });
                 await tx.node.createMany({
@@ -1016,34 +1020,34 @@ export const workflowsRouter = createTRPCRouter({
                     .max(PAGINATION.MAX_PAGE_SIZE)
                     .default(PAGINATION.DEFAULT_PAGE_SIZE),
                 search: z.string().default(""),
+                folder: z.string().max(100).default(""),
+                tag: z.string().max(100).default(""),
             })
         )
         .query(async ({ ctx, input }) => {
             const { page, pageSize, search } = input
+            const where = {
+                userId: ctx.workspace.ownerId,
+                name: {
+                    contains: search,
+                    mode: "insensitive" as const,
+                },
+                ...workflowListFilter(input),
+            }
             const [items, totalCount] = await Promise.all([
                 prisma.workflow.findMany({
                     skip: (page - 1) * pageSize,
                     take: pageSize,
-                    where: {
-                        userId: ctx.workspace.ownerId,
-                        name: {
-                            contains: search,
-                            mode: "insensitive",
-                        },
-                    },
+                    where,
                     orderBy: {
                         updatedAt: "desc"
-                    }
+                    },
+                    include: {
+                        folder: { select: { id: true, name: true } },
+                        tags: { select: { tag: { select: { id: true, name: true } } } },
+                    },
                 }),
-                prisma.workflow.count({
-                    where: {
-                        userId: ctx.workspace.ownerId,
-                        name: {
-                            contains: search,
-                            mode: "insensitive",
-                        },
-                    }
-                })
+                prisma.workflow.count({ where })
             ])
 
             const totalPages = Math.ceil(totalCount / pageSize)
@@ -1051,7 +1055,11 @@ export const workflowsRouter = createTRPCRouter({
             const hasPreviousPage = page > 1;
 
             return {
-                items,
+                // The tags flat: [{ id, name }]
+                items: items.map(({ tags, ...item }) => ({
+                    ...item,
+                    tags: tags.map((link) => link.tag),
+                })),
                 page,
                 pageSize,
                 totalCount,
