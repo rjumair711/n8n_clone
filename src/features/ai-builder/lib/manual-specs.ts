@@ -480,17 +480,37 @@ export const MANUAL_SPECS: Record<string, ManualSpec> = {
         description:
           "The spreadsheet's ID from its URL. Only the user knows it: leave it empty unless they gave it.",
       },
+      {
+        name: "operation",
+        type: "select",
+        required: true,
+        options: ["append", "get_rows", "lookup", "update", "upsert"],
+        default: "append",
+      },
       { name: "sheetName", type: "text", required: true, default: "Sheet1" },
       {
         name: "rowData",
         type: "text",
-        required: true,
-        description: "The values of the new row, comma-separated, one per column.",
+        description: "append only: the values of the new row, comma-separated, one per column.",
         example: "{{form.name}}, {{form.email}}",
+      },
+      {
+        name: "matchColumn",
+        type: "text",
+        description: "A column name from row 1. Required for lookup, update and upsert; an optional filter for get_rows.",
+        example: "Order ID",
+      },
+      { name: "matchValue", type: "text", description: "The value that column must equal.", example: "{{whatsapp.from}}" },
+      {
+        name: "columnValues",
+        type: "textarea",
+        description: "update and upsert: one \"Column: value\" line per column to set.",
+        example: "Status: Paid\nAmount: {{order.total}}",
       },
       variableName("sheetsResult"),
     ],
-    notes: "Appends one row.",
+    notes:
+      "Row 1 holds the column names. append adds a row; get_rows returns { rows, count } (rows are objects with row_number; add Split Out on sheetsResult.rows); lookup returns { found, row }; update changes the first matching row and returns { updated, rowNumber, row }; upsert updates the match or appends a new row and returns { action: \"updated\" | \"appended\", row }.",
   },
   GOOGLE_CALENDAR: {
     credential: "GOOGLE_CALENDAR or GOOGLE_OAUTH2",

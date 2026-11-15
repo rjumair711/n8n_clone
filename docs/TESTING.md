@@ -2055,6 +2055,29 @@ Signed out, no account needed.
 | 7 | Phone width (375 px) on all three pages | no sideways scrolling; the long email address wraps |
 | 8 | Self-hosted image: open `/terms`, `/privacy`, `/contact` | each redirects to `/workflows`; the sign-up form has no Terms line |
 
+## T30. Google Sheets: Get Rows, Lookup, Update, Upsert
+
+Use the test account and a new test spreadsheet shared with its Google credential. Row 1: `Order ID | Name | Status`; rows 2 and 3: `A1 | Sara | New` and `A2 | Ali | New`. Run each node with **Test step**.
+
+| # | Do | Expect |
+| - | -- | ------ |
+| 1 | Open an existing Google Sheets node from before this change | Operation is **Append Row** with its values; it runs and appends as before |
+| 2 | Get Rows, no filter | `rows` has 2 objects with `row_number` 2 and 3, `count` 2 |
+| 3 | Get Rows, Filter Column `status`, Filter Value `New` | the same 2 rows (column name ignores case) |
+| 4 | Get Rows → Split Out on `sheetsResult.rows` → Set | the Set node runs twice, once per row |
+| 5 | Lookup Row, Column `Order ID`, Value `A2` | `found: true`, `row.Name` is Ali, `rowNumber` 3 |
+| 6 | Lookup Row, Value `A9` | `found: false`, `row: null`, no error |
+| 7 | Update Row, `Order ID` = `A1`, Values `Status: Paid` | row 2's Status is Paid in the sheet; Name unchanged; `updated: true` |
+| 8 | Update Row, Value `A9` | nothing changes; `updated: false`, no error |
+| 9 | Append or Update Row, `A2`, `Status: Shipped` | row 3 updated, `action: "updated"` |
+| 10 | Append or Update Row, `A3`, `Name: Zara` + `Status: New` | new row 4 `A3 | Zara | New`, `action: "appended"`, `rowNumber` 4 |
+| 11 | Values to Set `Phone: 123` | fails: `The sheet has no column "Phone". Row 1 has: Order ID, Name, Status` |
+| 12 | Values to Set `Status Paid` (no colon) | fails with the `Column: value` hint |
+| 13 | A tab named `Bob's Orders` | every operation works on it |
+| 14 | AI Agent with a Get Rows tool and an Update Row tool | Get Rows is listed as Read, Update Row as Write |
+
+Delete the test spreadsheet afterwards.
+
 # When something fails
 
 Note the node, the exact values you entered, and the error text from the

@@ -618,6 +618,24 @@ OCR and vision for a file a workflow has: a Form Trigger upload, an HTTP Request
 
 Telegram, WhatsApp, Messenger, Instagram, Typeform, Shopify, WooCommerce and Stripe need `NEXT_PUBLIC_APP_URL` to be a public https address. Every webhook route is rate limited per workflow.
 
+## Google Sheets rows
+
+The Google Sheets node has five operations, like n8n's. Row 1 of the tab holds the column names; matching ignores case and spaces at the ends of a column name.
+
+| Operation | Fields | Output |
+| --------- | ------ | ------ |
+| Append Row | Row Values, comma-separated (as before) | `{ updatedRange, updatedRows, updatedCells }` |
+| Get Rows | optional Filter Column and Filter Value | `{ rows, count }`. Each row is an object by column name with `row_number`. Add a Split Out on `sheetsResult.rows` to run the next nodes once per row |
+| Lookup Row | Column to Match On, Value to Match | `{ found, row, rowNumber, matches }`; `row` is `null` when nothing matches |
+| Update Row | Column to Match On, Value to Match, Values to Set | changes the cells of the **first** matching row only and leaves its other columns (and formulas) alone. `{ updated, rowNumber, row, matches }`; `updated: false` when nothing matches (not an error) |
+| Append or Update Row | the same | updates the first match, or appends a new row with the match value and the values set. `{ action: "updated" \| "appended", rowNumber, row }` |
+
+* **Values to Set** is one `Column: value` per line, for example `Status: Paid`. The lines are split before the values are rendered, so data with a colon or a line break in it stays in its column. A column that is not in row 1 is an error that lists the columns there.
+* A value equals when both, trimmed, are the same text as Google Sheets shows it (formatted values).
+* Blank headings are named after their column letter (`C`), a repeated heading gets `_2`. Empty rows are skipped.
+* Get Rows returns at most 3 MB of rows, then says `truncated: true` with a warning; filter to get fewer.
+* Nodes saved before these operations existed keep appending exactly as before. As an AI Agent tool, Get Rows and Lookup count as Read tools; the others as Write.
+
 ## Duplicate deliveries and retry
 
 Providers re-send an event when they are unsure it arrived. Each trigger remembers the events it accepted for 7 days and ignores a repeat:
@@ -806,7 +824,7 @@ Actions: `goto` (url), `click` (selector), `type` (selector, text), `select` (se
 
 | Node             | Description                                                               |
 | ---------------- | ------------------------------------------------------------------------- |
-| Google Sheets    | Append rows (Google account or service account)                           |
+| Google Sheets    | Append Row, Get Rows (with an optional filter), Lookup Row, Update Row and Append or Update Row (upsert by a key column). Google account or service account. See "Google Sheets rows" |
 | Google Calendar  | Create, update and delete events (Google account or service account)      |
 | Google Drive     | Search, upload, download, create folder, delete. Google Docs and Slides download as PDF, Sheets as CSV |
 | Gmail            | Send (with file attachments), reply, search, get and mark messages as read. A reply stays in the thread: to a message you received it goes to its sender, to a message you sent yourself (a follow-up) it goes to the people that message was sent to, with its CC only when **CC of a Message You Sent** is set to Keep |
@@ -1530,7 +1548,7 @@ Planned, not built. These are the pieces an agent needs to find link prospects, 
 
 | Planned item | What it needs |
 | ------------ | ------------- |
-| Google Sheets: row operations | Get Rows (with filter), Lookup Row, Update Row, Append or Update (upsert by a key column) and Delete Row; rows come out as a list so Split Out can take them |
+| Google Sheets: Delete Row | Get Rows, Lookup, Update and Append or Update are built (see "Google Sheets rows"); Delete Row is not yet |
 | IMAP Trigger and IMAP node | A trigger for new email in a folder (polling every 1, 5, 15 or 60 minutes, a search filter, duplicate check by Message-ID) and a node with Search, Get Message, Mark as Read and Move to Folder. Needs a new IMAP credential: host, port, TLS, username, app password |
 | Email (SMTP): headers and replies | Custom Headers (for `List-Unsubscribe` and `List-Unsubscribe-Post`), a "Reply To Message" option that sets `In-Reply-To` and `References` and adds "Re:", and the sent Message-ID in the output. The Gmail node returns `messageId` and `threadId` |
 | Per-item approval and "Approve with edits" | Send and Wait for Approval asks once per item, and each item continues through Approved or Rejected. "Approve with edits" makes the subject and body editable on the approval page and returns them as `{{approval.edited.subject}}` / `{{approval.edited.body}}`. Needs default values on Form fields |
