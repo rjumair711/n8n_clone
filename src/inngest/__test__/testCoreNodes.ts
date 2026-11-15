@@ -15611,6 +15611,56 @@ pour()</code></pre>
     assert.match(readFileSync("next.config.ts", "utf8"), /"\/terms", "\/privacy", "\/contact"\]/);
   });
 
+  await test("Google Sheets rows: headers, matching and Column: value lines", async () => {
+    const rows = await import("@/features/executions/components/googleSheet/rows");
+    const values = [
+      ["Order ID", "Name", "", "Name", "Status"],
+      ["A1", "Sara", "x", "S", "New"],
+      [],
+      ["", "  ", ""],
+      [" A2 ", "Ali", "", "", "Paid"],
+    ];
+    assert.deepEqual(rows.readHeaders(values), ["Order ID", "Name", "C", "Name_2", "Status"]);
+    const list = rows.valuesToRows(values);
+    // Empty rows are skipped, but row numbers stay those of the sheet
+    assert.deepEqual(list.map((row) => row.row_number), [2, 5]);
+    assert.equal(list[0].Name_2, "S");
+    assert.equal(list[1].Status, "Paid");
+    // Trimmed, exact values; the column name ignores case
+    assert.deepEqual(rows.matchRows(list, rows.readHeaders(values), " order id ", "A2").map((row) => row.row_number), [5]);
+    assert.equal(rows.matchRows(list, rows.readHeaders(values), "Status", "paid").length, 0);
+    assert.throws(() => rows.matchRows(list, rows.readHeaders(values), "Phone", "1"), /no column "Phone".*Order ID, Name/);
+
+    assert.deepEqual(rows.parseColumnValueLines("Status: Paid\r\n\r\nNote: at 10:30: ok"), [
+      { column: "Status", template: "Paid" },
+      { column: "Note", template: "at 10:30: ok" },
+    ]);
+    assert.throws(() => rows.parseColumnValueLines("Status Paid"), /Column: value/);
+
+    const headers = rows.readHeaders(values);
+    const writes = rows.resolveCellWrites(headers, [{ column: "status", value: "Done" }, { column: "Order ID", value: "A9" }]);
+    assert.deepEqual(writes.map((write) => [write.column, write.index]), [["Status", 4], ["Order ID", 0]]);
+    assert.deepEqual(rows.buildRowArray(headers, writes), ["A9", "", "", "", "Done"]);
+    assert.equal(rows.applyWrites(list[0], writes).Status, "Done");
+
+    assert.deepEqual([0, 25, 26, 51, 52, 701, 702].map(rows.columnLetter), ["A", "Z", "AA", "AZ", "BA", "ZZ", "AAA"]);
+    assert.equal(rows.quoteSheetName("Bob's Orders"), "'Bob''s Orders'");
+    assert.equal(rows.normalizeSheetsOperation(undefined), "append");
+    assert.equal(rows.normalizeSheetsOperation("upsert"), "upsert");
+
+    const big = Array.from({ length: 50 }, (_, index) => ({ row_number: index + 2, text: "x".repeat(100) }));
+    const capped = rows.capRows(big as never, 1000);
+    assert.equal(capped.truncated, true);
+    assert.ok(capped.rows.length > 0 && capped.rows.length < 50);
+
+    // Read operations are Read tools for an AI Agent; the rest write
+    const { getToolRisk } = await import("@/features/executions/lib/agent-tools");
+    assert.equal(getToolRisk("GOOGLE_SHEETS" as never, { operation: "get_rows" }), "read");
+    assert.equal(getToolRisk("GOOGLE_SHEETS" as never, { operation: "lookup" }), "read");
+    assert.equal(getToolRisk("GOOGLE_SHEETS" as never, { operation: "upsert" }), "write");
+    assert.equal(getToolRisk("GOOGLE_SHEETS" as never, { operation: "update" }), "write");
+  });
+
   console.log(`\n${passed} checks passed`);
 };
 

@@ -5,9 +5,14 @@ import { GoogleSheetsDialog, GoogleSheetsFormValues } from "./dialog"; // Dialog
 import { Database } from "lucide-react";  // Icon import for Google Sheets node
 import { useNodeStatus } from "../../hooks/use-node-status";
 import { SHEETS_CHANNEL_NAME } from "@/inngest/channels/googleSheet";
+import { normalizeSheetsOperation, SHEETS_OPERATION_LABELS } from "./rows";
 
 // Define the data type for Google Sheets Node
 type GoogleSheetsNodeData = {
+  operation?: string;
+  matchColumn?: string;
+  matchValue?: string;
+  columnValues?: string;
   credentialId?: string;
   sheetId?: string;
   sheetName?: string;
@@ -42,7 +47,7 @@ export const GoogleSheetsNode = memo((props: NodeProps<GoogleSheetsNodeType>) =>
 
   // Without a credential it cannot run, whatever else is filled in
   const description = props.data?.credentialId
-    ? `Google Sheet ID: ${props.data?.sheetId || "Not configured"}`
+    ? `${SHEETS_OPERATION_LABELS[normalizeSheetsOperation(props.data?.operation)]}: ${props.data?.sheetName || "Sheet1"}`
     : "Not Configured";
 
   return (
