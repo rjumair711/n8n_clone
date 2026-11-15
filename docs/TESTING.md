@@ -2114,6 +2114,19 @@ Use the test account, a WhatsApp test number and your own phone (message the num
 | 8 | Buttons in Urdu (`ہاں`, `نہیں`) | sent and shown right to left |
 | 9 | An existing Send Text node | unchanged |
 
+## T33. Images from Telegram and WhatsApp as files
+
+| # | Do | Expect |
+| - | -- | ------ |
+| 1 | Send a photo with the caption `receipt` to the Telegram bot | `telegram.image` is a file (`photo.jpg`, image/jpeg) and `chatInput` is `receipt` |
+| 2 | Send a PNG to the bot as a file (paperclip → File) | `telegram.image` is the PNG with its name |
+| 3 | Send a PDF to the bot | no `telegram.image` (not an image); the run still starts |
+| 4 | WhatsApp Trigger with a WhatsApp credential: send a photo with caption `paid` | `whatsapp.image` is a file, `whatsapp.text` and `chatInput` are `paid` |
+| 5 | The same without a credential on the trigger | the run starts; `whatsapp.imageError` says no credential is selected |
+| 6 | Trigger → Analyze Image (File `whatsapp.image`, Describe) | the description of the photo |
+| 7 | Send a voice note to both | `voice` works exactly as before |
+| 8 | Executions → open the run → the file | it opens and is removed after the file retention period |
+
 # When something fails
 
 Note the node, the exact values you entered, and the error text from the
