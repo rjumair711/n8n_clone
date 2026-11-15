@@ -15983,6 +15983,20 @@ pour()</code></pre>
     assert.match(readFileSync("prisma/schema.prisma", "utf8"), /failureAlertEmails\s+Boolean\s+@default\(true\)/);
   });
 
+  await test("schema: data tables, folders, tags, onboarding, sticky notes and image nodes are additive", async () => {
+    const { readFileSync, readdirSync } = await import("node:fs");
+    const dir = readdirSync("prisma/migrations").find((name) => name.endsWith("_data_tables_folders_tags_sticky_image"));
+    assert.ok(dir, "migration exists");
+    const sql = readFileSync(`prisma/migrations/${dir}/migration.sql`, "utf8");
+    // Nothing is dropped, renamed or made required on an existing table
+    assert.equal(/\bDROP\b|\bRENAME\b|SET NOT NULL/i.test(sql), false);
+    assert.match(sql, /ALTER TABLE "Workflow" ADD COLUMN\s+"folderId" TEXT;/);
+    assert.match(sql, /ALTER TABLE "user" ADD COLUMN\s+"onboarding" JSONB;/);
+    for (const value of ["DATA_TABLE", "IMAGE_GENERATION", "STICKY_NOTE"]) assert.match(sql, new RegExp(`ADD VALUE '${value}'`));
+    // Deleting a folder keeps its workflows
+    assert.match(sql, /"Workflow_folderId_fkey"[^;]*ON DELETE SET NULL/);
+  });
+
   console.log(`\n${passed} checks passed`);
 };
 

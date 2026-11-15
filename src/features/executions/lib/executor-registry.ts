@@ -204,6 +204,12 @@ const baseExecutors: Record<NodeType, NodeExecutor<any>> = {
   [NodeType.BROWSER]: browserExecutor,
   [NodeType.TRANSCRIBE_AUDIO]: transcribeAudioExecutor,
   [NodeType.TEXT_TO_SPEECH]: textToSpeechExecutor,
+  // Placeholder until its node is added
+  [NodeType.DATA_TABLE]: async ({ context }) => context,
+  // Placeholder until its node is added
+  [NodeType.IMAGE_GENERATION]: async ({ context }) => context,
+  // Placeholder until its node is added
+  [NodeType.STICKY_NOTE]: async ({ context }) => context,
   [NodeType.TYPEFORM_TRIGGER]: contextTriggerExecutor,
   [NodeType.SHOPIFY]: shopifyExecutor,
   [NodeType.WOOCOMMERCE]: woocommerceExecutor,

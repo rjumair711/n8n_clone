@@ -52,6 +52,12 @@ model User {
   // An email to the owner when a workflow run fails (at most one an hour
   // per workflow). On unless switched off in Settings
   failureAlertEmails     Boolean          @default(true)
+  // Onboarding checklist: { usedTemplate?: true, dismissed?: true }. The
+  // other steps are read from the account's own data
+  onboarding             Json?
+  dataTables             DataTable[]
+  workflowFolders        WorkflowFolder[]
+  workflowTags           WorkflowTag[]
   // Set by Better Auth's two-factor plugin once a code has been verified
   twoFactorEnabled       Boolean?         @default(false)
   twoFactors             TwoFactor[]
@@ -334,6 +340,10 @@ model Workflow {
   aiBudgetCents Int?
   // IANA time zone its schedules run in ("Asia/Karachi"). Null: UTC
   timezone    String?
+  // Folder on the Workflows page. Null: not in a folder
+  folderId    String?
+  folder      WorkflowFolder? @relation(fields: [folderId], references: [id], onDelete: SetNull)
+  tags        WorkflowTagLink[]
   // The owner of the workspace the workflow belongs to
   userId      String
   user        User         @relation(fields: [userId], references: [id], onDelete: Cascade)
@@ -353,6 +363,74 @@ model Workflow {
   @@index([workspaceId])
   // The Workflows list and every count of a workspace's workflows
   @@index([userId, updatedAt])
+  @@index([folderId])
+}
+
+// A folder on the Workflows page, of the workspace owner's account
+model WorkflowFolder {
+  id        String     @id @default(cuid())
+  userId    String
+  user      User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  name      String
+  createdAt DateTime   @default(now())
+  updatedAt DateTime   @updatedAt
+  workflows Workflow[]
+
+  @@unique([userId, name])
+  @@map("workflow_folder")
+}
+
+// A tag workflows can carry, of the workspace owner's account
+model WorkflowTag {
+  id        String            @id @default(cuid())
+  userId    String
+  user      User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+  name      String
+  createdAt DateTime          @default(now())
+  workflows WorkflowTagLink[]
+
+  @@unique([userId, name])
+  @@map("workflow_tag")
+}
+
+model WorkflowTagLink {
+  workflowId String
+  workflow   Workflow    @relation(fields: [workflowId], references: [id], onDelete: Cascade)
+  tagId      String
+  tag        WorkflowTag @relation(fields: [tagId], references: [id], onDelete: Cascade)
+
+  @@id([workflowId, tagId])
+  @@index([tagId])
+  @@map("workflow_tag_link")
+}
+
+// Data Table node: a small named table of rows by key, per account, for
+// "already contacted" lists and agent state
+model DataTable {
+  id        String         @id @default(cuid())
+  userId    String
+  user      User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  name      String
+  createdAt DateTime       @default(now())
+  updatedAt DateTime       @updatedAt
+  rows      DataTableRow[]
+
+  @@unique([userId, name])
+  @@map("data_table")
+}
+
+model DataTableRow {
+  id        String    @id @default(cuid())
+  tableId   String
+  table     DataTable @relation(fields: [tableId], references: [id], onDelete: Cascade)
+  key       String
+  data      Json
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+
+  @@unique([tableId, key])
+  @@index([tableId, updatedAt])
+  @@map("data_table_row")
 }
 
 // Executions counted against the plan, per workspace owner and month (UTC).
@@ -749,6 +827,10 @@ enum NodeType {
   THINK_TOOL
   AI_AGENT_TOOL
   BROWSER
+  DATA_TABLE
+  IMAGE_GENERATION
+  // A note on the canvas; never runs
+  STICKY_NOTE
 }
 
 model Node {
