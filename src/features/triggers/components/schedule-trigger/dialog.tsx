@@ -9,6 +9,41 @@ import { Button } from "@/components/ui/button";
 import { useEffect } from "react";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Clock } from "lucide-react";
+import { useParams } from "next/navigation";
+import { useQuery } from "@tanstack/react-query";
+import { useTRPC } from "@/trpc/client";
+import { nextCronRuns } from "@/lib/schedule-due";
+import { effectiveTimeZone } from "@/lib/time-zones";
+
+// Which clock the schedule reads (Workflow settings -> Time zone) and when
+// it runs next, so nobody has to convert from UTC by hand
+const ScheduleTimeHint = ({ cronExpression }: { cronExpression: string }) => {
+    const { workflowId } = useParams<{ workflowId?: string }>();
+    const trpc = useTRPC();
+    const workflow = useQuery({
+        ...trpc.workflows.getOne.queryOptions({ id: workflowId ?? "" }),
+        enabled: !!workflowId,
+    });
+    const zone = effectiveTimeZone(workflow.data?.timezone);
+
+    let next: string[] = [];
+    try {
+        const format = new Intl.DateTimeFormat("en-GB", {
+            timeZone: zone, weekday: "short", day: "numeric", month: "short", hour: "2-digit", minute: "2-digit",
+        });
+        next = nextCronRuns(cronExpression.trim(), 3, zone).map((date) => format.format(date));
+    } catch {
+        next = [];
+    }
+
+    return (
+        <p className="text-xs text-muted-foreground">
+            Runs on <strong>{zone}</strong> time
+            {zone === "UTC" ? " (set the workflow's time zone in Workflow settings)" : ""}.
+            {next.length > 0 && <> Next: {next.join(" · ")}</>}
+        </p>
+    );
+};
 
 const formSchema = z.object({
     variableName: z
@@ -145,6 +180,7 @@ export const ScheduleDialog = ({
                                     <FormDescription>
                                         Standard 5-field UNIX syntax: <code className="bg-muted px-1 py-0.5 rounded text-xs font-mono">min hour dom mon dow</code>
                                     </FormDescription>
+                                    <ScheduleTimeHint cronExpression={field.value || ""} />
                                     <FormMessage />
                                 </FormItem>
                             )}

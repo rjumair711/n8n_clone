@@ -14,6 +14,7 @@ import Link from 'next/link'
 import { useEffect, useRef, useState } from 'react'
 import { editorAtom } from '../store/atoms'
 import { VersionHistory } from '@/features/workflows/components/version-history'
+import { WorkflowTimezoneDialog } from '@/features/workflows/components/workflow-timezone-dialog'
 
 
 
@@ -54,6 +55,7 @@ export const EditorSettingsMenu = ({ workflowId }: { workflowId: string }) => {
     const setSaveExecutionData = useSetSaveExecutionData()
     const exportWorkflow = useExportWorkflow()
     const [budgetOpen, setBudgetOpen] = useState(false)
+    const [timezoneOpen, setTimezoneOpen] = useState(false)
 
     return (
         <>
@@ -61,6 +63,12 @@ export const EditorSettingsMenu = ({ workflowId }: { workflowId: string }) => {
             workflowId={workflowId}
             open={budgetOpen}
             onOpenChange={setBudgetOpen}
+        />
+        <WorkflowTimezoneDialog
+            workflowId={workflowId}
+            timezone={workflow.timezone ?? null}
+            open={timezoneOpen}
+            onOpenChange={setTimezoneOpen}
         />
         <DropdownMenu>
             <DropdownMenuTrigger asChild>
@@ -87,6 +95,17 @@ export const EditorSettingsMenu = ({ workflowId }: { workflowId: string }) => {
                         </p>
                     </div>
                 </DropdownMenuCheckboxItem>
+                <DropdownMenuItem
+                    onSelect={() => setTimezoneOpen(true)}
+                    className='items-start pl-8'
+                >
+                    <div className='space-y-1'>
+                        <div>Time zone: {workflow.timezone ?? 'UTC'}</div>
+                        <p className='text-xs text-muted-foreground'>
+                            The clock this workflow&apos;s Schedule Triggers read.
+                        </p>
+                    </div>
+                </DropdownMenuItem>
                 <DropdownMenuItem
                     onSelect={() => exportWorkflow.mutate({ id: workflowId })}
                     disabled={exportWorkflow.isPending}

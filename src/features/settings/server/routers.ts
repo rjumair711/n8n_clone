@@ -12,6 +12,31 @@ import { describeUserAgent } from "../lib/user-agent";
 const AUDIT_LOG_MAX_ROWS = 500;
 
 export const settingsRouter = createTRPCRouter({
+    // Email notifications: an email when a workflow run fails
+    getNotifications: protectedProcedure.query(async ({ ctx }) => {
+        const user = await prisma.user.findUnique({
+            where: { id: ctx.auth.user.id },
+            select: { failureAlertEmails: true },
+        });
+
+        return {
+            failureAlertEmails: user?.failureAlertEmails ?? true,
+            // Without an email service nothing can be sent, whatever is set
+            emailAvailable: !!process.env.RESEND_API_KEY,
+        };
+    }),
+
+    setFailureAlertEmails: protectedProcedure
+        .input(z.object({ enabled: z.boolean() }))
+        .mutation(async ({ ctx, input }) => {
+            const user = await prisma.user.update({
+                where: { id: ctx.auth.user.id },
+                data: { failureAlertEmails: input.enabled },
+                select: { failureAlertEmails: true },
+            });
+            return user;
+        }),
+
     // What the Security section needs to know about the account
     getSecurity: protectedProcedure.query(async ({ ctx }) => {
         const user = await prisma.user.findUnique({

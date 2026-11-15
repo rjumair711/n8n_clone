@@ -291,6 +291,25 @@ Realtime workflow updates use:
 * Node-level diagnostics
 * Retry diagnostics
 
+### Failure emails
+
+When a run fails, the workflow's owner gets an email, **on by default** so nobody has to build an Error Trigger workflow first (`src/lib/failure-alerts.ts`).
+
+* **What it says:** the workflow, the failed node, the error (redacted like the execution log, shortened to 1,000 characters) and links to the execution and the workflow.
+* **At most one an hour per workflow.** A schedule that fails every minute sends one email, not sixty. The count is kept in the `rate_limit` table under `failure-alert:<workflowId>`.
+* **Not sent** for test runs from the editor (Manual and "Test run from editor") or evaluation rows, and not for a workflow whose failures an Error Trigger already handles (its own, or one with scope "all"). A failing error workflow does send one.
+* **Turning it off:** Settings → Profile → "Email me when a workflow fails" (`User.failureAlertEmails`, true for every account until switched off).
+* Sent with Resend from `EMAIL_FROM`. Without `RESEND_API_KEY` nothing is sent, and the setting says so. An email that cannot be sent never changes how the run failed.
+
+## Workflow time zone
+
+Schedules used to run on UTC only, so a 9:00 report in Pakistan had to be written as `0 4 * * *`. Now each workflow has a **Time zone** (editor → Workflow settings → Time zone), like n8n's workflow setting.
+
+* An IANA name such as `Asia/Karachi`, `Asia/Riyadh` or `Europe/London`; the picker lists the common ones first with their UTC offset and the time there now. Daylight saving is followed.
+* Every Schedule Trigger in the workflow reads its cron on that clock: `0 9 * * *` in Asia/Karachi runs at 9:00 Pakistan time, and weekdays are that zone's weekdays. The Schedule Trigger dialog shows the zone and the next three runs.
+* **No zone is UTC**, exactly as before, so existing workflows keep their times. Choosing UTC stores none. A stored name that stops being valid falls back to UTC.
+* Stored as `Workflow.timezone`. Only schedules use it; `$now`, the Date & Time node and the timestamps in executions are unchanged.
+
 ---
 
 # 🧠 AI Integrations
@@ -607,7 +626,7 @@ OCR and vision for a file a workflow has: a Form Trigger upload, an image sent t
 | Trigger             | Description                                                                                                |
 | ------------------- | ---------------------------------------------------------------------------------------------------------- |
 | Manual Trigger      | Manual execution on user demand                                                                            |
-| Schedule Trigger    | Time-based automatic triggers evaluated each minute using custom Cron intervals (e.g., `*/5 * * * *`)       |
+| Schedule Trigger    | Time-based automatic triggers evaluated each minute using custom Cron intervals (e.g., `*/5 * * * *`), read on the workflow's time zone (Workflow settings → Time zone; UTC when none is set). The dialog shows the zone and the next three runs |
 | Webhook Trigger     | Runs on any HTTP request to `/api/webhooks/trigger/<workflowId>`, protected by a per-node secret. Respond immediately, when the last node finishes, or with a Respond to Webhook node |
 | Chat Trigger        | Runs when a message is sent from the editor's chat panel, or (with "Make chat public") from the hosted chat page or the website widget; provides `chatInput` and `sessionId` |
 | Telegram Trigger    | Runs when your bot receives a message. The bot's webhook is registered when the workflow is activated. A voice message is given as a file at `{{telegram.voice}}`, a photo at `{{telegram.image}}` (its caption is `{{chatInput}}`) |
@@ -1505,7 +1524,7 @@ Anyone can run RXJ on their own VPS with Docker: [`docs/SELF_HOSTING.md`](docs/S
 | `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` | Google sign-in and the "Google account" credential. Add `<app URL>/api/oauth/google/callback` as an authorised redirect URI |
 | `GITHUB_CLIENT_ID`, `GITHUB_CLIENT_SECRET` | GitHub sign-in |
 | `SALESFORCE_CLIENT_ID`, `SALESFORCE_CLIENT_SECRET` | The Salesforce connected app behind "Connect Salesforce". Its callback URL is `<app URL>/api/oauth/salesforce/callback`, with the `api` and `refresh_token, offline_access` scopes |
-| `RESEND_API_KEY` | Sends verification and password-reset emails. Email verification is only required when this is set |
+| `RESEND_API_KEY` | Sends verification, password-reset and failure emails. Email verification is only required when this is set |
 | `EMAIL_FROM` | Sender of those emails; must be on a domain verified in Resend |
 | `REQUIRE_EMAIL_VERIFICATION` | Set to `false` to switch verification off |
 | `POLAR_*` | Billing (access token, product IDs, webhook secret, success URL). `POLAR_WEBHOOK_SECRET` is what Polar's webhooks are verified with |
