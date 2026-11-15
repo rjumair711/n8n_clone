@@ -2178,6 +2178,18 @@ Needs `RESEND_API_KEY`. Use the test account (its email must receive mail).
 
 Switch the setting back on and delete the test workflows afterwards.
 
+## T37. Contact memory
+
+Use the test account and a workflow with an AI Agent and a Postgres Memory node (Long-Term Facts on, Contact ID `{{whatsapp.from}}` or a fixed test value).
+
+| # | Do | Expect |
+| - | -- | ------ |
+| 1 | Chat with the agent: "My name is Sara and I like blue" | Settings → AI → Contact memory lists the contact with its facts |
+| 2 | Search for `blue` | only that contact |
+| 3 | Delete one fact | it is gone from the list; ask the agent and it no longer knows it |
+| 4 | **Delete all** on the contact, confirm | the contact disappears |
+| 5 | As a viewer of the workspace | the list shows, without delete buttons |
+
 # When something fails
 
 Note the node, the exact values you entered, and the error text from the

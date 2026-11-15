@@ -15997,6 +15997,20 @@ pour()</code></pre>
     assert.match(sql, /"Workflow_folderId_fkey"[^;]*ON DELETE SET NULL/);
   });
 
+  await test("contact memory: listed and deleted only within the owner's account", async () => {
+    const { readFileSync } = await import("node:fs");
+    const router = readFileSync("src/features/memory/server/routers.ts", "utf8");
+    assert.match(router, /listContacts: viewerProcedure/);
+    assert.match(router, /deleteFact: editorProcedure/);
+    assert.match(router, /deleteContact: editorProcedure/);
+    // Every query is limited to the workspace owner's facts
+    assert.equal((router.match(/userId: ctx\.workspace\.ownerId|const userId = ctx\.workspace\.ownerId/g) ?? []).length, 3);
+    assert.match(router, /where: \{ id: input\.id, userId: ctx\.workspace\.ownerId \}/);
+    const { SETTINGS_SECTIONS } = await import("@/features/settings/lib/sections");
+    assert.ok(SETTINGS_SECTIONS.some((section) => section.slug === "contact-memory"));
+    assert.ok(readFileSync("src/app/(dashboard)/(rest)/settings/contact-memory/page.tsx", "utf8").includes('slug="contact-memory"'));
+  });
+
   console.log(`\n${passed} checks passed`);
 };
 

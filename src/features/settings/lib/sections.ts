@@ -77,6 +77,11 @@ export const SETTINGS_GROUPS: SettingsGroup[] = [
         adminOnly: true,
       },
       {
+        slug: "contact-memory",
+        title: "Contact memory",
+        description: "What AI agents remember about each contact, and deleting it.",
+      },
+      {
         slug: "ai-budgets",
         title: "AI budgets",
         description: "This month's AI spend and the workspace's monthly AI budget.",

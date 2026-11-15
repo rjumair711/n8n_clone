@@ -186,7 +186,7 @@ Every workflow keeps its earlier versions, so a change can be looked at and undo
 * **Settings** has its own menu (tabs on a phone) and one page per section, `/settings/<section>`; `/settings` opens Profile, and the old `/api-keys` opens Settings → API Keys.
   * **Account:** Profile (change your name), Security (change your password, two-factor authentication, sessions), API Keys. An account that signs in with Google or GitHub has no password; **Forgot your password?** on the login page gives it one. Name and password changes are in the audit log, without the values.
   * **Workspace:** General (name, invitations for you, leaving), Members & roles, Usage, Audit log (your account's sign-ins and changes).
-  * **AI:** AI budgets (this month's spend; the budget is set by the workspace's owner and admins). Model prices and RXJ AI included are the platform admins' settings and are only in their menu; anyone else who opens them by address reads "Admins only".
+  * **AI:** Contact memory (what agents remember about each contact, with delete buttons; see "Persistent memory"), AI budgets (this month's spend; the budget is set by the workspace's owner and admins). Model prices and RXJ AI included are the platform admins' settings and are only in their menu; anyone else who opens them by address reads "Admins only".
   * A section your role cannot use says so ("Owners and admins only", "Admins only") instead of showing its controls. The server checks the same rules.
 
 ## Teams and roles
@@ -422,6 +422,7 @@ A second node for the agent's Memory port, next to the simple Memory node. It ke
 
   What is saved is also shown to the model at the start of every turn, so it does not have to ask first. The two tools only touch the agent's own notes and never ask for approval.
 * **Contact ID** says who the facts are about. Empty means the session. Use something that stays the same for a person, for example `{{whatsapp.from}}` or a customer ID, so the facts are there in the next conversation too.
+* **Seeing and deleting them:** Settings → AI → **Contact memory** lists every contact with facts (newest change first, searchable by contact or fact) with a delete button per fact and **Delete all** per contact, for example when a customer asks to be forgotten. Viewers can look; editors and up can delete. Deleted facts are gone for good: the agent no longer knows them.
 * **Limits:** 50 facts per contact, a key of up to 64 characters (lower case letters, digits and `_`), a value of one line of up to 500 characters.
 * **Facts belong to the account, not to one workflow.** Every agent of the same account that uses the same Contact ID sees and changes the same facts. Another account never does.
 * **What the model wrote is treated as notes.** The summary and the facts are given to the model marked as data, with the instruction not to follow anything written inside them, and a fact cannot contain line breaks or angle brackets. This lowers, but cannot remove, the risk that a user talks the agent into "remembering" an instruction.
