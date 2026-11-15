@@ -5,7 +5,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { SidebarTrigger } from '@/components/ui/sidebar'
 import { Switch } from '@/components/ui/switch'
-import { useSetSaveExecutionData, useSetWorkflowActive, useSuspenseWorkflow, useUpdateWorkflow, useUpdateWorkflowName } from '@/features/workflows/hooks/use-workflows'
+import { useExportWorkflow, useSetSaveExecutionData, useSetWorkflowActive, useSuspenseWorkflow, useUpdateWorkflow, useUpdateWorkflowName } from '@/features/workflows/hooks/use-workflows'
 import { DropdownMenu, DropdownMenuCheckboxItem, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
 import { WorkflowBudgetDialog } from '@/features/ai-usage/components/workflow-budget-dialog'
 import { useAtomValue } from 'jotai'
@@ -52,6 +52,7 @@ export const EditorSaveButton = ({ workflowId }: { workflowId: string }) => {
 export const EditorSettingsMenu = ({ workflowId }: { workflowId: string }) => {
     const { data: workflow } = useSuspenseWorkflow(workflowId)
     const setSaveExecutionData = useSetSaveExecutionData()
+    const exportWorkflow = useExportWorkflow()
     const [budgetOpen, setBudgetOpen] = useState(false)
 
     return (
@@ -86,6 +87,19 @@ export const EditorSettingsMenu = ({ workflowId }: { workflowId: string }) => {
                         </p>
                     </div>
                 </DropdownMenuCheckboxItem>
+                <DropdownMenuItem
+                    onSelect={() => exportWorkflow.mutate({ id: workflowId })}
+                    disabled={exportWorkflow.isPending}
+                    className='items-start pl-8'
+                >
+                    <div className='space-y-1'>
+                        <div>Download as JSON</div>
+                        <p className='text-xs text-muted-foreground'>
+                            The saved version, for a backup or another account.
+                            Secrets and webhook URLs are left out.
+                        </p>
+                    </div>
+                </DropdownMenuItem>
                 <DropdownMenuItem
                     onSelect={() => setBudgetOpen(true)}
                     className='items-start pl-8'

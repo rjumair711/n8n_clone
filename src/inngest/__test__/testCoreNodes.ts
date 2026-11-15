@@ -12202,7 +12202,7 @@ pour()</code></pre>
 
     // A button in the editor and in the workflows list
     assert.match(read("src/features/editor/components/editor.tsx"), /<EditorBuildWithAi \/>/);
-    assert.match(read("src/features/workflows/components/workflows.tsx"), /actions=\{<BuildWithAiButton \/>\}/);
+    assert.match(read("src/features/workflows/components/workflows.tsx"), /actions=\{<><ImportWorkflowButton disabled=\{disabled\} \/><BuildWithAiButton \/><\/>\}/);
     // The editor applies the result to the canvas and leaves saving to the user
     const editorDialog = read("src/features/ai-builder/components/editor-build-with-ai.tsx");
     assert.match(editorDialog, /setEdges\(graph\.edges\);/);
@@ -15815,6 +15815,79 @@ pour()</code></pre>
       context: { telegram: { message: { photo: [{ file_id: "huge", width: 9000, height: 9000, file_size: MAX_FILE_BYTES + 1 }] } } },
     });
     assert.match(big.telegram.imageError, /the image is larger than/);
+  });
+
+  await test("workflow export and import: no secrets out, no foreign references in", async () => {
+    const wf = await import("@/features/workflows/lib/workflow-json");
+    const exported = wf.buildWorkflowExport(
+      {
+        name: "Order bot",
+        nodes: [
+          { id: "init", type: "INITIAL", position: { x: 0, y: 0 }, data: {} },
+          { id: "t", type: "WHATSAPP_TRIGGER", position: { x: 1, y: 2 }, data: { verifyToken: "vt", appSecret: "as", credentialId: "cred-mine" } },
+          { id: "s", type: "SLACK", position: { x: 3, y: 4 }, data: { webhookUrl: "https://hooks.slack.com/x", text: "hi" } },
+          { id: "a", type: "AI_AGENT", position: { x: 5, y: 6 }, data: { fallbackModels: [{ credentialId: "cred-other", model: "m" }], toolSettings: { s: { name: "notify" } } } },
+        ],
+        connections: [
+          { fromNodeId: "init", toNodeId: "t", fromOutput: "main", toInput: "main" },
+          { fromNodeId: "t", toNodeId: "a", fromOutput: "main", toInput: "main" },
+          { fromNodeId: "s", toNodeId: "a", fromOutput: "main", toInput: "tools" },
+        ],
+      },
+      new Date("2026-11-15T00:00:00Z"),
+    );
+    const text = JSON.stringify(exported);
+    assert.equal(exported.format, "rxj-workflow");
+    assert.equal(exported.exportedAt, "2026-11-15T00:00:00.000Z");
+    assert.deepEqual(exported.nodes.map((node) => node.id), ["t", "s", "a"]);
+    assert.equal(exported.connections.length, 2);
+    for (const secret of ["vt", "\"as\"", "hooks.slack.com"]) assert.equal(text.includes(secret), false, secret);
+    // Which credential a node uses is kept
+    assert.equal(exported.nodes[0].data.credentialId, "cred-mine");
+    assert.equal(wf.exportFileName("Order bot (WhatsApp)"), "order-bot-whatsapp.json");
+    assert.equal(wf.exportFileName("!!!"), "workflow.json");
+
+    // Back in: fresh ids, its own credentials kept, others removed
+    let n = 0;
+    const prepared = wf.prepareWorkflowImport(wf.parseWorkflowFile(JSON.stringify(exported)), {
+      knownTypes: new Set(["WHATSAPP_TRIGGER", "AI_AGENT"]),
+      ownedCredentialIds: new Set(["cred-mine"]),
+      ownedWorkflowIds: new Set(),
+      createId: () => `new${++n}`,
+    });
+    assert.equal(prepared.name, "Order bot");
+    assert.deepEqual(prepared.report, { skippedTypes: ["SLACK"], clearedCredentials: 1, clearedWorkflowLinks: 0 });
+    assert.deepEqual(prepared.nodes.map((node) => node.id), ["new1", "new2"]);
+    assert.equal(prepared.nodes[0].data.credentialId, "cred-mine");
+    assert.deepEqual(prepared.nodes[1].data.fallbackModels, [{ model: "m" }]);
+    // The connection to the left-out Slack node goes with it
+    assert.deepEqual(prepared.connections, [{ fromNodeId: "new1", toNodeId: "new2", fromOutput: "main", toInput: "main" }]);
+    assert.match(wf.describeImportReport(prepared.report).join(". "), /SLACK.*1 node credential must be selected again/);
+
+    // A hand-made file: secrets are still dropped, a foreign workflow link cleared
+    const manual = wf.prepareWorkflowImport(
+      wf.parseWorkflowFile(JSON.stringify({ nodes: [{ id: "x", type: "EXECUTE_WORKFLOW", data: { workflowId: "theirs", secret: "s3" } }] })),
+      { knownTypes: new Set(["EXECUTE_WORKFLOW"]), ownedCredentialIds: new Set(), ownedWorkflowIds: new Set(), createId: () => "id" },
+    );
+    assert.equal(manual.name, "Imported workflow");
+    assert.deepEqual(manual.nodes[0].data, {});
+    assert.deepEqual(manual.nodes[0].position, { x: 0, y: 0 });
+    assert.equal(manual.report.clearedWorkflowLinks, 1);
+
+    assert.throws(() => wf.parseWorkflowFile("{nope"), /not valid JSON/);
+    assert.throws(() => wf.parseWorkflowFile(JSON.stringify({ name: "x" })), /not an RXJ workflow export/);
+    assert.throws(() => wf.parseWorkflowFile(JSON.stringify({ nodes: [{ id: "1", type: "n8n-nodes-base.httpRequest" }], connections: {} })), /This is an n8n workflow/);
+    assert.throws(() => wf.parseWorkflowFile(JSON.stringify({ version: 2, nodes: [] })), /newer version/);
+    assert.throws(() => wf.parseWorkflowFile(JSON.stringify({ nodes: [{ id: "1", type: "A" }, { id: "1", type: "B" }] })), /same id/);
+    assert.throws(() => wf.parseWorkflowFile(" ".repeat(wf.MAX_IMPORT_BYTES + 1)), /larger than 2 MB/);
+
+    const { readFileSync } = await import("node:fs");
+    const router = readFileSync("src/features/workflows/server/routers.ts", "utf8");
+    // Same rules as creating a workflow; only the owner's credentials count
+    assert.match(router, /importJson: builderProcedure/);
+    assert.match(router, /exportJson: viewerProcedure/);
+    assert.match(router, /prisma\.credential\.findMany\(\{ where: \{ userId: ownerId \}/);
+    assert.match(router.slice(router.indexOf("importJson:")), /countWorkflows\(ownerId\)\) >= workflowLimit/);
   });
 
   console.log(`\n${passed} checks passed`);

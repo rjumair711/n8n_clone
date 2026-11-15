@@ -159,6 +159,16 @@ Two ways to test one part of a workflow in the editor without running the rest a
 * **What is pinned** is what the node added to the workflow's data in that run (its own variables, and for a router its decision), up to 512 KB per node (`MAX_PINNED_DATA_KB`). For a trigger it is everything the run started with.
 * **Limits.** Inside a Loop, the nodes of the loop body that come before the chosen node give the data of the loop's last round. A Merge set to wait for all inputs does not run in a partial run that covers only one of its branches.
 
+## Workflow export and import (JSON)
+
+Like n8n's Download and Import from File, for backups and for moving a workflow to another account.
+
+* **Export:** editor → Workflow settings (gear) → **Download as JSON**. The file is the **saved** workflow (unsaved changes on the canvas are not in it): its name, nodes, connections and their settings, as `{ format: "rxj-workflow", version: 1, name, exportedAt, nodes, connections }`. The name of the file comes from the workflow's name.
+* **What is never in the file:** stored credentials (only which credential a node uses, by id), webhook and signing secrets, WhatsApp verify tokens and app secrets, and Slack/Discord webhook URLs. Anything typed into ordinary fields (a key pasted into a header, a prompt) is exported as it is, like a template.
+* **Import:** Workflows page → **Import** → pick the file. A new workflow opens; the original is never changed. Every node gets a new id. In the same account the nodes keep their credentials; in another account, references to credentials and to workflows (Execute Workflow) the account does not own are removed and the toast says how many must be selected again. Webhook-type triggers get a new URL with the new workflow, and their secrets must be typed again. The imported workflow is inactive.
+* **Checks:** at most 2 MB and 500 nodes; the workflow limit applies; a node this server does not offer (SSH on the hosted app) is refused with the same message as a template; node types that do not exist are left out and named. An n8n file is recognised and refused with a clear message: n8n's node types are different, so its workflows have to be rebuilt.
+* Workflow settings (Don't save node input/output, retention, AI budget) and version history are not exported. Importing needs the builder role in a workspace; exporting needs only viewer.
+
 ## Workflow version history
 
 Every workflow keeps its earlier versions, so a change can be looked at and undone.
