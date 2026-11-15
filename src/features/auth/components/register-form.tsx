@@ -15,6 +15,7 @@ import { toast } from "sonner"
 import Image from "next/image"
 import { useRef, useState } from "react"
 import { TURNSTILE_HEADER } from "@/lib/turnstile"
+import { SELF_HOSTED } from "@/config/self-hosted"
 import { TurnstileWidget, type TurnstileHandle } from "./turnstile-widget"
 
 const registerSchema = z.object({
@@ -216,6 +217,14 @@ export function RegisterForm({ turnstileSiteKey }: Props) {
                                     >
                                         Sign Up
                                     </Button>
+                                    {!SELF_HOSTED && (
+                                        <p className="text-center text-xs text-muted-foreground">
+                                            By signing up you agree to the{" "}
+                                            <Link href="/terms" className="underline underline-offset-4">Terms</Link>
+                                            {" "}and the{" "}
+                                            <Link href="/privacy" className="underline underline-offset-4">Privacy Policy</Link>.
+                                        </p>
+                                    )}
                                 </div>
                                 <div className="text-center text-sm">
                                     Already have an account? {" "}

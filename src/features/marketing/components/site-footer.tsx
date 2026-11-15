@@ -4,8 +4,8 @@ import { RxjLogo } from "./rxj-logo";
 
 const CONTAINER = "mx-auto w-full max-w-6xl px-4 sm:px-6";
 
-// Only pages that exist are linked. There are no Terms, Privacy or Contact
-// pages and no social accounts, so the footer has none of those.
+// Only pages that exist are linked. There are no social accounts, so the
+// footer has none.
 const COLUMNS = [
   {
     title: "Product",
@@ -27,7 +27,12 @@ const COLUMNS = [
   },
   {
     title: "Company",
-    links: [{ href: "/about", label: "About" }],
+    links: [
+      { href: "/about", label: "About" },
+      { href: "/contact", label: "Contact" },
+      { href: "/terms", label: "Terms" },
+      { href: "/privacy", label: "Privacy" },
+    ],
   },
   {
     title: "Account",
