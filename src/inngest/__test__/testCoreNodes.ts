@@ -15696,6 +15696,58 @@ pour()</code></pre>
     assert.equal(getToolRisk("GOOGLE_CALENDAR", { operation: "list" }), "read");
   });
 
+  await test("WhatsApp reply buttons and list menus", async () => {
+    const wa = await import("@/features/executions/components/whatsapp/interactive");
+
+    const buttons = wa.buildButtonsMessage({ body: "Book for 5 pm?", header: "Salon", footer: "", buttons: "yes | Yes, book it\n\nNo thanks" });
+    assert.deepEqual(buttons, {
+      type: "interactive",
+      interactive: {
+        type: "button",
+        header: { type: "text", text: "Salon" },
+        body: { text: "Book for 5 pm?" },
+        action: {
+          buttons: [
+            { type: "reply", reply: { id: "yes", title: "Yes, book it" } },
+            { type: "reply", reply: { id: "no_thanks", title: "No thanks" } },
+          ],
+        },
+      },
+    });
+    assert.throws(() => wa.parseButtons("a\nb\nc\nd"), /allows 3 reply buttons; there are 4/);
+    assert.throws(() => wa.parseButtons("x | A title that is far too long"), /Button title .* is 28 characters; WhatsApp allows 20/);
+    assert.throws(() => wa.parseButtons("Yes\nyes | Again"), /Two options have the id "yes"/);
+    assert.throws(() => wa.parseButtons(" \n "), /at least one button/);
+    assert.throws(() => wa.buildButtonsMessage({ body: "", buttons: "Yes" }), /Message is required/);
+    // Urdu titles count characters, not bytes
+    assert.equal(wa.parseButtons("ہاں، بک کریں")[0].title, "ہاں، بک کریں");
+
+    const list = wa.buildListMessage({
+      body: "What would you like?",
+      listButton: "",
+      sections: "# Pizzas\nmargherita | Margherita | Rs 1,200\npepperoni | Pepperoni\n# Drinks\nCola",
+    });
+    assert.equal(list.interactive.action.button, "Choose");
+    assert.deepEqual(list.interactive.action.sections, [
+      { title: "Pizzas", rows: [{ id: "margherita", title: "Margherita", description: "Rs 1,200" }, { id: "pepperoni", title: "Pepperoni" }] },
+      { title: "Drinks", rows: [{ id: "cola", title: "Cola" }] },
+    ]);
+    // One section needs no title; several do
+    assert.deepEqual(wa.parseListSections("a | A\nb | B"), [{ rows: [{ id: "a", title: "A" }, { id: "b", title: "B" }] }]);
+    assert.throws(() => wa.parseListSections("a | A\n# Two\nb | B"), /every section needs a title/);
+    assert.throws(() => wa.parseListSections(Array.from({ length: 11 }, (_, i) => `r${i} | Row ${i}`).join("\n")), /allows 10 rows in a list; there are 11/);
+    // Empty sections are dropped
+    assert.equal(wa.parseListSections("# Empty\n# Full\na | A").length, 1);
+
+    assert.equal(wa.replyIdOf({ interactive: { type: "button_reply", button_reply: { id: "yes", title: "Yes" } } }), "yes");
+    assert.equal(wa.replyIdOf({ interactive: { type: "list_reply", list_reply: { id: "cola", title: "Cola" } } }), "cola");
+    assert.equal(wa.replyIdOf({ type: "button", button: { text: "Confirm", payload: "CONFIRM_1" } }), "CONFIRM_1");
+    assert.equal(wa.replyIdOf({ type: "text", text: { body: "hi" } }), undefined);
+
+    const { readFileSync } = await import("node:fs");
+    assert.match(readFileSync("src/app/api/webhooks/whatsapp/[workflowId]/route.ts", "utf8"), /replyId: replyIdOf\(message\)/);
+  });
+
   console.log(`\n${passed} checks passed`);
 };
 

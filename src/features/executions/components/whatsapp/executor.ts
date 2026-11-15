@@ -8,6 +8,7 @@ import {
   toIntegrationError,
 } from "../../lib/integration";
 import { loadFiles, resolveFileId } from "../files/executors";
+import { buildButtonsMessage, buildListMessage } from "./interactive";
 
 type WhatsappData = {
   variableName?: string;
@@ -22,6 +23,12 @@ type WhatsappData = {
   // send_document: a file variable, and an optional caption
   file?: string;
   caption?: string;
+  // send_buttons and send_list
+  header?: string;
+  footer?: string;
+  buttons?: string;
+  listButton?: string;
+  sections?: string;
 };
 
 const GRAPH_API_VERSION = "v21.0";
@@ -113,6 +120,28 @@ export const whatsappExecutor: NodeExecutor<WhatsappData> = async ({
             : {}),
         },
       };
+      break;
+    }
+
+    case "send_buttons":
+    case "send_list": {
+      const parts = {
+        body: renderTemplate(data.message, context).trim(),
+        header: renderTemplate(data.header, context).trim(),
+        footer: renderTemplate(data.footer, context).trim(),
+      };
+      try {
+        payload =
+          data.operation === "send_buttons"
+            ? buildButtonsMessage({ ...parts, buttons: renderTemplate(data.buttons, context) })
+            : buildListMessage({
+                ...parts,
+                listButton: renderTemplate(data.listButton, context).trim(),
+                sections: renderTemplate(data.sections, context),
+              });
+      } catch (error: any) {
+        throw new NonRetriableError(`WhatsApp node: ${error.message}`);
+      }
       break;
     }
 
