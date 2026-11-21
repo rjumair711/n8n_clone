@@ -111,7 +111,7 @@ const AssignDialog = ({
 };
 
 /**
- * Settings → Platform → Managed servers: every customer's server, for the
+ * Admin → Managed servers (/admin/servers): every customer's server, for the
  * platform's admins. Problems first: a server that stopped reporting, a
  * container that is down, a backup that is two days old.
  */

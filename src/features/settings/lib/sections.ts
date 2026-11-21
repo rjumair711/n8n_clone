@@ -101,18 +101,6 @@ export const SETTINGS_GROUPS: SettingsGroup[] = [
       },
     ],
   },
-  {
-    title: "Platform",
-    sections: [
-      {
-        slug: "managed-servers",
-        title: "Managed servers",
-        description: "Every customer's private server: whether it reports in, its version and its last backup.",
-        adminOnly: true,
-        hostedOnly: true,
-      },
-    ],
-  },
 ];
 
 export const SETTINGS_SECTIONS = SETTINGS_GROUPS.flatMap((group) => group.sections);

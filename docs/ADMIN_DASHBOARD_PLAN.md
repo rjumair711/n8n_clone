@@ -46,7 +46,7 @@ panel, with **Admin** under it for admins.
   **Reply** (shown in My messages, emailed to the customer) and change
   the status.
 
-## Step 3: customers (index migration)
+## Step 3: customers (index migration) — done
 
 * Every account: workflows created, active workflows, runs this month,
   failed runs this month, sign-up date, last sign-in, open messages.

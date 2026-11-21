@@ -2401,6 +2401,23 @@ on), the **test account** with a message sent (T48), and `RESEND_API_KEY`.
 | 14 | Settings → Audit log (admin) | "Support message answered" and "Support message status changed" |
 | 15 | Phone width | the list above the message; everything readable |
 
+## T50. Admin: customers and managed servers
+
+As the admin, with the **test account** having a workflow and one failed
+run this month.
+
+| # | Do | Expect |
+| - | -- | ------ |
+| 1 | Admin → **Customers** | a table: name and email, Workflows, Active, Runs this month, Failed (red when not 0), Signed up, Last sign-in; the busiest account first |
+| 2 | Search part of the test account's email | only matching accounts |
+| 3 | Search something that matches nobody | "No account matches." |
+| 4 | Click the test account | a side panel: its workflows with node counts, its failed run with the failing node and error, its support messages (links to the inbox) |
+| 5 | An account with an open support message / a managed server | badges in its row |
+| 6 | Admin → **Managed servers** | the fleet table, as before |
+| 7 | Open `/settings/managed-servers` | it goes to `/admin/servers` |
+| 8 | Settings menu | no "Platform" group any more |
+| 9 | Self-hosted image, admin | no "Managed servers" tab; `/admin/servers` is "not found" |
+
 # When something fails
 
 Note the node, the exact values you entered, and the error text from the
