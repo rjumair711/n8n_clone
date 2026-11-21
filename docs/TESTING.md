@@ -1988,7 +1988,7 @@ checkout link, and `npm run dev` restarted after setting it.
 | 2 | Open `/pricing` | the same offer; the button says "Get your private server" |
 | 3 | Remove the variable, restart, open `/pricing` | the button says "Coming soon" and is not a link |
 | 4 | Put it back, click the button | Polar's sandbox checkout for $20/month opens |
-| 5 | Pay with card `4242 4242 4242 4242`, any future date, any CVC | Polar opens `/managed-server/thanks` with the "What to have ready" list |
+| 5 | Pay with card `4242 4242 4242 4242`, any future date, any CVC | Polar opens `/managed-server/thanks` with the "Set it up" steps and a link to Settings → Private server |
 | 6 | Pay with the email of an RXJ account that is on Pro | nothing about the account changes (Settings → Usage) |
 | 7 | In Polar sandbox, cancel that subscription | the account is still Pro |
 | 8 | Polar sandbox → Settings → Webhooks → the deliveries of steps 5 and 7 | each answered 200, none failed or retried |
@@ -2287,6 +2287,39 @@ Needs an OpenAI key with image access; each run costs a few cents.
 | 9 | A folder name that exists | "There is already a folder ..." |
 | 10 | 11 tags | "A workflow can have at most 10 tags" |
 | 11 | An empty folder picked | "No workflows here..." (not "You haven't created any workflows") |
+
+## T45. Managed server: self-serve install
+
+Needs `POLAR_MANAGED_SERVER_PRODUCT_ID` (the sandbox product id) on the
+app, the migration `managed_servers` applied, a **test account** with a
+verified email, and a throwaway VPS (Ubuntu 24.04, 4 GB) with a test
+subdomain pointing at it. Delete the VPS afterwards.
+
+| # | Do | Expect |
+| - | -- | ------ |
+| 1 | Settings, as the test account before buying | "Private server" in the Account menu; it says "No private server on this account" with a link to the offer |
+| 2 | Buy the managed server in the Polar sandbox with the test account's email | Polar's webhook delivery answered 200; Settings → Private server shows one server "Waiting for install" |
+| 3 | Polar resends the same delivery | still one server (no duplicate) |
+| 4 | Sign up a second account with an **unverified** address and buy with it | its Private server page says "No private server" until the address is verified |
+| 5 | Enter the test subdomain and an email, press **Make install command** | a `curl ... /install.sh \| sudo bash -s -- --platform ... --token rxjms_... --domain ... --email ...` line, shown once, with a copy button. Audit log: "Private server install command made" |
+| 6 | Reload the page | the command is gone; the button says "Make a new install command" and shows the token's first characters |
+| 7 | On the VPS, run the command with one character of the token changed | "RXJ does not know this install token", nothing installed |
+| 8 | Run the real command | Docker installed, RXJ started, "RXJ is installed" with the address; `https://<subdomain>` opens the sign-up page |
+| 9 | Back in Settings → Private server (within a minute) | "Online", the domain as a link, Last report "less than a minute ago", a version like `5c4da8c+0123456789ab` |
+| 10 | On the VPS: `systemctl list-timers 'rxj-*'` | `rxj-heartbeat`, `rxj-backup`, `rxj-update` |
+| 11 | `sudo /opt/rxj/self-host/rxj-agent.sh backup` | a `rxj-<date>.sql.gz` in `/opt/rxj/self-host/backups`; Last backup updates after the next heartbeat |
+| 12 | `grep TOKEN /opt/rxj/self-host/.env` | nothing: the token is only in `.env.agent` (`-rw-------`) |
+| 13 | `cd /opt/rxj/self-host && docker compose stop caddy && sudo ./rxj-agent.sh heartbeat` | the page says "Not running: caddy"; `docker compose start caddy` and another heartbeat clear it |
+| 14 | Run the install command again | it keeps the existing `.env` ("Keeping the settings"), and the server keeps its data |
+| 15 | Make a new install command, then `sudo ./rxj-agent.sh heartbeat` on the VPS | `curl: (22) ... 401`: the old token no longer works. Run the new command to fix it |
+| 16 | Set `MANAGED_SERVER_UPDATES_PAUSED=true` on the app, then `sudo ./rxj-agent.sh update` | "RXJ has paused updates", nothing pulled |
+| 17 | As an admin: Settings → Platform → Managed servers | every server with customer, domain, state, last report, last backup, version and problems; a non-admin does not see the menu item and gets "Admins only" at the address |
+| 18 | Power off the VPS for 40 minutes | customer page "Not reporting"; fleet page "not reporting" first in the list |
+| 19 | Cancel the subscription in the Polar sandbox | "Subscription ended"; no install command can be made |
+| 20 | Self-hosted image: open `/settings` | no "Private server" or "Managed servers" in the menu; `POST /api/managed-servers/heartbeat` answers 404 |
+
+Afterwards: delete the VPS, and delete the test rows with
+`DELETE FROM managed_server WHERE "customerEmail" = '<test address>';`.
 
 # When something fails
 

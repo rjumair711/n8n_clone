@@ -1232,8 +1232,32 @@ There are no Beginner, Intermediate or Pro plans and no free trial (`src/config/
 The pricing page and the landing page show one offer: the **managed private server**, $20 a month (`src/config/pricing-plans.ts`). RXJ is installed on the client's own server (see "Self-hosting") and looked after for them, and the $20 covers building and looking after up to 5 of their workflows (the server itself has no limit; more workflows are priced separately). The Beginner, Intermediate and Pro plans are no longer sold.
 
 * **Buying:** the button opens the Polar checkout link in `NEXT_PUBLIC_MANAGED_SERVER_CHECKOUT_URL` (the sandbox link while testing, the production link when live). Without it the button says "Coming soon". The link can also be sent to a client directly.
-* **After paying:** set the link's success URL in Polar to `<app URL>/managed-server/thanks?checkout_id={CHECKOUT_ID}`. That page tells the buyer what to have ready; you then email them from the subscription in Polar.
-* **Webhooks:** only the three plan products change a user's plan (`getPlanForPolarProduct` in `src/config/plans.ts`). A managed-server subscription, or its end, leaves the buyer's RXJ account as it is, and `/api/webhooks/polar` answers it with success so Polar does not retry it.
+* **After paying:** set the link's success URL in Polar to `<app URL>/managed-server/thanks?checkout_id={CHECKOUT_ID}`. That page sends the buyer to **Settings → Private server**, where they install the server themselves with one command (below).
+* **Webhooks:** only the three plan products change a user's plan (`getPlanForPolarProduct` in `src/config/plans.ts`). A subscription of the product in `POLAR_MANAGED_SERVER_PRODUCT_ID` keeps one `ManagedServer` row per subscription (its status follows every `subscription.*` event, and the same event twice changes nothing). Both Polar webhook addresses do this. It never changes the buyer's plan.
+
+### Self-serve install of a managed server
+
+Nobody has to log in to a customer's server to set it up:
+
+1. The customer signs in with the address they paid with. The server row is given to the account once that address is **verified**, because anyone can sign up with someone else's address.
+2. In **Settings → Private server** they enter their domain and admin email and press **Make install command**. The command is shown once. It carries an install token (`rxjms_...`) of which only the SHA-256 hash is stored. A new command replaces the old token.
+3. On their VPS they paste: `curl -fsSL <app URL>/install.sh | sudo bash -s -- --platform <app URL> --token rxjms_... --domain ... --email ...`
+
+`public/install.sh` checks the token with RXJ first (and that the subscription is paid), installs Docker and git, downloads RXJ to `/opt/rxj`, writes `self-host/.env` with new secrets, warns when the domain's DNS does not point at the server, starts it, and adds three systemd timers that run `self-host/rxj-agent.sh`:
+
+| Timer | When | What |
+| ----- | ---- | ---- |
+| `rxj-heartbeat` | every 15 minutes | `POST /api/managed-servers/heartbeat`: domain, version (commit + image), container states, disk use, last backup. Never workflows, credentials or data |
+| `rxj-backup` | nightly, around 03:00 | `pg_dump` to `/opt/rxj/self-host/backups`, kept 14 days, plus a copy of `.env` |
+| `rxj-update` | weekly, Sunday 04:00 to 07:00 (spread out) | `git pull`, `docker compose pull`, `up -d` (the app migrates its own database when it starts) |
+
+* The token lives in `self-host/.env.agent` (mode 600), not in `.env`, so the app never sees it. The agent reads that file line by line; it does not run it.
+* **Pause updates on every server** (a bad release): set `MANAGED_SERVER_UPDATES_PAUSED=true` on the hosted app. One server: `RXJ_AUTO_UPDATE=false` in its `.env.agent`.
+* The heartbeat endpoint answers 404 on a self-hosted server, refuses unknown tokens (401) and malformed reports (400), and is rate limited per server (20 a minute).
+* **Settings → Private server** shows the customer their server: waiting for install, online, not reporting (no heartbeat for 35 minutes) or subscription ended, with its last report, last backup and version.
+* **Settings → Platform → Managed servers** (admins only) lists every customer's server, problems first: not reporting, a container that is down, no backup for 48 hours.
+* The installer also works without a token, for anyone self-hosting: `curl -fsSL <app URL>/install.sh | sudo bash -s -- --domain rxj.example.com --email you@example.com`. Then it sends nothing anywhere.
+* Not done yet: backups go to the server's own disk only (not off-site), and nobody is emailed when a server stops reporting. The fleet page shows both.
 * **Earlier plan subscribers** keep the Polar customer portal under Billing, where they can cancel; their plan column no longer changes anything. Prompts about what only an own server offers open the pricing page.
 
 ---
@@ -1605,6 +1629,8 @@ Anyone can run RXJ on their own VPS with Docker: [`docs/SELF_HOSTING.md`](docs/S
 | `TELEGRAM_PROXY` | Optional proxy for calls to the Telegram API |
 | `NGROK_URL` | Tunnel domain for local development |
 | `NEXT_PUBLIC_MANAGED_SERVER_CHECKOUT_URL` | The Polar checkout link of the managed private server ($20 a month) that the pricing page opens. Sandbox link while testing, production link when live. Read when the app is built, so redeploy after changing it |
+| `POLAR_MANAGED_SERVER_PRODUCT_ID` | The Polar product id of the managed private server (sandbox id in development, production id when live). Its subscriptions become rows in Settings → Private server. Without it no managed server is recorded |
+| `MANAGED_SERVER_UPDATES_PAUSED` | `true` stops the weekly update of every managed server (their agents ask at each update). Unset: updates run |
 | `BROWSER_CDP_URL` | Optional. A browser the Browser node uses when it has no credential: `http://host:9222` or a `ws://` address of Chrome's DevTools. Set by `self-host/docker-compose.yml`; leave unset on Vercel |
 | `NEXT_PUBLIC_SELF_HOSTED` | `true` builds the self-hosted edition: no billing, every feature unlocked. Set by the Dockerfile; **never set it on Vercel** (the server refuses to start there). See "Self-hosting" |
 | `NEXT_PUBLIC_SENTRY_DSN` | Optional. Your own Sentry project. Not set: the hosted app reports to RXJ's project and a self-hosted server to none. Read when the app is built |

@@ -4,6 +4,7 @@ import { useEffect, useMemo, useRef } from "react";
 import { useQuery } from "@tanstack/react-query";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { SELF_HOSTED } from "@/config/self-hosted";
 import { cn } from "@/lib/utils";
 import { useTRPC } from "@/trpc/client";
 import { SETTINGS_GROUPS, settingsHref } from "../lib/sections";
@@ -27,7 +28,10 @@ export const SettingsNav = () => {
         () =>
             SETTINGS_GROUPS.map((group) => ({
                 ...group,
-                sections: group.sections.filter((section) => isAdmin || !section.adminOnly),
+                sections: group.sections.filter(
+                    (section) =>
+                        (isAdmin || !section.adminOnly) && (!SELF_HOSTED || !section.hostedOnly)
+                ),
             })).filter((group) => group.sections.length > 0),
         [isAdmin]
     );

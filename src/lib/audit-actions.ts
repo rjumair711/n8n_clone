@@ -29,6 +29,7 @@ export const AUDIT_ACTIONS = {
   "model_price.deleted": "Model price deleted",
   "included_ai.saved": "Included AI provider saved",
   "included_ai.deleted": "Included AI provider deleted",
+  "managed_server.install_token_created": "Private server install command made",
   "auth.sign_in": "Signed in",
   "account.name_changed": "Name changed",
   "account.password_changed": "Password changed",

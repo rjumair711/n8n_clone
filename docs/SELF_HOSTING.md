@@ -67,7 +67,34 @@ Only Caddy is open to the internet, on ports 80 and 443.
   curl -fsSL https://get.docker.com | sh
   ```
 
-## Install
+## Install with one command
+
+Point your domain's DNS `A` record at the server, sign in to it over SSH
+and run:
+
+```bash
+curl -fsSL https://<the RXJ app>/install.sh | sudo bash -s -- --domain rxj.example.com --email you@example.com
+```
+
+It installs Docker and git if they are missing, downloads RXJ to
+`/opt/rxj`, writes `self-host/.env` with new secrets, starts it, and adds
+three systemd timers that run `self-host/rxj-agent.sh`: a nightly database
+backup (kept 14 days in `/opt/rxj/self-host/backups`), a weekly update, and
+a heartbeat that only does something on a managed server. Running it again
+keeps your `.env`. Without `--platform` and `--token` it sends nothing to
+RXJ.
+
+**Managed private server:** use the command in Settings → Private server on
+the RXJ app instead. It also has `--platform` and `--token`, so the server
+reports to RXJ every 15 minutes (domain, version, container states, disk
+use and last backup; never your workflows, credentials or data) and RXJ can
+see that it is healthy. The token is kept in `self-host/.env.agent`, apart
+from the app's settings. Set `RXJ_AUTO_UPDATE=false` there to stop the
+weekly update.
+
+The steps below do the same by hand.
+
+## Install by hand
 
 1. **Point your domain at the server.** Add a DNS `A` record for
    `rxj.example.com` with the server's IP address. Wait until
