@@ -1,10 +1,6 @@
-import { SettingsSection } from "@/features/settings/components/settings-section";
-import { ManagedServersSection } from "@/features/settings/components/sections/managed-servers-section";
+import { redirect } from "next/navigation";
 
-const Page = () => (
-    <SettingsSection slug="managed-servers">
-        <ManagedServersSection />
-    </SettingsSection>
-);
+// Managed servers moved to the admin area
+const Page = () => redirect("/admin/servers");
 
 export default Page;

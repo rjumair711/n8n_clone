@@ -1024,6 +1024,8 @@ model Execution {
 
   // This month's executions of a workspace, and a workflow's executions
   @@index([workflowId, startedAt])
+  // The admin dashboard: failed runs of the last day, week or month
+  @@index([status, startedAt])
 }
 
 // A question put to a person while an execution waits: may this AI Agent

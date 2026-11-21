@@ -1,3 +1,4 @@
+import { Prisma } from "@prisma/client";
 import { TRPCError } from "@trpc/server";
 import { Resend } from "resend";
 import z from "zod";
@@ -10,6 +11,7 @@ import {
     SUPPORT_STATUSES,
     buildSupportReplyEmail,
 } from "@/lib/support";
+import { getServerState } from "@/lib/managed-server";
 import { createTRPCRouter, protectedProcedure } from "@/trpc/init";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -36,6 +38,9 @@ const adminActionProcedure = adminProcedure.use(({ ctx, next }) => {
 const startOfMonthUtc = (now: Date) => new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1));
 
 const statusSchema = z.enum(SUPPORT_STATUSES);
+
+// The Customers page lists at most this many accounts (the busiest first)
+const CUSTOMERS_MAX = 500;
 
 export const adminRouter = createTRPCRouter({
     // The Overview tiles
@@ -69,6 +74,173 @@ export const adminRouter = createTRPCRouter({
             canAct: canUseAdminActions(ctx.auth.user),
         };
     }),
+
+    // Every account with what it does, busiest first (most runs this
+    // month). Up to CUSTOMERS_MAX accounts that match the search.
+    customers: adminProcedure
+        .input(z.object({ search: z.string().trim().max(100).optional() }).default({}))
+        .query(async ({ input }) => {
+            const now = new Date();
+            const month = startOfMonthUtc(now);
+            const search = input.search || undefined;
+
+            const users = await prisma.user.findMany({
+                where: search
+                    ? {
+                          OR: [
+                              { email: { contains: search, mode: "insensitive" } },
+                              { name: { contains: search, mode: "insensitive" } },
+                          ],
+                      }
+                    : {},
+                orderBy: { createdAt: "desc" },
+                take: CUSTOMERS_MAX,
+                select: { id: true, name: true, email: true, createdAt: true, emailVerified: true },
+            });
+            const ids = users.map((user) => user.id);
+            if (!ids.length) return { customers: [], capped: false };
+
+            const [workflows, active, usage, failed, sessions, support, servers] = await Promise.all([
+                prisma.workflow.groupBy({ by: ["userId"], where: { userId: { in: ids } }, _count: { _all: true } }),
+                prisma.workflow.groupBy({
+                    by: ["userId"],
+                    where: { userId: { in: ids }, active: true },
+                    _count: { _all: true },
+                }),
+                prisma.executionUsage.findMany({
+                    where: { userId: { in: ids }, month },
+                    select: { userId: true, count: true },
+                }),
+                // Failed runs this month, per workflow owner (uses the
+                // status + startedAt index)
+                prisma.$queryRaw<{ userId: string; count: bigint }[]>`
+                    SELECT w."userId", COUNT(*)::bigint AS count
+                    FROM "Execution" e
+                    JOIN "Workflow" w ON w."id" = e."workflowId"
+                    WHERE e."status" = 'FAILED' AND e."startedAt" >= ${month}
+                      AND w."userId" IN (${Prisma.join(ids)})
+                    GROUP BY w."userId"
+                `,
+                prisma.session.groupBy({ by: ["userId"], where: { userId: { in: ids } }, _max: { updatedAt: true } }),
+                prisma.supportMessage.groupBy({
+                    by: ["userId"],
+                    where: { userId: { in: ids }, status: { in: ["new", "in_progress"] } },
+                    _count: { _all: true },
+                }),
+                prisma.managedServer.findMany({
+                    where: { userId: { in: ids } },
+                    select: { userId: true, status: true, installedAt: true, lastSeenAt: true },
+                }),
+            ]);
+
+            const byUser = <T extends { userId: string | null }>(rows: T[]) =>
+                new Map(rows.map((row) => [row.userId as string, row]));
+            const workflowCount = byUser(workflows);
+            const activeCount = byUser(active);
+            const runs = byUser(usage);
+            const failedCount = byUser(failed);
+            const lastSeen = byUser(sessions);
+            const openSupport = byUser(support);
+
+            const customers = users
+                .map((user) => {
+                    const own = servers.filter((server) => server.userId === user.id);
+                    return {
+                        ...user,
+                        workflows: workflowCount.get(user.id)?._count._all ?? 0,
+                        activeWorkflows: activeCount.get(user.id)?._count._all ?? 0,
+                        runsThisMonth: runs.get(user.id)?.count ?? 0,
+                        failedRunsThisMonth: Number(failedCount.get(user.id)?.count ?? 0),
+                        lastSignInAt: lastSeen.get(user.id)?._max.updatedAt ?? null,
+                        openSupport: openSupport.get(user.id)?._count._all ?? 0,
+                        servers: own.map((server) => getServerState(server, now)),
+                    };
+                })
+                .sort(
+                    (a, b) =>
+                        b.runsThisMonth - a.runsThisMonth ||
+                        b.activeWorkflows - a.activeWorkflows ||
+                        b.createdAt.getTime() - a.createdAt.getTime()
+                );
+
+            return { customers, capped: users.length === CUSTOMERS_MAX };
+        }),
+
+    // One account: its workflows, latest failed runs, servers and messages.
+    // Names, types and error messages only: never node settings,
+    // credentials or run data.
+    customer: adminProcedure
+        .input(z.object({ userId: z.string().min(1).max(40) }))
+        .query(async ({ input }) => {
+            const user = await prisma.user.findUnique({
+                where: { id: input.userId },
+                select: { id: true, name: true, email: true, emailVerified: true, createdAt: true },
+            });
+            if (!user) throw new TRPCError({ code: "NOT_FOUND", message: "Account not found" });
+
+            const [workflows, failedRuns, servers, messages] = await Promise.all([
+                prisma.workflow.findMany({
+                    where: { userId: user.id },
+                    orderBy: { updatedAt: "desc" },
+                    take: 100,
+                    select: {
+                        id: true,
+                        name: true,
+                        active: true,
+                        updatedAt: true,
+                        _count: { select: { nodes: true } },
+                    },
+                }),
+                prisma.execution.findMany({
+                    where: { status: "FAILED", workflow: { userId: user.id } },
+                    orderBy: { startedAt: "desc" },
+                    take: 10,
+                    select: {
+                        id: true,
+                        startedAt: true,
+                        error: true,
+                        workflow: { select: { name: true } },
+                        nodes: {
+                            where: { status: "FAILED" },
+                            take: 1,
+                            select: { nodeName: true, nodeType: true, error: true },
+                        },
+                    },
+                }),
+                prisma.managedServer.findMany({
+                    where: { userId: user.id },
+                    select: {
+                        id: true,
+                        domain: true,
+                        status: true,
+                        installedAt: true,
+                        lastSeenAt: true,
+                        createdAt: true,
+                    },
+                }),
+                prisma.supportMessage.findMany({
+                    where: { userId: user.id },
+                    orderBy: { createdAt: "desc" },
+                    take: 20,
+                    select: { id: true, title: true, status: true, createdAt: true },
+                }),
+            ]);
+
+            const now = new Date();
+            return {
+                user,
+                workflows: workflows.map(({ _count, ...workflow }) => ({ ...workflow, nodes: _count.nodes })),
+                failedRuns: failedRuns.map((run) => ({
+                    id: run.id,
+                    startedAt: run.startedAt,
+                    workflowName: run.workflow.name,
+                    node: run.nodes[0] ? { name: run.nodes[0].nodeName, type: run.nodes[0].nodeType } : null,
+                    error: (run.nodes[0]?.error ?? run.error)?.slice(0, 1000) ?? null,
+                })),
+                servers: servers.map((server) => ({ ...server, state: getServerState(server, now) })),
+                messages,
+            };
+        }),
 
     // The support inbox, newest first
     supportList: adminProcedure

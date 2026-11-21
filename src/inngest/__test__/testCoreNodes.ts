@@ -5484,7 +5484,7 @@ const main = async () => {
     const read = (file: string) => fs.readFileSync(path.join(process.cwd(), file), "utf8");
     const settingsDir = "src/app/(dashboard)/(rest)/settings";
 
-    assert.deepEqual(SETTINGS_GROUPS.map((group) => group.title), ["Account", "Workspace", "AI", "Platform"]);
+    assert.deepEqual(SETTINGS_GROUPS.map((group) => group.title), ["Account", "Workspace", "AI"]);
     // No enterprise sections: Git sync, external secrets and SSO are gone
     for (const slug of ["git-sync", "secrets", "sso"]) {
       assert.equal(fs.existsSync(path.join(process.cwd(), `${settingsDir}/${slug}`)), false, slug);
@@ -5492,12 +5492,12 @@ const main = async () => {
     // The platform's own settings are only in an admin's menu
     assert.deepEqual(
       SETTINGS_SECTIONS.filter((section) => section.adminOnly).map((section) => section.slug),
-      ["model-prices", "rxj-ai", "managed-servers"]
+      ["model-prices", "rxj-ai"]
     );
     // The managed private server is the hosted app's: a self-hosted menu has none of it
     assert.deepEqual(
       SETTINGS_SECTIONS.filter((section) => section.hostedOnly).map((section) => section.slug),
-      ["private-server", "managed-servers"]
+      ["private-server"]
     );
     assert.match(
       read("src/features/settings/components/settings-nav.tsx"),
@@ -16590,6 +16590,34 @@ pour()</code></pre>
     const inbox = readFileSync("src/features/admin/components/support-inbox.tsx", "utf8");
     assert.match(inbox, /searchParams\.get\("message"\)/);
     assert.match(readFileSync("src/features/admin/components/admin-nav.tsx", "utf8"), /\{ href: "\/admin\/support", title: "Support" \}/);
+  });
+
+  await test("admin: customers, and managed servers moved into the admin area", async () => {
+    const { readFileSync, existsSync } = await import("node:fs");
+
+    const router = readFileSync("src/features/admin/server/routers.ts", "utf8");
+    assert.match(router, /customers: adminProcedure/);
+    assert.match(router, /customer: adminProcedure/);
+    // Failed runs are counted in SQL with the account ids as parameters
+    assert.match(router, /AND w\."userId" IN \(\$\{Prisma\.join\(ids\)\}\)/);
+    assert.match(router, /if \(!ids\.length\) return \{ customers: \[\], capped: false \};/);
+    // Busiest first
+    assert.match(router, /b\.runsThisMonth - a\.runsThisMonth \|\|/);
+    // One customer's details: names, types and errors, never node settings
+    const detail = router.slice(router.indexOf("customer: adminProcedure"), router.indexOf("supportList:"));
+    assert.doesNotMatch(detail, /data: true|credentialId|inputData|output: true/);
+
+    // The index the counts use
+    const schema = readFileSync("prisma/schema.prisma", "utf8");
+    assert.match(schema, /@@index\(\[workflowId, startedAt\]\)\r?\n\s+\/\/[^\r\n]*\r?\n\s+@@index\(\[status, startedAt\]\)/);
+
+    // Managed servers: /admin/servers, the old Settings address redirects
+    const nav = readFileSync("src/features/admin/components/admin-nav.tsx", "utf8");
+    assert.match(nav, /\{ href: "\/admin\/customers", title: "Customers" \}/);
+    assert.match(nav, /\.\.\.\(SELF_HOSTED \? \[\] : \[\{ href: "\/admin\/servers", title: "Managed servers" \}\]\)/);
+    assert.match(readFileSync("src/app/(dashboard)/(rest)/admin/servers/page.tsx", "utf8"), /<ManagedServersSection \/>/);
+    assert.match(readFileSync("src/app/(dashboard)/(rest)/settings/managed-servers/page.tsx", "utf8"), /redirect\("\/admin\/servers"\)/);
+    assert.ok(existsSync("src/app/(dashboard)/(rest)/admin/customers/page.tsx"));
   });
 
   console.log(`\n${passed} checks passed`);
