@@ -2356,6 +2356,28 @@ admin account with two-factor on.
 | 9 | An admin without two-factor presses **Assign** | "Turn on two-factor authentication in Settings to assign servers." |
 | 10 | An account with no server opens Settings → Private server | the note says "Paid with a different address? Contact us and we will link it to this account." |
 
+## T48. Support messages
+
+Use the **test account**. Needs `RESEND_API_KEY` for the email steps.
+
+| # | Do | Expect |
+| - | -- | ------ |
+| 1 | Sidebar → **Support** | the support email with "Write an email" and a copy button, **Send a message**, and "My messages: No messages yet." |
+| 2 | Write an email | the mail app opens with the support address |
+| 3 | **Send a message**: name and email are filled in | title, message, name, email; no "We'll include" line |
+| 4 | Title `x`, or a message of 5 characters | it says what is missing; nothing is sent |
+| 5 | Send a real message | "Thanks, we've got your message and will reply to ..."; it is listed under My messages as "Sent" |
+| 6 | The support inbox | an email "Support: <title>" with the name, email and message; replying to it goes to the customer's address |
+| 7 | Open a workflow, select a node, press **Help** in the top bar | the popup says "We'll include: workflow ..., node ..." |
+| 8 | Press **Help** with no node selected | only the workflow is included |
+| 9 | Send it | the email names the workflow and node |
+| 10 | Send a 6th message within an hour | "You can send 5 messages an hour..." |
+| 11 | In a shared workspace (as a member), Help on its workflow | the workflow is included |
+| 12 | `/privacy` | the "Support messages you send us" item, updated 21 November 2026 |
+| 13 | Self-hosted image without `SUPPORT_EMAIL` | Support has no email card; sending a message still works |
+
+Afterwards delete the test messages: `DELETE FROM support_message WHERE "userId" = '<test user id>';`
+
 # When something fails
 
 Note the node, the exact values you entered, and the error text from the

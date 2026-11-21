@@ -1227,6 +1227,16 @@ There are no Beginner, Intermediate or Pro plans and no free trial (`src/config/
 * What only an own server offers says so in plain words ("SSH is only available on a self-hosted or managed RXJ server (see Pricing)"), and the dialog it opens shows the server's message and links to the managed private server. A role error (a viewer who may not edit) is shown as the error it is.
 * **Earlier subscribers** of the old plans are not charged anything new, but Polar keeps billing their subscriptions until they are cancelled: cancel or refund them in Polar.
 
+## Support messages
+
+Customers reach the platform's owner in two ways:
+
+* **Email:** **Sidebar → Support** shows the support address (`SUPPORT_EMAIL`, or the Contact page's address in `LEGAL`) with "Write an email" and a copy button. Those emails are answered from the owner's own inbox.
+* **A message from RXJ:** **Send a message** on the Support page, or **Help** in the workflow editor's top bar. The popup asks for a title (up to 120 characters), a message (up to 5,000), and a name and email to reply to (filled in from the account). From the editor, the workflow and the node selected on the canvas go with it, and the popup says so. Only a workflow of the workspace the customer is in is attached; credentials are never sent. At most 5 messages an hour per account.
+* Each message is saved (`support_message`) and emailed to the support address (to the first admin when there is none), with Reply-To set to the customer, so replying to that email answers them. The customer sees their messages and the replies under **Support → My messages**.
+* Answering inside RXJ, with replies shown under My messages, comes with the admin dashboard (`docs/ADMIN_DASHBOARD_PLAN.md`, step 2).
+* A self-hosted server shows no support address unless its owner sets `SUPPORT_EMAIL`; its messages go to that server's own admins.
+
 ## What is on sale: the managed private server
 
 The pricing page and the landing page show one offer: the **managed private server**, $20 a month (`src/config/pricing-plans.ts`). RXJ is installed on the client's own server (see "Self-hosting") and looked after for them, and the $20 covers building and looking after up to 5 of their workflows (the server itself has no limit; more workflows are priced separately). The Beginner, Intermediate and Pro plans are no longer sold.
@@ -1632,6 +1642,7 @@ Anyone can run RXJ on their own VPS with Docker: [`docs/SELF_HOSTING.md`](docs/S
 | `NGROK_URL` | Tunnel domain for local development |
 | `NEXT_PUBLIC_MANAGED_SERVER_CHECKOUT_URL` | The Polar checkout link of the managed private server ($20 a month) that the pricing page opens. Sandbox link while testing, production link when live. Read when the app is built, so redeploy after changing it |
 | `POLAR_MANAGED_SERVER_PRODUCT_ID` | The Polar product id of the managed private server (sandbox id in development, production id when live). Its subscriptions become rows in Settings → Private server. Without it no managed server is recorded |
+| `SUPPORT_EMAIL` | The address customers see under Support and where support messages are emailed. Unset: the Contact page's address (`LEGAL.email`) on the hosted app, none on a self-hosted server |
 | `MANAGED_SERVER_UPDATES_PAUSED` | `true` stops the weekly update of every managed server (their agents ask at each update). Unset: updates run |
 | `BROWSER_CDP_URL` | Optional. A browser the Browser node uses when it has no credential: `http://host:9222` or a `ws://` address of Chrome's DevTools. Set by `self-host/docker-compose.yml`; leave unset on Vercel |
 | `NEXT_PUBLIC_SELF_HOSTED` | `true` builds the self-hosted edition: no billing, every feature unlocked. Set by the Dockerfile; **never set it on Vercel** (the server refuses to start there). See "Self-hosting" |

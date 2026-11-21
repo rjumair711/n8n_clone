@@ -9,7 +9,7 @@ export const LEGAL = {
   operator: "RJ Umair",
   email: "umairajput711@gmail.com",
   country: "Pakistan",
-  updated: "15 November 2026",
+  updated: "21 November 2026",
 } as const;
 
 export type LegalSection = {
@@ -41,6 +41,7 @@ export const PRIVACY_SECTIONS: LegalSection[] = [
       "Execution data: the input and output of each node when a workflow runs, which may include messages, emails, spreadsheet rows or other data your workflows process. Known secret patterns are redacted from these logs.",
       "Files that workflows create or receive, such as voice notes and images sent to your bots.",
       "Chat widget conversations on websites where you install the RXJ chat widget.",
+      "Support messages you send us from RXJ (Support or the Help button in the workflow editor): the title, message, name and email you enter, the workflow and node they are about, and our replies. We keep them so we can answer you and fix the problem, until you ask us to delete them or delete your account.",
       "Billing records from our payment provider: your plan, orders and AI credit balance. We never see or store your card number.",
       "Technical data: IP address and browser details in server logs, used for security and rate limiting, and error reports when something breaks.",
     ],

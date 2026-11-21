@@ -13,6 +13,7 @@ import {
     HistoryIcon,
     KeyIcon,
     LayoutTemplateIcon,
+    LifeBuoyIcon,
     LogOutIcon,
     SettingsIcon,
     UserCheckIcon,
@@ -78,6 +79,8 @@ const ACCOUNT_ITEMS: NavItem[] = [
     { title: "Billing", icon: CreditCardIcon, url: "/billing" },
     { title: "API Keys", icon: Code2Icon, url: "/settings/api-keys" },
     { title: "Docs", icon: BookOpenIcon, url: "/docs" },
+    // The support email, a message form and My messages
+    { title: "Support", icon: LifeBuoyIcon, url: "/support" },
 // A self-hosted server has no billing
 ].filter((item) => !SELF_HOSTED || item.url !== "/billing")
 
