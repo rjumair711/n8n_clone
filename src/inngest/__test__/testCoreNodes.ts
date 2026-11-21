@@ -16620,6 +16620,62 @@ pour()</code></pre>
     assert.ok(existsSync("src/app/(dashboard)/(rest)/admin/customers/page.tsx"));
   });
 
+  await test("admin errors: failed runs per customer and grouped by error", async () => {
+    const errors = await import("@/lib/admin-errors");
+    const { readFileSync } = await import("node:fs");
+
+    // What differs from run to run is left out, so one problem is one group
+    const n = errors.normalizeErrorMessage;
+    assert.equal(n('Request failed with status 401 for "abc"'), n('Request failed with status 401 for "xyz"'));
+    assert.equal(n("Sheet 1BxiMVs0XRA5nFMdKvBdBZjgmUUqptlbs74OgvE2upms not found"), "Sheet <id> not found");
+    assert.equal(n("Row 123456 missing"), "Row <n> missing");
+    assert.equal(n("Fetch https://api.example.com/v1/x?key=1 failed"), "Fetch <url> failed");
+    assert.equal(n("id 3f2b1c9e-1234-4abc-9def-0123456789ab gone"), "id <id> gone");
+    assert.equal(n("\n\n  First line\nstack here"), "First line");
+    assert.equal(n(null), "No error message");
+    assert.equal(n("x".repeat(500)).length, 200);
+
+    const user = (id: string) => ({ id, name: id, email: `${id}@x.pk` });
+    const at = (minutes: number) => new Date(Date.UTC(2026, 10, 21, 12, 0) - minutes * 60_000);
+    const run = (id: string, owner: string, workflowId: string, minutes: number, error: string, nodeType = "GMAIL") => ({
+      id,
+      startedAt: at(minutes),
+      workflowId,
+      workflowName: workflowId,
+      user: user(owner),
+      nodeName: "Send",
+      nodeType,
+      error,
+    });
+    const runs = [
+      run("r1", "ali", "w1", 5, 'invalid_grant for "a@b.c"'),
+      run("r2", "ali", "w2", 50, 'invalid_grant for "d@e.f"'),
+      run("r3", "sara", "w3", 1, 'invalid_grant for "g@h.i"'),
+      run("r4", "ali", "w1", 10, "Timeout", "HTTP_REQUEST"),
+    ];
+
+    const customers = errors.groupByCustomer(runs);
+    assert.deepEqual(customers.map((c) => [c.user.id, c.failedRuns, c.workflows]), [["ali", 3, 2], ["sara", 1, 1]]);
+    assert.deepEqual(customers[0].runs.map((r) => r.id), ["r1", "r4", "r2"], "newest first");
+    assert.equal(errors.groupByCustomer(runs, 2)[0].runs.length, 2);
+
+    const groups = errors.groupByError(runs);
+    assert.equal(groups.length, 2);
+    assert.deepEqual([groups[0].failedRuns, groups[0].customers, groups[0].nodeType], [3, 2, "GMAIL"]);
+    assert.equal(groups[0].example.id, "r3", "the newest one to read");
+    assert.deepEqual(groups[0].customerList.map((u) => u.id), ["sara", "ali"]);
+    assert.deepEqual(errors.groupByError([]), []);
+
+    // The router: admins only, the index, never node input or output
+    const router = readFileSync("src/features/admin/server/routers.ts", "utf8");
+    assert.match(router, /errors: adminProcedure/);
+    assert.match(router, /errorRun: adminProcedure/);
+    assert.match(router, /where: \{ status: "FAILED", startedAt: \{ gte: since \} \}/);
+    const runDetail = router.slice(router.indexOf("errorRun: adminProcedure"), router.indexOf("supportList:"));
+    assert.doesNotMatch(runDetail, /input: true|output: true|inputData|waitingData|webhookResponse/);
+    assert.match(readFileSync("src/features/admin/components/admin-nav.tsx", "utf8"), /\{ href: "\/admin\/errors", title: "Errors" \}/);
+  });
+
   console.log(`\n${passed} checks passed`);
 };
 

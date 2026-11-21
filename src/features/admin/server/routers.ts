@@ -11,6 +11,14 @@ import {
     SUPPORT_STATUSES,
     buildSupportReplyEmail,
 } from "@/lib/support";
+import {
+    ERRORS_MAX_RUNS,
+    ERROR_RANGES,
+    groupByCustomer,
+    groupByError,
+    type ErrorRange,
+    type FailedRun,
+} from "@/lib/admin-errors";
 import { getServerState } from "@/lib/managed-server";
 import { createTRPCRouter, protectedProcedure } from "@/trpc/init";
 
@@ -239,6 +247,105 @@ export const adminRouter = createTRPCRouter({
                 })),
                 servers: servers.map((server) => ({ ...server, state: getServerState(server, now) })),
                 messages,
+            };
+        }),
+
+    // Failed runs of the last day, week or month: per customer, and the
+    // same node and error grouped across customers. Names, types and error
+    // messages only (errors are cleaned of known secret shapes when saved).
+    errors: adminProcedure
+        .input(z.object({ range: z.enum(Object.keys(ERROR_RANGES) as [ErrorRange, ...ErrorRange[]]).default("7d") }))
+        .query(async ({ input }) => {
+            const since = new Date(Date.now() - ERROR_RANGES[input.range]);
+
+            const executions = await prisma.execution.findMany({
+                // Uses the status + startedAt index
+                where: { status: "FAILED", startedAt: { gte: since } },
+                orderBy: { startedAt: "desc" },
+                take: ERRORS_MAX_RUNS,
+                select: {
+                    id: true,
+                    startedAt: true,
+                    error: true,
+                    workflow: {
+                        select: {
+                            id: true,
+                            name: true,
+                            user: { select: { id: true, name: true, email: true } },
+                        },
+                    },
+                    nodes: {
+                        where: { status: "FAILED" },
+                        orderBy: { startedAt: "asc" },
+                        take: 1,
+                        select: { nodeName: true, nodeType: true, error: true },
+                    },
+                },
+            });
+
+            const runs: FailedRun[] = executions.map((execution) => ({
+                id: execution.id,
+                startedAt: execution.startedAt,
+                workflowId: execution.workflow.id,
+                workflowName: execution.workflow.name,
+                user: execution.workflow.user,
+                nodeName: execution.nodes[0]?.nodeName ?? null,
+                nodeType: execution.nodes[0]?.nodeType ?? null,
+                error: (execution.nodes[0]?.error ?? execution.error)?.slice(0, 2000) ?? null,
+            }));
+
+            return {
+                total: runs.length,
+                capped: runs.length === ERRORS_MAX_RUNS,
+                byCustomer: groupByCustomer(runs),
+                byError: groupByError(runs).slice(0, 100),
+            };
+        }),
+
+    // One failed run: every node it ran, in order, with its status, time
+    // and error. Never the nodes' input or output.
+    errorRun: adminProcedure
+        .input(z.object({ id: z.string().min(1).max(40) }))
+        .query(async ({ input }) => {
+            const execution = await prisma.execution.findUnique({
+                where: { id: input.id },
+                select: {
+                    id: true,
+                    status: true,
+                    startedAt: true,
+                    completedAt: true,
+                    durationMs: true,
+                    triggerSource: true,
+                    error: true,
+                    workflow: {
+                        select: {
+                            id: true,
+                            name: true,
+                            active: true,
+                            user: { select: { id: true, name: true, email: true } },
+                        },
+                    },
+                    nodes: {
+                        orderBy: { startedAt: "asc" },
+                        take: 200,
+                        select: {
+                            id: true,
+                            nodeName: true,
+                            nodeType: true,
+                            status: true,
+                            error: true,
+                            durationMs: true,
+                            startedAt: true,
+                        },
+                    },
+                },
+            });
+            if (!execution) throw new TRPCError({ code: "NOT_FOUND", message: "Run not found" });
+
+            return {
+                ...execution,
+                error: execution.error?.slice(0, 4000) ?? null,
+                nodes: execution.nodes.map((node) => ({ ...node, error: node.error?.slice(0, 4000) ?? null })),
             };
         }),
 

@@ -54,7 +54,7 @@ panel, with **Admin** under it for admins.
 * The managed servers fleet page moves to `/admin`.
 * An index on executions by status and time for the counts.
 
-## Step 4: errors
+## Step 4: errors — done
 
 * Failed runs of the last 24 hours / 7 days, **per customer**: who, which
   workflow, which node, the error message, when, how often. Click a row

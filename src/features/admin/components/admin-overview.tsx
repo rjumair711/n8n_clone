@@ -80,7 +80,12 @@ export const AdminOverview = () => {
                 <Tile label="Sign-ups this week" value={data.signupsThisWeek} />
                 <Tile label="Active workflows" value={data.activeWorkflows} />
                 <Tile label="Runs this month" value={data.runsThisMonth} />
-                <Tile label="Failed runs, last 24 hours" value={data.failedRunsLast24h} />
+                <Tile
+                    label="Failed runs, last 24 hours"
+                    value={data.failedRunsLast24h}
+                    href="/admin/errors"
+                    highlight={data.failedRunsLast24h > 0}
+                />
             </div>
         </div>
     );
