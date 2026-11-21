@@ -2338,6 +2338,24 @@ applied) and the **test account**.
 | 8 | An account without a managed server, and a self-hosted server | no popup, and no request to `managedServers.welcome` on the self-hosted one |
 | 9 | Phone width (375 px) | the popup fits and scrolls; both buttons can be pressed |
 
+## T47. Managed server: paying with the right email
+
+Needs what T45 needs and two test accounts (A and B, both verified); one
+admin account with two-factor on.
+
+| # | Do | Expect |
+| - | -- | ------ |
+| 1 | Signed in as A, open `/pricing`, press **Get your private server** | Polar's sandbox checkout opens with A's email already filled in |
+| 2 | Signed out, press it | the checkout opens with an empty email; the pricing page says "Pay with the email of your RXJ account... Sign in first" |
+| 3 | Remove `NEXT_PUBLIC_MANAGED_SERVER_CHECKOUT_URL`, rebuild, open `/managed-server/checkout` | back to `/pricing`, which says "Coming soon" |
+| 4 | Signed out, pay with an address that has no RXJ account | the fleet page shows the server with "No account yet" and an **Assign** button |
+| 5 | As the admin, **Assign** → B's email | "Assigned to ..."; B's Settings → Private server shows the server; the button now says **Reassign** |
+| 6 | **Assign** with an address that has no account | "No RXJ account has the address ... Ask the customer to sign up first." and nothing changes |
+| 7 | **Reassign** to A | A sees the server, B no longer does |
+| 8 | Settings → Audit log, as the admin and as A | "Private server assigned to an account", with the payer's address, the new account and the old one; A's line says who did it |
+| 9 | An admin without two-factor presses **Assign** | "Turn on two-factor authentication in Settings to assign servers." |
+| 10 | An account with no server opens Settings → Private server | the note says "Paid with a different address? Contact us and we will link it to this account." |
+
 # When something fails
 
 Note the node, the exact values you entered, and the error text from the

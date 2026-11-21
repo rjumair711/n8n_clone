@@ -237,7 +237,11 @@ export const PrivateServerSection = () => {
         return (
             <SectionNote title="No private server on this account">
                 Bought one? It shows up here once you are signed in with the email address you
-                paid with, and that address is verified.{" "}
+                paid with, and that address is verified. Paid with a different address?{" "}
+                <Link href="/contact" className="underline underline-offset-4">
+                    Contact us
+                </Link>{" "}
+                and we will link it to this account.{" "}
                 <Link href="/pricing" className="underline underline-offset-4">
                     See the managed private server
                 </Link>
