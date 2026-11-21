@@ -5525,7 +5525,7 @@ const main = async () => {
     const account = sidebar.slice(sidebar.indexOf("const ACCOUNT_ITEMS"), sidebar.indexOf("// One size for every item"));
     assert.deepEqual(
       [...account.matchAll(/title: "([^"]+)"/g)].map((match) => match[1]),
-      ["Settings", "Usage", "Billing", "API Keys", "Docs"]
+      ["Settings", "Usage", "Billing", "API Keys", "Docs", "Support"]
     );
     // Sign out comes after them, at the end of the menu
     assert.ok(sidebar.lastIndexOf("Sign out") > sidebar.indexOf("ACCOUNT_ITEMS.map"));
@@ -16474,6 +16474,76 @@ pour()</code></pre>
     const fleet = readFileSync("src/features/settings/components/sections/managed-servers-section.tsx", "utf8");
     assert.match(fleet, /trpc\.managedServers\.assignToAccount\.mutationOptions/);
     assert.match(fleet, /\{server\.user \? "Reassign" : "Assign"\}/);
+  });
+
+  await test("support: customers send messages from Support and the editor's Help button", async () => {
+    const support = await import("@/lib/support");
+    const { LEGAL } = await import("@/features/marketing/lib/legal-content");
+    const { readFileSync } = await import("node:fs");
+
+    // The address: SUPPORT_EMAIL, else the Contact page's on the hosted app,
+    // none on a self-hosted server
+    assert.equal(support.getSupportEmail({}, false), LEGAL.email);
+    assert.equal(support.getSupportEmail({ SUPPORT_EMAIL: " help@rxj.example " }, false), "help@rxj.example");
+    assert.equal(support.getSupportEmail({}, true), null);
+    assert.equal(support.getSupportEmail({ SUPPORT_EMAIL: "help@own.server" }, true), "help@own.server");
+    assert.equal(support.getSupportEmail({ SUPPORT_EMAIL: "not an email" }, false), LEGAL.email);
+
+    // What may be sent: workflow and node are optional
+    const ok = { title: "Gmail won't connect", message: "It says invalid_grant after I sign in.", name: "Ali", email: "ali@shop.pk" };
+    const parsed = support.supportMessageSchema.parse({ ...ok, workflowId: "", nodeName: "  " });
+    assert.equal(parsed.workflowId, undefined);
+    assert.equal(parsed.nodeName, undefined);
+    assert.equal(support.supportMessageSchema.parse({ ...ok, workflowId: "wf1", nodeType: "GMAIL" }).nodeType, "GMAIL");
+    for (const bad of [
+      { ...ok, title: "x" },
+      { ...ok, title: "x".repeat(121) },
+      { ...ok, message: "short" },
+      { ...ok, message: "x".repeat(5001) },
+      { ...ok, email: "nope" },
+      { ...ok, name: "" },
+    ]) {
+      assert.equal(support.supportMessageSchema.safeParse(bad).success, false, JSON.stringify(bad).slice(0, 60));
+    }
+    assert.equal(support.cleanSupportPage("/workflows/abc"), "/workflows/abc");
+    assert.equal(support.cleanSupportPage("https://evil.example/x"), undefined);
+    assert.equal(support.cleanSupportPage("/x?<script>"), undefined);
+
+    // The owner's email: escaped, one-line subject, reply goes to the customer
+    const email = support.buildNewSupportEmail({
+      appUrl: "https://app.rxj.example/",
+      messageId: "m1",
+      title: "Broken\r\nBcc: x@y.z",
+      message: "<img src=x onerror=alert(1)>",
+      name: "Ali <b>",
+      email: "ali@shop.pk",
+      workflowName: "Leads",
+      nodeName: "Send email",
+      nodeType: "GMAIL",
+    });
+    assert.equal(email.subject, "Support: Broken Bcc: x@y.z");
+    assert.equal(email.replyTo, "ali@shop.pk");
+    assert.doesNotMatch(email.html, /<img|<b>/);
+    assert.match(email.text, /Workflow: Leads\nNode: Send email \(GMAIL\)/);
+    assert.match(email.text, /https:\/\/app\.rxj\.example\/admin\/support\?message=m1/);
+
+    // The router: an hourly limit, only the workspace's own workflow, the
+    // customer's own messages
+    const router = readFileSync("src/features/support/server/routers.ts", "utf8");
+    assert.match(router, /if \(recent >= SUPPORT_MESSAGES_PER_HOUR\)/);
+    assert.match(router, /where: \{ id: input\.workflowId, userId: ctx\.workspace\.ownerId \}/);
+    assert.match(router, /where: \{ userId: ctx\.auth\.user\.id \},\s+orderBy: \{ createdAt: "desc" \}/);
+    assert.match(router, /void notifyOwner\(/);
+    assert.equal(support.SUPPORT_MESSAGES_PER_HOUR, 5);
+
+    // Where customers find it
+    assert.match(readFileSync("src/components/app-sidebar.tsx", "utf8"), /\{ title: "Support", icon: LifeBuoyIcon, url: "\/support" \}/);
+    assert.match(readFileSync("src/features/editor/components/editor-header.tsx", "utf8"), /<EditorHelpButton workflowId=\{workflowId\} \/>/);
+    assert.match(readFileSync("src/app/(dashboard)/(rest)/support/page.tsx", "utf8"), /<SupportPage \/>/);
+    const dialog = readFileSync("src/features/support/components/support-dialog.tsx", "utf8");
+    assert.match(dialog, /Your credentials are never sent/);
+    // The privacy policy says support messages are kept
+    assert.match(readFileSync("src/features/marketing/lib/legal-content.ts", "utf8"), /Support messages you send us from RXJ/);
   });
 
   console.log(`\n${passed} checks passed`);

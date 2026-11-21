@@ -78,6 +78,8 @@ model User {
   workspaceMemberships   WorkspaceMember[]
   ssoProviders           SsoProvider[]
   managedServers         ManagedServer[]
+  supportMessages        SupportMessage[]
+  supportReplies         SupportReply[]
 
   @@unique([email])
   @@map("user")
@@ -203,6 +205,52 @@ model ManagedServer {
   @@index([userId])
   @@index([customerEmail])
   @@map("managed_server")
+}
+
+// A message a customer sent from Support or the workflow editor's Help
+// button (src/lib/support.ts). Answered from the admin dashboard; the
+// replies are shown under My messages and emailed. The workflow and node
+// are kept as plain ids and names, so the message stays when they go.
+model SupportMessage {
+  id           String         @id @default(cuid())
+  userId       String
+  user         User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  // Where to answer: from the account, the customer may change them
+  name         String
+  email        String
+  title        String
+  message      String         @db.Text
+  workflowId   String?
+  workflowName String?
+  nodeId       String?
+  nodeName     String?
+  nodeType     String?
+  // The page it was sent from, e.g. /workflows/abc
+  page         String?
+  // "new", "in_progress" or "resolved"
+  status       String         @default("new")
+  replies      SupportReply[]
+  createdAt    DateTime       @default(now())
+  updatedAt    DateTime       @default(now()) @updatedAt
+
+  @@index([userId, createdAt])
+  @@index([status, createdAt])
+  @@map("support_message")
+}
+
+// An admin's answer to a support message
+model SupportReply {
+  id        String         @id @default(cuid())
+  messageId String
+  message   SupportMessage @relation(fields: [messageId], references: [id], onDelete: Cascade)
+  // The admin who answered. Null when that account is deleted
+  adminId   String?
+  admin     User?          @relation(fields: [adminId], references: [id], onDelete: SetNull)
+  text      String         @db.Text
+  createdAt DateTime       @default(now())
+
+  @@index([messageId, createdAt])
+  @@map("support_reply")
 }
 
 // What a model costs, in US dollars per million tokens. Edited by admins

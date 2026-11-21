@@ -17,6 +17,7 @@ import { useEffect, useRef, useState } from 'react'
 import { editorAtom } from '../store/atoms'
 import { VersionHistory } from '@/features/workflows/components/version-history'
 import { WorkflowTimezoneDialog } from '@/features/workflows/components/workflow-timezone-dialog'
+import { EditorHelpButton } from '@/features/support/components/editor-help-button'
 
 
 
@@ -289,6 +290,7 @@ export const EditorHeader = ({ workflowId }: { workflowId: string }) => {
                         Evaluations
                     </Link>
                 </Button>
+                <EditorHelpButton workflowId={workflowId} />
                 <EditorSaveButton workflowId={workflowId} />
             </div>
         </header>
