@@ -1254,10 +1254,11 @@ Nobody has to log in to a customer's server to set it up:
 * The token lives in `self-host/.env.agent` (mode 600), not in `.env`, so the app never sees it. The agent reads that file line by line; it does not run it.
 * **Pause updates on every server** (a bad release): set `MANAGED_SERVER_UPDATES_PAUSED=true` on the hosted app. One server: `RXJ_AUTO_UPDATE=false` in its `.env.agent`.
 * The heartbeat endpoint answers 404 on a self-hosted server, refuses unknown tokens (401) and malformed reports (400), and is rate limited per server (20 a minute).
+* **Popup after paying:** the thanks page Polar opens after payment shows a popup with the five steps to connect the server (sign in with the email you paid with, rent a server, point the domain, make the install command, paste it on the server), ending with "You can see these steps again any time in Settings → Private server, or on the Docs page in the sidebar." The same popup opens once inside the app for a paid server that is not installed yet (also for a buyer who made their account after paying); closing it, or opening Settings → Private server, is remembered per server (`managedServerWelcome` in the user's `onboarding` JSON, no new column). The steps are one list: `src/features/managed-servers/lib/install-steps.ts`.
 * **Settings → Private server** shows the customer their server: waiting for install, online, not reporting (no heartbeat for 35 minutes) or subscription ended, with its last report, last backup and version.
 * **Settings → Platform → Managed servers** (admins only) lists every customer's server, problems first: not reporting, a container that is down, no backup for 48 hours.
 * The installer also works without a token, for anyone self-hosting: `curl -fsSL <app URL>/install.sh | sudo bash -s -- --domain rxj.example.com --email you@example.com`. Then it sends nothing anywhere.
-* Not done yet: backups go to the server's own disk only (not off-site), and nobody is emailed when a server stops reporting. The fleet page shows both.
+* Not done yet: backups go to the server's own disk only (not off-site; the plan is in [`docs/OFFSITE_BACKUPS_PLAN.md`](docs/OFFSITE_BACKUPS_PLAN.md)), and nobody is emailed when a server stops reporting. The fleet page shows both.
 * **Earlier plan subscribers** keep the Polar customer portal under Billing, where they can cancel; their plan column no longer changes anything. Prompts about what only an own server offers open the pricing page.
 
 ---

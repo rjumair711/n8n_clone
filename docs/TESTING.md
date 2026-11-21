@@ -2321,6 +2321,23 @@ subdomain pointing at it. Delete the VPS afterwards.
 Afterwards: delete the VPS, and delete the test rows with
 `DELETE FROM managed_server WHERE "customerEmail" = '<test address>';`.
 
+## T46. Managed server: popup after paying
+
+Needs what T45 needs (sandbox product, the `managed_servers` migration
+applied) and the **test account**.
+
+| # | Do | Expect |
+| - | -- | ------ |
+| 1 | Buy the managed server in the Polar sandbox | Polar opens `/managed-server/thanks` and a popup opens at once: "Your private server is ready to connect", five numbered steps, and at the end "You can see these steps again any time in Settings → Private server, or on the Docs page in the sidebar." |
+| 2 | Press **Later** | the popup closes; the page behind it shows the same five steps and an "Open Private server settings" button |
+| 3 | Open `/workflows` signed in as the test account | the same popup opens once |
+| 4 | Close it, reload, open other pages | it does not open again |
+| 5 | Buy a second managed server, open `/workflows` | the popup opens again, for the new server |
+| 6 | Press **Open Private server settings** in it | Settings → Private server opens; the popup does not come back |
+| 7 | A server that is already installed, or a cancelled subscription | no popup in the app |
+| 8 | An account without a managed server, and a self-hosted server | no popup, and no request to `managedServers.welcome` on the self-hosted one |
+| 9 | Phone width (375 px) | the popup fits and scrolls; both buttons can be pressed |
+
 # When something fails
 
 Note the node, the exact values you entered, and the error text from the
