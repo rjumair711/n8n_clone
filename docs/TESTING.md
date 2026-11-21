@@ -2418,6 +2418,22 @@ run this month.
 | 8 | Settings menu | no "Platform" group any more |
 | 9 | Self-hosted image, admin | no "Managed servers" tab; `/admin/servers` is "not found" |
 
+## T51. Admin: errors
+
+Make two test workflows fail (for example an HTTP Request to
+`https://httpstat.us/500`) from two test accounts.
+
+| # | Do | Expect |
+| - | -- | ------ |
+| 1 | Admin → Overview | "Failed runs, last 24 hours" highlighted; press it |
+| 2 | Admin → **Errors**, By customer, Last 24 hours | each test account with "N failed", workflows and when |
+| 3 | Open an account | its failed runs: workflow, "at <node> (<type>)", the error |
+| 4 | Press a run | a side panel: customer, workflow, start time, what started it, every node in order with status and time, the failed one in red with its error; no node data |
+| 5 | **By error** | the HTTP 500 errors of both accounts as one group: "HTTP Request · 2 runs · 2 customers" with both emails |
+| 6 | Last 7 / 30 days | older failures too |
+| 7 | A time with no failures | "No failed runs in this time." |
+| 8 | As a non-admin, `/admin/errors` | "page not found" |
+
 # When something fails
 
 Note the node, the exact values you entered, and the error text from the
