@@ -15511,7 +15511,7 @@ pour()</code></pre>
     assert.match(page, /href=\{checkoutUrl\}/);
     assert.equal(/Beginner|Intermediate|\/api\/subscription\/checkout/.test(page), false);
     assert.match(readFileSync("src/features/marketing/components/landing-page.tsx", "utf8"), /PRICING_OFFERS\.map/);
-    assert.match(readFileSync("src/app/managed-server/thanks/page.tsx", "utf8"), /href="\/settings\/private-server"/);
+    assert.match(readFileSync("src/app/managed-server/thanks/page.tsx", "utf8"), /href=\{PRIVATE_SERVER_SETTINGS_HREF\}/);
   });
 
   await test("self-hosted: Sentry reports nowhere unless the owner sets a DSN; the hosted app keeps RXJ's", async () => {
@@ -16032,6 +16032,14 @@ pour()</code></pre>
     assert.deepEqual(readOnboardingState({ usedTemplate: true, dismissed: "yes", other: 1 }), { usedTemplate: true });
     assert.deepEqual(readOnboardingState(null), {});
     assert.deepEqual(readOnboardingState([1]), {});
+    // The managed servers whose "connect your server" popup was closed
+    assert.deepEqual(readOnboardingState({ managedServerWelcome: ["cm1abc", 3, "bad id!", "cm2def"] }), {
+      managedServerWelcome: ["cm1abc", "cm2def"],
+    });
+    assert.equal(
+      readOnboardingState({ managedServerWelcome: Array.from({ length: 25 }, (_, i) => `s${i}`) }).managedServerWelcome?.length,
+      20
+    );
 
     const { readFileSync } = await import("node:fs");
     assert.match(readFileSync("src/features/templates/server/routers.ts", "utf8"), /markOnboarding\(ctx\.auth\.user\.id, \{ usedTemplate: true \}\)\.catch/);
@@ -16391,6 +16399,44 @@ pour()</code></pre>
         assert.equal(check.status, 0, `${file}: ${check.stderr}`);
       }
     }
+  });
+
+  await test("managed server: the popup after paying shows how to connect the server", async () => {
+    const steps = await import("@/features/managed-servers/lib/install-steps");
+    const { readFileSync } = await import("node:fs");
+
+    assert.deepEqual(
+      steps.MANAGED_SERVER_INSTALL_STEPS.map((step) => step.title),
+      [
+        "Sign in with the email you paid with",
+        "Rent a server",
+        "Point your domain at it",
+        "Make your install command",
+        "Paste it on your server",
+      ]
+    );
+    // It ends by saying where the steps are again
+    assert.match(steps.INSTALL_STEPS_FOOTER, /Settings → Private server/);
+    assert.match(steps.INSTALL_STEPS_FOOTER, /Docs page in the sidebar/);
+    assert.equal(steps.PRIVATE_SERVER_SETTINGS_HREF, "/settings/private-server");
+
+    // On the thanks page Polar opens after paying, and once in the app
+    const thanks = readFileSync("src/app/managed-server/thanks/page.tsx", "utf8");
+    assert.match(thanks, /<ThanksWelcome \/>/);
+    assert.match(thanks, /<InstallStepsList \/>/);
+    const dialog = readFileSync("src/features/managed-servers/components/managed-server-welcome-dialog.tsx", "utf8");
+    assert.match(dialog, /\{INSTALL_STEPS_FOOTER\}/);
+    assert.match(readFileSync("src/app/(dashboard)/layout.tsx", "utf8"), /<ManagedServerWelcomeGate \/>/);
+    const gate = readFileSync("src/features/managed-servers/components/managed-server-welcome-gate.tsx", "utf8");
+    assert.match(gate, /enabled: !SELF_HOSTED/);
+    assert.match(gate, /dismiss\.mutate\(\{ serverId \}\)/);
+
+    // Only the customer's own paid servers that are not installed yet;
+    // closing it is remembered per server, for their own servers only
+    const router = readFileSync("src/features/managed-servers/server/routers.ts", "utf8");
+    assert.match(router, /where: \{ userId: ctx\.auth\.user\.id, installedAt: null \}/);
+    assert.match(router, /isSubscriptionLive\(row\.status\) && !seen\.has\(row\.id\)/);
+    assert.match(router, /where: \{ id: input\.serverId, userId: ctx\.auth\.user\.id \},\s+select: \{ id: true \},/);
   });
 
   console.log(`\n${passed} checks passed`);

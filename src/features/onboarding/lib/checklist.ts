@@ -2,13 +2,27 @@
 // account to a workflow that runs by itself. Pure, so the rules can be
 // tested; the counts come from the account's own data.
 
-export type OnboardingState = { usedTemplate?: boolean; dismissed?: boolean };
+export type OnboardingState = {
+  usedTemplate?: boolean;
+  dismissed?: boolean;
+  // Managed servers whose "how to connect your server" popup was shown
+  managedServerWelcome?: string[];
+};
+
+// A customer has one or a few servers; more ids than this are not kept
+const MAX_WELCOMED_SERVERS = 20;
 
 export const readOnboardingState = (value: unknown): OnboardingState => {
   const record = value && typeof value === "object" && !Array.isArray(value) ? (value as Record<string, unknown>) : {};
+  const welcomed = Array.isArray(record.managedServerWelcome)
+    ? record.managedServerWelcome
+        .filter((id): id is string => typeof id === "string" && /^[a-z0-9]{1,40}$/.test(id))
+        .slice(-MAX_WELCOMED_SERVERS)
+    : [];
   return {
     ...(record.usedTemplate === true ? { usedTemplate: true } : {}),
     ...(record.dismissed === true ? { dismissed: true } : {}),
+    ...(welcomed.length ? { managedServerWelcome: welcomed } : {}),
   };
 };
 

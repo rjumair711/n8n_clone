@@ -1,5 +1,6 @@
 import { redirect } from "next/navigation";
 import { AppSidebar } from "@/components/app-sidebar";
+import { ManagedServerWelcomeGate } from "@/features/managed-servers/components/managed-server-welcome-gate";
 import {
     SidebarInset,
     SidebarProvider,
@@ -56,6 +57,8 @@ const Layout = async ({
             <SidebarInset className="bg-accent/20">
                 {children}
             </SidebarInset>
+            {/* After paying for a managed server: how to connect it */}
+            <ManagedServerWelcomeGate />
         </SidebarProvider>
     );
 };

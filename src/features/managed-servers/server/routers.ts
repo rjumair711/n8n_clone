@@ -14,6 +14,8 @@ import {
     unhealthyContainers,
 } from "@/lib/managed-server";
 import { claimManagedServers } from "@/lib/managed-servers";
+import type { Prisma } from "@prisma/client";
+import { readOnboardingState } from "@/features/onboarding/lib/checklist";
 import { createTRPCRouter, protectedProcedure } from "@/trpc/init";
 
 // What either page shows of a server. The token hash never leaves the server.
@@ -65,6 +67,58 @@ export const managedServersRouter = createTRPCRouter({
 
         return { servers: servers.map((server) => describe(server, now)) };
     }),
+
+    // The server to show the "how to connect your server" popup for: the
+    // customer's first paid server that is not installed yet and whose
+    // popup they have not closed. Null when there is none.
+    welcome: protectedProcedure.query(async ({ ctx }) => {
+        if (SELF_HOSTED) return { serverId: null };
+
+        await claimManagedServers(ctx.auth.user);
+
+        const [user, servers] = await Promise.all([
+            prisma.user.findUnique({ where: { id: ctx.auth.user.id }, select: { onboarding: true } }),
+            prisma.managedServer.findMany({
+                where: { userId: ctx.auth.user.id, installedAt: null },
+                orderBy: { createdAt: "asc" },
+                select: { id: true, status: true },
+            }),
+        ]);
+        const seen = new Set(readOnboardingState(user?.onboarding).managedServerWelcome ?? []);
+        const server = servers.find((row) => isSubscriptionLive(row.status) && !seen.has(row.id));
+
+        return { serverId: server?.id ?? null };
+    }),
+
+    // The popup was closed: it does not open again for this server
+    dismissWelcome: protectedProcedure
+        .input(z.object({ serverId: z.string().min(1).max(40) }))
+        .mutation(async ({ ctx, input }) => {
+            if (SELF_HOSTED) throw notHosted();
+
+            const server = await prisma.managedServer.findFirst({
+                where: { id: input.serverId, userId: ctx.auth.user.id },
+                select: { id: true },
+            });
+            if (!server) throw new TRPCError({ code: "NOT_FOUND", message: "Server not found" });
+
+            const user = await prisma.user.findUnique({
+                where: { id: ctx.auth.user.id },
+                select: { onboarding: true },
+            });
+            const raw = user?.onboarding && typeof user.onboarding === "object" && !Array.isArray(user.onboarding)
+                ? (user.onboarding as Record<string, unknown>)
+                : {};
+            const state = readOnboardingState(raw);
+            const welcomed = [...new Set([...(state.managedServerWelcome ?? []), server.id])].slice(-20);
+
+            await prisma.user.update({
+                where: { id: ctx.auth.user.id },
+                data: { onboarding: { ...raw, managedServerWelcome: welcomed } as Prisma.InputJsonValue },
+            });
+
+            return { dismissed: true };
+        }),
 
     // A new install token for one of the customer's servers, shown once.
     // It replaces the old one: a server already installed with the old
