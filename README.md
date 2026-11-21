@@ -1234,7 +1234,15 @@ Customers reach the platform's owner in two ways:
 * **Email:** **Sidebar → Support** shows the support address (`SUPPORT_EMAIL`, or the Contact page's address in `LEGAL`) with "Write an email" and a copy button. Those emails are answered from the owner's own inbox.
 * **A message from RXJ:** **Send a message** on the Support page, or **Help** in the workflow editor's top bar. The popup asks for a title (up to 120 characters), a message (up to 5,000), and a name and email to reply to (filled in from the account). From the editor, the workflow and the node selected on the canvas go with it, and the popup says so. Only a workflow of the workspace the customer is in is attached; credentials are never sent. At most 5 messages an hour per account.
 * Each message is saved (`support_message`) and emailed to the support address (to the first admin when there is none), with Reply-To set to the customer, so replying to that email answers them. The customer sees their messages and the replies under **Support → My messages**.
-* Answering inside RXJ, with replies shown under My messages, comes with the admin dashboard (`docs/ADMIN_DASHBOARD_PLAN.md`, step 2).
+* **Support** is in its own **Help** group of the sidebar panel.
+
+### Admin area (`/admin`)
+
+Only for admins: a verified address in `ADMIN_EMAILS`. For anyone else the pages answer "not found" and the sidebar has no **Admin** item; every procedure checks again on the server. Answering and changing a status also need two-factor on the admin's account. The plan for the rest is in `docs/ADMIN_DASHBOARD_PLAN.md`.
+
+* **Overview:** new and open support messages (highlighted when there are new ones), accounts, sign-ups this week, active workflows, runs this month, failed runs in the last 24 hours.
+* **Support:** the messages, newest first, filtered by New / In progress / Resolved. `?message=<id>` (the link in the owner's email) opens one. A message shows the sender, their account if its address differs, the page, and a read-only view of the workflow: its nodes' names and types, which nodes use a credential, and its last failed run's failing node and error. Never node settings or credential values.
+* **Reply:** saved as a `support_reply`, shown under the customer's **Support → My messages** ("RXJ support"), and emailed to the address they gave. A new message becomes "In progress", or "Resolved" with **Mark as resolved**. Replies and status changes are in the audit log.
 * A self-hosted server shows no support address unless its owner sets `SUPPORT_EMAIL`; its messages go to that server's own admins.
 
 ## What is on sale: the managed private server

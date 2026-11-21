@@ -126,3 +126,35 @@ export const buildNewSupportEmail = (input: {
     ].join(""),
   };
 };
+
+export const SUPPORT_REPLY_MAX = 5000;
+
+/** The email a customer gets when an admin answers their message. */
+export const buildSupportReplyEmail = (input: {
+  appUrl: string;
+  title: string;
+  reply: string;
+  name: string;
+}) => {
+  const url = `${input.appUrl.replace(/\/+$/, "")}${SUPPORT_PAGE_HREF}`;
+  const subject = `Re: ${oneLine(input.title).slice(0, SUPPORT_TITLE_MAX)}`;
+
+  return {
+    subject,
+    text: [
+      `Hi ${oneLine(input.name)},`,
+      "",
+      input.reply,
+      "",
+      `You can see your messages and our replies in RXJ: ${url}`,
+      "",
+      "RXJ support",
+    ].join("\n"),
+    html: [
+      `<p>Hi ${escapeHtml(oneLine(input.name))},</p>`,
+      `<p style="white-space:pre-wrap">${escapeHtml(input.reply)}</p>`,
+      `<p><a href="${escapeHtml(url)}">See your messages in RXJ</a></p>`,
+      "<p>RXJ support</p>",
+    ].join(""),
+  };
+};

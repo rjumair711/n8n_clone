@@ -5525,7 +5525,7 @@ const main = async () => {
     const account = sidebar.slice(sidebar.indexOf("const ACCOUNT_ITEMS"), sidebar.indexOf("// One size for every item"));
     assert.deepEqual(
       [...account.matchAll(/title: "([^"]+)"/g)].map((match) => match[1]),
-      ["Settings", "Usage", "Billing", "API Keys", "Docs", "Support"]
+      ["Settings", "Usage", "Billing", "API Keys", "Docs"]
     );
     // Sign out comes after them, at the end of the menu
     assert.ok(sidebar.lastIndexOf("Sign out") > sidebar.indexOf("ACCOUNT_ITEMS.map"));
@@ -16537,13 +16537,59 @@ pour()</code></pre>
     assert.equal(support.SUPPORT_MESSAGES_PER_HOUR, 5);
 
     // Where customers find it
-    assert.match(readFileSync("src/components/app-sidebar.tsx", "utf8"), /\{ title: "Support", icon: LifeBuoyIcon, url: "\/support" \}/);
+    // In the sidebar panel itself, in a Help group; Admin only for admins
+    const sidebarSource = readFileSync("src/components/app-sidebar.tsx", "utf8");
+    assert.match(sidebarSource, /title: "Help",\s+items: \[\s+\/\/[^\n]*\n\s+\{ title: "Support", icon: LifeBuoyIcon, url: "\/support" \}/);
+    assert.match(sidebarSource, /const navGroups = security\?\.isAdmin/);
     assert.match(readFileSync("src/features/editor/components/editor-header.tsx", "utf8"), /<EditorHelpButton workflowId=\{workflowId\} \/>/);
     assert.match(readFileSync("src/app/(dashboard)/(rest)/support/page.tsx", "utf8"), /<SupportPage \/>/);
     const dialog = readFileSync("src/features/support/components/support-dialog.tsx", "utf8");
     assert.match(dialog, /Your credentials are never sent/);
     // The privacy policy says support messages are kept
     assert.match(readFileSync("src/features/marketing/lib/legal-content.ts", "utf8"), /Support messages you send us from RXJ/);
+  });
+
+  await test("admin: overview and support inbox, for admins only; replies reach the customer", async () => {
+    const support = await import("@/lib/support");
+    const { readFileSync } = await import("node:fs");
+
+    // The reply email: escaped, one-line subject, links to My messages
+    const reply = support.buildSupportReplyEmail({
+      appUrl: "https://app.rxj.example/",
+      title: "Gmail\nBcc: x@y.z",
+      reply: "Reconnect it <b>now</b>",
+      name: "Ali\r\n",
+    });
+    assert.equal(reply.subject, "Re: Gmail Bcc: x@y.z");
+    assert.match(reply.text, /^Hi Ali,\n\nReconnect it <b>now<\/b>/);
+    assert.doesNotMatch(reply.html, /<b>now/);
+    assert.match(reply.text, /https:\/\/app\.rxj\.example\/support/);
+
+    // Pages: only admins, everyone else "not found"
+    const layout = readFileSync("src/app/(dashboard)/(rest)/admin/layout.tsx", "utf8");
+    assert.match(layout, /if \(!isAdmin\(session\.user\)\) notFound\(\);/);
+
+    // Every procedure checks again: looking needs an admin, changing also
+    // two-factor; workflow details never include node settings
+    const router = readFileSync("src/features/admin/server/routers.ts", "utf8");
+    assert.match(router, /const adminProcedure = protectedProcedure\.use\(\(\{ ctx, next \}\) => \{\s+if \(!isAdmin\(ctx\.auth\.user\)\)/);
+    assert.match(router, /const adminActionProcedure = adminProcedure\.use\(\(\{ ctx, next \}\) => \{\s+if \(!canUseAdminActions\(ctx\.auth\.user\)\)/);
+    for (const name of ["overview", "supportList", "supportMessage"]) {
+      assert.match(router, new RegExp(`${name}: adminProcedure`), name);
+    }
+    for (const name of ["reply", "setSupportStatus"]) {
+      assert.match(router, new RegExp(`${name}: adminActionProcedure`), name);
+    }
+    assert.match(router, /select: \{ id: true, name: true, type: true, credentialId: true \}/);
+    assert.doesNotMatch(router.slice(router.indexOf("supportMessage:"), router.indexOf("reply:")), /data: true/);
+    assert.match(router, /action: "support\.replied"/);
+    const audit = await import("@/lib/audit-actions");
+    assert.ok("support.replied" in audit.AUDIT_ACTIONS && "support.status_changed" in audit.AUDIT_ACTIONS);
+
+    // The owner's email links here, and the inbox opens that message
+    const inbox = readFileSync("src/features/admin/components/support-inbox.tsx", "utf8");
+    assert.match(inbox, /searchParams\.get\("message"\)/);
+    assert.match(readFileSync("src/features/admin/components/admin-nav.tsx", "utf8"), /\{ href: "\/admin\/support", title: "Support" \}/);
   });
 
   console.log(`\n${passed} checks passed`);

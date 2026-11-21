@@ -20,6 +20,7 @@ import { dataTablesRouter } from '@/features/data-tables/server/routers';
 import { workflowFoldersRouter } from '@/features/workflows/server/folders';
 import { managedServersRouter } from '@/features/managed-servers/server/routers';
 import { supportRouter } from '@/features/support/server/routers';
+import { adminRouter } from '@/features/admin/server/routers';
 
 
 
@@ -45,6 +46,7 @@ export const appRouter = createTRPCRouter({
   workflowFolders: workflowFoldersRouter,
   managedServers: managedServersRouter,
   support: supportRouter,
+  admin: adminRouter,
 });
 // export type definition of API
 export type AppRouter = typeof appRouter;

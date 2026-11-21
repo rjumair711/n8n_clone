@@ -1,7 +1,7 @@
 "use client"
 
 import { useEffect } from "react"
-import { useQueryClient } from "@tanstack/react-query"
+import { useQuery, useQueryClient } from "@tanstack/react-query"
 import {
     BookOpenIcon,
     BotIcon,
@@ -16,6 +16,7 @@ import {
     LifeBuoyIcon,
     LogOutIcon,
     SettingsIcon,
+    ShieldCheckIcon,
     UserCheckIcon,
     type LucideIcon,
 } from "lucide-react"
@@ -50,6 +51,7 @@ import { getInitials } from "@/lib/initials"
 import { RxjLogo } from "@/features/marketing/components/rxj-logo"
 import { WorkspaceSwitcher } from "@/features/workspaces/components/workspace-switcher"
 import { SELF_HOSTED } from "@/config/self-hosted"
+import { useTRPC } from "@/trpc/client"
 
 type NavItem = { title: string; icon: LucideIcon; url: string }
 
@@ -70,7 +72,17 @@ const NAV_GROUPS: { title: string; items: NavItem[] }[] = [
             { title: "Credentials", icon: KeyIcon, url: "/credentials" },
         ],
     },
+    {
+        title: "Help",
+        items: [
+            // The support email, a message form and My messages
+            { title: "Support", icon: LifeBuoyIcon, url: "/support" },
+        ],
+    },
 ]
+
+// Only in an admin's sidebar (the pages check it on the server too)
+const ADMIN_ITEM: NavItem = { title: "Admin", icon: ShieldCheckIcon, url: "/admin" }
 
 // The account menu, in order; Sign out comes after them
 const ACCOUNT_ITEMS: NavItem[] = [
@@ -79,8 +91,6 @@ const ACCOUNT_ITEMS: NavItem[] = [
     { title: "Billing", icon: CreditCardIcon, url: "/billing" },
     { title: "API Keys", icon: Code2Icon, url: "/settings/api-keys" },
     { title: "Docs", icon: BookOpenIcon, url: "/docs" },
-    // The support email, a message form and My messages
-    { title: "Support", icon: LifeBuoyIcon, url: "/support" },
 // A self-hosted server has no billing
 ].filter((item) => !SELF_HOSTED || item.url !== "/billing")
 
@@ -163,6 +173,14 @@ const AccountMenu = () => {
 export const AppSidebar = () => {
     const pathname = usePathname()
     const queryClient = useQueryClient()
+    const trpc = useTRPC()
+    // The same answer Settings uses to show its admin sections
+    const { data: security } = useQuery({ ...trpc.settings.getSecurity.queryOptions(), staleTime: 5 * 60_000 })
+    const navGroups = security?.isAdmin
+        ? NAV_GROUPS.map((group) =>
+              group.title === "Help" ? { ...group, items: [...group.items, ADMIN_ITEM] } : group
+          )
+        : NAV_GROUPS
     const { state, setOpenMobile } = useSidebar()
     const isCollapsed = state === "collapsed"
 
@@ -197,7 +215,7 @@ export const AppSidebar = () => {
             </SidebarHeader>
 
             <SidebarContent className="gap-0">
-                {NAV_GROUPS.map((group) => (
+                {navGroups.map((group) => (
                     <SidebarGroup key={group.title} className="px-3 py-2 group-data-[collapsible=icon]:px-2">
                         <SidebarGroupLabel className="h-7 px-3 text-[11px] font-semibold uppercase tracking-wider text-[var(--sidebar-muted)]">
                             {group.title}
