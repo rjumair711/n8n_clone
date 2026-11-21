@@ -31,6 +31,8 @@ export const AUDIT_ACTIONS = {
   "included_ai.deleted": "Included AI provider deleted",
   "managed_server.install_token_created": "Private server install command made",
   "managed_server.assigned": "Private server assigned to an account",
+  "support.replied": "Support message answered",
+  "support.status_changed": "Support message status changed",
   "auth.sign_in": "Signed in",
   "account.name_changed": "Name changed",
   "account.password_changed": "Password changed",

@@ -16,7 +16,7 @@ connections, runs), not their own servers.
   messages** in RXJ, and emailed to them too.
 * **Errors page:** yes, per customer, with details.
 
-## Step 1: customers send messages (migration)
+## Step 1: customers send messages (migration) — done, PR #121
 
 * **Sidebar → Support** (`/support`): the support email (copy, "Write an
   email"), a **Send a message** button, and **My messages** with their
@@ -31,7 +31,10 @@ connections, runs), not their own servers.
   workflow, node, page, status `new` / `in_progress` / `resolved`,
   times) and `support_reply` (message, admin, text, time). Additive.
 
-## Step 2: admin area and support inbox (no migration)
+## Step 2: admin area and support inbox (no migration) — done
+
+Support moved from the account menu into a **Help** group of the sidebar
+panel, with **Admin** under it for admins.
 
 * `/admin`, in the sidebar only for admins (verified address in
   `ADMIN_EMAILS`); changing anything also needs two-factor.

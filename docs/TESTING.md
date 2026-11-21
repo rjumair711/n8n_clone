@@ -2378,6 +2378,29 @@ Use the **test account**. Needs `RESEND_API_KEY` for the email steps.
 
 Afterwards delete the test messages: `DELETE FROM support_message WHERE "userId" = '<test user id>';`
 
+## T49. Admin area and support inbox
+
+Needs an admin account (address in `ADMIN_EMAILS`, verified, two-factor
+on), the **test account** with a message sent (T48), and `RESEND_API_KEY`.
+
+| # | Do | Expect |
+| - | -- | ------ |
+| 1 | As the test account, open `/admin` | "page not found"; no **Admin** in the sidebar |
+| 2 | As the admin | **Help → Support** and **Help → Admin** in the sidebar |
+| 3 | Admin → Overview | the tiles; "New support messages" highlighted and counting the test message |
+| 4 | Press that tile | Support, filtered to New, with the message |
+| 5 | Open the message | title, name and email, when, the page; the workflow's nodes as badges (the one it is about filled in, a key on nodes with a credential) and its last failed run's node and error; no node settings |
+| 6 | Open the link in the owner's email ("Open it in RXJ") | the same message, opened |
+| 7 | Write a reply, **Send reply** | "Reply sent..."; the message is "In progress"; the reply is listed under it |
+| 8 | As the test account: Support → My messages | "Being looked at" with "RXJ support · ..." and the reply |
+| 9 | The test account's inbox | "Re: <title>" with the reply and a link to Support |
+| 10 | Reply again with **Mark as resolved** | "Resolved" for both of you |
+| 11 | **Mark as new** | back to New |
+| 12 | An admin without two-factor | the Overview says answering needs two-factor; **Send reply** says "Turn on two-factor..." |
+| 13 | A message whose workflow was deleted | "The workflow has been deleted since." |
+| 14 | Settings → Audit log (admin) | "Support message answered" and "Support message status changed" |
+| 15 | Phone width | the list above the message; everything readable |
+
 # When something fails
 
 Note the node, the exact values you entered, and the error text from the
