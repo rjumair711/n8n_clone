@@ -8,6 +8,8 @@ export type SettingsSection = {
   description: string;
   // Set up by the platform's admins: left out of the menu for everyone else
   adminOnly?: boolean;
+  // Only on the hosted app: left out of the menu on a self-hosted server
+  hostedOnly?: boolean;
 };
 
 export type SettingsGroup = {
@@ -33,6 +35,12 @@ export const SETTINGS_GROUPS: SettingsGroup[] = [
         slug: "api-keys",
         title: "API Keys",
         description: "Run your workflows and read their results from your own code.",
+      },
+      {
+        slug: "private-server",
+        title: "Private server",
+        description: "Your managed private server: install it with one command, and see that it is running.",
+        hostedOnly: true,
       },
     ],
   },
@@ -90,6 +98,18 @@ export const SETTINGS_GROUPS: SettingsGroup[] = [
         slug: "ai-budgets",
         title: "AI budgets",
         description: "This month's AI spend and the workspace's monthly AI budget.",
+      },
+    ],
+  },
+  {
+    title: "Platform",
+    sections: [
+      {
+        slug: "managed-servers",
+        title: "Managed servers",
+        description: "Every customer's private server: whether it reports in, its version and its last backup.",
+        adminOnly: true,
+        hostedOnly: true,
       },
     ],
   },

@@ -24,6 +24,8 @@ import { grantCreditPurchase } from "./ai-credits"
 import { SubscriptionPlan } from "@prisma/client"
 import { SELF_HOSTED } from "@/config/self-hosted"
 import { getPlanForPolarProduct } from "@/config/plans"
+import { readManagedSubscription } from "./managed-server"
+import { saveManagedSubscription } from "./managed-servers"
 import { Resend } from "resend"
 
 // Where the app may be opened from. Set NEXT_PUBLIC_APP_URL (and
@@ -367,6 +369,14 @@ export const auth = betterAuth({
             const creditOrder = readCreditOrder(type, data as never, getCreditPacks());
             if (creditOrder) {
               await grantCreditPurchase(creditOrder);
+            }
+
+            // The managed private server: the same row as when
+            // /api/webhooks/polar gets the event (found by subscription id)
+            const managedSubscription = readManagedSubscription(type, data as never);
+            if (managedSubscription) {
+              await saveManagedSubscription(managedSubscription);
+              return;
             }
 
             // 1. Upgrade user when they subscribe or modify their plan

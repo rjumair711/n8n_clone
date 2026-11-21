@@ -18,6 +18,7 @@ import { memoryRouter } from '@/features/memory/server/routers';
 import { onboardingRouter } from '@/features/onboarding/server/routers';
 import { dataTablesRouter } from '@/features/data-tables/server/routers';
 import { workflowFoldersRouter } from '@/features/workflows/server/folders';
+import { managedServersRouter } from '@/features/managed-servers/server/routers';
 
 
 
@@ -41,6 +42,7 @@ export const appRouter = createTRPCRouter({
   onboarding: onboardingRouter,
   dataTables: dataTablesRouter,
   workflowFolders: workflowFoldersRouter,
+  managedServers: managedServersRouter,
 });
 // export type definition of API
 export type AppRouter = typeof appRouter;

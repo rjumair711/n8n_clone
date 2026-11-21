@@ -5484,7 +5484,7 @@ const main = async () => {
     const read = (file: string) => fs.readFileSync(path.join(process.cwd(), file), "utf8");
     const settingsDir = "src/app/(dashboard)/(rest)/settings";
 
-    assert.deepEqual(SETTINGS_GROUPS.map((group) => group.title), ["Account", "Workspace", "AI"]);
+    assert.deepEqual(SETTINGS_GROUPS.map((group) => group.title), ["Account", "Workspace", "AI", "Platform"]);
     // No enterprise sections: Git sync, external secrets and SSO are gone
     for (const slug of ["git-sync", "secrets", "sso"]) {
       assert.equal(fs.existsSync(path.join(process.cwd(), `${settingsDir}/${slug}`)), false, slug);
@@ -5492,11 +5492,16 @@ const main = async () => {
     // The platform's own settings are only in an admin's menu
     assert.deepEqual(
       SETTINGS_SECTIONS.filter((section) => section.adminOnly).map((section) => section.slug),
-      ["model-prices", "rxj-ai"]
+      ["model-prices", "rxj-ai", "managed-servers"]
+    );
+    // The managed private server is the hosted app's: a self-hosted menu has none of it
+    assert.deepEqual(
+      SETTINGS_SECTIONS.filter((section) => section.hostedOnly).map((section) => section.slug),
+      ["private-server", "managed-servers"]
     );
     assert.match(
       read("src/features/settings/components/settings-nav.tsx"),
-      /sections: group\.sections\.filter\(\(section\) => isAdmin \|\| !section\.adminOnly\),/
+      /\(isAdmin \|\| !section\.adminOnly\) && \(!SELF_HOSTED \|\| !section\.hostedOnly\)/
     );
     const slugs = SETTINGS_SECTIONS.map((section) => section.slug);
     assert.equal(new Set(slugs).size, slugs.length, "section slugs are unique");
@@ -15506,7 +15511,7 @@ pour()</code></pre>
     assert.match(page, /href=\{checkoutUrl\}/);
     assert.equal(/Beginner|Intermediate|\/api\/subscription\/checkout/.test(page), false);
     assert.match(readFileSync("src/features/marketing/components/landing-page.tsx", "utf8"), /PRICING_OFFERS\.map/);
-    assert.match(readFileSync("src/app/managed-server/thanks/page.tsx", "utf8"), /We will email you/);
+    assert.match(readFileSync("src/app/managed-server/thanks/page.tsx", "utf8"), /href="\/settings\/private-server"/);
   });
 
   await test("self-hosted: Sentry reports nowhere unless the owner sets a DSN; the hosted app keeps RXJ's", async () => {
@@ -16235,6 +16240,157 @@ pour()</code></pre>
     const workflows = readFileSync("src/features/workflows/server/routers.ts", "utf8");
     assert.match(workflows, /\.\.\.workflowListFilter\(input\),/);
     assert.match(workflows, /folderId: source\.folderId,/);
+  });
+
+  await test("managed private server: tokens, Polar events, heartbeats and the installer", async () => {
+    const ms = await import("@/lib/managed-server");
+    const { readFileSync } = await import("node:fs");
+    const { spawnSync } = await import("node:child_process");
+
+    // Tokens: random, stored as a hash, read only from a Bearer header
+    const a = ms.generateInstallToken();
+    const b = ms.generateInstallToken();
+    assert.match(a.token, /^rxjms_[0-9a-f]{64}$/);
+    assert.notEqual(a.token, b.token);
+    assert.equal(a.tokenHash, ms.hashInstallToken(a.token));
+    assert.notEqual(a.tokenHash, a.token);
+    assert.equal(a.tokenPrefix, a.token.slice(0, 12));
+    assert.equal(ms.readInstallToken(`Bearer ${a.token}`), a.token);
+    assert.equal(ms.readInstallToken(`bearer  ${a.token} `), a.token);
+    for (const header of [null, "", a.token, "Bearer rxj_abc", `Basic ${a.token}`, `Bearer ${a.token}x`]) {
+      assert.equal(ms.readInstallToken(header), null, String(header));
+    }
+
+    // Polar: only the managed server product, with the payer's address
+    const env = { POLAR_MANAGED_SERVER_PRODUCT_ID: "prod_ms" };
+    const event = {
+      id: "sub_1",
+      status: "Active",
+      product_id: "prod_ms",
+      customer: { email: " Owner@Shop.PK " },
+    };
+    assert.deepEqual(ms.readManagedSubscription("subscription.created", event, env), {
+      subscriptionId: "sub_1",
+      productId: "prod_ms",
+      status: "active",
+      customerEmail: "owner@shop.pk",
+    });
+    // The Better Auth plugin's parsed events use product.id
+    assert.equal(
+      ms.readManagedSubscription("subscription.canceled", { ...event, product_id: undefined, product: { id: "prod_ms" }, status: "canceled" }, env)?.status,
+      "canceled"
+    );
+    assert.equal(ms.readManagedSubscription("order.paid", event, env), null);
+    assert.equal(ms.readManagedSubscription("subscription.created", { ...event, product_id: "prod_pro" }, env), null);
+    assert.equal(ms.readManagedSubscription("subscription.created", event, {}), null, "no product configured");
+    assert.equal(ms.readManagedSubscription("subscription.created", { ...event, customer: null }, env), null);
+    assert.equal(ms.readManagedSubscription("subscription.created", null, env), null);
+    assert.ok(ms.isSubscriptionLive("active") && ms.isSubscriptionLive("past_due") && ms.isSubscriptionLive("trialing"));
+    assert.ok(!ms.isSubscriptionLive("canceled") && !ms.isSubscriptionLive("revoked") && !ms.isSubscriptionLive(null));
+
+    // Heartbeats: short plain fields only
+    const beat = {
+      event: "heartbeat",
+      domain: "automate.shop.pk",
+      version: "5c4da8c+0123456789ab",
+      lastBackupAt: "2026-11-21T03:12:00Z",
+      diskUsedPercent: 41,
+      containers: [{ name: "app", state: "running" }, { name: "caddy", state: "exited" }],
+    };
+    assert.ok(ms.heartbeatSchema.safeParse(beat).success);
+    assert.ok(ms.heartbeatSchema.safeParse({ event: "install-start" }).success);
+    for (const bad of [
+      { ...beat, event: "delete" },
+      { ...beat, domain: "evil.com/<script>" },
+      { ...beat, domain: "localhost" },
+      { ...beat, version: "1.0; rm -rf /" },
+      { ...beat, diskUsedPercent: 140 },
+      { ...beat, lastBackupAt: "yesterday" },
+      { ...beat, containers: [{ name: "App", state: "running" }] },
+      { ...beat, containers: Array.from({ length: 21 }, () => ({ name: "x", state: "running" })) },
+    ]) {
+      assert.equal(ms.heartbeatSchema.safeParse(bad).success, false, JSON.stringify(bad).slice(0, 80));
+    }
+    assert.deepEqual(ms.unhealthyContainers({ containers: beat.containers }), ["caddy"]);
+    assert.deepEqual(ms.unhealthyContainers(null), []);
+    assert.deepEqual(ms.unhealthyContainers({ containers: "x" }), []);
+
+    // States
+    const now = new Date("2026-11-21T12:00:00Z");
+    const minutesAgo = (minutes: number) => new Date(now.getTime() - minutes * 60_000);
+    const state = (status: string, installedAt: Date | null, lastSeenAt: Date | null) =>
+      ms.getServerState({ status, installedAt, lastSeenAt }, now);
+    assert.equal(state("active", null, null), "waiting-for-install");
+    assert.equal(state("active", minutesAgo(60), minutesAgo(10)), "online");
+    assert.equal(state("active", minutesAgo(60), minutesAgo(36)), "offline");
+    assert.equal(state("canceled", minutesAgo(60), minutesAgo(1)), "canceled");
+    assert.equal(ms.isBackupStale(minutesAgo(24 * 60), now), false);
+    assert.equal(ms.isBackupStale(minutesAgo(49 * 60), now), true);
+    assert.equal(ms.isBackupStale(null, now), true);
+
+    // The install command: plain values only, nothing that could run
+    const command = ms.buildInstallCommand({
+      appUrl: "https://app.rxj.example/",
+      token: a.token,
+      domain: "Automate.Shop.pk",
+      email: "owner@shop.pk",
+    });
+    assert.equal(
+      command,
+      `curl -fsSL https://app.rxj.example/install.sh | sudo bash -s -- --platform https://app.rxj.example --token ${a.token} --domain automate.shop.pk --email owner@shop.pk`
+    );
+    const unsafe = ms.buildInstallCommand({
+      appUrl: "https://app.rxj.example",
+      token: a.token,
+      domain: "x.com; curl evil.sh | sh",
+      email: "a@b.co$(reboot)",
+    });
+    assert.doesNotMatch(unsafe, /--domain|--email|;|\$\(/);
+
+    // Both Polar webhook addresses keep the row; the plans are untouched
+    const route = readFileSync("src/app/api/webhooks/polar/route.ts", "utf8");
+    assert.ok(route.indexOf("readManagedSubscription(eventType, eventData)") < route.indexOf("getPlanForPolarProduct(eventData.product_id)"));
+    assert.match(readFileSync("src/lib/auth.ts", "utf8"), /readManagedSubscription\(type, data as never\)/);
+
+    // The heartbeat checks the token by its hash and never returns it
+    const heartbeat = readFileSync("src/app/api/managed-servers/heartbeat/route.ts", "utf8");
+    assert.match(heartbeat, /where: \{ tokenHash: hashInstallToken\(token\) \}/);
+    assert.match(heartbeat, /if \(SELF_HOSTED\) return error\(404/);
+    assert.match(heartbeat, /rateLimitResponse\(`managed-server:\$\{server\.id\}`/);
+
+    // The pages never get the hash; a customer only sees their own servers;
+    // the fleet is for admins
+    const router = readFileSync("src/features/managed-servers/server/routers.ts", "utf8");
+    const fields = router.slice(router.indexOf("const SERVER_FIELDS"), router.indexOf("} as const;"));
+    assert.doesNotMatch(fields, /tokenHash/);
+    assert.match(router, /where: \{ id: input\.serverId, userId: ctx\.auth\.user\.id \}/);
+    assert.match(router, /if \(!isAdmin\(ctx\.auth\.user\)\) \{/);
+    // Rows bought with an address go only to an account that verified it
+    assert.match(readFileSync("src/lib/managed-servers.ts", "utf8"), /if \(!user\.emailVerified\) return;/);
+
+    // The installer and the agent: valid bash; the token stays out of the
+    // app's .env; secrets are made on the server
+    const install = readFileSync("public/install.sh", "utf8");
+    const agent = readFileSync("self-host/rxj-agent.sh", "utf8");
+    assert.doesNotMatch(install, /\r/);
+    assert.doesNotMatch(agent, /\r/);
+    assert.match(install, /RXJ_MANAGED_TOKEN=%s\\n' "\$PLATFORM_URL" "\$TOKEN" >\.env\.agent/);
+    assert.doesNotMatch(install, /set_env RXJ_MANAGED_TOKEN/);
+    assert.match(install, /for key in POSTGRES_PASSWORD BETTER_AUTH_SECRET ENCRYPTION_KEY INNGEST_SIGNING_KEY INNGEST_EVENT_KEY; do/);
+    assert.match(install, /\/api\/managed-servers\/heartbeat/);
+    assert.match(agent, /\/api\/managed-servers\/heartbeat/);
+    assert.match(agent, /"updatesPaused":true/);
+    // .env.agent is read line by line, not run
+    assert.doesNotMatch(agent, /^\s*(source|\.) .*\.env/m);
+    assert.match(readFileSync(".gitignore", "utf8"), /^self-host\/backups\/$/m);
+
+    const bash = spawnSync("bash", ["--version"], { encoding: "utf8" });
+    if (bash.status === 0) {
+      for (const file of ["public/install.sh", "self-host/rxj-agent.sh"]) {
+        const check = spawnSync("bash", ["-n", file], { encoding: "utf8" });
+        assert.equal(check.status, 0, `${file}: ${check.stderr}`);
+      }
+    }
   });
 
   console.log(`\n${passed} checks passed`);

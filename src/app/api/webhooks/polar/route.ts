@@ -5,6 +5,8 @@ import { NextResponse } from "next/server";
 import { getCreditPacks, readCreditOrder } from "@/config/ai-credits";
 import { grantCreditPurchase } from "@/lib/ai-credits";
 import { SELF_HOSTED } from "@/config/self-hosted";
+import { readManagedSubscription } from "@/lib/managed-server";
+import { saveManagedSubscription } from "@/lib/managed-servers";
 
 import { getPlanForPolarProduct } from "@/config/plans";
 
@@ -50,6 +52,18 @@ export async function POST(req: Request) {
                     ? `Added ${creditOrder.pack.credits} AI credits to user ${creditOrder.userId}.`
                     : `Polar order ${creditOrder.orderId} was already counted.`
             );
+        }
+
+        // The managed private server: one row per subscription, kept up to
+        // date by every subscription event (created, active, canceled...).
+        // The buyer gets the install command in Settings → Private server.
+        const managedSubscription = readManagedSubscription(eventType, eventData);
+        if (managedSubscription) {
+            await saveManagedSubscription(managedSubscription);
+            console.log(
+                `Managed server subscription ${managedSubscription.subscriptionId} is ${managedSubscription.status}.`
+            );
+            return NextResponse.json({ succeeded: true });
         }
 
         if (eventType === "subscription.created" || eventType === "subscription.updated") {
