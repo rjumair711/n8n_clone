@@ -15508,7 +15508,9 @@ pour()</code></pre>
 
     const page = readFileSync("src/app/pricing/page.tsx", "utf8");
     assert.match(page, /const checkoutUrl = getManagedServerCheckoutUrl\(\);/);
-    assert.match(page, /href=\{checkoutUrl\}/);
+    // Through /managed-server/checkout, which fills in the buyer's email
+    assert.match(page, /href=\{MANAGED_SERVER_CHECKOUT_PATH\}/);
+    assert.equal(pricing.MANAGED_SERVER_CHECKOUT_PATH, "/managed-server/checkout");
     assert.equal(/Beginner|Intermediate|\/api\/subscription\/checkout/.test(page), false);
     assert.match(readFileSync("src/features/marketing/components/landing-page.tsx", "utf8"), /PRICING_OFFERS\.map/);
     assert.match(readFileSync("src/app/managed-server/thanks/page.tsx", "utf8"), /href=\{PRIVATE_SERVER_SETTINGS_HREF\}/);
@@ -16437,6 +16439,41 @@ pour()</code></pre>
     assert.match(router, /where: \{ userId: ctx\.auth\.user\.id, installedAt: null \}/);
     assert.match(router, /isSubscriptionLive\(row\.status\) && !seen\.has\(row\.id\)/);
     assert.match(router, /where: \{ id: input\.serverId, userId: ctx\.auth\.user\.id \},\s+select: \{ id: true \},/);
+  });
+
+  await test("managed server: the buyer pays with their RXJ email, and admins can fix a mismatch", async () => {
+    const pricing = await import("@/config/pricing-plans");
+    const { readFileSync } = await import("node:fs");
+
+    const link = "https://sandbox-api.polar.sh/v1/checkout-links/polar_cl_abc/redirect";
+    assert.equal(pricing.withCustomerEmail(link, "ali@shop.pk"), `${link}?customer_email=ali%40shop.pk`);
+    assert.equal(pricing.withCustomerEmail(`${link}?x=1`, " ali+rxj@shop.pk "), `${link}?x=1&customer_email=ali%2Brxj%40shop.pk`);
+    for (const email of [null, undefined, "", "not an email", "a@b", `${"x".repeat(250)}@b.co`]) {
+      assert.equal(pricing.withCustomerEmail(link, email), link, String(email));
+    }
+
+    // The route: signed in, the email is filled in; no link, back to pricing
+    const route = readFileSync("src/app/managed-server/checkout/route.ts", "utf8");
+    assert.match(route, /withCustomerEmail\(checkoutUrl, session\?\.user\?\.email\)/);
+    assert.match(route, /if \(!checkoutUrl\) return NextResponse\.redirect\(new URL\("\/pricing", request\.url\)\)/);
+    assert.match(route, /if \(SELF_HOSTED\) return NextResponse\.redirect\(home\)/);
+    assert.match(route, /export const dynamic = "force-dynamic"/);
+
+    // Assigning: admins with two-factor only, to an account that exists,
+    // written to the audit log
+    const router = readFileSync("src/features/managed-servers/server/routers.ts", "utf8");
+    const assign = router.slice(router.indexOf("assignToAccount:"), router.indexOf("fleet: protectedProcedure"));
+    assert.match(assign, /if \(!isAdmin\(ctx\.auth\.user\)\)/);
+    assert.match(assign, /if \(!canUseAdminActions\(ctx\.auth\.user\)\)/);
+    assert.match(assign, /where: \{ email: input\.email\.toLowerCase\(\) \}/);
+    assert.match(assign, /Ask the customer to sign up first/);
+    assert.match(assign, /action: "managed_server\.assigned"/);
+    const audit = await import("@/lib/audit-actions");
+    assert.ok("managed_server.assigned" in audit.AUDIT_ACTIONS);
+
+    const fleet = readFileSync("src/features/settings/components/sections/managed-servers-section.tsx", "utf8");
+    assert.match(fleet, /trpc\.managedServers\.assignToAccount\.mutationOptions/);
+    assert.match(fleet, /\{server\.user \? "Reassign" : "Assign"\}/);
   });
 
   console.log(`\n${passed} checks passed`);

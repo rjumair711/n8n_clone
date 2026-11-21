@@ -1,7 +1,7 @@
 import { TRPCError } from "@trpc/server";
 import z from "zod";
 import { SELF_HOSTED } from "@/config/self-hosted";
-import { isAdmin } from "@/lib/admin";
+import { canUseAdminActions, isAdmin } from "@/lib/admin";
 import { getAppUrl } from "@/lib/app-url";
 import { recordAudit } from "@/lib/audit-log";
 import prisma from "@/lib/db";
@@ -168,6 +168,67 @@ export const managedServersRouter = createTRPCRouter({
                     email: input.email,
                 }),
             };
+        }),
+
+    // An admin links a purchase to the right RXJ account, for a buyer who
+    // paid with a different address than their account's. Also moves a
+    // server to another account. Needs two-factor; written to the audit log
+    // of both the admin and the account.
+    assignToAccount: protectedProcedure
+        .input(z.object({ serverId: z.string().min(1).max(40), email: z.string().trim().email().max(254) }))
+        .mutation(async ({ ctx, input }) => {
+            if (SELF_HOSTED) throw notHosted();
+            if (!isAdmin(ctx.auth.user)) {
+                throw new TRPCError({ code: "FORBIDDEN", message: "Admins only" });
+            }
+            if (!canUseAdminActions(ctx.auth.user)) {
+                throw new TRPCError({
+                    code: "FORBIDDEN",
+                    message: "Turn on two-factor authentication in Settings to assign servers.",
+                });
+            }
+
+            const [server, account] = await Promise.all([
+                prisma.managedServer.findUnique({
+                    where: { id: input.serverId },
+                    select: { id: true, customerEmail: true, user: { select: { email: true } } },
+                }),
+                prisma.user.findUnique({
+                    where: { email: input.email.toLowerCase() },
+                    select: { id: true, email: true, emailVerified: true },
+                }),
+            ]);
+            if (!server) throw new TRPCError({ code: "NOT_FOUND", message: "Server not found" });
+            if (!account) {
+                throw new TRPCError({
+                    code: "NOT_FOUND",
+                    message: `No RXJ account has the address ${input.email}. Ask the customer to sign up first.`,
+                });
+            }
+
+            await prisma.managedServer.update({
+                where: { id: server.id },
+                data: { userId: account.id },
+            });
+
+            const target = `Private server (${server.id}), paid by ${server.customerEmail}, to ${account.email}${
+                server.user ? ` (was ${server.user.email})` : ""
+            }`;
+            await Promise.all([
+                recordAudit({ userId: ctx.auth.user.id, action: "managed_server.assigned", target }),
+                ...(account.id === ctx.auth.user.id
+                    ? []
+                    : [
+                          recordAudit({
+                              userId: account.id,
+                              action: "managed_server.assigned",
+                              target,
+                              actor: ctx.auth.user.email,
+                          }),
+                      ]),
+            ]);
+
+            return { email: account.email, emailVerified: account.emailVerified };
         }),
 
     // Every customer's server, for the platform's admins

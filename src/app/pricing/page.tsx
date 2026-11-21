@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import {
   MANAGED_SERVER_OFFER as offer,
+  MANAGED_SERVER_CHECKOUT_PATH,
   getManagedServerCheckoutUrl,
 } from "@/config/pricing-plans";
 
@@ -49,12 +50,24 @@ export default function PricingPage() {
             <p className="mt-6 text-xs text-muted-foreground">{offer.note}</p>
 
             {checkoutUrl ? (
-              <a
-                href={checkoutUrl}
-                className="mt-8 w-full rounded-xl bg-primary px-4 py-3 text-center text-sm font-medium text-primary-foreground transition-all hover:opacity-90"
-              >
-                Get your private server
-              </a>
+              <>
+                {/* Through our own route: it fills in the signed-in
+                    buyer's RXJ email at Polar's checkout */}
+                <a
+                  href={MANAGED_SERVER_CHECKOUT_PATH}
+                  className="mt-8 w-full rounded-xl bg-primary px-4 py-3 text-center text-sm font-medium text-primary-foreground transition-all hover:opacity-90"
+                >
+                  Get your private server
+                </a>
+                <p className="mt-3 text-center text-xs text-muted-foreground">
+                  Pay with the email of your RXJ account: your server is linked
+                  to the account with that address.{" "}
+                  <Link href="/login" className="underline underline-offset-4">
+                    Sign in first
+                  </Link>{" "}
+                  and it is filled in for you.
+                </p>
+              </>
             ) : (
               <span className="mt-8 w-full cursor-not-allowed rounded-xl border bg-muted px-4 py-3 text-center text-sm font-medium text-muted-foreground">
                 Coming soon

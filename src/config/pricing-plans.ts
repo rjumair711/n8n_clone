@@ -49,3 +49,25 @@ export const getManagedServerCheckoutUrl = (
     return null;
   }
 };
+
+// Where the pricing page's button goes: it fills in the buyer's RXJ email
+// and sends them on to the Polar checkout link
+// (src/app/managed-server/checkout/route.ts)
+export const MANAGED_SERVER_CHECKOUT_PATH = "/managed-server/checkout";
+
+/**
+ * The checkout link with the buyer's email filled in (Polar's
+ * `customer_email`), so they pay with the address of their RXJ account:
+ * the server is linked to the account by that address. Without an email,
+ * or with one that is not an address, the link as it is.
+ */
+export const withCustomerEmail = (checkoutUrl: string, email: string | null | undefined) => {
+  const address = email?.trim();
+  if (!address || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(address) || address.length > 254) {
+    return checkoutUrl;
+  }
+
+  const url = new URL(checkoutUrl);
+  url.searchParams.set("customer_email", address);
+  return url.toString();
+};
