@@ -7576,8 +7576,18 @@ const main = async () => {
     const sql = readFileSync(`prisma/migrations/${folder}/migration.sql`, "utf8").replace(/\r\n/g, "\n");
 
     assert.match(sql, /^-- AlterEnum\nALTER TYPE "NodeType" ADD VALUE 'ANALYZE_DOCUMENT';/);
+    // As first inserted: the invoice's Sheets node said its operation only
+    // later (invoice_template_sheets_operation migration)
+    const asInserted = builtin.DOCUMENT_TEMPLATES.map((template) => ({
+      ...template,
+      nodes: template.nodes.map((node) => {
+        if (node.type !== "GOOGLE_SHEETS") return node;
+        const { operation: _operation, ...data } = node.data as Record<string, unknown>;
+        return { ...node, data };
+      }),
+    })) as typeof builtin.DOCUMENT_TEMPLATES;
     assert.ok(
-      sql.includes(builtin.buildSeedSql(builtin.DOCUMENT_TEMPLATES)),
+      sql.includes(builtin.buildSeedSql(asInserted)),
       "the migration holds what the templates module builds"
     );
     assert.equal(sql.match(/INSERT INTO "workflow_template"/g)?.length, 2);
@@ -12938,6 +12948,23 @@ pour()</code></pre>
     assert.match(sql, /ORDER BY position/);
     const statements = sql.replace(/^--.*$/gm, "").replace(/'(?:[^']|'')*'/g, "''");
     assert.equal(/\b(DROP|DELETE|TRUNCATE|INSERT|RENAME|ALTER)\b/i.test(statements), false);
+
+    // The same for the built-in "Invoice to Google Sheets" template: the code
+    // says it, and a migration wrote it into that one row
+    const builtin = await import("@/features/templates/lib/builtin-templates");
+    for (const template of builtin.BUILTIN_TEMPLATES) {
+      for (const node of template.nodes.filter((entry) => entry.type === "GOOGLE_SHEETS")) {
+        assert.equal(node.data.operation, "append", `${template.id}: operation`);
+      }
+    }
+    const invoiceFolder = readdirSync("prisma/migrations").find((name) => name.endsWith("_invoice_template_sheets_operation"));
+    assert.ok(invoiceFolder, "invoice_template_sheets_operation migration");
+    const invoiceSql = readFileSync(`prisma/migrations/${invoiceFolder}/migration.sql`, "utf8");
+    assert.match(invoiceSql, /WHERE t\."id" = 'tpl_invoice_to_google_sheets'\s+AND t\."createdById" = 'system'/);
+    assert.equal(
+      /\b(DROP|DELETE|TRUNCATE|INSERT|RENAME|ALTER)\b/i.test(invoiceSql.replace(/^--.*$/gm, "").replace(/'(?:[^']|'')*'/g, "''")),
+      false
+    );
   });
 
   await test("every starter template is there in English only", () => {

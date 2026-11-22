@@ -2460,6 +2460,7 @@ Needs the `sheets_template_operation` migration applied (it runs on the producti
 | 2 | **Use template** on "WhatsApp shop order bot" and open its Google Sheets node | Operation shows **Append Row**; the columns are filled in as before |
 | 3 | Run that workflow with a test sheet | a row is added, as before |
 | 4 | Run the migration's SQL a second time | updates 0 rows |
+| 5 | After the `invoice_template_sheets_operation` migration, **Use template** on "Invoice to Google Sheets" and open its Google Sheets node | Operation shows **Append Row**; that migration updates only this one row |
 
 # When something fails
 

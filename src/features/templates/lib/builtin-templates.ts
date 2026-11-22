@@ -95,6 +95,7 @@ const INVOICE_TO_SHEETS: BuiltinTemplate = {
       position: { x: 640, y: 0 },
       data: {
         variableName: "sheetRow",
+        operation: "append",
         sheetName: "Sheet1",
         // One value per column, separated by commas
         rowData:
