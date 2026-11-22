@@ -267,24 +267,6 @@
       "confirmedNote": "Customer confirmed the order on WhatsApp.",
       "thanksMessage": "Thank you! Order {{openOrder.items.0.number}} is confirmed and will be dispatched soon.",
       "cancelMessage": "Order {{openOrder.items.0.number}} has been cancelled. Message us any time if you change your mind."
-    },
-    "ur": {
-      "name": "واٹس ایپ پر کیش آن ڈیلیوری آرڈر کی تصدیق",
-      "description": "ہر نئے کیش آن ڈیلیوری آرڈر پر گاہک کو واٹس ایپ پیغام جاتا ہے کہ آرڈر کی تصدیق کریں۔ ہاں پر آرڈر میں نوٹ لگ جاتا ہے، نہیں پر آرڈر منسوخ ہو جاتا ہے، یوں کم پارسل واپس آتے ہیں۔ سیٹ اپ: cod_confirmation نام کا منظور شدہ واٹس ایپ ٹیمپلیٹ بنائیں جس میں 3 متغیر ہوں (نام، آرڈر نمبر، رقم)؛ WooCommerce، WhatsApp اور Gemini نوڈز پر Store URL اور credentials دیں؛ پہلے WhatsApp نوڈ پر Phone Number ID لکھیں؛ WhatsApp Trigger پر Verify Token اور App Secret لکھیں۔ فون نمبر ملک کے کوڈ کے ساتھ ہوں۔",
-      "languageCode": "ur",
-      "classifierPrompt": "آپ گاہک کا وہ جواب پڑھتے ہیں جو اس سوال پر آیا: کیا آپ اپنے کیش آن ڈیلیوری آرڈر کی تصدیق کرتے ہیں؟",
-      "confirmedNote": "گاہک نے واٹس ایپ پر آرڈر کی تصدیق کر دی۔",
-      "thanksMessage": "شکریہ! آرڈر {{openOrder.items.0.number}} کی تصدیق ہو گئی ہے اور جلد روانہ کر دیا جائے گا۔",
-      "cancelMessage": "آرڈر {{openOrder.items.0.number}} منسوخ کر دیا گیا ہے۔ ارادہ بدلے تو کسی بھی وقت پیغام کریں۔"
-    },
-    "ar": {
-      "name": "تأكيد طلبات الدفع عند الاستلام عبر واتساب",
-      "description": "كل طلب جديد بالدفع عند الاستلام يرسل للعميل رسالة واتساب يطلب فيها تأكيد الطلب. الرد بنعم يضيف ملاحظة إلى الطلب، والرد بلا يلغيه، فتقل الشحنات المرتجعة. الإعداد: أنشئ قالب واتساب معتمداً باسم cod_confirmation بثلاثة متغيرات (الاسم، رقم الطلب، الإجمالي)؛ أدخل Store URL واختر credentials في عقد WooCommerce وWhatsApp وGemini؛ اكتب Phone Number ID في أول عقدة WhatsApp؛ أدخل Verify Token وApp Secret في WhatsApp Trigger. يجب أن تتضمن أرقام الهواتف رمز الدولة.",
-      "languageCode": "ar",
-      "classifierPrompt": "تقرأ رد العميل على السؤال: هل تؤكد طلبك بالدفع عند الاستلام؟",
-      "confirmedNote": "أكد العميل الطلب عبر واتساب.",
-      "thanksMessage": "شكراً لك! تم تأكيد الطلب {{openOrder.items.0.number}} وسيتم شحنه قريباً.",
-      "cancelMessage": "تم إلغاء الطلب {{openOrder.items.0.number}}. راسلنا في أي وقت إذا غيرت رأيك."
     }
   }
 }

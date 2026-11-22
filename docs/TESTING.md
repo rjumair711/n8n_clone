@@ -583,7 +583,7 @@ Repeat with Title `رسید نمبر 42` and Content `محترم علی خان،
 | 5 | Put `sk-proj-AbCdEfGhIjKlMnOp_QrStUv-123` in an AI Agent's System Message and `postgresql://app:s3cr3t@db.example.com/main` in any text field, save, publish as a new template | both nodes are listed, each with its field and kind ("an \"sk-\" API key", "a password in a URL") |
 | 6 | After a block, pick a different workflow in the dialog | the red box disappears until the next save attempt |
 
-**Languages and starter templates.** Needs the `template_language` and `starter_templates_built_in` migrations applied.
+**Languages and starter templates.** Needs the `template_language` and `starter_templates_built_in` migrations applied. Since the `english_only_templates` migration (T52) the Urdu and Arabic rows, the language filter and the language field are gone: skip the steps about them.
 
 | # | Do | Expect |
 |---|----|--------|
@@ -2433,6 +2433,21 @@ Make two test workflows fail (for example an HTTP Request to
 | 6 | Last 7 / 30 days | older failures too |
 | 7 | A time with no failures | "No failed runs in this time." |
 | 8 | As a non-admin, `/admin/errors` | "page not found" |
+
+
+## T52. English-only templates
+
+Needs the `english_only_templates` migration applied (it runs on the production deploy after merging). It deletes the 104 Urdu and Arabic starter rows the app added itself (`createdById = 'system'`, ids `tpl_starter_*_ur` / `_ar`), and makes the "Product descriptions" starter write English only; nothing else.
+
+| # | Do | Expect |
+|---|----|--------|
+| 1 | Before the deploy: `select language, count(*) from workflow_template where "createdById" = 'system' group by 1` | `en` 56, `ur` 52, `ar` 52 |
+| 2 | After the deploy, the same query | only `en` 56. `npx prisma migrate status` up to date |
+| 3 | Open **Templates** | 52 starter templates in English plus the other built-ins; no language filter and no language badge on the cards or in the details panel |
+| 4 | As admin, **New template** | the form has no Language field; the template is saved as English |
+| 5 | A workflow made earlier from an Urdu or Arabic template | still opens and runs: it was a copy |
+| 6 | **Use template** on "Product descriptions written by AI" | the Gemini node's System Prompt asks for an English description only; no Urdu or Arabic headings |
+| 7 | Run the migration's SQL a second time | deletes 0 rows; the update sets the same values again |
 
 # When something fails
 

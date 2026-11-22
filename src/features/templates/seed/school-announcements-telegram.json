@@ -77,26 +77,6 @@
       "submitLabel": "Send for approval",
       "thankYouMessage": "Sent to the principal for approval.",
       "approvalTitle": "Post this announcement from {{form.teacher}}: {{form.title}}?"
-    },
-    "ur": {
-      "name": "پرنسپل کی منظوری کے ساتھ اسکول کے اعلانات",
-      "description": "اساتذہ فارم پر اعلان لکھتے ہیں؛ پرنسپل اسے ٹیلیگرام پر منظور یا مسترد کرتے ہیں، اور منظور شدہ اعلان والدین کے ٹیلیگرام چینل پر لگ جاتا ہے۔ سیٹ اپ: والدین کا چینل بنائیں اور بوٹ کو ایڈمن بنائیں؛ دونوں نوڈز پر Telegram credential چنیں؛ منظوری والے نوڈ میں پرنسپل کا Chat ID اور Telegram نوڈ میں چینل کا ‎@name‎ لکھیں؛ Form URL صرف اساتذہ کو دیں۔",
-      "formTitle": "نیا اعلان",
-      "formDescription": "والدین کے لیے اعلان لکھیں۔ لگنے سے پہلے پرنسپل اسے منظور کریں گے۔",
-      "formFields": "[{\"label\":\"استاد (Teacher)\",\"type\":\"text\",\"required\":true,\"options\":\"\"},{\"label\":\"عنوان (Title)\",\"type\":\"text\",\"required\":true,\"options\":\"\"},{\"label\":\"اعلان (Announcement)\",\"type\":\"text\",\"required\":true,\"options\":\"\"}]",
-      "submitLabel": "منظوری کے لیے بھیجیں",
-      "thankYouMessage": "منظوری کے لیے پرنسپل کو بھیج دیا گیا۔",
-      "approvalTitle": "{{form.teacher}} کا یہ اعلان لگائیں: {{form.title}}؟"
-    },
-    "ar": {
-      "name": "إعلانات المدرسة بموافقة المدير",
-      "description": "يكتب المعلمون الإعلان في نموذج؛ يوافق المدير عليه أو يرفضه عبر تيليجرام، وتُنشر الإعلانات الموافق عليها في قناة أولياء الأمور على تيليجرام. الإعداد: أنشئ قناة أولياء الأمور وأضف البوت مشرفاً؛ اختر credential تيليجرام في العقدتين؛ اكتب Chat ID للمدير في عقدة الموافقة و‎@name‎ للقناة في عقدة Telegram؛ شارك Form URL مع المعلمين فقط.",
-      "formTitle": "إعلان جديد",
-      "formDescription": "اكتب الإعلان لأولياء الأمور. يوافق عليه المدير قبل نشره.",
-      "formFields": "[{\"label\":\"المعلم (Teacher)\",\"type\":\"text\",\"required\":true,\"options\":\"\"},{\"label\":\"العنوان (Title)\",\"type\":\"text\",\"required\":true,\"options\":\"\"},{\"label\":\"الإعلان (Announcement)\",\"type\":\"text\",\"required\":true,\"options\":\"\"}]",
-      "submitLabel": "إرسال للموافقة",
-      "thankYouMessage": "أُرسل إلى المدير للموافقة.",
-      "approvalTitle": "نشر إعلان {{form.teacher}}: {{form.title}}؟"
     }
   }
 }

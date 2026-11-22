@@ -110,18 +110,6 @@
       "description": "Once a day, finds WooCommerce orders still waiting for payment that were placed one to two days ago, and sends each customer one WhatsApp reminder with the order number, the total and the payment link. Cash-on-delivery orders are not included (they are Processing, not Pending payment). Set up: create and get approval for a WhatsApp template payment_reminder with 4 variables (name, order, total, payment link); type your store URL and pick your WooCommerce credential; pick your WhatsApp credential and type your Phone Number ID; billing phone numbers must include the country code.",
       "cronExpression": "0 6 * * *",
       "languageCode": "en_US"
-    },
-    "ur": {
-      "name": "WooCommerce کے غیر ادا شدہ آرڈر کی واٹس ایپ یاد دہانی",
-      "description": "دن میں ایک بار آپ کے WooCommerce اسٹور کے وہ آرڈر ڈھونڈتا ہے جن کی ادائیگی ابھی باقی ہے اور جو ایک سے دو دن پہلے کیے گئے، اور ہر گاہک کو آرڈر نمبر، کل رقم اور ادائیگی کے لنک کے ساتھ ایک واٹس ایپ یاد دہانی بھیجتا ہے۔ کیش آن ڈیلیوری آرڈر شامل نہیں (وہ Processing ہوتے ہیں، Pending payment نہیں)۔ سیٹ اپ: 4 متغیرات (نام، آرڈر، رقم، ادائیگی کا لنک) کے ساتھ payment_reminder نام کا واٹس ایپ ٹیمپلیٹ بنا کر منظور کروائیں؛ اسٹور کا URL لکھیں اور WooCommerce credential چنیں؛ WhatsApp credential چنیں اور Phone Number ID لکھیں؛ بلنگ فون نمبر میں ملک کا کوڈ ہونا چاہیے۔",
-      "cronExpression": "0 6 * * *",
-      "languageCode": "ur"
-    },
-    "ar": {
-      "name": "تذكير بطلبات WooCommerce غير المدفوعة عبر واتساب",
-      "description": "مرة يومياً، يجد طلبات متجر WooCommerce التي ما زالت بانتظار الدفع وأُنشئت قبل يوم إلى يومين، ويرسل لكل عميل تذكيراً واحداً على واتساب برقم الطلب والإجمالي ورابط الدفع. لا تُشمل طلبات الدفع عند الاستلام (حالتها Processing وليست Pending payment). الإعداد: أنشئ قالب واتساب باسم payment_reminder بأربعة متغيرات (الاسم، الطلب، الإجمالي، رابط الدفع) واحصل على موافقته؛ اكتب رابط المتجر واختر WooCommerce credential؛ اختر WhatsApp credential واكتب Phone Number ID؛ يجب أن تتضمن أرقام هواتف الفواتير رمز الدولة.",
-      "cronExpression": "0 7 * * *",
-      "languageCode": "ar"
     }
   }
 }

@@ -1,7 +1,7 @@
-// Starter templates: built-in templates of the gallery, each in English,
-// Urdu and Arabic. A seed file (../seed/*.json) holds one workflow once and
-// its texts per language; a setting whose value is "@text:<key>" takes the
-// text of that key in the template's language.
+// Starter templates: built-in templates of the gallery, in English (the Urdu
+// and Arabic versions were removed). A seed file (../seed/*.json) holds one
+// workflow and its texts under "en"; a setting whose value is "@text:<key>"
+// takes the text of that key.
 //
 // Nothing here touches the database. A migration puts them in the gallery,
 // published, for every account: its INSERT statements are printed by
@@ -45,7 +45,7 @@ import eventRegistrationPdfTicket from "../seed/event-registration-pdf-ticket.js
 import quoteRequestWithApproval from "../seed/quote-request-with-approval.json";
 import lowStockAlert from "../seed/low-stock-alert.json";
 import shippingEmailWithTracking from "../seed/shipping-email-with-tracking.json";
-import productDescriptionsThreeLanguages from "../seed/product-descriptions-three-languages.json";
+import productDescriptions from "../seed/product-descriptions.json";
 import cancelledOrderAlert from "../seed/cancelled-order-alert.json";
 import documentSummaryByEmail from "../seed/document-summary-by-email.json";
 import invoiceGenerator from "../seed/invoice-generator.json";
@@ -124,7 +124,7 @@ export const STARTER_SEEDS: StarterSeed[] = [
   quoteRequestWithApproval,
   lowStockAlert,
   shippingEmailWithTracking,
-  productDescriptionsThreeLanguages,
+  productDescriptions,
   cancelledOrderAlert,
   documentSummaryByEmail,
   invoiceGenerator,

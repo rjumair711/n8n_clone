@@ -140,20 +140,6 @@
       "cronExpression": "0 13 * * *",
       "timezone": "Asia/Karachi",
       "languageCode": "en_US"
-    },
-    "ur": {
-      "name": "واٹس ایپ پر اپائنٹمنٹ کی یاد دہانی",
-      "description": "ہر شام 6 بجے (پاکستانی وقت) آپ کی بکنگ شیٹ پڑھتا ہے اور کل کی بکنگ والے ہر شخص کو واٹس ایپ پر یاد دہانی بھیجتا ہے۔ شیٹ کے کالم (پہلی سطر): name, phone, date (YYYY-MM-DD), time۔ سیٹ اپ: appointment_reminder نام کا منظور شدہ واٹس ایپ ٹیمپلیٹ بنائیں جس میں 3 متغیر ہوں (نام، تاریخ، وقت)؛ Google Drive نوڈ پر گوگل credential اور شیٹ چنیں؛ WhatsApp نوڈ پر واٹس ایپ credential اور Phone Number ID دیں۔",
-      "cronExpression": "0 13 * * *",
-      "timezone": "Asia/Karachi",
-      "languageCode": "ur"
-    },
-    "ar": {
-      "name": "تذكير بالمواعيد عبر واتساب",
-      "description": "كل مساء الساعة 18:00 (بتوقيت السعودية) يقرأ جدول الحجوزات ويرسل تذكيراً على واتساب لكل من لديه موعد غداً. أعمدة الجدول (الصف الأول): name, phone, date (YYYY-MM-DD), time. الإعداد: أنشئ قالب واتساب معتمداً باسم appointment_reminder بثلاثة متغيرات (الاسم، التاريخ، الوقت)؛ اختر حساب Google والجدول في Google Drive؛ اختر credential واتساب واكتب Phone Number ID في عقدة WhatsApp.",
-      "cronExpression": "0 15 * * *",
-      "timezone": "Asia/Riyadh",
-      "languageCode": "ar"
     }
   }
 }

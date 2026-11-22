@@ -12850,18 +12850,16 @@ pour()</code></pre>
   await test("a template has a language; the column is added with English as its default", async () => {
     const { readFileSync, readdirSync } = await import("node:fs");
 
-    assert.deepEqual(templateLanguages.TEMPLATE_LANGUAGE_CODES, ["en", "ur", "ar"]);
-    assert.deepEqual(
-      templateLanguages.TEMPLATE_LANGUAGES.map((language) => language.dir),
-      ["ltr", "rtl", "rtl"]
-    );
-    assert.equal(templateLanguages.isTemplateLanguage("ur"), true);
-    assert.equal(templateLanguages.isTemplateLanguage("fr"), false);
+    // Only English: the Urdu and Arabic versions were removed
+    assert.deepEqual(templateLanguages.TEMPLATE_LANGUAGE_CODES, ["en"]);
+    assert.equal(templateLanguages.isTemplateLanguage("en"), true);
+    assert.equal(templateLanguages.isTemplateLanguage("ur"), false);
+    assert.equal(templateLanguages.isTemplateLanguage("ar"), false);
     assert.equal(templateLanguages.isTemplateLanguage(undefined), false);
     // A value the app does not know is shown as English, not hidden
     assert.equal(templateLanguages.getTemplateLanguage("fr").value, "en");
     assert.equal(templateLanguages.getTemplateLanguage(null).value, "en");
-    assert.equal(templateLanguages.getTemplateLanguage("ar").dir, "rtl");
+    assert.equal(templateLanguages.getTemplateLanguage("ur").dir, "ltr");
 
     // The migration: one new column with a default, so the code that runs
     // before the deploy keeps working and existing templates are English
@@ -12878,13 +12876,49 @@ pour()</code></pre>
     assert.match(router, /language: z\.enum\(TEMPLATE_LANGUAGE_CODES\)\.default\(DEFAULT_TEMPLATE_LANGUAGE\),/);
     assert.match(router, /category: true,\s+language: true,/);
 
-    // The gallery filters by it
+    // No language filter, badge or form field any more
     const gallery = readFileSync("src/features/templates/components/templates.tsx", "utf8");
-    assert.match(gallery, /language === "all" \|\| getTemplateLanguage\(item\.language\)\.value === language/);
-    assert.match(gallery, /<SelectItem value="all">All languages<\/SelectItem>/);
+    assert.equal(gallery.includes("All languages"), false);
+    assert.equal(gallery.includes("<Label>Language</Label>"), false);
+    assert.equal(readFileSync("src/features/templates/components/template-card.tsx", "utf8").includes("LanguageBadge"), false);
+
+    // The migration that removes the Urdu and Arabic built-in rows: only the
+    // app's own starter rows, and safe to run twice
+    const english = readdirSync("prisma/migrations").find((name) => name.endsWith("_english_only_templates"));
+    assert.ok(english, "english_only_templates migration");
+    const [removal, update] = readFileSync(`prisma/migrations/${english}/migration.sql`, "utf8")
+      .split(/\r?\n/)
+      .filter((line) => !line.startsWith("--"))
+      .join("\n")
+      .trim()
+      .split(/\n\n+/);
+    assert.equal(
+      removal,
+      `DELETE FROM "workflow_template"\nWHERE "createdById" = 'system'\n  AND "language" IN ('ur', 'ar')\n  AND ("id" LIKE 'tpl\\_starter\\_%\\_ur' OR "id" LIKE 'tpl\\_starter\\_%\\_ar');`
+    );
+
+    // The product descriptions starter now writes English only: the update
+    // gives its row exactly what the seed builds
+    const { quoteSql } = await import("@/features/templates/lib/builtin-templates");
+    const products = starterTemplates.buildStarterTemplate(
+      starterTemplates.STARTER_SEEDS.find((seed) => seed.key === "product_descriptions_three_languages")!,
+      "en"
+    );
+    assert.equal(products.name, "Product descriptions written by AI");
+    assert.equal(RTL_TEXT.test(JSON.stringify(products.nodes)), false);
+    assert.equal(
+      update,
+      `UPDATE "workflow_template"\n` +
+        `SET "name" = ${quoteSql(products.name)},\n` +
+        `    "description" = ${quoteSql(products.description)},\n` +
+        `    "nodes" = ${quoteSql(JSON.stringify(products.nodes))}::jsonb,\n` +
+        `    "updatedAt" = CURRENT_TIMESTAMP\n` +
+        `WHERE "id" = 'tpl_starter_product_descriptions_three_languages_en'\n` +
+        `  AND "createdById" = 'system';`
+    );
   });
 
-  await test("every starter template is there in English, Urdu and Arabic", () => {
+  await test("every starter template is there in English only", () => {
     // The first five, the 35 added with the template gallery, then the AI
     // support bot, lead form and email triage
     assert.deepEqual(
@@ -12893,25 +12927,21 @@ pour()</code></pre>
     );
     assert.equal(starterTemplates.STARTER_SEEDS.length, 52);
     assert.equal(new Set(starterTemplates.STARTER_SEEDS.map((seed) => seed.key)).size, 52);
-    assert.equal(allStarters.length, 156);
-    assert.equal(new Set(allStarters.map((starter) => starter.id)).size, 156);
+    assert.equal(allStarters.length, 52);
+    assert.equal(new Set(allStarters.map((starter) => starter.id)).size, 52);
 
     for (const seed of starterTemplates.STARTER_SEEDS) {
       assert.match(seed.key, /^[a-z_]+$/);
-      assert.deepEqual(Object.keys(seed.text).sort(), ["ar", "en", "ur"], seed.key);
+      assert.deepEqual(Object.keys(seed.text), ["en"], seed.key);
 
-      // Each language has the same texts, and the nodes use every one
-      // (a template that only moves data, like the orders ledger, has
-      // only its name and description to translate)
+      // The nodes use every text (a template that only moves data, like the
+      // orders ledger, has only its name and description)
       const used = [...starterTemplates.findTextKeys(seed.nodes)].sort();
-
-      for (const language of ["en", "ur", "ar"]) {
-        assert.deepEqual(
-          Object.keys(seed.text[language]).sort(),
-          [...used, "description", "name"].sort(),
-          `${seed.key} (${language}): its texts`
-        );
-      }
+      assert.deepEqual(
+        Object.keys(seed.text.en).sort(),
+        [...used, "description", "name"].sort(),
+        `${seed.key}: its texts`
+      );
     }
 
     for (const starter of allStarters) {
@@ -12927,37 +12957,18 @@ pour()</code></pre>
       );
       assert.ok(starter.category.length <= 40);
 
-      // Written in its language: Urdu and Arabic in Arabic script
-      assert.equal(RTL_TEXT.test(starter.name), starter.language !== "en", `${label}: name`);
-      assert.equal(RTL_TEXT.test(starter.description), starter.language !== "en", `${label}: description`);
+      // English, with the same id as before
+      assert.equal(starter.language, "en", label);
+      assert.equal(RTL_TEXT.test(starter.name), false, `${label}: name`);
+      assert.equal(RTL_TEXT.test(starter.description), false, `${label}: description`);
       assert.equal(JSON.stringify(starter.nodes).includes("@text:"), false, `${label}: a text was not filled in`);
 
       const agent = starter.nodes.find((node) => node.type === "AI_AGENT");
       if (agent) {
-        assert.equal(RTL_TEXT.test(String(agent.data.systemMessage)), starter.language !== "en", `${label}: system message`);
-        // Whatever the language, the same safety rules
+        assert.equal(RTL_TEXT.test(String(agent.data.systemMessage)), false, `${label}: system message`);
         assert.ok(String(agent.data.systemMessage).length > 400, label);
       }
     }
-
-    // The three versions of a template are the same workflow
-    for (const seed of starterTemplates.STARTER_SEEDS) {
-      const [english, urdu, arabic] = allStarters.filter((starter) => starter.key === seed.key);
-      const shape = (starter: typeof english) =>
-        starter.nodes.map((node) => `${node.type}:${Object.keys(node.data).sort().join(",")}`);
-
-      assert.deepEqual(shape(urdu), shape(english), seed.key);
-      assert.deepEqual(shape(arabic), shape(english), seed.key);
-      assert.deepEqual(urdu.nodeTypes, english.nodeTypes);
-    }
-
-    // Urdu and Arabic are not copies of each other
-    const urduClinic = allStarters.find((starter) => starter.id === "tpl_starter_clinic_appointment_bot_ur")!;
-    const arabicClinic = allStarters.find((starter) => starter.id === "tpl_starter_clinic_appointment_bot_ar")!;
-    assert.notEqual(urduClinic.name, arabicClinic.name);
-    // Letters Urdu has and Arabic does not
-    assert.match(urduClinic.description, /[ٹڈڑںےپچگ]/);
-    assert.equal(/[ٹڈڑںے]/.test(arabicClinic.description), false);
 
     assert.throws(
       () =>
@@ -13149,11 +13160,11 @@ pour()</code></pre>
 
     // The FAQ bot is a public website chat once it is activated
     const { parseChatWidgetSettings } = await import("@/lib/chat-widget");
-    const faq = allStarters.find((starter) => starter.id === "tpl_starter_support_faq_bot_ur")!;
+    const faq = allStarters.find((starter) => starter.id === "tpl_starter_support_faq_bot_en")!;
     const widget = parseChatWidgetSettings(faq.nodes[0].data);
     assert.equal(widget.public, true);
-    assert.equal(widget.title, "سپورٹ");
-    assert.equal(widget.direction, "rtl");
+    assert.equal(widget.title, "Support");
+    assert.equal(widget.direction, "ltr");
   });
 
   await test("AI email triage: each category takes its own branch, and a reply is only sent once approved", async () => {
@@ -13469,10 +13480,10 @@ pour()</code></pre>
 
     assert.deepEqual(
       reminders.map((starter) => starter.nodes.find((node) => node.type === "WHATSAPP")!.data.languageCode),
-      ["en_US", "ur", "ar"]
+      ["en_US"]
     );
 
-    const [english, urdu] = reminders;
+    const [english] = reminders;
     assert.deepEqual(english.nodeTypes, ["SCHEDULE_TRIGGER", "GOOGLE_DRIVE", "EXTRACT_FROM_FILE", "IF", "WHATSAPP"]);
 
     const byType = (type: string) => english.nodes.find((node) => node.type === type)!;
@@ -13500,7 +13511,7 @@ pour()</code></pre>
 
     // The template's variables are valid JSON, also with Urdu names and quotes
     const params = JSON.parse(
-      renderTemplate(String(urdu.nodes.find((node) => node.type === "WHATSAPP")!.data.templateParamsJson), {
+      renderTemplate(String(english.nodes.find((node) => node.type === "WHATSAPP")!.data.templateParamsJson), {
         item: { parent: 'جناب "خان"', student: "علی", amount: "5000", due: "10 نومبر" },
       })
     );
@@ -13538,9 +13549,11 @@ pour()</code></pre>
     const folder = readdirSync("prisma/migrations").find((name) => name.endsWith("_starter_templates_built_in"));
     assert.ok(folder, "migration");
     const sql = readFileSync(`prisma/migrations/${folder}/migration.sql`, "utf8").replace(/\r\n/g, "\n");
-    assert.equal(sql.match(/INSERT INTO "workflow_template"/g)?.length, allStarters.length);
-    assert.equal(sql.match(/ON CONFLICT \("id"\) DO NOTHING;/g)?.length, allStarters.length);
-    assert.equal(sql.match(/, 'FREE', true, '/g)?.length, allStarters.length);
+    // It inserted each seed in English, Urdu and Arabic (156 rows); the
+    // english_only_templates migration later removed the Urdu and Arabic ones
+    assert.equal(sql.match(/INSERT INTO "workflow_template"/g)?.length, allStarters.length * 3);
+    assert.equal(sql.match(/ON CONFLICT \("id"\) DO NOTHING;/g)?.length, allStarters.length * 3);
+    assert.equal(sql.match(/, 'FREE', true, '/g)?.length, allStarters.length * 3);
     const statements = sql.replace(/'(?:[^']|'')*'/g, "''");
     assert.equal(/\b(DROP|DELETE|TRUNCATE|UPDATE|RENAME|ALTER)\b/i.test(statements), false);
 

@@ -91,28 +91,6 @@
       "thankYouMessage": "Thank you for your feedback!",
       "classifierPrompt": "You read customer feedback for a small business.",
       "alert": "Unhappy customer ({{form.rating}}/5): {{form.name}} {{form.phone}}\n{{form.comments}}"
-    },
-    "ur": {
-      "name": "گاہکوں کی رائے کا فارم اور ناخوش گاہک کی اطلاع",
-      "description": "آپ کی دکان، کلینک یا ریسٹورنٹ کے لیے رائے کا فارم۔ جب کوئی گاہک ناخوش ہو تو آپ کو فوراً ٹیلیگرام پر اس کا تبصرہ اور فون نمبر مل جاتا ہے تاکہ اسی دن رابطہ کر سکیں۔ سیٹ اپ: Gemini پر credential چنیں؛ Telegram نوڈ پر credential اور اپنا Chat ID دیں؛ ورک فلو فعال کریں اور Form URL شیئر کریں (یا کاؤنٹر پر QR کوڈ لگائیں)۔",
-      "formTitle": "ہماری سروس کیسی رہی؟",
-      "formDescription": "آپ کی رائے ہمیں بہتر بناتی ہے۔ صرف 30 سیکنڈ لگیں گے۔",
-      "formFields": "[{\"label\":\"نام (Name)\",\"type\":\"text\",\"required\":false,\"options\":\"\"},{\"label\":\"فون (Phone)\",\"type\":\"text\",\"required\":false,\"options\":\"\"},{\"label\":\"ریٹنگ (Rating)\",\"type\":\"dropdown\",\"required\":true,\"options\":\"5, 4, 3, 2, 1\"},{\"label\":\"تبصرہ (Comments)\",\"type\":\"text\",\"required\":false,\"options\":\"\"}]",
-      "submitLabel": "رائے بھیجیں",
-      "thankYouMessage": "آپ کی رائے کا شکریہ!",
-      "classifierPrompt": "آپ ایک چھوٹے کاروبار کے گاہکوں کی رائے پڑھتے ہیں۔",
-      "alert": "ناخوش گاہک ({{form.rating}}/5): {{form.name}} {{form.phone}}\n{{form.comments}}"
-    },
-    "ar": {
-      "name": "نموذج آراء العملاء مع تنبيه للعميل غير الراضي",
-      "description": "نموذج آراء لمتجرك أو عيادتك أو مطعمك. عندما يكون العميل غير راضٍ تصلك رسالة تيليجرام فوراً بتعليقه ورقم هاتفه لتتصل به في اليوم نفسه. الإعداد: اختر credential في Gemini؛ اختر credential تيليجرام وChat ID في عقدة Telegram؛ فعّل سير العمل وشارك Form URL (أو اطبعه رمز QR عند الكاشير).",
-      "formTitle": "كيف كانت تجربتك؟",
-      "formDescription": "رأيك يساعدنا على التحسن. يستغرق 30 ثانية.",
-      "formFields": "[{\"label\":\"الاسم (Name)\",\"type\":\"text\",\"required\":false,\"options\":\"\"},{\"label\":\"الهاتف (Phone)\",\"type\":\"text\",\"required\":false,\"options\":\"\"},{\"label\":\"التقييم (Rating)\",\"type\":\"dropdown\",\"required\":true,\"options\":\"5, 4, 3, 2, 1\"},{\"label\":\"التعليق (Comments)\",\"type\":\"text\",\"required\":false,\"options\":\"\"}]",
-      "submitLabel": "إرسال الرأي",
-      "thankYouMessage": "شكراً على رأيك!",
-      "classifierPrompt": "تقرأ آراء العملاء لنشاط تجاري صغير.",
-      "alert": "عميل غير راضٍ ({{form.rating}}/5): {{form.name}} {{form.phone}}\n{{form.comments}}"
     }
   }
 }

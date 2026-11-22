@@ -1,7 +1,7 @@
 "use client";
 
 import { memo, type KeyboardEvent, type ReactNode } from "react";
-import { EyeOffIcon, LanguagesIcon, LockIcon } from "lucide-react";
+import { EyeOffIcon, LockIcon } from "lucide-react";
 import { getNodeLabel } from "@/config/node-labels";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -49,19 +49,6 @@ export const PlanBadge = ({ plan, locked }: { plan: string; locked: boolean }) =
             {PLAN_NAMES[plan] ?? "Own server"}
         </Badge>
     ) : null;
-
-// "اردو (Urdu)" -> "Urdu"
-const languageName = (language: string) => {
-    const { label } = getTemplateLanguage(language);
-    return /\(([^)]+)\)/.exec(label)?.[1] ?? label;
-};
-
-const LanguageBadge = ({ language }: { language: string }) => (
-    <Badge variant="outline" className="gap-1 font-normal text-muted-foreground">
-        <LanguagesIcon className="size-3" />
-        {languageName(language)}
-    </Badge>
-);
 
 const NodeChip = ({ type }: { type: string }) => (
     <Badge variant="secondary" className="max-w-36 font-normal">
@@ -148,7 +135,6 @@ export const TemplateCard = memo(function TemplateCard({
         >
             <div className="flex items-center justify-between gap-2">
                 <PlanBadge plan={template.minPlan} locked={template.locked} />
-                <LanguageBadge language={template.language} />
             </div>
 
             <div className="min-w-0 space-y-1">
@@ -234,7 +220,6 @@ export const TemplateDetailsSheet = ({
                         <SheetHeader className="border-b">
                             <div className="flex flex-wrap items-center gap-2 pr-8">
                                 <PlanBadge plan={template.minPlan} locked={template.locked} />
-                                <LanguageBadge language={template.language} />
                                 <span className="text-xs text-muted-foreground">{template.category}</span>
                             </div>
                             <SheetTitle lang={written.value} dir={written.dir}>

@@ -39,9 +39,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Checkbox } from "@/components/ui/checkbox";
 import {
     DEFAULT_TEMPLATE_LANGUAGE,
-    TEMPLATE_LANGUAGES,
     getTemplateLanguage,
-    isTemplateLanguage,
     type TemplateLanguage,
 } from "../lib/template-languages";
 import type { TemplateSecretFinding } from "../lib/template-secrets";
@@ -95,8 +93,6 @@ export const Templates = () => {
     // Typing stays quick: the grid follows a moment later
     const deferredSearch = useDeferredValue(search);
     const [category, setCategory] = useState("All");
-    // "all", or the language of the templates shown
-    const [language, setLanguage] = useState("all");
     const [sort, setSort] = useState<SortOrder>("popular");
     const [shown, setShown] = useState(PAGE_SIZE);
     // The details panel: which template, and whether it is open (the
@@ -181,22 +177,12 @@ export const Templates = () => {
         [items]
     );
 
-    // Only the languages the gallery has templates in
-    const languages = useMemo(
-        () =>
-            TEMPLATE_LANGUAGES.filter((entry) =>
-                items.some((item) => getTemplateLanguage(item.language).value === entry.value)
-            ),
-        [items]
-    );
-
     const matching = useMemo(() => {
         const query = deferredSearch.trim().toLowerCase();
 
         const found = items.filter(
             (item) =>
                 (category === "All" || item.category === category) &&
-                (language === "all" || getTemplateLanguage(item.language).value === language) &&
                 (!query ||
                     item.name.toLowerCase().includes(query) ||
                     item.description.toLowerCase().includes(query) ||
@@ -208,7 +194,7 @@ export const Templates = () => {
                 ? b.useCount - a.useCount
                 : new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
         );
-    }, [items, deferredSearch, category, language, sort]);
+    }, [items, deferredSearch, category, sort]);
 
     const visible = matching.slice(0, shown);
 
@@ -314,19 +300,6 @@ export const Templates = () => {
                         {categories.map((name) => (
                             <SelectItem key={name} value={name}>
                                 {name === "All" ? "All categories" : name}
-                            </SelectItem>
-                        ))}
-                    </SelectContent>
-                </Select>
-                <Select value={language} onValueChange={filterBy(setLanguage)}>
-                    <SelectTrigger className="w-full sm:w-44" aria-label="Language">
-                        <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                        <SelectItem value="all">All languages</SelectItem>
-                        {languages.map((entry) => (
-                            <SelectItem key={entry.value} value={entry.value}>
-                                {entry.label}
                             </SelectItem>
                         ))}
                     </SelectContent>
@@ -508,31 +481,6 @@ export const Templates = () => {
                                     dir="auto"
                                     onChange={(event) => setForm({ ...form, description: event.target.value })}
                                 />
-                            </div>
-
-                            <div className="space-y-2">
-                                <Label>Language</Label>
-                                <Select
-                                    value={form.language}
-                                    onValueChange={(value) =>
-                                        isTemplateLanguage(value) && setForm({ ...form, language: value })
-                                    }
-                                >
-                                    <SelectTrigger className="w-full">
-                                        <SelectValue />
-                                    </SelectTrigger>
-                                    <SelectContent>
-                                        {TEMPLATE_LANGUAGES.map((entry) => (
-                                            <SelectItem key={entry.value} value={entry.value}>
-                                                {entry.label}
-                                            </SelectItem>
-                                        ))}
-                                    </SelectContent>
-                                </Select>
-                                <p className="text-xs text-muted-foreground">
-                                    The language the name, the description and the texts inside the
-                                    workflow are written in. The gallery can be filtered by it.
-                                </p>
                             </div>
 
                             <div className="space-y-2">

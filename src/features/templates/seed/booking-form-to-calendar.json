@@ -102,34 +102,6 @@
       "eventTitle": "Booking: {{form.name}}",
       "emailSubject": "Your booking on {{form.date}} at {{form.time}}",
       "emailBody": "Hi {{form.name}},\n\nYour booking is confirmed for {{form.date}} at {{form.time}}.\n\nTo change it, reply to this email or call 0300-0000000."
-    },
-    "ur": {
-      "name": "بکنگ فارم سے گوگل کیلنڈر",
-      "description": "گاہک بکنگ فارم پر دن اور وقت چنتے ہیں؛ آپ کے گوگل کیلنڈر میں 30 منٹ کی اپائنٹمنٹ بن جاتی ہے اور انہیں تصدیقی ای میل ملتی ہے۔ یہ چیک نہیں کرتا کہ وقت پہلے سے بک ہے یا نہیں۔ سیٹ اپ: فارم میں اوقات اپنے مطابق کریں؛ Google Calendar پر گوگل credential چنیں؛ Email پر SMTP credential چنیں؛ شروع کے وقت میں ‎+05:00‎ (پاکستان) دیکھ لیں؛ Form URL شیئر کریں۔",
-      "formTitle": "اپائنٹمنٹ بک کریں",
-      "formDescription": "دن اور وقت چنیں۔ تصدیق آپ کو ای میل پر ملے گی۔",
-      "formFields": "[{\"label\":\"نام (Name)\",\"type\":\"text\",\"required\":true,\"options\":\"\"},{\"label\":\"ای میل (Email)\",\"type\":\"email\",\"required\":true,\"options\":\"\"},{\"label\":\"فون (Phone)\",\"type\":\"text\",\"required\":true,\"options\":\"\"},{\"label\":\"تاریخ (Date)\",\"type\":\"date\",\"required\":true,\"options\":\"\"},{\"label\":\"وقت (Time)\",\"type\":\"dropdown\",\"required\":true,\"options\":\"10:00, 10:30, 11:00, 11:30, 12:00, 12:30, 14:00, 14:30, 15:00, 15:30, 16:00, 16:30, 17:00\"},{\"label\":\"نوٹ (Notes)\",\"type\":\"text\",\"required\":false,\"options\":\"\"}]",
-      "submitLabel": "بک کریں",
-      "thankYouMessage": "شکریہ! آپ کی بکنگ کی تصدیق ہو گئی، اپنی ای میل دیکھیں۔",
-      "timezone": "Asia/Karachi",
-      "startTime": "{{form.date}}T{{form.time}}:00+05:00",
-      "eventTitle": "بکنگ: {{form.name}}",
-      "emailSubject": "{{form.date}} کو {{form.time}} بجے آپ کی بکنگ",
-      "emailBody": "محترم {{form.name}}،\n\n{{form.date}} کو {{form.time}} بجے آپ کی بکنگ کی تصدیق ہو گئی ہے۔\n\nتبدیلی کے لیے اس ای میل کا جواب دیں یا 0300-0000000 پر کال کریں۔"
-    },
-    "ar": {
-      "name": "نموذج حجز إلى تقويم Google",
-      "description": "يختار العملاء يوماً ووقتاً في نموذج الحجز؛ يُضاف موعد مدته 30 دقيقة إلى تقويم Google ويصلهم بريد تأكيد. لا يتحقق من أن الوقت محجوز مسبقاً. الإعداد: غيّر الأوقات في النموذج حسب عملك؛ اختر حساب Google في Google Calendar؛ اختر credential لـ SMTP في Email؛ تحقق من فرق التوقيت ‎+03:00‎ (السعودية) في وقت البداية؛ شارك Form URL.",
-      "formTitle": "احجز موعداً",
-      "formDescription": "اختر اليوم والوقت. سيصلك التأكيد بالبريد.",
-      "formFields": "[{\"label\":\"الاسم (Name)\",\"type\":\"text\",\"required\":true,\"options\":\"\"},{\"label\":\"البريد الإلكتروني (Email)\",\"type\":\"email\",\"required\":true,\"options\":\"\"},{\"label\":\"الهاتف (Phone)\",\"type\":\"text\",\"required\":true,\"options\":\"\"},{\"label\":\"التاريخ (Date)\",\"type\":\"date\",\"required\":true,\"options\":\"\"},{\"label\":\"الوقت (Time)\",\"type\":\"dropdown\",\"required\":true,\"options\":\"10:00, 10:30, 11:00, 11:30, 12:00, 12:30, 14:00, 14:30, 15:00, 15:30, 16:00, 16:30, 17:00\"},{\"label\":\"ملاحظات (Notes)\",\"type\":\"text\",\"required\":false,\"options\":\"\"}]",
-      "submitLabel": "احجز",
-      "thankYouMessage": "شكراً! تم تأكيد حجزك، راجع بريدك.",
-      "timezone": "Asia/Riyadh",
-      "startTime": "{{form.date}}T{{form.time}}:00+03:00",
-      "eventTitle": "حجز: {{form.name}}",
-      "emailSubject": "حجزك يوم {{form.date}} الساعة {{form.time}}",
-      "emailBody": "مرحباً {{form.name}}،\n\nتم تأكيد حجزك يوم {{form.date}} الساعة {{form.time}}.\n\nللتغيير، رد على هذا البريد أو اتصل على 0500-000000."
     }
   }
 }

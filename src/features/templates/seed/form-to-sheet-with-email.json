@@ -76,28 +76,6 @@
       "thankYouMessage": "Thank you! We received your message and emailed you a copy.",
       "emailSubject": "We received your message",
       "emailMessage": "Hi {{form.name}},\n\nThank you for contacting us. We received your message and will reply within one working day.\n\nYour message:\n{{form.message}}"
-    },
-    "ur": {
-      "name": "رابطہ فارم سے گوگل شیٹ اور تصدیقی ای میل",
-      "description": "ایک آن لائن رابطہ فارم: ہر جمع شدہ فارم آپ کی گوگل شیٹ میں نئی سطر بن جاتا ہے اور بھیجنے والے کو آپ کے Gmail سے تصدیقی ای میل جاتی ہے۔ سیٹ اپ: Received, Name, Email, Phone, Message کالموں والی شیٹ بنائیں؛ Google Sheets اور Gmail پر گوگل credential اور Spreadsheet ID دیں؛ چاہیں تو فارم کی عبارت بدلیں؛ ورک فلو فعال کریں اور Form Trigger کا Form URL شیئر کریں۔",
-      "formTitle": "ہم سے رابطہ کریں",
-      "formDescription": "اپنی تفصیل لکھیں، ہم ایک کاروباری دن کے اندر جواب دیں گے۔",
-      "formFields": "[{\"label\":\"نام (Name)\",\"type\":\"text\",\"required\":true,\"options\":\"\"},{\"label\":\"ای میل (Email)\",\"type\":\"email\",\"required\":true,\"options\":\"\"},{\"label\":\"فون (Phone)\",\"type\":\"text\",\"required\":false,\"options\":\"\"},{\"label\":\"پیغام (Message)\",\"type\":\"text\",\"required\":true,\"options\":\"\"}]",
-      "submitLabel": "بھیجیں",
-      "thankYouMessage": "شکریہ! آپ کا پیغام مل گیا ہے اور اس کی نقل آپ کو ای میل کر دی گئی ہے۔",
-      "emailSubject": "آپ کا پیغام موصول ہو گیا",
-      "emailMessage": "محترم {{form.name}}،\n\nرابطہ کرنے کا شکریہ۔ آپ کا پیغام مل گیا ہے، ہم ایک کاروباری دن کے اندر جواب دیں گے۔\n\nآپ کا پیغام:\n{{form.message}}"
-    },
-    "ar": {
-      "name": "نموذج تواصل إلى Google Sheets مع بريد تأكيد",
-      "description": "نموذج تواصل مستضاف: كل إرسال يصبح صفاً في جدول Google Sheets ويتلقى المرسل بريد تأكيد من Gmail الخاص بك. الإعداد: أنشئ جدولاً بالأعمدة Received, Name, Email, Phone, Message؛ اختر حساب Google وSpreadsheet ID في Google Sheets وGmail؛ عدّل نصوص النموذج إن أردت؛ فعّل سير العمل وشارك Form URL من Form Trigger.",
-      "formTitle": "تواصل معنا",
-      "formDescription": "اترك بياناتك وسنرد عليك خلال يوم عمل واحد.",
-      "formFields": "[{\"label\":\"الاسم (Name)\",\"type\":\"text\",\"required\":true,\"options\":\"\"},{\"label\":\"البريد الإلكتروني (Email)\",\"type\":\"email\",\"required\":true,\"options\":\"\"},{\"label\":\"الهاتف (Phone)\",\"type\":\"text\",\"required\":false,\"options\":\"\"},{\"label\":\"الرسالة (Message)\",\"type\":\"text\",\"required\":true,\"options\":\"\"}]",
-      "submitLabel": "إرسال",
-      "thankYouMessage": "شكراً لك! استلمنا رسالتك وأرسلنا إليك نسخة بالبريد.",
-      "emailSubject": "استلمنا رسالتك",
-      "emailMessage": "مرحباً {{form.name}}،\n\nشكراً لتواصلك معنا. استلمنا رسالتك وسنرد خلال يوم عمل واحد.\n\nرسالتك:\n{{form.message}}"
     }
   }
 }
