@@ -23,6 +23,7 @@
       },
       "data": {
         "variableName": "ledgerRow",
+        "operation": "append",
         "sheetId": "",
         "sheetName": "Sheet1",
         "rowData": "{{shopify.order.created_at}}, {{shopify.order.name}}, {{shopify.customerName}}, {{shopify.phone}}, {{shopify.order.total_price}}, {{shopify.order.currency}}, {{shopify.order.gateway}}"

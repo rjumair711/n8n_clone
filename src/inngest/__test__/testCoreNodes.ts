@@ -12918,6 +12918,28 @@ pour()</code></pre>
     );
   });
 
+  await test("starter templates: every Google Sheets node says its operation", async () => {
+    const { readFileSync, readdirSync } = await import("node:fs");
+    const sheets = allStarters.flatMap((starter) =>
+      starter.nodes.filter((node) => node.type === "GOOGLE_SHEETS").map((node) => ({ starter, node }))
+    );
+    assert.equal(sheets.length, 12);
+    for (const { starter, node } of sheets) {
+      assert.equal(node.data.operation, "append", `${starter.key}: operation`);
+    }
+
+    // The migration writes it into the rows already in the gallery: only the
+    // app's own starters, only Sheets nodes without one, safe to run twice
+    const folder = readdirSync("prisma/migrations").find((name) => name.endsWith("_sheets_template_operation"));
+    assert.ok(folder, "sheets_template_operation migration");
+    const sql = readFileSync(`prisma/migrations/${folder}/migration.sql`, "utf8");
+    assert.match(sql, /WHEN node->>'type' = 'GOOGLE_SHEETS' AND NOT \(node->'data' \? 'operation'\)\s+THEN jsonb_set\(node, '\{data,operation\}', '"append"'::jsonb\)/);
+    assert.match(sql, /WHERE t\."createdById" = 'system'\s+AND t\."id" LIKE 'tpl\\_starter\\_%'/);
+    assert.match(sql, /ORDER BY position/);
+    const statements = sql.replace(/^--.*$/gm, "").replace(/'(?:[^']|'')*'/g, "''");
+    assert.equal(/\b(DROP|DELETE|TRUNCATE|INSERT|RENAME|ALTER)\b/i.test(statements), false);
+  });
+
   await test("every starter template is there in English only", () => {
     // The first five, the 35 added with the template gallery, then the AI
     // support bot, lead form and email triage

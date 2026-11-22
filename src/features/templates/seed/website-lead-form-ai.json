@@ -54,6 +54,7 @@
       },
       "data": {
         "variableName": "savedLead",
+        "operation": "append",
         "sheetId": "",
         "sheetName": "Sheet1",
         "rowData": "{{formMeta.submittedAt}}, {{form.name}}, {{form.email}}, {{form.phone}}, {{lead.output.category}}, {{lead.output.urgency}}, {{lead.output.need}}, {{lead.output.budget}}, {{lead.output.summary}}"

@@ -50,6 +50,7 @@
       "position": { "x": 600, "y": 260 },
       "data": {
         "variableName": "lead",
+        "operation": "append",
         "sheetId": "",
         "sheetName": "Sheet1",
         "rowData": "{{$now}}, {{$fromAI \"name\" \"the person's name, without commas\"}}, {{whatsapp.from}}, {{$fromAI \"need\" \"what they want, in a few words, without commas\"}}, {{$fromAI \"budget\" \"their budget as they said it, or unknown, without commas\"}}, {{$fromAI \"timeline\" \"when they need it, or unknown, without commas\"}}"

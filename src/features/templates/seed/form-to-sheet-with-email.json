@@ -29,6 +29,7 @@
       },
       "data": {
         "variableName": "savedRow",
+        "operation": "append",
         "sheetId": "",
         "sheetName": "Sheet1",
         "rowData": "{{formMeta.submittedAt}}, {{form.name}}, {{form.email}}, {{form.phone}}, {{form.message}}"

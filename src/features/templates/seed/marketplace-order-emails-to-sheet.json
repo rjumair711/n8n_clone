@@ -67,6 +67,7 @@
       },
       "data": {
         "variableName": "savedOrder",
+        "operation": "append",
         "sheetId": "",
         "sheetName": "Sheet1",
         "rowData": "{{gmail.date}}, {{order.output.orderNumber}}, {{order.output.customer}}, {{order.output.items}}, {{order.output.total}}, {{order.output.city}}"

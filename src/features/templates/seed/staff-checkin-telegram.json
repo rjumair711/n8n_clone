@@ -35,6 +35,7 @@
       },
       "data": {
         "variableName": "attendance",
+        "operation": "append",
         "sheetId": "",
         "sheetName": "Sheet1",
         "rowData": "{{now.result}}, {{telegram.message.from.first_name}}, {{telegram.message.from.id}}, {{telegram.message.text}}"
