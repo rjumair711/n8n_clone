@@ -123,16 +123,6 @@
       "name": "Marketplace order emails to Google Sheets",
       "description": "Reads the new-order emails your marketplace or website sends you (Daraz, Noon, Amazon or your own shop) and writes each order as a row: number, customer, items, total and city. Set up: change the Gmail Trigger's search so it matches only order emails; create a sheet with the columns Date, Order, Customer, Items, Total, City; pick credentials on the Gmail Trigger, Gemini, Google Sheets (and Spreadsheet ID) and Gmail.",
       "extractPrompt": "You read order notification emails from online marketplaces and shops."
-    },
-    "ur": {
-      "name": "مارکیٹ پلیس آرڈر ای میلز سے گوگل شیٹ",
-      "description": "آپ کی مارکیٹ پلیس یا ویب سائٹ (Daraz، Noon، Amazon یا آپ کی اپنی دکان) کی نئے آرڈر والی ای میلز پڑھ کر ہر آرڈر کو شیٹ میں سطر بنا دیتا ہے: نمبر، گاہک، اشیاء، کل رقم اور شہر۔ سیٹ اپ: Gmail Trigger کی تلاش ایسی رکھیں کہ صرف آرڈر ای میلز ملیں؛ Date, Order, Customer, Items, Total, City کالموں والی شیٹ بنائیں؛ Gmail Trigger، Gemini، Google Sheets (اور Spreadsheet ID) اور Gmail پر credentials چنیں۔",
-      "extractPrompt": "آپ آن لائن مارکیٹ پلیسز اور دکانوں کی آرڈر اطلاع والی ای میلز پڑھتے ہیں۔"
-    },
-    "ar": {
-      "name": "رسائل طلبات المتاجر إلى Google Sheets",
-      "description": "يقرأ رسائل الطلبات الجديدة التي يرسلها متجرك أو منصتك (نون أو أمازون أو متجرك الخاص) ويكتب كل طلب صفاً: الرقم والعميل والأصناف والإجمالي والمدينة. الإعداد: عدّل بحث Gmail Trigger ليطابق رسائل الطلبات فقط؛ أنشئ جدولاً بالأعمدة Date, Order, Customer, Items, Total, City؛ اختر credentials في Gmail Trigger وGemini وGoogle Sheets (مع Spreadsheet ID) وGmail.",
-      "extractPrompt": "تقرأ رسائل إشعارات الطلبات من المتاجر والمنصات الإلكترونية."
     }
   }
 }

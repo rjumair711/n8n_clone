@@ -1,11 +1,8 @@
 // The languages a template can be written in. No server imports: the
-// gallery uses it too.
+// gallery uses it too. Only English: the Urdu and Arabic versions of the
+// built-in templates were removed (migration english_only_templates).
 
-export const TEMPLATE_LANGUAGES = [
-  { value: "en", label: "English", dir: "ltr" },
-  { value: "ur", label: "اردو (Urdu)", dir: "rtl" },
-  { value: "ar", label: "العربية (Arabic)", dir: "rtl" },
-] as const;
+export const TEMPLATE_LANGUAGES = [{ value: "en", label: "English", dir: "ltr" }] as const;
 
 export type TemplateLanguage = (typeof TEMPLATE_LANGUAGES)[number]["value"];
 

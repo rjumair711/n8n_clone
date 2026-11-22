@@ -164,22 +164,6 @@
       "timezone": "Asia/Karachi",
       "savedMessage": "Saved: {{expense.output.item}}, {{expense.output.amount}} ({{expense.output.category}}).",
       "helpMessage": "Send what you spent and how much, for example: fuel 2500"
-    },
-    "ur": {
-      "name": "ٹیلیگرام پر اخراجات کا حساب",
-      "description": "اپنے بوٹ کو \"پیٹرول 2500\" یا \"مال خریدا 12000\" جیسا پیغام بھیجیں اور وہ گوگل شیٹ میں تاریخ کے ساتھ چیز، رقم اور قسم کی نئی سطر لکھ دیتا ہے۔ سیٹ اپ: Date, Item, Amount, Category, By کالموں والی شیٹ بنائیں؛ Telegram Trigger، Gemini، Google Sheets (اور Spreadsheet ID) اور دونوں Telegram نوڈز پر credentials چنیں؛ بوٹ صرف انہی لوگوں کو دیں جو اخراجات لکھ سکتے ہیں۔",
-      "extractPrompt": "آپ ایک چھوٹے کاروبار کے مالک کے مختصر اخراجات کے پیغامات پڑھتے ہیں، اردو، رومن اردو، انگریزی یا عربی میں۔",
-      "timezone": "Asia/Karachi",
-      "savedMessage": "محفوظ ہو گیا: {{expense.output.item}}، {{expense.output.amount}} ({{expense.output.category}})۔",
-      "helpMessage": "لکھیں کہ کس چیز پر کتنا خرچ ہوا، مثلاً: پیٹرول 2500"
-    },
-    "ar": {
-      "name": "تسجيل المصروفات عبر تيليجرام",
-      "description": "أرسل إلى البوت رسالة مثل \"وقود 150\" أو \"شراء بضاعة 900\" فيضيف صفاً مؤرخاً إلى جدول Google Sheets بالبند والمبلغ والفئة. الإعداد: أنشئ جدولاً بالأعمدة Date, Item, Amount, Category, By؛ اختر credentials في Telegram Trigger وGemini وGoogle Sheets (مع Spreadsheet ID) وعقدتي Telegram؛ شارك البوت فقط مع من يحق لهم تسجيل المصروفات.",
-      "extractPrompt": "تقرأ رسائل مصروفات قصيرة من صاحب نشاط تجاري صغير، بالعربية أو الإنجليزية أو الأردية.",
-      "timezone": "Asia/Riyadh",
-      "savedMessage": "تم الحفظ: {{expense.output.item}}، {{expense.output.amount}} ({{expense.output.category}}).",
-      "helpMessage": "اكتب ما صرفت عليه وكم، مثلاً: وقود 150"
     }
   }
 }

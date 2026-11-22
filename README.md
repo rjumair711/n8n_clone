@@ -1364,7 +1364,7 @@ RXJ includes onboarding UX to improve activation and retention.
 
 * First-time onboarding page
 * Create workflow CTA
-* Workflow templates, with starter templates in English, Urdu and Arabic (see below)
+* Workflow templates, with 52 built-in starter templates in English (see below)
 * Build with AI: a workflow from a description (see below)
 * One-click chatbot: documents or website pages in, a website widget, share link and WhatsApp out (see below)
 * Guided product introduction
@@ -1383,8 +1383,8 @@ The **Templates** page is a gallery of ready-made workflows. "Use template" copi
 * **Summary and steps** come from the one description field: the summary is the text before "Set up:" (or "To set it up:", "سیٹ اپ:", "الإعداد:"), and the steps are what follows, one per line, numbered, or one per sentence or semicolon. A description without that marker is all summary. There is no separate database field.
 * **No plans:** every template is open to every account (`canUseTemplate` in `src/features/templates/lib/template-data.ts`), except one with a node only a self-hosted server runs (SSH, on the hosted app). **Use template** checks that on the server, from the nodes that will be copied. The plan an admin once stored on a template row no longer counts.
 * Workflows already made from a template do not change when the template is edited or deleted.
-* **Languages.** Every template has a language: English, Urdu or Arabic (templates made before the field existed are English). The gallery has a language filter next to the search; Urdu and Arabic names and descriptions are shown right to left. An admin picks the language under **New template** and in the edit dialog.
-* **Starter templates** ship with the app as JSON seed data in `src/features/templates/seed/`, each in English, Urdu and Arabic: 52 templates, 156 in all. They are built in: the `starter_templates_built_in` migration puts all of them in the gallery, published and open to every account, and there is no admin step. Afterwards an admin can edit, hide or delete each one like any template; running the migration again changes nothing (a template already there, also one edited since, is left alone). A new seed reaches the gallery only through a new migration: print its INSERT statements with `npx tsx scripts/print-builtin-template-sql.ts starters`, keep only the new ones, and put them in a migration (see CLAUDE.md). A changed seed does not change the template already in the gallery.
+* **Language.** Templates are English only. The `language` column stays (always `en`), but the gallery has no language filter or badge and the template form no language field. The Urdu and Arabic versions the starters used to have were removed by the `english_only_templates` migration (it deletes only the app's own `tpl_starter_*_ur` / `_ar` rows; workflows made from them are copies and stay).
+* **Starter templates** ship with the app as JSON seed data in `src/features/templates/seed/`, in English: 52 templates. They are built in: the `starter_templates_built_in` migration puts all of them in the gallery, published and open to every account, and there is no admin step. Afterwards an admin can edit, hide or delete each one like any template; running the migration again changes nothing (a template already there, also one edited since, is left alone). A new seed reaches the gallery only through a new migration: print its INSERT statements with `npx tsx scripts/print-builtin-template-sql.ts starters`, keep only the new ones, and put them in a migration (see CLAUDE.md). A changed seed does not change the template already in the gallery.
 
   | Starter template | What it does | Who |
   | ---------------- | ------------ | ---- |
@@ -1424,7 +1424,7 @@ The **Templates** page is a gallery of ready-made workflows. "Use template" copi
   | Quote requests drafted by AI, sent after your approval | Customers ask for a price on a form; Gemini drafts a quote from your price list, you check it in RXJ (Approvals), and only approved quotes are emailed to the customer. | Everyone |
   | Low stock alert on Telegram | When a Shopify product is updated and one of its variants has fewer than 5 in stock, you get a Telegram message with the product, variant and quantity, so you can reorder in time. | Everyone |
   | Shipping email with tracking link | When a Shopify order is fulfilled, the customer gets an email in your own words with the courier and the tracking link. | Everyone |
-  | Product descriptions in English, Urdu and Arabic | When you add a product to Shopify, Gemini writes a short description in English, Urdu and Arabic from its title, type and tags and saves it on the product. | Everyone |
+  | Product descriptions written by AI | When you add a product to Shopify, Gemini writes a short English description from its title, type and tags and saves it on the product. | Everyone |
   | Cancelled order alert from WooCommerce | When an order in your WooCommerce store is cancelled, your team gets a Telegram message with the order, customer, phone and total, so someone can call and save the sale or stop the parcel. | Everyone |
   | PDF summary by email | Upload a PDF (a contract, a report, a tender, a circular) on a form and get a short summary with the key points by email a minute later. | Everyone |
   | Invoice generator: PDF by email and to Google Drive | Fill in a short form and get a numbered PDF invoice: it is emailed to your customer and a copy is saved to a Google Drive folder. | Everyone |
@@ -1445,9 +1445,9 @@ The **Templates** page is a gallery of ready-made workflows. "Use template" copi
 
   More about the seeds:
   * **Open to everyone.** No starter has an SSH node, so all 52 run on every account. The seeds still carry the plan they were written for; it no longer counts, and the tests check that every starter is open.
-  * **Description.** Each one is a summary for the card, then `Set up:` (`سیٹ اپ:`, `الإعداد:`) and the steps separated by semicolons; the details panel shows them as a numbered list. At most 600 characters.
-  * **Forms.** A form field's name (`{{form.<name>}}`) is made from the Latin letters of its label, so Urdu and Arabic labels end with the English word in brackets, for example `نام (Name)`. The tests check that a template's fields have the same names in all three languages and that every `{{form.x}}` it reads is one of its fields.
-  * **Times.** Schedules run in UTC. A starter that runs at a local time has its cron per language: 18:00 is `0 13 * * *` in the English and Urdu versions (Pakistan) and `0 15 * * *` in the Arabic one (Saudi Arabia). Booking times carry the offset (`+05:00` / `+03:00`).
+  * **Description.** Each one is a summary for the card, then `Set up:` and the steps separated by semicolons; the details panel shows them as a numbered list. At most 600 characters.
+  * **Forms.** A form field's name (`{{form.<name>}}`) is made from the Latin letters of its label. The tests check that every `{{form.x}}` a template reads is one of its fields.
+  * **Times.** Schedules run in UTC. A starter that runs at a local time is written for Pakistan: 18:00 is `0 13 * * *`. Booking times carry the offset (`+05:00`).
   * **Left for the user.** Settings only the user can give (Phone Number ID, Chat ID, a Drive file or folder, Store URL, Shop Domain) are saved empty, and the workflow opens with those nodes marked Not Configured.
   * **Check against the editor.** `npx tsx scripts/check-starter-templates.ts` runs every starter in every language through the same check "Build with AI" uses before a workflow goes into the editor (node types, operations, required settings, ports and connections) against the real node registry, builds the editor's nodes and edges, and checks the declared plan. No database or network.
 

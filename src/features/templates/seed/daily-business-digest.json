@@ -133,24 +133,6 @@
       "systemPrompt": "You write a short morning digest for the owner of an online shop. From the numbers given, write 3 to 5 short lines in English: how yesterday went, and what needs attention today (payments still pending, orders not yet shipped, cancellations). Use only the numbers given and do not calculate new ones. No greeting and no sign-off.",
       "emailSubject": "Yesterday ({{digest.date}}): {{digest.count}} orders, {{digest.total}} {{digest.currency}}",
       "emailMessage": "{{summary.text}}\n\n---\nOrders: {{digest.count}}\nTotal: {{digest.total}} {{digest.currency}}\nPaid: {{digest.paidCount}} ({{digest.paidTotal}})\nPayment pending: {{digest.pendingCount}} ({{digest.pendingTotal}})\nCancelled: {{digest.cancelledCount}}\nNot yet fulfilled: {{digest.unfulfilledCount}}\n\nBiggest orders:\n{{digest.biggest}}"
-    },
-    "ur": {
-      "name": "روزانہ کاروباری خلاصہ، AI کے تبصرے کے ساتھ",
-      "description": "ہر صبح 8 بجے (پاکستانی وقت) آپ کو کل کے Shopify آرڈرز کے بارے میں ایک ای میل ملتی ہے: کتنے آرڈر، کل رقم، ادا شدہ اور باقی ادائیگیاں، منسوخیاں، بھیجنے کے لیے باقی آرڈر اور سب سے بڑے آرڈر، ساتھ میں Gemini کا مختصر خلاصہ کہ کس چیز پر توجہ دینی ہے۔ اعداد ورک فلو گنتا ہے، AI نہیں۔ سیٹ اپ: اپنی دکان کا ڈومین لکھیں اور Shopify credential چنیں؛ Gemini اور Gmail پر credentials چنیں اور To میں اپنا ای میل لکھیں؛ کسی اور وقت کے لیے cron expression بدلیں (یہ UTC میں ہے)۔",
-      "cronExpression": "0 3 * * *",
-      "timezone": "Asia/Karachi",
-      "systemPrompt": "آپ ایک آن لائن دکان کے مالک کے لیے صبح کا مختصر خلاصہ لکھتے ہیں۔ دیے گئے اعداد سے اردو میں 3 سے 5 مختصر سطریں لکھیں: کل کا دن کیسا رہا، اور آج کس چیز پر توجہ دینی ہے (باقی ادائیگیاں، نہ بھیجے گئے آرڈر، منسوخیاں)۔ صرف دیے گئے اعداد استعمال کریں اور نئے حساب نہ لگائیں۔ سلام اور اختتامی جملہ نہ لکھیں۔",
-      "emailSubject": "کل ({{digest.date}}): {{digest.count}} آرڈر، {{digest.total}} {{digest.currency}}",
-      "emailMessage": "{{summary.text}}\n\n---\nآرڈر: {{digest.count}}\nکل رقم: {{digest.total}} {{digest.currency}}\nادا شدہ: {{digest.paidCount}} ({{digest.paidTotal}})\nادائیگی باقی: {{digest.pendingCount}} ({{digest.pendingTotal}})\nمنسوخ: {{digest.cancelledCount}}\nابھی نہیں بھیجے گئے: {{digest.unfulfilledCount}}\n\nسب سے بڑے آرڈر:\n{{digest.biggest}}"
-    },
-    "ar": {
-      "name": "ملخص يومي للنشاط مع تعليق بالذكاء الاصطناعي",
-      "description": "كل صباح الساعة 08:00 (بتوقيت السعودية) يصلك بريد واحد عن طلبات Shopify أمس: عددها، والإجمالي، والمدفوع والمعلّق، والإلغاءات، والطلبات التي لم تُشحن بعد، وأكبر الطلبات، مع ملخص قصير يكتبه Gemini يشير إلى ما يحتاج إلى متابعة. يحسب سير العمل الأرقام وليس الذكاء الاصطناعي. الإعداد: اكتب نطاق متجرك واختر Shopify credential؛ اختر credentials في Gemini وGmail واكتب بريدك في To؛ غيّر cron expression لوقت آخر (بتوقيت UTC).",
-      "cronExpression": "0 5 * * *",
-      "timezone": "Asia/Riyadh",
-      "systemPrompt": "تكتب ملخصاً صباحياً قصيراً لصاحب متجر إلكتروني. من الأرقام المعطاة اكتب من 3 إلى 5 أسطر قصيرة بالعربية: كيف كان يوم أمس، وما الذي يحتاج إلى متابعة اليوم (مدفوعات معلّقة، طلبات لم تُشحن، إلغاءات). استخدم الأرقام المعطاة فقط ولا تحسب أرقاماً جديدة. بلا تحية ولا خاتمة.",
-      "emailSubject": "أمس ({{digest.date}}): {{digest.count}} طلب، {{digest.total}} {{digest.currency}}",
-      "emailMessage": "{{summary.text}}\n\n---\nالطلبات: {{digest.count}}\nالإجمالي: {{digest.total}} {{digest.currency}}\nالمدفوع: {{digest.paidCount}} ({{digest.paidTotal}})\nبانتظار الدفع: {{digest.pendingCount}} ({{digest.pendingTotal}})\nالملغاة: {{digest.cancelledCount}}\nلم تُشحن بعد: {{digest.unfulfilledCount}}\n\nأكبر الطلبات:\n{{digest.biggest}}"
     }
   }
 }

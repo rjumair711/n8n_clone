@@ -104,16 +104,6 @@
       "name": "Telegram voice notes to Notion",
       "description": "Send a voice note to your Telegram bot (in Urdu, Arabic or English) and it is written out as text and saved as a page in a Notion database: ideas, to-dos and meeting notes on the go. Set up: create a Notion database with a title column called Name and share it with your Notion integration; pick credentials on the Telegram Trigger, Transcribe Audio (OpenAI), Notion (and the Database ID) and Telegram.",
       "savedMessage": "Saved to Notion: {{transcript.text}}"
-    },
-    "ur": {
-      "name": "ٹیلیگرام وائس نوٹ سے Notion",
-      "description": "اپنے ٹیلیگرام بوٹ کو وائس نوٹ بھیجیں (اردو، عربی یا انگریزی) اور وہ تحریر بن کر Notion ڈیٹا بیس میں صفحے کے طور پر محفوظ ہو جاتا ہے: چلتے پھرتے خیالات، کام اور میٹنگ نوٹس۔ سیٹ اپ: Name نامی عنوان کالم والا Notion ڈیٹا بیس بنائیں اور اپنی Notion integration سے شیئر کریں؛ Telegram Trigger، Transcribe Audio (OpenAI)، Notion (اور Database ID) اور Telegram پر credentials چنیں۔",
-      "savedMessage": "Notion میں محفوظ ہو گیا: {{transcript.text}}"
-    },
-    "ar": {
-      "name": "رسائل تيليجرام الصوتية إلى Notion",
-      "description": "أرسل رسالة صوتية إلى بوت تيليجرام (بالعربية أو الأردية أو الإنجليزية) فتُكتب نصاً وتُحفظ صفحة في قاعدة بيانات Notion: أفكار ومهام وملاحظات اجتماعات أثناء التنقل. الإعداد: أنشئ قاعدة بيانات Notion بعمود عنوان اسمه Name وشاركها مع تكامل Notion؛ اختر credentials في Telegram Trigger وTranscribe Audio (OpenAI) وNotion (مع Database ID) وTelegram.",
-      "savedMessage": "تم الحفظ في Notion: {{transcript.text}}"
     }
   }
 }
