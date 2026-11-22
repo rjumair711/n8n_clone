@@ -45,6 +45,7 @@
       "position": { "x": 680, "y": 260 },
       "data": {
         "variableName": "order",
+        "operation": "append",
         "sheetId": "",
         "sheetName": "Sheet1",
         "rowData": "{{$now}}, {{$fromAI \"customerName\" \"the customer's name, without commas\"}}, {{whatsapp.from}}, {{$fromAI \"items\" \"the items and quantities, separated by semicolons, for example: 2 x Chicken biryani; 1 x Raita\"}}, {{$fromAI \"total\" \"the order total as a number\"}}, {{$fromAI \"address\" \"the delivery address without commas, or the word pickup\"}}, {{$fromAI \"note\" \"anything else the customer asked for, without commas, or a dash\"}}"

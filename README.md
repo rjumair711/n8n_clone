@@ -1448,6 +1448,7 @@ The **Templates** page is a gallery of ready-made workflows. "Use template" copi
   * **Description.** Each one is a summary for the card, then `Set up:` and the steps separated by semicolons; the details panel shows them as a numbered list. At most 600 characters.
   * **Forms.** A form field's name (`{{form.<name>}}`) is made from the Latin letters of its label. The tests check that every `{{form.x}}` a template reads is one of its fields.
   * **Times.** Schedules run in UTC. A starter that runs at a local time is written for Pakistan: 18:00 is `0 13 * * *`. Booking times carry the offset (`+05:00`).
+  * **Google Sheets.** Every Sheets node in a starter says its operation (`append`, Append Row); the `sheets_template_operation` migration wrote it into the rows already in the gallery.
   * **Left for the user.** Settings only the user can give (Phone Number ID, Chat ID, a Drive file or folder, Store URL, Shop Domain) are saved empty, and the workflow opens with those nodes marked Not Configured.
   * **Check against the editor.** `npx tsx scripts/check-starter-templates.ts` runs every starter in every language through the same check "Build with AI" uses before a workflow goes into the editor (node types, operations, required settings, ports and connections) against the real node registry, builds the editor's nodes and edges, and checks the declared plan. No database or network.
 

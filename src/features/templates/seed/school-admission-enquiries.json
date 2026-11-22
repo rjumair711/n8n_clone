@@ -29,6 +29,7 @@
       },
       "data": {
         "variableName": "savedEnquiry",
+        "operation": "append",
         "sheetId": "",
         "sheetName": "Sheet1",
         "rowData": "{{formMeta.submittedAt}}, {{form.parent_name}}, {{form.student_name}}, {{form.class}}, {{form.phone}}, {{form.email}}"

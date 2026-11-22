@@ -45,6 +45,7 @@
       "position": { "x": 680, "y": 260 },
       "data": {
         "variableName": "appointment",
+        "operation": "append",
         "sheetId": "",
         "sheetName": "Sheet1",
         "rowData": "{{$now}}, {{$fromAI \"patientName\" \"the patient's full name, without commas\"}}, {{whatsapp.from}}, {{$fromAI \"doctor\" \"the doctor or department, without commas\"}}, {{$fromAI \"date\" \"the appointment date as YYYY-MM-DD\"}}, {{$fromAI \"time\" \"the appointment time as HH:MM, 24-hour\"}}, {{$fromAI \"reason\" \"the reason for the visit in a few words, without commas\"}}"

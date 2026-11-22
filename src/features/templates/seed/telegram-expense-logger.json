@@ -78,6 +78,7 @@
       },
       "data": {
         "variableName": "savedExpense",
+        "operation": "append",
         "sheetId": "",
         "sheetName": "Sheet1",
         "rowData": "{{now.result}}, {{expense.output.item}}, {{expense.output.amount}}, {{expense.output.category}}, {{telegram.message.from.first_name}}"

@@ -2449,6 +2449,18 @@ Needs the `english_only_templates` migration applied (it runs on the production 
 | 6 | **Use template** on "Product descriptions written by AI" | the Gemini node's System Prompt asks for an English description only; no Urdu or Arabic headings |
 | 7 | Run the migration's SQL a second time | deletes 0 rows; the update sets the same values again |
 
+
+## T53. Google Sheets operation in starter templates
+
+Needs the `sheets_template_operation` migration applied (it runs on the production deploy after merging). It adds `"operation": "append"` to the Google Sheets nodes of the 12 starter templates that had none; nothing else changes.
+
+| # | Do | Expect |
+|---|----|--------|
+| 1 | `npx tsx scripts/check-starter-templates.ts` | no "operation" is required problem (the plan notes that are left do not matter: there are no plans) |
+| 2 | **Use template** on "WhatsApp shop order bot" and open its Google Sheets node | Operation shows **Append Row**; the columns are filled in as before |
+| 3 | Run that workflow with a test sheet | a row is added, as before |
+| 4 | Run the migration's SQL a second time | updates 0 rows |
+
 # When something fails
 
 Note the node, the exact values you entered, and the error text from the

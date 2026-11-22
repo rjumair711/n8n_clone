@@ -45,6 +45,7 @@
       "position": { "x": 680, "y": 260 },
       "data": {
         "variableName": "lead",
+        "operation": "append",
         "sheetId": "",
         "sheetName": "Sheet1",
         "rowData": "{{$now}}, {{$fromAI \"name\" \"the person's name, without commas\"}}, {{whatsapp.from}}, {{$fromAI \"purpose\" \"one of: buy, rent, sell\"}}, {{$fromAI \"propertyType\" \"for example house, flat, plot, shop\"}}, {{$fromAI \"area\" \"the area or neighbourhood they want, without commas\"}}, {{$fromAI \"budget\" \"the budget or asking price as they said it, without commas\"}}, {{$fromAI \"timeline\" \"when they want to move or close the deal, without commas\"}}, {{$fromAI \"note\" \"anything else useful for the agent, without commas, or a dash\"}}"
