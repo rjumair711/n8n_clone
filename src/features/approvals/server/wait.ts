@@ -11,8 +11,11 @@ import {
   APPROVAL_DECIDED_EVENT,
   APPROVAL_STATUS,
   WAITING_FOR_APPROVAL,
+  type ApprovalField,
+  approvalFieldValues,
   clipApprovalTitle,
   formatApprovalDetails,
+  readApprovalFields,
 } from "@/lib/approvals";
 import { buildApprovalLinks } from "@/lib/approval-links";
 import {
@@ -29,6 +32,10 @@ export type ApprovalResult = {
   outcome: ApprovalOutcome;
   // "link" or "app"; null when nobody answered
   decidedVia: string | null;
+  // Editable Fields: the final text of each (the approver's where they
+  // changed it), and whether they changed any
+  fields: Record<string, string>;
+  edited: boolean;
 };
 
 /**
@@ -52,6 +59,7 @@ export const requestApproval = async ({
   delivery,
   timeoutMs,
   context,
+  fields,
 }: {
   step: StepTools;
   // Unique within the run, e.g. "approval-<nodeId>" or "agent-approval-<toolCallId>"
@@ -67,6 +75,8 @@ export const requestApproval = async ({
   delivery: ApprovalDelivery;
   timeoutMs: number;
   context: WorkflowContext;
+  // Send and Wait for Approval: what the approver may change, filled in
+  fields?: ApprovalField[];
 }): Promise<ApprovalResult> => {
   if (!executionId) {
     throw new NonRetriableError(
@@ -104,6 +114,7 @@ export const requestApproval = async ({
             : JSON.parse(JSON.stringify(details))) as Prisma.InputJsonValue | undefined,
         channel,
         expiresAt,
+        ...(fields?.length ? { fields: fields as unknown as Prisma.InputJsonValue } : {}),
       },
       select: { id: true },
     });
@@ -136,6 +147,7 @@ export const requestApproval = async ({
             details,
             workflowName: request.workflowName,
             expiresAt,
+            fields,
             ...buildApprovalLinks(getAppUrl(), request.id, expiresAt),
           },
           userId,
@@ -176,13 +188,22 @@ export const requestApproval = async ({
 
     const answered = await prisma.approvalRequest.findUnique({
       where: { id: request.id },
-      select: { status: true, decidedVia: true },
+      select: { status: true, decidedVia: true, fields: true, edits: true },
     });
 
     // Throws when the execution was cancelled while it waited
     await markExecutionResumed({ executionId, nodeId, label });
 
+    // The approver's changes only count when they approved
+    const storedFields = readApprovalFields(answered?.fields);
+    const finalFields = approvalFieldValues(
+      storedFields,
+      answered?.status === APPROVAL_STATUS.APPROVED ? answered.edits : null
+    );
+
     return {
+      fields: finalFields,
+      edited: storedFields.some((field) => finalFields[field.name] !== field.value),
       approvalId: request.id,
       outcome:
         answered?.status === APPROVAL_STATUS.APPROVED

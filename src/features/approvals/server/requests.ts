@@ -1,10 +1,16 @@
 import prisma from "@/lib/db";
 import { inngest } from "@/inngest/client";
+import type { Prisma } from "@prisma/client";
 import {
     APPROVAL_DECIDED_EVENT,
     APPROVAL_STATUS,
     type ApprovalDecision,
+    cleanApprovalEdits,
+    readApprovalFields,
 } from "@/lib/approvals";
+
+// The approver sent a value that is not allowed (too long): nothing is saved
+export class ApprovalEditError extends Error {}
 
 // "answered": this call answered the request. The others say why it did not.
 export type DecideOutcome =
@@ -21,20 +27,38 @@ export type DecideOutcome =
  *
  * With `userId` the request must belong to that user (the in-app buttons);
  * a signed link needs no user.
+ *
+ * `edits` are the approver's changes to the request's Editable Fields. They
+ * are kept to those fields and only saved with an Approve.
  */
 export const decideApproval = async ({
     id,
     decision,
     via,
     userId,
+    edits,
 }: {
     id: string;
     decision: ApprovalDecision;
     via: "link" | "app";
     userId?: string;
+    edits?: Record<string, unknown> | null;
 }): Promise<{ outcome: DecideOutcome; status?: string }> => {
     const now = new Date();
     const owner = userId ? { userId } : {};
+
+    let changed: Record<string, string> = {};
+    if (decision === "approve" && edits && Object.keys(edits).length > 0) {
+        const stored = await prisma.approvalRequest.findFirst({
+            where: { id, ...owner },
+            select: { fields: true },
+        });
+        try {
+            changed = cleanApprovalEdits(readApprovalFields(stored?.fields), edits);
+        } catch (error) {
+            throw new ApprovalEditError(error instanceof Error ? error.message : "The edits are not valid");
+        }
+    }
 
     const updated = await prisma.approvalRequest.updateMany({
         where: {
@@ -50,6 +74,9 @@ export const decideApproval = async ({
                     : APPROVAL_STATUS.REJECTED,
             decidedAt: now,
             decidedVia: via,
+            ...(Object.keys(changed).length > 0
+                ? { edits: changed as Prisma.InputJsonValue }
+                : {}),
         },
     });
 
@@ -108,6 +135,7 @@ export const listPendingApprovals = async (
             kind: true,
             title: true,
             details: true,
+            fields: true,
             channel: true,
             expiresAt: true,
             createdAt: true,

@@ -4,12 +4,14 @@ import { rateLimitResponse } from "@/lib/rate-limit";
 import {
     APPROVAL_STATUS,
     escapeHtml,
+    MAX_APPROVAL_FIELD_CHARS,
     formatApprovalDetails,
     isApprovalDecision,
+    readApprovalFields,
     type ApprovalDecision,
 } from "@/lib/approvals";
 import { verifyApprovalLink } from "@/lib/approval-links";
-import { decideApproval } from "@/features/approvals/server/requests";
+import { ApprovalEditError, decideApproval } from "@/features/approvals/server/requests";
 
 // The Approve and Reject links of an approval request:
 //   <app>/api/approvals/<id>?decision=approve&expires=...&signature=...
@@ -20,7 +22,7 @@ import { decideApproval } from "@/features/approvals/server/requests";
 
 const page = (title: string, body: string, status = 200) =>
     new Response(
-        `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="robots" content="noindex"><title>${escapeHtml(title)}</title><style>body{font-family:system-ui,Arial,sans-serif;background:#f9fafb;color:#111827;margin:0;padding:24px}main{max-width:560px;margin:40px auto;background:#fff;border:1px solid #e5e7eb;border-radius:10px;padding:24px}h1{font-size:18px;margin:0 0 12px}p{font-size:14px;line-height:1.5}pre{background:#f3f4f6;padding:12px;border-radius:6px;white-space:pre-wrap;word-break:break-word;font-size:12px}button{border:0;border-radius:6px;padding:10px 18px;color:#fff;font-weight:600;font-size:14px;cursor:pointer}.approve{background:#16a34a}.reject{background:#dc2626}.muted{color:#6b7280;font-size:12px}</style></head><body><main>${body}</main></body></html>`,
+        `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="robots" content="noindex"><title>${escapeHtml(title)}</title><style>body{font-family:system-ui,Arial,sans-serif;background:#f9fafb;color:#111827;margin:0;padding:24px}main{max-width:560px;margin:40px auto;background:#fff;border:1px solid #e5e7eb;border-radius:10px;padding:24px}h1{font-size:18px;margin:0 0 12px}p{font-size:14px;line-height:1.5}pre{background:#f3f4f6;padding:12px;border-radius:6px;white-space:pre-wrap;word-break:break-word;font-size:12px}button{border:0;border-radius:6px;padding:10px 18px;color:#fff;font-weight:600;font-size:14px;cursor:pointer}.approve{background:#16a34a}.reject{background:#dc2626}.muted{color:#6b7280;font-size:12px}label{display:block;font-size:13px;font-weight:600;margin:14px 0 4px}textarea{display:block;width:100%;box-sizing:border-box;font:inherit;font-size:13px;line-height:1.5;padding:8px 10px;border:1px solid #d1d5db;border-radius:6px;margin-bottom:6px;resize:vertical}</style></head><body><main>${body}</main></body></html>`,
         {
             status,
             headers: {
@@ -78,6 +80,7 @@ const readRequest = async (request: NextRequest, id: string) => {
             kind: true,
             title: true,
             details: true,
+            fields: true,
             status: true,
             expiresAt: true,
             execution: { select: { workflow: { select: { name: true } } } },
@@ -122,6 +125,16 @@ export async function GET(
                 ? `An AI Agent wants to use the tool "${approval.title}"`
                 : approval.title;
         const details = formatApprovalDetails(approval.details);
+        const fields = readApprovalFields(approval.fields);
+
+        // Approve: each Editable Field in a text box, filled in. Reject: shown
+        const fieldsHtml = fields
+            .map((field) =>
+                approve
+                    ? `<label for="field-${escapeHtml(field.name)}">${escapeHtml(field.name)}</label><textarea id="field-${escapeHtml(field.name)}" name="field:${escapeHtml(field.name)}" rows="${Math.min(12, Math.max(2, field.value.split("\n").length + 1))}" maxlength="${MAX_APPROVAL_FIELD_CHARS}">${escapeHtml(field.value)}</textarea>`
+                    : `<p>${escapeHtml(field.name)}:</p><pre>${escapeHtml(formatApprovalDetails(field.value))}</pre>`
+            )
+            .join("");
 
         return page(
             approve ? "Approve?" : "Reject?",
@@ -132,7 +145,7 @@ export async function GET(
                     ? `<p>${approval.kind === "tool" ? "Arguments" : "Details"}:</p><pre>${escapeHtml(details)}</pre>`
                     : "",
                 // Posts back to this same signed link
-                `<form method="post"><button type="submit" class="${approve ? "approve" : "reject"}">${approve ? "Approve" : "Reject"}</button></form>`,
+                `<form method="post">${fieldsHtml}${approve && fields.length ? `<p class="muted">Change the text if you like, then approve.</p>` : ""}<button type="submit" class="${approve ? "approve" : "reject"}">${approve ? (fields.length ? "Approve with these texts" : "Approve") : "Reject"}</button></form>`,
                 `<p class="muted">The request can be answered once and expires on ${escapeHtml(approval.expiresAt.toISOString())}.</p>`,
             ].join("")
         );
@@ -157,7 +170,29 @@ export async function POST(
         if (found.response) return found.response;
 
         const { decision } = found;
-        const { outcome, status } = await decideApproval({ id, decision, via: "link" });
+
+        // The text boxes of an Approve page: "field:<name>" -> value
+        let edits: Record<string, string> | undefined;
+        if (decision === "approve") {
+            const form = await request.formData().catch(() => null);
+            edits = {};
+            for (const [key, value] of form?.entries() ?? []) {
+                if (key.startsWith("field:") && typeof value === "string") {
+                    edits[key.slice("field:".length)] = value;
+                }
+            }
+        }
+
+        let result;
+        try {
+            result = await decideApproval({ id, decision, via: "link", edits });
+        } catch (error) {
+            if (error instanceof ApprovalEditError) {
+                return message("Not saved", error.message, 400);
+            }
+            throw error;
+        }
+        const { outcome, status } = result;
 
         if (outcome === "answered") {
             return decision === "approve"

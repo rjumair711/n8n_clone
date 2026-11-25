@@ -83,6 +83,12 @@ The **Send and Wait for Approval** node asks a person a yes/no question in a nor
 * The run continues through the **Approved** or the **Rejected** output. Later nodes can also read `{{approval.approved}}`, `{{approval.decision}}` (`approved`, `rejected` or `expired`), `{{approval.timedOut}}` and `{{approval.decidedVia}}` (`link` or `app`).
 * **Timeout** (default 24 hours, at most the longest wait) and **When Nobody Answers**: continue through Rejected, or fail the workflow.
 * While it waits the execution is **Waiting** and can be cancelled. After a list node it asks once for the whole list.
+* **Approve with edits.** **Editable Fields** (optional) names text the approver may change before approving, one `name: value` per line, for example `subject: {{draft.subject}}` and `body: {{draft.body}}`. Names are letters, digits and `_`, starting with a letter; at most 10 fields of up to 10,000 characters. The lines are split before the values are filled in, so a value may have colons or several lines.
+  * The values are filled in when the request is made and stored with it (`ApprovalRequest.fields`). The email, Slack, Telegram and WhatsApp messages show them, escaped, with "You can change these before approving". The **Approve** link's page and the **Approvals** page show each in a text box, filled in; the **Reject** page shows them read-only.
+  * Approving saves only what was changed (`ApprovalRequest.edits`), kept to the request's own fields: other names, non-text values and anything on a Reject are ignored, and a value over the limit is refused with nothing saved.
+  * Later nodes read the final text at `{{approval.fields.<name>}}`: the approver's where they changed it, the filled-in value otherwise. `{{approval.edited}}` is true when anything was changed. After a reject or expiry `fields` holds the filled-in values and `edited` is false. Nodes without Editable Fields have neither, as before.
+  * What the approver types is data: it is inserted into later nodes as text and never evaluated as a `{{template}}`.
+  * Not built: editing an AI Agent tool's arguments before approving, and one approval per item after a list node.
 
 ## Forms
 

@@ -2521,6 +2521,26 @@ Needs the `instagram_comment_to_dm_template` migration applied (it runs on the p
 | 6 | Run the migration's SQL a second time | inserts 0 rows |
 | 7 | **Build with AI**: "when someone messages my Facebook Page, answer with Gemini" | the workflow is built; a Messenger Trigger without Trigger On is accepted (it means Messages) |
 
+## T57. Approve with edits
+
+Needs the `approval_editable_fields` migration applied (it runs on the production deploy after merging): two new nullable columns on `ApprovalRequest`, nothing else.
+
+Workflow: Manual Trigger → Set Variable (`draft` = `Dear Ali, the price is 500.`) → **Send and Wait for Approval** (In the app, Title `Send this quote?`, Editable Fields `subject: Your quote` and `body: {{draft}}`) → Approved: Set Variable (`sent` = `{{approval.fields.subject}} / {{approval.fields.body}} / {{approval.edited}}`).
+
+| # | Do | Expect |
+|---|----|--------|
+| 1 | Before the deploy: `npx prisma migrate status` | one migration not yet applied, `..._approval_editable_fields`. After: up to date, and `select "fields", "edits" from "ApprovalRequest" limit 1` works |
+| 2 | Execute the workflow, open **Approvals** | the request with two text boxes, filled in with `Your quote` and the draft |
+| 3 | Change the price to 450 and press **Approve** | the run goes on; `sent` is `Your quote / Dear Ali, the price is 450. / true` |
+| 4 | Run again and approve without changing anything | `... the price is 500. / false` |
+| 5 | Run again and press **Reject** after changing the text | it goes through Rejected; `{{approval.fields.body}}` is the original draft |
+| 6 | Switch the node to **Email** (to yourself) and run | the email shows `subject` and `body` and "You can change these before approving". **Approve** opens a page with the text boxes; change the body and press **Approve with these texts**: the run continues with your text |
+| 7 | Open the email's **Reject** link | the fields are shown read-only, with no text boxes |
+| 8 | Open the used Approve link again | "Already answered"; nothing changes |
+| 9 | A Send and Wait for Approval node without Editable Fields | works as before; its output has no `fields` or `edited` |
+| 10 | Editable Fields `my subject: x` | the run fails at once with "must be \"name: value\"" and nobody is asked |
+| 11 | Put `<b>hi</b>` in a field | shown as text everywhere, never as bold |
+
 ## T58. WordPress node
 
 Needs the `wordpress_node` migration applied (it runs on the production deploy after merging): two enum values, nothing else. Needs a test WordPress site on https (5.6 or newer) and a user with the Editor role. Create an application password under Users > Profile > Application Passwords and save a **WordPress** credential `username:the password`.

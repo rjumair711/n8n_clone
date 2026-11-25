@@ -63,6 +63,97 @@ export const toolRequiresApproval = ({
   return defaultByRisk && risk !== "read";
 };
 
+// =========================================================================
+// EDITABLE FIELDS ("Approve with edits")
+// =========================================================================
+// A Send and Wait for Approval node can name fields the approver may change
+// before approving, one per line: `subject: {{draft.subject}}`. The run
+// fills in the values; the approver sees them in text boxes; later nodes
+// read the final text at {{approval.fields.subject}}.
+
+export type ApprovalField = { name: string; value: string };
+
+export const MAX_APPROVAL_FIELDS = 10;
+export const MAX_APPROVAL_FIELD_CHARS = 10_000;
+const FIELD_NAME = /^[A-Za-z][A-Za-z0-9_]{0,39}$/;
+
+/**
+ * The lines of the Editable Fields setting, before their values are filled
+ * in: `name: value`. The name is split off first, so a value may hold a
+ * colon or a {{expression}} that later becomes several lines.
+ */
+export const parseEditableFields = (text: string | undefined): { name: string; template: string }[] => {
+  const fields: { name: string; template: string }[] = [];
+
+  for (const line of (text ?? "").split(/\r?\n/)) {
+    if (!line.trim()) continue;
+
+    const colon = line.indexOf(":");
+    const name = (colon === -1 ? line : line.slice(0, colon)).trim();
+    if (!FIELD_NAME.test(name)) {
+      throw new Error(
+        `Editable Fields: "${line.trim().slice(0, 60)}" must be "name: value", with a name of letters, digits and _ that starts with a letter`
+      );
+    }
+    if (fields.some((field) => field.name === name)) {
+      throw new Error(`Editable Fields: "${name}" is there twice`);
+    }
+
+    fields.push({ name, template: colon === -1 ? "" : line.slice(colon + 1).trim() });
+  }
+
+  if (fields.length > MAX_APPROVAL_FIELDS) {
+    throw new Error(`Editable Fields: at most ${MAX_APPROVAL_FIELDS} fields`);
+  }
+
+  return fields;
+};
+
+/** The fields a request was stored with, or none for one that has no such fields. */
+export const readApprovalFields = (stored: unknown): ApprovalField[] =>
+  (Array.isArray(stored) ? stored : []).flatMap((field) =>
+    field && typeof field === "object" && typeof (field as ApprovalField).name === "string"
+      ? [{ name: (field as ApprovalField).name, value: String((field as ApprovalField).value ?? "") }]
+      : []
+  );
+
+/**
+ * What an approver sent, kept to the request's own fields: text only, at
+ * most MAX_APPROVAL_FIELD_CHARS each, line breaks as \n. A value that was
+ * not changed is left out. Anything else that was sent is ignored.
+ */
+export const cleanApprovalEdits = (
+  fields: ApprovalField[],
+  submitted: Record<string, unknown> | null | undefined
+): Record<string, string> => {
+  const edits: Record<string, string> = {};
+
+  for (const field of fields) {
+    const value = submitted?.[field.name];
+    if (typeof value !== "string") continue;
+
+    const text = value.replace(/\r\n?/g, "\n");
+    if (text.length > MAX_APPROVAL_FIELD_CHARS) {
+      throw new Error(`"${field.name}" has ${text.length} characters; at most ${MAX_APPROVAL_FIELD_CHARS}`);
+    }
+    if (text !== field.value) edits[field.name] = text;
+  }
+
+  return edits;
+};
+
+/** The final value of each field: the approver's text where they changed it. */
+export const approvalFieldValues = (fields: ApprovalField[], edits: unknown): Record<string, string> => {
+  const changed = edits && typeof edits === "object" ? (edits as Record<string, unknown>) : {};
+
+  return Object.fromEntries(
+    fields.map((field) => [
+      field.name,
+      typeof changed[field.name] === "string" ? (changed[field.name] as string) : field.value,
+    ])
+  );
+};
+
 // Agent data: set on AI Agent nodes added to the canvas since approvals exist
 export const TOOL_APPROVAL_DEFAULT_BY_RISK = "risk";
 
@@ -106,7 +197,11 @@ export type ApprovalMessageInput = {
   approveUrl: string;
   rejectUrl: string;
   expiresAt: Date;
+  // Editable Fields: shown, and changeable on the Approve link's page
+  fields?: ApprovalField[];
 };
+
+const EDIT_NOTE = "You can change these before approving: open the Approve link.";
 
 const describe = (input: ApprovalMessageInput) =>
   input.kind === "tool"
@@ -127,6 +222,9 @@ export const buildApprovalText = (input: ApprovalMessageInput): string => {
     `Approval needed: ${heading}`,
     `Workflow: ${input.workflowName}`,
     details ? `${detailsLabel}:\n${details}` : "",
+    input.fields?.length
+      ? [...input.fields.map((field) => `${field.name}:\n${formatApprovalDetails(field.value)}`), EDIT_NOTE].join("\n\n")
+      : "",
     `Approve: ${input.approveUrl}`,
     `Reject: ${input.rejectUrl}`,
     `Each link opens a page that asks you to confirm. The request can be answered once and expires on ${input.expiresAt.toISOString()}.`,
@@ -156,6 +254,11 @@ export const buildApprovalEmail = (
       details
         ? `<p style="margin-bottom:4px">${detailsLabel}:</p><pre style="background:#f3f4f6;padding:12px;border-radius:6px;white-space:pre-wrap;word-break:break-word;font-size:12px">${escapeHtml(details)}</pre>`
         : "",
+      ...(input.fields ?? []).map(
+        (field) =>
+          `<p style="margin-bottom:4px">${escapeHtml(field.name)}:</p><pre style="background:#f3f4f6;padding:12px;border-radius:6px;white-space:pre-wrap;word-break:break-word;font-size:12px">${escapeHtml(formatApprovalDetails(field.value))}</pre>`
+      ),
+      input.fields?.length ? `<p>${EDIT_NOTE}</p>` : "",
       `<p><a href="${escapeHtml(input.approveUrl)}" style="${button}background:#16a34a">Approve</a>&nbsp;&nbsp;<a href="${escapeHtml(input.rejectUrl)}" style="${button}background:#dc2626">Reject</a></p>`,
       `<p style="color:#6b7280;font-size:12px">Each button opens a page that asks you to confirm. The request can be answered once and expires on ${escapeHtml(input.expiresAt.toISOString())}.</p>`,
       `</div>`,

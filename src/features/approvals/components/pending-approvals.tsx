@@ -1,5 +1,6 @@
 "use client";
 
+import { useState } from "react";
 import Link from "next/link";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { formatDistanceToNow } from "date-fns";
@@ -7,7 +8,55 @@ import { CheckIcon, UserCheckIcon, XIcon } from "lucide-react";
 import { toast } from "sonner";
 import { useTRPC } from "@/trpc/client";
 import { Button } from "@/components/ui/button";
-import { formatApprovalDetails } from "@/lib/approvals";
+import { Textarea } from "@/components/ui/textarea";
+import {
+    MAX_APPROVAL_FIELD_CHARS,
+    formatApprovalDetails,
+    readApprovalFields,
+} from "@/lib/approvals";
+
+// A request's Editable Fields in text boxes, filled in; what the approver
+// types is sent with Approve
+const EditableFields = ({
+    approvalId,
+    stored,
+    values,
+    onChange,
+}: {
+    approvalId: string;
+    stored: unknown;
+    values: Record<string, string>;
+    onChange: (name: string, value: string) => void;
+}) => {
+    const fields = readApprovalFields(stored);
+    if (fields.length === 0) return null;
+
+    return (
+        <div className="space-y-3">
+            <p className="text-xs text-muted-foreground">
+                Change the text if you like, then approve.
+            </p>
+            {fields.map((field) => (
+                <div key={field.name} className="space-y-1">
+                    <label
+                        htmlFor={`${approvalId}-${field.name}`}
+                        className="text-xs font-medium text-muted-foreground"
+                    >
+                        {field.name}
+                    </label>
+                    <Textarea
+                        id={`${approvalId}-${field.name}`}
+                        value={values[field.name] ?? field.value}
+                        onChange={(event) => onChange(field.name, event.target.value)}
+                        maxLength={MAX_APPROVAL_FIELD_CHARS}
+                        rows={Math.min(12, Math.max(2, field.value.split("\n").length + 1))}
+                        className="font-mono text-xs"
+                    />
+                </div>
+            ))}
+        </div>
+    );
+};
 
 /**
  * The approval requests the user can still answer, each with Approve and
@@ -17,6 +66,8 @@ import { formatApprovalDetails } from "@/lib/approvals";
 export const PendingApprovals = ({ executionId }: { executionId?: string }) => {
     const trpc = useTRPC();
     const queryClient = useQueryClient();
+    // Per request: the Editable Fields the approver changed
+    const [edits, setEdits] = useState<Record<string, Record<string, string>>>({});
 
     const { data: approvals, isLoading } = useQuery({
         ...trpc.approvals.getPending.queryOptions({ executionId }),
@@ -92,7 +143,13 @@ export const PendingApprovals = ({ executionId }: { executionId?: string }) => {
                             <div className="flex shrink-0 gap-2">
                                 <Button
                                     size="sm"
-                                    onClick={() => decide.mutate({ id: approval.id, decision: "approve" })}
+                                    onClick={() =>
+                                        decide.mutate({
+                                            id: approval.id,
+                                            decision: "approve",
+                                            edits: edits[approval.id],
+                                        })
+                                    }
                                     disabled={decide.isPending}
                                 >
                                     <CheckIcon className="size-4" />
@@ -109,6 +166,17 @@ export const PendingApprovals = ({ executionId }: { executionId?: string }) => {
                                 </Button>
                             </div>
                         </div>
+                        <EditableFields
+                            approvalId={approval.id}
+                            stored={approval.fields}
+                            values={edits[approval.id] ?? {}}
+                            onChange={(name, value) =>
+                                setEdits((current) => ({
+                                    ...current,
+                                    [approval.id]: { ...current[approval.id], [name]: value },
+                                }))
+                            }
+                        />
                         {details && (
                             <div>
                                 <p className="mb-1 text-xs font-medium text-muted-foreground">

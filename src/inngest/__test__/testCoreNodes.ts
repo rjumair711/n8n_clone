@@ -6598,6 +6598,117 @@ const main = async () => {
     );
   });
 
+  await test("Approve with edits: Editable Fields, what the approver may send, and the final text", async () => {
+    const { readFileSync } = await import("node:fs");
+
+    // The setting: one name: value per line, split before values are filled in
+    assert.deepEqual(approvals.parseEditableFields("subject: {{draft.subject}}\n\n body : Dear {{name}}: thanks\r\nnote"), [
+      { name: "subject", template: "{{draft.subject}}" },
+      { name: "body", template: "Dear {{name}}: thanks" },
+      { name: "note", template: "" },
+    ]);
+    assert.deepEqual(approvals.parseEditableFields(undefined), []);
+    assert.deepEqual(approvals.parseEditableFields("  \n "), []);
+    assert.throws(() => approvals.parseEditableFields("my subject: x"), /must be "name: value"/);
+    assert.throws(() => approvals.parseEditableFields("1st: x"), /must be "name: value"/);
+    assert.throws(() => approvals.parseEditableFields("a: 1\na: 2"), /"a" is there twice/);
+    assert.throws(
+      () => approvals.parseEditableFields(Array.from({ length: 11 }, (_, i) => `f${i}: x`).join("\n")),
+      /at most 10 fields/
+    );
+
+    // What the approver sent: only the request's fields, text only, changed ones
+    const fields = [
+      { name: "subject", value: "Your quote" },
+      { name: "body", value: "Dear Ali,\nthe price is 500." },
+    ];
+    assert.deepEqual(
+      approvals.cleanApprovalEdits(fields, {
+        subject: "Your quote",
+        body: "Dear Ali,\r\nthe price is 450.",
+        other: "ignored",
+      }),
+      { body: "Dear Ali,\nthe price is 450." }
+    );
+    assert.deepEqual(approvals.cleanApprovalEdits(fields, { subject: 5 as unknown as string }), {});
+    assert.deepEqual(approvals.cleanApprovalEdits([], { subject: "x" }), {}, "a request without fields takes no edits");
+    assert.deepEqual(approvals.cleanApprovalEdits(fields, null), {});
+    assert.throws(
+      () => approvals.cleanApprovalEdits(fields, { body: "x".repeat(approvals.MAX_APPROVAL_FIELD_CHARS + 1) }),
+      /at most 10000/
+    );
+
+    // The final text
+    assert.deepEqual(approvals.approvalFieldValues(fields, { body: "New" }), { subject: "Your quote", body: "New" });
+    assert.deepEqual(approvals.approvalFieldValues(fields, null), { subject: "Your quote", body: "Dear Ali,\nthe price is 500." });
+    assert.deepEqual(approvals.approvalFieldValues(fields, { body: 3 }), { subject: "Your quote", body: "Dear Ali,\nthe price is 500." });
+    assert.deepEqual(approvals.readApprovalFields(fields), fields);
+    assert.deepEqual(approvals.readApprovalFields(null), []);
+    assert.deepEqual(approvals.readApprovalFields([{ name: "a" }, "x", { value: "y" }]), [{ name: "a", value: "" }]);
+
+    // The request as text and email shows the fields, escaped, and says they can be changed
+    const input = {
+      kind: "node" as const,
+      title: "Send this quote?",
+      details: null,
+      workflowName: "Quotes",
+      approveUrl: "https://app.example/api/approvals/a1?decision=approve",
+      rejectUrl: "https://app.example/api/approvals/a1?decision=reject",
+      expiresAt: new Date("2026-12-01T00:00:00Z"),
+      fields: [{ name: "body", value: "<b>Price</b> 500" }],
+    };
+    const text = approvals.buildApprovalText(input);
+    assert.match(text, /body:\n<b>Price<\/b> 500\n\nYou can change these before approving: open the Approve link\./);
+    const email = approvals.buildApprovalEmail(input);
+    assert.ok(email.html.includes("&lt;b&gt;Price&lt;/b&gt; 500"));
+    assert.ok(!email.html.includes("<b>Price</b>"));
+    assert.ok(email.html.includes("You can change these before approving"));
+    assert.ok(!approvals.buildApprovalText({ ...input, fields: undefined }).includes("change these"));
+
+    // The node fills in the values and checks the setting before asking anyone
+    const { approvalExecutor } = await import("@/features/executions/components/core/executors");
+    await assert.rejects(
+      approvalExecutor({ ...baseParams, data: { title: "ok?", editableFields: "bad name: x" }, context: {} }),
+      /Send and Wait for Approval node: Editable Fields: "bad name: x" must be/
+    );
+    await assert.rejects(
+      approvalExecutor({
+        ...baseParams,
+        data: { title: "ok?", editableFields: "body: {{draft}}" },
+        context: { draft: "x".repeat(approvals.MAX_APPROVAL_FIELD_CHARS + 1) },
+      }),
+      /"body" has 10001 characters; at most 10000/
+    );
+    const executors = readFileSync("src/features/executions/components/core/executors.ts", "utf8");
+    assert.match(executors, /parseEditableFields\(data\.editableFields\)\.map\(\(field\) => \{\s+const value = renderTemplate\(field\.template, context\);/);
+    assert.match(executors, /\.\.\.\(fields\.length > 0 \? \{ fields: result\.fields, edited: result\.edited \} : \{\}\)/);
+
+    // Stored with the request; edits only count when it was approved
+    const wait = readFileSync("src/features/approvals/server/wait.ts", "utf8");
+    assert.match(wait, /\.\.\.\(fields\?\.length \? \{ fields: fields as unknown as Prisma\.InputJsonValue \} : \{\}\)/);
+    assert.match(wait, /answered\?\.status === APPROVAL_STATUS\.APPROVED \? answered\.edits : null/);
+    const requests = readFileSync("src/features/approvals/server/requests.ts", "utf8");
+    assert.match(requests, /if \(decision === "approve" && edits && Object\.keys\(edits\)\.length > 0\)/);
+    assert.match(requests, /cleanApprovalEdits\(readApprovalFields\(stored\?\.fields\), edits\)/);
+    // The Approve link's page: text boxes, read back by their names
+    const route = readFileSync("src/app/api/approvals/[id]/route.ts", "utf8");
+    assert.match(route, /name="field:\$\{escapeHtml\(field\.name\)\}"/);
+    assert.match(route, />\$\{escapeHtml\(field\.value\)\}<\/textarea>/);
+    assert.match(route, /if \(key\.startsWith\("field:"\) && typeof value === "string"\)/);
+    // The in-app button sends them; the router limits them
+    assert.match(readFileSync("src/features/approvals/server/routers.ts", "utf8"), /z\.string\(\)\.max\(MAX_APPROVAL_FIELD_CHARS\)/);
+    assert.match(readFileSync("src/features/approvals/components/pending-approvals.tsx", "utf8"), /edits: edits\[approval\.id\]/);
+
+    // The migration: two nullable columns, nothing else
+    const fs = await import("node:fs");
+    const folder = fs.readdirSync("prisma/migrations").find((name) => name.endsWith("_approval_editable_fields"));
+    assert.ok(folder, "migration");
+    assert.equal(
+      readFileSync(`prisma/migrations/${folder}/migration.sql`, "utf8").replace(/\r\n/g, "\n").trim(),
+      `-- AlterTable\nALTER TABLE "ApprovalRequest" ADD COLUMN     "edits" JSONB,\nADD COLUMN     "fields" JSONB;`
+    );
+  });
+
   await test("a channel that is not set up fails before anyone is asked, and answers are single use", async () => {
     const { getDeliveryProblem, getApprovalChannel } = await import(
       "@/features/approvals/server/notify"
@@ -6647,7 +6758,7 @@ const main = async () => {
     const route = read("src/app/api/approvals/[id]/route.ts");
     const get = route.slice(route.indexOf("export async function GET"), route.indexOf("export async function POST"));
     assert.doesNotMatch(get, /decideApproval\(/);
-    assert.match(route.slice(route.indexOf("export async function POST")), /decideApproval\(\{ id, decision, via: "link" \}\)/);
+    assert.match(route.slice(route.indexOf("export async function POST")), /decideApproval\(\{ id, decision, via: "link", edits \}\)/);
     assert.ok(route.indexOf("verifyApprovalLink(") < route.indexOf("prisma.approvalRequest"));
 
     // The run waits with an Inngest wait-for-event, takes the answer from
