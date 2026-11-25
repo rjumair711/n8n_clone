@@ -178,7 +178,7 @@ export const aiBudgetError = ({
 
   return scope === "workflow"
     ? `Monthly AI budget reached: the workflow${workflowName ? ` "${workflowName}"` : ""} has spent ${spent} on AI this month and its budget is ${budget}. Raise or remove the budget in the workflow's settings, or wait until the 1st of next month (UTC).`
-    : `Monthly AI budget reached: your account has spent ${spent} on AI this month and your budget is ${budget}. Raise or remove the budget on the Billing page, or wait until the 1st of next month (UTC).`;
+    : `Monthly AI budget reached: your account has spent ${spent} on AI this month and your budget is ${budget}. Raise or remove the budget under Settings → AI budgets, or wait until the 1st of next month (UTC).`;
 };
 
 export type UsageRow = TokenUsage & {

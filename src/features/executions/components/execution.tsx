@@ -14,6 +14,7 @@ import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/component
 import { Button } from "@/components/ui/button"
 import { ExecutionAiUsage } from "@/features/ai-usage/components/execution-ai-usage"
 import { PendingApprovals } from "@/features/approvals/components/pending-approvals"
+import { guideTopicForError, guideTopicHref } from "@/features/settings/lib/guide-links"
 
 
 const getStatusIcon = (status: ExecutionStatus) => {
@@ -229,6 +230,12 @@ export const ExecutionView = ({
                             <p className="text-sm text-red-800 font-mono">
                                 {execution.error}
                             </p>
+                            <Link
+                                href={guideTopicHref(guideTopicForError(execution.error))}
+                                className="mt-2 inline-block text-sm font-medium text-red-900 underline underline-offset-4"
+                            >
+                                How to fix this (Platform guide)
+                            </Link>
                         </div>
                         {execution.errorStack && (
                             <Collapsible

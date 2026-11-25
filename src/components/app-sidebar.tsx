@@ -3,6 +3,7 @@
 import { useEffect } from "react"
 import { useQuery, useQueryClient } from "@tanstack/react-query"
 import {
+    BookMarkedIcon,
     BookOpenIcon,
     BotIcon,
     ChevronsUpDownIcon,
@@ -90,6 +91,8 @@ const ACCOUNT_ITEMS: NavItem[] = [
     { title: "Usage", icon: GaugeIcon, url: "/settings/usage" },
     { title: "Billing", icon: CreditCardIcon, url: "/billing" },
     { title: "API Keys", icon: Code2Icon, url: "/settings/api-keys" },
+    // The customer manual in Settings, and the public getting-started page
+    { title: "Platform guide", icon: BookMarkedIcon, url: "/settings/guide" },
     { title: "Docs", icon: BookOpenIcon, url: "/docs" },
 // A self-hosted server has no billing
 ].filter((item) => !SELF_HOSTED || item.url !== "/billing")

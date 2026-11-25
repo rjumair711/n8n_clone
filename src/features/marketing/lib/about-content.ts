@@ -33,6 +33,6 @@ export const ABOUT_PRINCIPLES: {
   {
     icon: LanguagesIcon,
     title: "In your language",
-    text: "Starter templates come in English, Urdu and Arabic, and the website chat widget can run right to left.",
+    text: "AI agents answer in the language they are asked in, voice notes in Urdu and Arabic become text, and PDFs and the website chat widget run right to left.",
   },
 ];
