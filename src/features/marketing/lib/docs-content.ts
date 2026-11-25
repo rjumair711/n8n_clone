@@ -50,7 +50,7 @@ export const DOCS_SECTIONS: DocsSection[] = [
       },
       {
         term: "Start from a template",
-        text: "The Templates page is a gallery of ready-made workflows in English, Urdu and Arabic. \"Use template\" copies one into your account; nodes that need your own account open as Not Configured.",
+        text: "The Templates page is a gallery of ready-made workflows, in English. \"Use template\" copies one into your account; nodes that need your own account open as Not Configured.",
       },
       {
         term: "Drag nodes yourself",

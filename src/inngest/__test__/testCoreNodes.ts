@@ -3898,7 +3898,7 @@ const main = async () => {
 
     const account = aiBudgetError({ scope: "account", spentUsd: 20, budgetCents: 2000 });
     assert.match(account, /^Monthly AI budget reached: your account/);
-    assert.match(account, /Billing page/);
+    assert.match(account, /Settings → AI budgets/);
 
     // The month is the calendar month in UTC
     assert.equal(startOfUtcMonth(new Date("2026-10-31T23:59:59.999Z")).toISOString(), "2026-10-01T00:00:00.000Z");
@@ -5484,7 +5484,7 @@ const main = async () => {
     const read = (file: string) => fs.readFileSync(path.join(process.cwd(), file), "utf8");
     const settingsDir = "src/app/(dashboard)/(rest)/settings";
 
-    assert.deepEqual(SETTINGS_GROUPS.map((group) => group.title), ["Account", "Workspace", "AI"]);
+    assert.deepEqual(SETTINGS_GROUPS.map((group) => group.title), ["Account", "Workspace", "AI", "Help"]);
     // No enterprise sections: Git sync, external secrets and SSO are gone
     for (const slug of ["git-sync", "secrets", "sso"]) {
       assert.equal(fs.existsSync(path.join(process.cwd(), `${settingsDir}/${slug}`)), false, slug);
@@ -5525,7 +5525,7 @@ const main = async () => {
     const account = sidebar.slice(sidebar.indexOf("const ACCOUNT_ITEMS"), sidebar.indexOf("// One size for every item"));
     assert.deepEqual(
       [...account.matchAll(/title: "([^"]+)"/g)].map((match) => match[1]),
-      ["Settings", "Usage", "Billing", "API Keys", "Docs"]
+      ["Settings", "Usage", "Billing", "API Keys", "Platform guide", "Docs"]
     );
     // Sign out comes after them, at the end of the menu
     assert.ok(sidebar.lastIndexOf("Sign out") > sidebar.indexOf("ACCOUNT_ITEMS.map"));
@@ -16680,6 +16680,114 @@ pour()</code></pre>
     assert.match(readFileSync("src/app/(dashboard)/(rest)/admin/servers/page.tsx", "utf8"), /<ManagedServersSection \/>/);
     assert.match(readFileSync("src/app/(dashboard)/(rest)/settings/managed-servers/page.tsx", "utf8"), /redirect\("\/admin\/servers"\)/);
     assert.ok(existsSync("src/app/(dashboard)/(rest)/admin/customers/page.tsx"));
+  });
+
+  await test("Settings → Help → Platform guide: every chapter, filtered per server, searchable", async () => {
+    const fs = await import("node:fs");
+    const { buildGuide, searchGuide, topicText } = await import("@/features/settings/lib/guide-content");
+    const { SETTINGS_GROUPS } = await import("@/features/settings/lib/sections");
+    const { HOSTED_MONTHLY_EXECUTIONS } = await import("@/config/plans");
+    const { ACCOUNT_MESSAGE_CAPS } = await import("@/config/message-caps");
+
+    const help = SETTINGS_GROUPS.find((group) => group.title === "Help");
+    assert.deepEqual(help?.sections.map((section) => section.slug), ["guide"]);
+    assert.ok(!help?.sections[0].adminOnly && !help?.sections[0].hostedOnly, "every account has the guide");
+
+    const hosted = buildGuide({ nodeCount: 123, selfHosted: false });
+    const own = buildGuide({ nodeCount: 123, selfHosted: true });
+    const ids = (chapters: typeof hosted) => chapters.map((chapter) => chapter.id);
+
+    // Unique anchors, and every chapter has something in it
+    const allIds = hosted.flatMap((chapter) => [chapter.id, ...chapter.topics.map((topic) => topic.id)]);
+    assert.equal(new Set(allIds).size, allIds.length, "chapter and topic ids are unique");
+    for (const chapter of [...hosted, ...own]) assert.ok(chapter.topics.length > 0, chapter.id);
+
+    // The hosted app's billing, limits and private server are not on a self-hosted server
+    for (const id of ["limits", "own-server"]) {
+      assert.ok(ids(hosted).includes(id), id);
+      assert.ok(!ids(own).includes(id), id);
+    }
+    const topicIds = (chapters: typeof hosted) => chapters.flatMap((chapter) => chapter.topics.map((topic) => topic.id));
+    assert.ok(topicIds(hosted).includes("rxj-ai") && !topicIds(own).includes("rxj-ai"));
+    assert.ok(topicIds(own).includes("ssh") && !topicIds(hosted).includes("ssh"));
+    assert.ok(topicIds(hosted).includes("ssh-hosted") && !topicIds(own).includes("ssh-hosted"));
+    // The admins' chapter is marked, and the component hides it from everyone else
+    assert.deepEqual(hosted.filter((chapter) => chapter.adminOnly).map((chapter) => chapter.id), ["admin"]);
+    const component = fs.readFileSync("src/features/settings/components/sections/guide-section.tsx", "utf8");
+    assert.match(component, /isAdmin \|\| !chapter\.adminOnly/);
+
+    // Numbers come from the code
+    const text = hosted.flatMap((chapter) => chapter.topics.map(topicText)).join(" ");
+    assert.ok(text.includes("123 kinds of steps"), "node count");
+    assert.ok(text.includes(HOSTED_MONTHLY_EXECUTIONS.toLocaleString("en-US")), "monthly runs");
+    assert.ok(text.includes(`${ACCOUNT_MESSAGE_CAPS.email.toLocaleString("en-US")} emails`), "email cap");
+
+    // Every in-app link points at a page that exists
+    const appDir = "src/app";
+    const routeExists = (href: string) => {
+      const route = href.replace(/^\//, "");
+      return [
+        `${appDir}/${route}/page.tsx`,
+        `${appDir}/(dashboard)/(rest)/${route}/page.tsx`,
+      ].some((file) => fs.existsSync(file));
+    };
+    for (const link of hosted.flatMap((chapter) => chapter.topics.flatMap((topic) => topic.links ?? []))) {
+      assert.ok(routeExists(link.href), `${link.label}: ${link.href}`);
+    }
+
+    // Search: every word must match, case and markup ignored
+    assert.deepEqual(searchGuide(hosted, ""), hosted);
+    const whatsapp = searchGuide(hosted, "WHATSAPP 24 hours");
+    assert.ok(whatsapp.length > 0);
+    for (const chapter of whatsapp) {
+      for (const topic of chapter.topics) {
+        const words = `${chapter.title} ${chapter.summary} ${topicText(topic)}`.toLowerCase();
+        assert.ok(words.includes("whatsapp") && words.includes("24 hours"), topic.id);
+      }
+    }
+    assert.deepEqual(searchGuide(hosted, "zzzz-no-such-word"), []);
+    assert.ok(searchGuide(hosted, "invalid_grant").some((chapter) => chapter.id === "troubleshooting"));
+
+    assert.match(
+      fs.readFileSync("src/app/(dashboard)/(rest)/settings/guide/page.tsx", "utf8"),
+      /buildGuide\(\{ nodeCount: NODE_COUNT, selfHosted: SELF_HOSTED \}\)/
+    );
+
+    // Links into the guide from nodes and errors name topics that exist
+    const { NodeType } = await import("@prisma/client");
+    const links = await import("@/features/settings/lib/guide-links");
+    const hostedTopics = new Set(topicIds(hosted));
+    for (const type of Object.values(NodeType)) {
+      if (type === "INITIAL" || type === "STICKY_NOTE") continue;
+      const topic = links.guideTopicForNode(type);
+      assert.ok(topic && hostedTopics.has(topic), `${type} → ${topic}`);
+    }
+    assert.equal(links.guideTopicForNode("STICKY_NOTE"), null);
+    assert.equal(links.guideTopicForNode(undefined), null);
+    assert.equal(links.guideTopicHref("agent"), "/settings/guide#guide-topic-agent");
+    assert.equal(links.guideTopicForError("Monthly AI budget reached: your account has spent $5"), "ai-cost");
+    assert.equal(
+      links.guideTopicForError("Daily email limit reached: an account may send 1000 emails per day"),
+      "message-caps"
+    );
+    assert.equal(links.guideTopicForError("You have no RXJ AI (included) credits: it runs on credits you buy."), "rxj-ai");
+    assert.equal(links.guideTopicForError("Something odd happened"), "common-problems");
+    assert.equal(links.guideTopicForError(null), "common-problems");
+    for (const topic of ["ai-cost", "message-caps", "rxj-ai", "agent-safety", "approvals", "messaging", "common-problems"]) {
+      assert.ok(hostedTopics.has(topic), topic);
+    }
+
+    // Where the links are: every node's toolbar, the execution's error, the editor's Help menu, the account menu
+    assert.match(fs.readFileSync("src/components/workflow-node.tsx", "utf8"), /guideTopicHref\(topic\)[^\n]+"_blank"/);
+    assert.match(
+      fs.readFileSync("src/features/executions/components/execution.tsx", "utf8"),
+      /href=\{guideTopicHref\(guideTopicForError\(execution\.error\)\)\}/
+    );
+    const helpButton = fs.readFileSync("src/features/support/components/editor-help-button.tsx", "utf8");
+    assert.match(helpButton, /<DropdownMenu modal=\{false\}>/);
+    assert.match(helpButton, /onSelect=\{openGuide\}[\s\S]+Platform guide[\s\S]+onSelect=\{openDialog\}[\s\S]+Contact support/);
+    // Topic links open the topic's chapter
+    assert.match(component, /hash\.startsWith\("#guide-topic-"\)/);
   });
 
   await test("admin errors: failed runs per customer and grouped by error", async () => {

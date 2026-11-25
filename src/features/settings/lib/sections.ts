@@ -101,6 +101,16 @@ export const SETTINGS_GROUPS: SettingsGroup[] = [
       },
     ],
   },
+  {
+    title: "Help",
+    sections: [
+      {
+        slug: "guide",
+        title: "Platform guide",
+        description: "Every part of RXJ and how to use it: workflows, triggers, AI agents, chatbots, teams, limits and fixes for common problems.",
+      },
+    ],
+  },
 ];
 
 export const SETTINGS_SECTIONS = SETTINGS_GROUPS.flatMap((group) => group.sections);

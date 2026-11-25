@@ -16,6 +16,7 @@ import {
 } from "lucide-react";
 import { getNodeLabel } from "@/config/node-labels";
 import { PLAN_LIMITS } from "@/config/plans";
+import { MANAGED_SERVER_OFFER } from "@/config/pricing-plans";
 
 // The words of the landing page. Everything here describes something the
 // app does today (see README.md); numbers come from the code, not from
@@ -239,11 +240,11 @@ export const FAQ = [
   {
     question: "Can I self-host RXJ?",
     answer:
-      "RXJ is offered as a hosted service, and that is what the plans on this page are for. There is no packaged self-hosted edition at the moment.",
+      `Yes. Install RXJ on a server of your own for free, with one command (Docker; see the self-hosting guide), or have it set up and looked after for you as a managed private server for ${MANAGED_SERVER_OFFER.price} a month. A server of your own has no limits on runs or messages, and can use the SSH node.`,
   },
   {
     question: "Does it work in Urdu and Arabic?",
     answer:
-      "Yes. Starter templates come in English, Urdu and Arabic, and the website chat widget can run right to left.",
+      "Yes, for your customers: AI agents answer in the language they are asked in, voice notes in Urdu and Arabic are turned into text, PDFs are written right to left, and the website chat widget can run right to left. Starter templates are in English.",
   },
 ];

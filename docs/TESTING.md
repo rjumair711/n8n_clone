@@ -463,7 +463,7 @@ Needs the `workspaces` migration applied. Use two accounts, A and B, in two brow
 
 | # | Do | Expect |
 |---|----|--------|
-| 1 | Open Settings | the menu has Account, Workspace and AI; no Enterprise group |
+| 1 | Open Settings | the menu has Account, Workspace, AI and Help; no Enterprise group |
 | 2 | Open `/settings/git-sync`, `/settings/secrets` and `/settings/sso` | "not found" |
 | 3 | Open the login page | Continue with GitHub, Continue with Google and the email form; no **Sign in with SSO** |
 | 4 | Run a workflow whose nodes use ordinary credentials (OpenAI, Gmail, Telegram) | they run as before |
@@ -2461,6 +2461,29 @@ Needs the `sheets_template_operation` migration applied (it runs on the producti
 | 3 | Run that workflow with a test sheet | a row is added, as before |
 | 4 | Run the migration's SQL a second time | updates 0 rows |
 | 5 | After the `invoice_template_sheets_operation` migration, **Use template** on "Invoice to Google Sheets" and open its Google Sheets node | Operation shows **Append Row**; that migration updates only this one row |
+## T54. Settings → Help → Platform guide
+
+No migration. Sign in with the test account.
+
+| # | Do | Expect |
+|---|----|--------|
+| 1 | Open **Settings** | the menu has a fourth group, **Help**, with **Platform guide**; on a phone it is the last tab |
+| 2 | Open it | the search box, a numbered list of chapters, and the first chapter "Getting started" open; the others closed |
+| 3 | Click "AI agents and models" in the list | that chapter opens and scrolls into view; the address ends in `#guide-ai`. Reload: it is open again |
+| 4 | Type `whatsapp 24 hours` | "N topics found"; only topics with both words, all chapters with a match open |
+| 5 | Type `zzzz` | "Nothing in the guide matches that..."; clear it with ✕ and the chapter list is back |
+| 6 | Click a link inside a topic (for example **AI budgets →**) | that page opens |
+| 7 | As a normal user | no "For platform admins" chapter. As an admin (in `ADMIN_EMAILS`): it is the last chapter |
+| 8 | On a self-hosted server | no "Usage, limits and billing" or "Your own server" chapter, no RXJ AI topic, and SSH is described as available |
+| 9 | Dark mode, and a 1366 × 768 window | text readable, no sideways scroll |
+| 10 | Account menu (bottom of the sidebar) | Settings, Usage, Billing, API Keys, **Platform guide**, Docs, Sign out. Platform guide opens `/settings/guide` |
+| 11 | In the editor, hover an AI Agent node and press the book button on its toolbar | a new tab opens the guide at "The AI Agent", its chapter open. The editor tab is unchanged (an unsaved change is still there) |
+| 12 | The same on a Google Sheets node, a Form Trigger and a Wait node | "Apps and databases", "Making a form", "Waiting" |
+| 13 | Editor → **Help** | a menu with **Platform guide** and **Contact support**. With a node selected, Platform guide opens that node's topic; with none, the guide's start. Contact support opens the support popup as before, and the page stays clickable after it closes |
+| 14 | Open a failed execution | under the error, **How to fix this (Platform guide)**. For a run stopped by an AI budget it opens "Watching AI spend"; for any other error "Common problems" |
+| 15 | Public **Docs** page, landing page FAQ "Does it work in Urdu and Arabic?" and **About** | templates are described as English; nothing says they come in Urdu or Arabic |
+| 16 | Landing page FAQ "Can I self-host RXJ?" | "Yes": install it yourself for free, or the managed private server at the price the Pricing page shows |
+| 17 | Set the workspace's AI budget to $0.01 under Settings → AI budgets, run a workflow with an AI node | the run fails with "Monthly AI budget reached: ... Raise or remove the budget under Settings → AI budgets ..."; **How to fix this** opens "Watching AI spend". Remove the budget afterwards |
 
 # When something fails
 

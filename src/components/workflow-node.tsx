@@ -1,9 +1,10 @@
 "use client"
 
-import { NodeToolbar, Position } from "@xyflow/react"
+import { NodeToolbar, Position, useNodeId, useReactFlow } from "@xyflow/react"
 import type { ReactNode } from "react"
 import { Button } from "./ui/button";
-import { SettingsIcon, TrashIcon } from "lucide-react";
+import { BookOpenIcon, SettingsIcon, TrashIcon } from "lucide-react";
+import { guideTopicForNode, guideTopicHref } from "@/features/settings/lib/guide-links";
 
 
 interface WorkflowNodeProps {
@@ -26,6 +27,16 @@ showToolbar = true,
     name,
     description
 }: WorkflowNodeProps) {
+    const nodeId = useNodeId();
+    const { getNode } = useReactFlow();
+
+    // The guide's topic about this node type, in a new tab so the canvas
+    // (and anything not saved yet) stays as it is
+    const openGuide = () => {
+        const topic = guideTopicForNode(nodeId ? getNode(nodeId)?.type : undefined);
+        window.open(topic ? guideTopicHref(topic) : "/settings/guide", "_blank", "noopener");
+    };
+
     return (
         <>
             {showToolbar && (
@@ -34,6 +45,15 @@ showToolbar = true,
                         <SettingsIcon className="size-4" />
                     </Button>
                     {extraActions}
+                    <Button
+                        size="sm"
+                        variant="ghost"
+                        onClick={openGuide}
+                        title="How this node works (Platform guide)"
+                        aria-label="How this node works (Platform guide)"
+                    >
+                        <BookOpenIcon className="size-4" />
+                    </Button>
                     <Button size="sm" variant="ghost" onClick={onDelete}>
                         <TrashIcon className="size-4" />
                     </Button>
