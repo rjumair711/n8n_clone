@@ -8867,6 +8867,111 @@ pour()</code></pre>
     );
   });
 
+  await test("Google Search Console: the property, the dates and the query, and what comes back", async () => {
+    const { readFileSync } = await import("node:fs");
+    const sc = await import("@/features/executions/components/apps/search-console");
+    const now = Date.parse("2026-11-25T12:00:00Z");
+    const build = (data: Record<string, string>, context: Record<string, unknown> = {}) =>
+      sc.buildSearchAnalyticsRequest({ siteUrl: "https://example.com", ...data }, context, now);
+
+    // Properties: URL prefix with a trailing slash, or a domain
+    assert.equal(sc.normalizeSiteUrl("https://example.com"), "https://example.com/");
+    assert.equal(sc.normalizeSiteUrl("https://example.com/blog"), "https://example.com/blog/");
+    assert.equal(sc.normalizeSiteUrl("sc-domain:Example.com"), "sc-domain:example.com");
+    assert.equal(sc.normalizeSiteUrl("example.com"), "sc-domain:example.com");
+    for (const site of ["", "not a site", "sc-domain:", "ftp://example.com"]) {
+      assert.throws(() => sc.normalizeSiteUrl(site), /Site/, site);
+    }
+
+    // Defaults: the last 28 days of final data, by query, web, 100 rows
+    assert.deepEqual(build({}), {
+      siteUrl: "https://example.com/",
+      requestBody: { startDate: "2026-10-26", endDate: "2026-11-22", dimensions: ["query"], type: "web", rowLimit: 100 },
+    });
+    const custom = build({
+      startDate: "7 days ago",
+      endDate: "yesterday",
+      dimensions: "Page, query, searchAppearance",
+      searchType: "image",
+      rowLimit: "5000",
+      queryContains: "{{keyword}}",
+      pageContains: "/blog/",
+      country: "PAK",
+      device: "mobile",
+    }, { keyword: "kurta" });
+    assert.deepEqual(custom.requestBody, {
+      startDate: "2026-11-18",
+      endDate: "2026-11-24",
+      dimensions: ["page", "query", "searchAppearance"],
+      type: "image",
+      rowLimit: 1000,
+      dimensionFilterGroups: [{
+        filters: [
+          { dimension: "query", operator: "contains", expression: "kurta" },
+          { dimension: "page", operator: "contains", expression: "/blog/" },
+          { dimension: "country", operator: "equals", expression: "pak" },
+          { dimension: "device", operator: "equals", expression: "MOBILE" },
+        ],
+      }],
+    });
+    assert.equal(build({ startDate: "2026-11-01", endDate: "2026-11-10" }).requestBody.startDate, "2026-11-01");
+    assert.throws(() => build({ startDate: "2026-11-10", endDate: "2026-11-01" }), /Start Date is after End Date/);
+    assert.throws(() => build({ startDate: "last month" }), /Start Date must be a date/);
+    assert.throws(() => build({ dimensions: "keyword" }), /"keyword" is not a dimension/);
+    assert.throws(() => build({ dimensions: "query, Query" }), /there twice/);
+    assert.throws(() => build({ searchType: "maps" }), /not a search type/);
+    assert.throws(() => build({ country: "pakistan" }), /three-letter code/);
+    assert.throws(() => build({ device: "watch" }), /desktop, mobile or tablet/);
+
+    // Rows get a field per dimension; totals weigh position by impressions
+    const shaped = sc.shapeSearchAnalytics(["query", "page"], {
+      rows: [
+        { keys: ["kurta", "https://example.com/a"], clicks: 10, impressions: 100, ctr: 0.1, position: 2.04 },
+        { keys: ["lawn suit", "https://example.com/b"], clicks: 0, impressions: 300, ctr: 0, position: 10 },
+      ],
+    });
+    assert.deepEqual(shaped.rows[0], { query: "kurta", page: "https://example.com/a", clicks: 10, impressions: 100, ctr: 0.1, position: 2 });
+    assert.deepEqual(shaped.totals, { clicks: 10, impressions: 400, ctr: 0.025, position: 8 });
+    assert.deepEqual(sc.shapeSearchAnalytics(["query"], {}), { rows: [], count: 0, totals: { clicks: 0, impressions: 0, ctr: 0, position: 0 } });
+
+    const inspected = sc.shapeInspection({ inspectionResult: { indexStatusResult: { verdict: "PASS", coverageState: "Submitted and indexed", lastCrawlTime: "2026-11-20T10:00:00Z", googleCanonical: "https://example.com/a" }, mobileUsabilityResult: { verdict: "PASS" } } });
+    assert.equal(inspected.indexed, true);
+    assert.equal(inspected.coverageState, "Submitted and indexed");
+    assert.equal(inspected.mobileUsability, "PASS");
+    assert.equal(sc.shapeInspection({}).indexed, false);
+
+    // The executor checks the settings before it reads a credential
+    const run = (data: Record<string, string>) =>
+      sc.searchConsoleExecutor({ ...baseParams, data, context: {} });
+    await assert.rejects(run({ operation: "delete_site" }), /Unsupported operation/);
+    await assert.rejects(run({ operation: "inspect_url", siteUrl: "https://example.com/", inspectionUrl: "example.com/a" }), /Page URL must be the page's full address/);
+    await assert.rejects(run({ operation: "inspect_url", siteUrl: "https://example.com/", inspectionUrl: "https://other.com/a" }), /must be inside the Site/);
+    await assert.rejects(run({ operation: "search_analytics", siteUrl: "https://example.com/" }), /Credential is required/);
+
+    // Read-only everywhere: the scope, and as an agent tool
+    const options = await import("@/features/executions/lib/search-console-options");
+    assert.equal(options.SEARCH_CONSOLE_SCOPE, "https://www.googleapis.com/auth/webmasters.readonly");
+    assert.match(readFileSync("src/lib/google-oauth.ts", "utf8"), /"https:\/\/www\.googleapis\.com\/auth\/webmasters\.readonly",\s*\]/);
+    for (const operation of ["search_analytics", "inspect_url", "list_sites", "list_sitemaps"]) {
+      assert.equal(agentTools.getToolRisk("GOOGLE_SEARCH_CONSOLE", { operation }), "read", operation);
+    }
+    // Either credential: a Google account, or the new service account type
+    const dialog = readFileSync("src/features/executions/components/apps/nodes.tsx", "utf8");
+    assert.match(dialog, /values\.authentication === "service_account"\s+\? CredentialType\.GOOGLE_SEARCH_CONSOLE\s+: CredentialType\.GOOGLE_OAUTH2/);
+    const credentialForm = readFileSync("src/features/credentials/components/credential.tsx", "utf8");
+    assert.match(credentialForm, /CredentialType\.GOOGLE_CALENDAR,\s+CredentialType\.GOOGLE_SEARCH_CONSOLE,\s+\];/);
+    assert.match(readFileSync("src/features/executions/lib/executor-registry.ts", "utf8"), /\[NodeType\.GOOGLE_SEARCH_CONSOLE\]: searchConsoleExecutor/);
+
+    // The migration: two enum values, nothing else
+    const fs = await import("node:fs");
+    const folder = fs.readdirSync("prisma/migrations").find((name) => name.endsWith("_google_search_console"));
+    assert.ok(folder, "migration");
+    assert.equal(
+      readFileSync(`prisma/migrations/${folder}/migration.sql`, "utf8").replace(/\r\n/g, "\n").trim(),
+      `-- AlterEnum\nALTER TYPE "CredentialType" ADD VALUE 'GOOGLE_SEARCH_CONSOLE';\n\n-- AlterEnum\nALTER TYPE "NodeType" ADD VALUE 'GOOGLE_SEARCH_CONSOLE';`
+    );
+  });
+
   await test("a store request is sent with the key, never follows a redirect, and reports the store's error", async () => {
     type Call = { method: string; url: string; headers: Record<string, unknown>; body: string };
     const calls: Call[] = [];

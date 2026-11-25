@@ -2159,6 +2159,136 @@ export const WordpressNode = createIntegrationNode(wordpressConfig, (data) =>
   data.siteUrl ? operationLabel(wordpressConfig, data.operation) : "Not Configured"
 );
 
+// =========================================================================
+// GOOGLE SEARCH CONSOLE
+// =========================================================================
+const SITE_OPS = ["search_analytics", "inspect_url", "list_sitemaps"];
+
+export const searchConsoleConfig: IntegrationConfig = {
+  label: "Google Search Console",
+  description:
+    "How your site does in Google Search: clicks, impressions, CTR and position by query, page, country, device or date; whether a page is indexed; your sites and sitemaps. Read-only.",
+  logo: "/logos/google-search-console.svg",
+  credentialTypeFor: (values) =>
+    values.authentication === "service_account"
+      ? CredentialType.GOOGLE_SEARCH_CONSOLE
+      : CredentialType.GOOGLE_OAUTH2,
+  credentialLabel: "Credential",
+  defaultVariableName: "searchConsole",
+  hint: "Search Analytics gives {{json searchConsole.rows}} (each with its dimensions, clicks, impressions, ctr from 0 to 1, and position), {{searchConsole.count}} and {{searchConsole.totals.clicks}}. Add a Split Out on searchConsole.rows to handle them one by one. Inspect URL gives {{searchConsole.indexed}}, {{searchConsole.coverageState}} and {{searchConsole.lastCrawlTime}}. Search data is about three days behind.",
+  operations: [
+    { value: "search_analytics", label: "Search Analytics (performance)" },
+    { value: "inspect_url", label: "Inspect URL (is it indexed?)" },
+    { value: "list_sites", label: "List Sites" },
+    { value: "list_sitemaps", label: "List Sitemaps" },
+  ],
+  fields: [
+    {
+      name: "authentication",
+      label: "Authentication",
+      type: "select",
+      defaultValue: "oauth",
+      options: [
+        { value: "oauth", label: "Google account (sign in with Google)" },
+        { value: "service_account", label: "Service account" },
+      ],
+      description:
+        "A Google account that can open the property in Search Console, or a service account whose email you added there under Settings > Users and permissions. A Google account connected before this node existed has to be connected again.",
+    },
+    {
+      name: "siteUrl",
+      label: "Site",
+      placeholder: "https://example.com/ or sc-domain:example.com",
+      description: "The property exactly as Search Console shows it. List Sites shows them.",
+      required: true,
+      operations: SITE_OPS,
+    },
+    {
+      name: "startDate",
+      label: "Start Date",
+      placeholder: "28 days ago",
+      description: "2026-11-01, or \"N days ago\". Empty: 28 days before End Date.",
+      operations: ["search_analytics"],
+    },
+    {
+      name: "endDate",
+      label: "End Date",
+      placeholder: "3 days ago",
+      description: "Empty: three days ago, the newest final data.",
+      operations: ["search_analytics"],
+    },
+    {
+      name: "dimensions",
+      label: "Group By",
+      placeholder: "query",
+      description: "Comma-separated: query, page, country, device, date, searchAppearance. Empty: query.",
+      operations: ["search_analytics"],
+    },
+    {
+      name: "searchType",
+      label: "Search Type",
+      type: "select",
+      defaultValue: "web",
+      options: [
+        { value: "web", label: "Web" },
+        { value: "image", label: "Image" },
+        { value: "video", label: "Video" },
+        { value: "news", label: "News" },
+        { value: "discover", label: "Discover" },
+        { value: "googleNews", label: "Google News" },
+      ],
+      operations: ["search_analytics"],
+    },
+    {
+      name: "queryContains",
+      label: "Only Queries Containing",
+      placeholder: "kurta",
+      operations: ["search_analytics"],
+    },
+    {
+      name: "pageContains",
+      label: "Only Pages Containing",
+      placeholder: "/blog/",
+      operations: ["search_analytics"],
+    },
+    {
+      name: "country",
+      label: "Only Country",
+      placeholder: "pak",
+      description: "A three-letter code: pak, are, sau, gbr, usa.",
+      operations: ["search_analytics"],
+    },
+    {
+      name: "device",
+      label: "Only Device",
+      placeholder: "mobile",
+      description: "desktop, mobile or tablet.",
+      operations: ["search_analytics"],
+    },
+    {
+      name: "rowLimit",
+      label: "Rows",
+      placeholder: "100",
+      description: "The top rows by clicks. At most 1000.",
+      operations: ["search_analytics"],
+    },
+    {
+      name: "inspectionUrl",
+      label: "Page URL",
+      placeholder: "https://example.com/blog/my-post",
+      description: "A page of the Site. Google allows about 2,000 inspections a day per property.",
+      required: true,
+      operations: ["inspect_url"],
+    },
+  ],
+};
+
+export const SearchConsoleNode = createIntegrationNode(searchConsoleConfig, (data) =>
+  data.siteUrl || data.operation === "list_sites"
+    ? operationLabel(searchConsoleConfig, data.operation)
+    : "Not Configured"
+);
+
 export const woocommerceTriggerConfig: IntegrationConfig = {
   label: "WooCommerce Trigger",
   description:

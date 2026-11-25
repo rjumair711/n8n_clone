@@ -113,6 +113,7 @@ const NODE_TOPICS: Record<GuideNodeType, string> = {
   POSTGRES: "apps",
   MYSQL: "apps",
   WORDPRESS: "apps",
+  GOOGLE_SEARCH_CONSOLE: "apps",
   SSH: SELF_HOSTED ? "ssh" : "ssh-hosted",
   // Messaging
   WHATSAPP: "messaging",

@@ -939,6 +939,7 @@ Actions: `goto` (url), `click` (selector), `type` (selector, text), `select` (se
 | Shopify          | Orders, products, customers, inventory levels and abandoned checkouts (see "Shopify and WooCommerce") |
 | WooCommerce      | Orders, order notes, products and customers through the REST API           |
 | WordPress        | Create, update, get and list posts and pages; upload media; list categories and tags. Application password. See "WordPress" |
+| Google Search Console | Search Analytics (clicks, impressions, CTR, position by query, page, country, device, date), Inspect URL (indexed or not), List Sites, List Sitemaps. Read-only; Google account or service account. See "Google Search Console" |
 | Postgres         | Run parameterised SQL, select rows, insert rows. Expressions go in Query Parameters, not in the query text |
 | MySQL            | Run parameterised SQL, select rows, insert rows (MySQL and MariaDB). Same rule for expressions |
 
@@ -963,6 +964,26 @@ Posts, pages and media of a WordPress site through its REST API (`/wp-json/wp/v2
 * WordPress's error reason is shown without its HTML, with a hint for the usual ones: no permission (the user's role) and a rejected password (some hosts strip the `Authorization` header; their support has to allow it).
 * As AI Agent tools, Get Post and the lists are "read"; Create, Update and Upload Media are "write", so they ask for approval by default. Keep AI-written posts as Draft, or put a Send and Wait for Approval with Editable Fields before Create Post.
 * Not built: deleting posts, comments, users, custom post types other than posts and pages, and WordPress.com sites without an application password.
+
+## Google Search Console
+
+How a site does in Google Search, for SEO reports and alerts. Read-only: the node asks for `webmasters.readonly` and cannot change a property. Executor: `src/features/executions/components/apps/search-console.ts`.
+
+| Operation | What it gives |
+| --------- | ------------- |
+| Search Analytics | The top rows by clicks for a date range, grouped by **Group By** (query by default; also page, country, device, date, searchAppearance, several comma-separated), with optional filters: Only Queries Containing, Only Pages Containing, Only Country (`pak`), Only Device. `{{json searchConsole.rows}}`: each row has a field per dimension plus `clicks`, `impressions`, `ctr` (0 to 1) and `position`; `{{searchConsole.count}}`; `{{searchConsole.totals}}` (clicks, impressions, ctr and the position weighted by impressions, like Search Console's own) |
+| Inspect URL | For one page of the property: `indexed` (true when Google's verdict is PASS), `verdict`, `coverageState` ("Submitted and indexed", "Crawled - currently not indexed"...), `indexingState`, `lastCrawlTime`, `googleCanonical`, `userCanonical`, `robotsTxtState`, `pageFetchState`, `mobileUsability`, `link` (the report in Search Console) |
+| List Sites | The properties the credential can open, with `permissionLevel` |
+| List Sitemaps | Each sitemap's `path`, `lastSubmitted`, `lastDownloaded`, `isPending`, `errors`, `warnings` |
+
+* **Site** is the property exactly as Search Console names it: `https://example.com/` (a trailing slash is added) or `sc-domain:example.com`; a bare `example.com` is taken as the domain property. Inspect URL's **Page URL** has to be inside it.
+* **Dates:** `2026-11-01`, `N days ago`, `yesterday` or `today`. Empty End Date is three days ago (Google's data is final about three days later), empty Start Date is 28 days before End Date. Rows: 100 by default, at most 1000.
+* **Authentication** (a setting on the node):
+  * **Google account**: the "Google account" credential ("Sign in with Google"). Its scopes now include `webmasters.readonly`, so a credential connected before this node existed gets "insufficient authentication scopes" until it is connected again; the error says so. The Google Cloud OAuth app needs the scope added to its consent screen, and Google's verification for it before people outside the test users can sign in with it.
+  * **Service account**: a new "Google Search Console (service account)" credential, entered like the Sheets one (project id, client email, private key). Enable the Search Console API in that Google Cloud project and add the service account's email as a user of the property (Search Console > Settings > Users and permissions). No consent screen and no verification.
+* Errors name the cause: a missing scope (connect again), no access to the property (add the account or service account as a user, write the Site exactly), an expired sign-in.
+* As an AI Agent tool every operation is "read".
+* Not built: submitting or deleting sitemaps and requesting indexing (they need the full `webmasters` scope), and Google Analytics.
 
 ## Shopify and WooCommerce
 
@@ -1059,7 +1080,7 @@ Supported credential types:
 | QWEN          | Qwen node     |
 | OPENAI_COMPATIBLE | Chat Model node (the API key of whichever provider preset is picked: OpenRouter, Groq, Zhipu, MiniMax, Ollama...) |
 | SMTP          | Email node    |
-| GOOGLE_OAUTH2 | Gmail, Gmail Trigger, Google Drive, Google Sheets, Google Calendar ("Sign in with Google") |
+| GOOGLE_OAUTH2 | Gmail, Gmail Trigger, Google Drive, Google Sheets, Google Calendar, Google Search Console ("Sign in with Google") |
 | GOOGLE_SHEETS | Google Sheets (service account) |
 | GOOGLE_CALENDAR | Google Calendar (service account) |
 | NOTION        | Notion nodes  |
@@ -1083,6 +1104,7 @@ Supported credential types:
 | SHOPIFY       | Shopify node (a custom app's Admin API access token, `shpat_...`) |
 | WOOCOMMERCE   | WooCommerce node (`consumer_key:consumer_secret`) |
 | WORDPRESS     | WordPress node (`username:application password`) |
+| GOOGLE_SEARCH_CONSOLE | Google Search Console node (service account: project id, client email, private key). A Google account (GOOGLE_OAUTH2) works too |
 | POSTGRES      | Postgres node (connection string) |
 | MYSQL         | MySQL node (`mysql://user:password@host:3306/database`) |
 | SSH           | SSH node (host, port, username, and a private key or password; optional host key fingerprint) |

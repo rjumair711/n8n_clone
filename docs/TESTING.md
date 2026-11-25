@@ -2528,6 +2528,25 @@ Needs the `wordpress_node` migration applied (it runs on the production deploy a
 | 13 | Connect it to an AI Agent's Tools port with Create Post | the tool is "Write" and asks for approval |
 | 14 | Delete the test posts and the application password in WordPress afterwards | |
 
+## T59. Google Search Console node
+
+Needs the `google_search_console` migration applied (it runs on the production deploy after merging, after `wordpress_node`): two enum values, nothing else. Needs a Search Console property you own. In Google Cloud: add the `.../auth/webmasters.readonly` scope to the OAuth consent screen, and enable the Google Search Console API in the project.
+
+| # | Do | Expect |
+|---|----|--------|
+| 1 | Before the deploy: `npx prisma migrate status` | `..._wordpress_node` and `..._google_search_console` not yet applied. After: up to date |
+| 2 | Add the node with Authentication **Google account** and an old Google credential, Search Analytics | fails with "insufficient authentication scopes ... connect it again" |
+| 3 | Connect the Google account again (the consent screen asks for Search Console too), run again | rows by query for the last 28 days ending 3 days ago; `totals` adds up |
+| 4 | Group By `page, query`, Only Country `pak`, Rows 20 | at most 20 rows, each with `page` and `query` |
+| 5 | Start Date `7 days ago`, End Date `yesterday` | the output's `startDate`/`endDate` are those days |
+| 6 | Inspect URL: a page you know is indexed | `indexed: true`, `coverageState`, `lastCrawlTime` |
+| 7 | Inspect URL: a page of another site | fails at once: "must be inside the Site" |
+| 8 | List Sites | your properties; List Sitemaps for one of them: its sitemaps |
+| 9 | Credentials → New credential → **Google Search Console (service account)**: project id, client email, private key of a service account; add its email in Search Console > Settings > Users and permissions | saved; the node with Authentication **Service account** and this credential returns the same rows as step 3 |
+| 10 | The same service account on a property it was not added to | "[403] ... must be a user of this property" |
+| 11 | Site `example` (no dot) | fails at once: "Site must be the property as Search Console shows it" |
+| 12 | Connect it to an AI Agent's Tools port | the tool is "Read" and never asks for approval |
+
 # When something fails
 
 Note the node, the exact values you entered, and the error text from the

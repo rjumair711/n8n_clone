@@ -31,6 +31,7 @@ const NODE_LABELS: Record<string, string> = {
     WOOCOMMERCE: "WooCommerce",
     WOOCOMMERCE_TRIGGER: "WooCommerce Trigger",
     WORDPRESS: "WordPress",
+    GOOGLE_SEARCH_CONSOLE: "Google Search Console",
     SSH: "SSH",
     PDF_GENERATOR: "PDF Generator",
     CONVERT_TO_FILE: "Convert to File",
