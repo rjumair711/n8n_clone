@@ -2507,6 +2507,27 @@ Workflow: **Instagram Trigger** (Trigger On **Comments on posts**, Only Comments
 | 12 | Facebook Page: the same with a **Messenger Trigger** on Comments (subscribe the Page to **feed**) and the Messenger node | the same results; `{{messenger.postId}}` is `<page>_<post>` |
 | 13 | **Settings → Platform guide**, search `comment` | the "Comment to DM" topic |
 
+## T58. WordPress node
+
+Needs the `wordpress_node` migration applied (it runs on the production deploy after merging): two enum values, nothing else. Needs a test WordPress site on https (5.6 or newer) and a user with the Editor role. Create an application password under Users > Profile > Application Passwords and save a **WordPress** credential `username:the password`.
+
+| # | Do | Expect |
+|---|----|--------|
+| 1 | Before the deploy: `npx prisma migrate status` | `..._wordpress_node` not yet applied. After: up to date |
+| 2 | Add a node: search "WordPress" | the WordPress node with its logo; Credentials → New credential lists WordPress |
+| 3 | Create Post: Site URL, Title `RXJ test`, Content `<p>Hello</p>` | a **draft** in WordPress; the result has `id`, `link`, `status: draft` |
+| 4 | Update Post: Post ID from step 3, Content `<p>Changed</p>`, New Status left as it is | the content changes, it stays a draft |
+| 5 | Update Post with New Status Publish | the post is published |
+| 6 | Image Generation → WordPress Upload Media (File `image.file`, Alt Text) → Create Post with Featured Image ID `{{wordpress.id}}` | the picture is in the media library with its alt text, and is the new post's featured image |
+| 7 | List Categories, then Create Post with one of the ids in Category IDs | the post is in that category |
+| 8 | List Posts with Search `RXJ` and Status Any | the test posts, newest first |
+| 9 | Site URL `http://...` | fails at once: "Site URL must be the site's https address" |
+| 10 | A wrong application password | "WordPress API error [401]: ... Check the user name and application password" |
+| 11 | A user with the Subscriber role | "[403]... needs the Author or Editor role" |
+| 12 | Status Scheduled without Publish Date | fails at once: "needs a Publish Date" |
+| 13 | Connect it to an AI Agent's Tools port with Create Post | the tool is "Write" and asks for approval |
+| 14 | Delete the test posts and the application password in WordPress afterwards | |
+
 # When something fails
 
 Note the node, the exact values you entered, and the error text from the

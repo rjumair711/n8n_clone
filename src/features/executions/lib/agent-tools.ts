@@ -157,6 +157,7 @@ const TOOL_LABELS: Record<string, string> = {
   SALESFORCE: "Salesforce",
   SHOPIFY: "Shopify",
   WOOCOMMERCE: "WooCommerce",
+  WORDPRESS: "WordPress",
   SSH: "SSH Command",
   MYSQL: "MySQL",
   RESEND: "Resend",

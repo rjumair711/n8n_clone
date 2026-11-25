@@ -53,6 +53,7 @@ import {
   shopifyExecutor,
   woocommerceExecutor,
 } from '../components/apps/stores';
+import { wordpressExecutor } from '../components/apps/wordpress';
 import {
   instagramExecutor,
   messengerExecutor,
@@ -215,6 +216,7 @@ const baseExecutors: Record<NodeType, NodeExecutor<any>> = {
   [NodeType.WOOCOMMERCE]: woocommerceExecutor,
   [NodeType.SHOPIFY_TRIGGER]: contextTriggerExecutor,
   [NodeType.WOOCOMMERCE_TRIGGER]: contextTriggerExecutor,
+  [NodeType.WORDPRESS]: wordpressExecutor,
   [NodeType.MESSENGER]: messengerExecutor,
   [NodeType.INSTAGRAM]: instagramExecutor,
   [NodeType.SOCIAL_POST]: socialPostExecutor,

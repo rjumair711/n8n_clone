@@ -76,6 +76,7 @@ const credentialTypeOptions = [
   { value: CredentialType.HUBSPOT, label: "HubSpot", logo: "/logos/hubspot.svg" },
   { value: CredentialType.SHOPIFY, label: "Shopify", logo: "/logos/shopify.svg" },
   { value: CredentialType.WOOCOMMERCE, label: "WooCommerce", logo: "/logos/woocommerce.svg" },
+  { value: CredentialType.WORDPRESS, label: "WordPress", logo: "/logos/wordpress.svg" },
   { value: CredentialType.SALESFORCE, label: "Salesforce Account", logo: "/logos/salesforce.svg" },
   { value: CredentialType.MYSQL, label: "MySQL", logo: "/logos/mysql.svg" },
   { value: CredentialType.SSH, label: "SSH (Server Login)", logo: "/logos/ssh.svg" },
@@ -314,6 +315,13 @@ const credentialFieldConfig: Record<CredentialType, {
     secretLabel: "Consumer Key and Consumer Secret",
     secretPlaceholder: "ck_xxxxxxxx:cs_xxxxxxxx",
     help: "Written as ConsumerKey:ConsumerSecret. Create them in WordPress under WooCommerce > Settings > Advanced > REST API, with Read or Read/Write permission.",
+  },
+  [CredentialType.WORDPRESS]: {
+    namePlaceholder: "My WordPress Site",
+    defaultName: "WordPress credential",
+    secretLabel: "User Name and Application Password",
+    secretPlaceholder: "your-username:abcd efgh ijkl mnop qrst uvwx",
+    help: "Written as username:application password. In WordPress open Users > Profile, scroll to Application Passwords, type a name (RXJ) and press Add New Application Password; it is shown once. Not your login password. The user needs the Author or Editor role to create posts. The site must be on https.",
   },
   [CredentialType.SALESFORCE]: {
     namePlaceholder: "My Salesforce Org",

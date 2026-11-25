@@ -17,6 +17,7 @@ import {
   siStripe,
   siTelegram,
   siWhatsapp,
+  siWordpress,
 } from "simple-icons";
 
 // The integrations on the landing page's strip. Every one of them is a node
@@ -41,6 +42,7 @@ export const INTEGRATIONS: Integration[] = [
   { name: "Notion", path: siNotion.path },
   { name: "Airtable", path: siAirtable.path },
   { name: "Shopify", path: siShopify.path },
+  { name: "WordPress", path: siWordpress.path },
   { name: "Google Drive", path: siGoogledrive.path },
   { name: "Stripe", path: siStripe.path },
   { name: "HubSpot", path: siHubspot.path },

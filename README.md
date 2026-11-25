@@ -938,10 +938,31 @@ Actions: `goto` (url), `click` (selector), `type` (selector, text), `select` (se
 | Salesforce       | Query with SOQL, and create, get, update and delete records of any object |
 | Shopify          | Orders, products, customers, inventory levels and abandoned checkouts (see "Shopify and WooCommerce") |
 | WooCommerce      | Orders, order notes, products and customers through the REST API           |
+| WordPress        | Create, update, get and list posts and pages; upload media; list categories and tags. Application password. See "WordPress" |
 | Postgres         | Run parameterised SQL, select rows, insert rows. Expressions go in Query Parameters, not in the query text |
 | MySQL            | Run parameterised SQL, select rows, insert rows (MySQL and MariaDB). Same rule for expressions |
 
 ---
+
+## WordPress
+
+Posts, pages and media of a WordPress site through its REST API (`/wp-json/wp/v2`), for publishing AI-written articles and keeping a blog up to date. Executor: `src/features/executions/components/apps/wordpress.ts`.
+
+| Operation | What it does | Result |
+| --------- | ------------ | ------ |
+| Create Post | A post or a page (**Post Type**) with Title, Content (HTML or text), Excerpt, **Status** (Draft by default; Publish, Pending review, Private, Scheduled with a Publish Date), Slug, Category IDs, Tag IDs and Featured Image ID | `{{wordpress.id}}`, `.link`, `.status`, `.slug`, `.title`, `.excerpt`, `.date`, `.modified`, `.featuredMedia`, `.categories`, `.tags`, and the whole answer at `.post` |
+| Update Post | The same fields, by **Post ID**; only what is filled in is sent. **New Status** is "Leave as it is" by default, so an update never unpublishes a post | the same |
+| Get Post | One post or page, as the editor sees it (`context=edit`) | the same |
+| List Posts | Newest first, with an optional Search and Status (Published by default, or Any, Draft...), up to Limit (10, at most 100) | `{{json wordpress.items}}`, `{{wordpress.count}}` |
+| Upload Media | A workflow file (an Image Generation picture, a download, a form upload) into the media library, with an optional Title and Alt Text | `{{wordpress.id}}` (use it as Featured Image ID), `.url`, `.link`, `.mimeType` |
+| List Categories, List Tags | Their ids and names, with an optional Search | `{ items: [{ id, name, slug, count }], count }` |
+
+* **Credential:** "WordPress": `username:application password`. Make one in WordPress under Users > Profile > **Application Passwords** (WordPress 5.6 or newer); it is not the login password, and it can be revoked there at any time. The spaces WordPress shows in it are optional. The user needs the Author role to write their own posts, Editor for others' posts and pages.
+* **Site URL** is the site's `https` address (a site in a folder works: `https://example.com/blog`); `http` is refused, because the password goes with every request in an `Authorization` header. A redirect is not followed: the error names where the site pointed. Requests go through the SSRF guard, answers are limited to 3 MB and a media upload to the workflow file size limit.
+* **Additional Fields (JSON)** is merged into what Create and Update send, in WordPress's own names (`comment_status`, `parent` for a page, `meta` for fields a plugin registered for the REST API).
+* WordPress's error reason is shown without its HTML, with a hint for the usual ones: no permission (the user's role) and a rejected password (some hosts strip the `Authorization` header; their support has to allow it).
+* As AI Agent tools, Get Post and the lists are "read"; Create, Update and Upload Media are "write", so they ask for approval by default. Keep AI-written posts as Draft, or put a Send and Wait for Approval with Editable Fields before Create Post.
+* Not built: deleting posts, comments, users, custom post types other than posts and pages, and WordPress.com sites without an application password.
 
 ## Shopify and WooCommerce
 
@@ -1061,6 +1082,7 @@ Supported credential types:
 | SALESFORCE    | Salesforce node ("Connect Salesforce", production or sandbox) |
 | SHOPIFY       | Shopify node (a custom app's Admin API access token, `shpat_...`) |
 | WOOCOMMERCE   | WooCommerce node (`consumer_key:consumer_secret`) |
+| WORDPRESS     | WordPress node (`username:application password`) |
 | POSTGRES      | Postgres node (connection string) |
 | MYSQL         | MySQL node (`mysql://user:password@host:3306/database`) |
 | SSH           | SSH node (host, port, username, and a private key or password; optional host key fingerprint) |
