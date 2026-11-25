@@ -9468,6 +9468,36 @@ pour()</code></pre>
     assert.equal((buildTestPayload("MESSENGER_TRIGGER", {}) as any).messenger.type, "message");
   });
 
+  await test("template: Instagram comment to DM, added by its own migration", async () => {
+    const fs = await import("node:fs");
+    const starters = await import("@/features/templates/lib/starter-templates");
+    const template = starters.buildStarterTemplates().find((item) => item.key === "instagram_comment_to_dm");
+    assert.ok(template, "the seed is registered");
+    assert.equal(template.id, "tpl_starter_instagram_comment_to_dm_en");
+    assert.equal(template.category, "Marketing");
+    assert.deepEqual(template.nodeTypes, ["INSTAGRAM_TRIGGER", "INSTAGRAM", "GOOGLE_SHEETS"]);
+    const byType = (type: string) => template.nodes.filter((node) => node.type === type);
+    assert.deepEqual(byType("INSTAGRAM_TRIGGER")[0].data, { triggerOn: "comments", keywords: "price, info, details" });
+    assert.deepEqual(byType("INSTAGRAM").map((node) => node.data.operation), ["private_reply", "reply_comment"]);
+    for (const node of byType("INSTAGRAM")) assert.equal(node.data.commentId, "{{instagram.commentId}}");
+    // The trigger's keyword is what the sample comment of a test run contains
+    assert.ok(metaMessaging.matchesKeywords("price please", "price, info, details"));
+    assert.ok(template.description.length <= 600);
+
+    const folder = fs.readdirSync("prisma/migrations").find((name) => name.endsWith("_instagram_comment_to_dm_template"));
+    assert.ok(folder, "migration");
+    const sql = fs.readFileSync(`prisma/migrations/${folder}/migration.sql`, "utf8").replace(/\r\n/g, "\n");
+    // Exactly the builder's statement for this one row: safe to run twice
+    assert.ok(sql.includes(starters.buildStarterSeedSql([template]).trim()));
+    assert.equal(sql.match(/INSERT INTO "workflow_template"/g)?.length, 1);
+    assert.equal(/\b(DROP|DELETE|TRUNCATE|UPDATE|ALTER)\b/i.test(sql.replace(/'(?:[^']|'')*'/g, "''")), false);
+
+    // Trigger On is not required: an empty one means Messages
+    const nodes = fs.readFileSync("src/features/executions/components/apps/nodes.tsx", "utf8");
+    const triggerOn = nodes.slice(nodes.indexOf('name: "triggerOn"'), nodes.indexOf('name: "keywords"'));
+    assert.doesNotMatch(triggerOn, /required: true/);
+  });
+
   await test("Messenger and Instagram nodes: reply to a comment, send a private reply, hide it", async () => {
     const { readFileSync } = await import("node:fs");
     const call = (channel: "messenger" | "instagram", data: Record<string, string>, context: Record<string, unknown> = {}) =>
@@ -13121,7 +13151,8 @@ pour()</code></pre>
     const sheets = allStarters.flatMap((starter) =>
       starter.nodes.filter((node) => node.type === "GOOGLE_SHEETS").map((node) => ({ starter, node }))
     );
-    assert.equal(sheets.length, 12);
+    // 12 when the migration ran, and the comment-to-DM template's
+    assert.equal(sheets.length, 13);
     for (const { starter, node } of sheets) {
       assert.equal(node.data.operation, "append", `${starter.key}: operation`);
     }
@@ -13162,10 +13193,10 @@ pour()</code></pre>
       starterTemplates.STARTER_SEEDS.slice(0, 5).map((seed) => seed.key),
       ["clinic_appointment_bot", "school_fee_reminder", "shop_order_bot", "real_estate_lead_bot", "support_faq_bot"]
     );
-    assert.equal(starterTemplates.STARTER_SEEDS.length, 52);
-    assert.equal(new Set(starterTemplates.STARTER_SEEDS.map((seed) => seed.key)).size, 52);
-    assert.equal(allStarters.length, 52);
-    assert.equal(new Set(allStarters.map((starter) => starter.id)).size, 52);
+    assert.equal(starterTemplates.STARTER_SEEDS.length, 53);
+    assert.equal(new Set(starterTemplates.STARTER_SEEDS.map((seed) => seed.key)).size, 53);
+    assert.equal(allStarters.length, 53);
+    assert.equal(new Set(allStarters.map((starter) => starter.id)).size, 53);
 
     for (const seed of starterTemplates.STARTER_SEEDS) {
       assert.match(seed.key, /^[a-z_]+$/);
@@ -13787,10 +13818,12 @@ pour()</code></pre>
     assert.ok(folder, "migration");
     const sql = readFileSync(`prisma/migrations/${folder}/migration.sql`, "utf8").replace(/\r\n/g, "\n");
     // It inserted each seed in English, Urdu and Arabic (156 rows); the
-    // english_only_templates migration later removed the Urdu and Arabic ones
-    assert.equal(sql.match(/INSERT INTO "workflow_template"/g)?.length, allStarters.length * 3);
-    assert.equal(sql.match(/ON CONFLICT \("id"\) DO NOTHING;/g)?.length, allStarters.length * 3);
-    assert.equal(sql.match(/, 'FREE', true, '/g)?.length, allStarters.length * 3);
+    // english_only_templates migration later removed the Urdu and Arabic ones.
+    // It holds the 52 starters of that time; later ones have a migration each
+    const firstStarters = 52;
+    assert.equal(sql.match(/INSERT INTO "workflow_template"/g)?.length, firstStarters * 3);
+    assert.equal(sql.match(/ON CONFLICT \("id"\) DO NOTHING;/g)?.length, firstStarters * 3);
+    assert.equal(sql.match(/, 'FREE', true, '/g)?.length, firstStarters * 3);
     const statements = sql.replace(/'(?:[^']|'')*'/g, "''");
     assert.equal(/\b(DROP|DELETE|TRUNCATE|UPDATE|RENAME|ALTER)\b/i.test(statements), false);
 

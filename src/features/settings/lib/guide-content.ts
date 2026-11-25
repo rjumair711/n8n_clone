@@ -511,7 +511,8 @@ const CHAPTERS = (nodeCount: number): GuideChapter[] => [
           "Add another with **Reply to Comment** (\"Sent you a DM!\"). Use **Hide Comment** for spam.",
           "When the person answers the DM, the trigger gets their message like any other: set Trigger On to **Messages and comments** and let an AI Agent continue, saving the lead to Google Sheets.",
         ],
-        tip: "Meta allows one private reply per comment, within 7 days of it. Your own replies never start the workflow again.",
+        tip: "Meta allows one private reply per comment, within 7 days of it. Your own replies never start the workflow again. The template \"Instagram comment to DM: leads in Google Sheets\" has all of this ready.",
+        links: [{ label: "Templates", href: "/templates" }],
       },
       {
         id: "apps",

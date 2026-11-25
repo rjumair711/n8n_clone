@@ -1117,7 +1117,8 @@ const metaTriggerFilterFields = (postLabel: string, noun: string): IntegrationFi
     label: "Trigger On",
     type: "select",
     defaultValue: "messages",
-    required: true,
+    // Not required: empty is Messages, what every trigger saved before
+    // this setting existed means
     options: META_TRIGGER_ON,
     description:
       "Comments need the Webhook URL subscribed to comments in your Meta app as well (see above). Meta sends all of an app's events to one address, so one workflow gets both.",
