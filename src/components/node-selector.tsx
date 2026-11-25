@@ -640,6 +640,18 @@ const productivityNodes: NodeTypeOption[] = [
         description: "Orders, products and customers of a WooCommerce store",
         icon: "/logos/woocommerce.svg"
     },
+    {
+        type: NodeType.WORDPRESS,
+        label: "WordPress",
+        description: "Create and update posts and pages, upload media, list categories and tags",
+        icon: "/logos/wordpress.svg"
+    },
+    {
+        type: NodeType.GOOGLE_SEARCH_CONSOLE,
+        label: "Google Search Console",
+        description: "Clicks, impressions and positions in Google Search; is a page indexed; sitemaps",
+        icon: "/logos/google-search-console.svg"
+    },
 ]
 
 const networkNodes: NodeTypeOption[] = [

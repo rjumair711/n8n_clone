@@ -63,6 +63,8 @@ import dailyBusinessDigest from "../seed/daily-business-digest.json";
 import shopifyShippedWhatsapp from "../seed/shopify-shipped-whatsapp.json";
 import woocommerceUnpaidReminder from "../seed/woocommerce-unpaid-reminder.json";
 import meetingRecordingSummary from "../seed/meeting-recording-summary.json";
+// Comment to DM (Instagram comment trigger and private replies)
+import instagramCommentToDm from "../seed/instagram-comment-to-dm.json";
 import {
   TEMPLATE_LANGUAGES,
   type TemplateLanguage,
@@ -140,6 +142,7 @@ export const STARTER_SEEDS: StarterSeed[] = [
   shopifyShippedWhatsapp,
   woocommerceUnpaidReminder,
   meetingRecordingSummary,
+  instagramCommentToDm,
 ];
 
 const TEXT_MARKER = "@text:";

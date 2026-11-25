@@ -103,6 +103,8 @@ import {
     TypeformTriggerNode,
     WoocommerceNode,
     WoocommerceTriggerNode,
+    WordpressNode,
+    SearchConsoleNode,
 } from '@/features/executions/components/apps/nodes';
 import {
     ConvertToFileNode,
@@ -201,6 +203,8 @@ export const nodeComponents: NodeTypes = {
     [NodeType.SHOPIFY_TRIGGER]: ShopifyTriggerNode,
     [NodeType.WOOCOMMERCE]: WoocommerceNode,
     [NodeType.WOOCOMMERCE_TRIGGER]: WoocommerceTriggerNode,
+    [NodeType.WORDPRESS]: WordpressNode,
+    [NodeType.GOOGLE_SEARCH_CONSOLE]: SearchConsoleNode,
     [NodeType.MESSENGER]: MessengerNode,
     [NodeType.MESSENGER_TRIGGER]: MessengerTriggerNode,
     [NodeType.INSTAGRAM]: InstagramNode,

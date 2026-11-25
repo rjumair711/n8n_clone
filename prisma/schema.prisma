@@ -409,6 +409,11 @@ enum CredentialType {
   // Browser node: the WebSocket address of a hosted browser (Browserless,
   // Browserbase, Steel) with its key
   BROWSER
+  // WordPress REST API: "username:application password"
+  WORDPRESS
+  // Google Search Console through a service account (the other way is a
+  // Google account, GOOGLE_OAUTH2)
+  GOOGLE_SEARCH_CONSOLE
 }
 
 model Workflow {
@@ -913,6 +918,8 @@ enum NodeType {
   BROWSER
   DATA_TABLE
   IMAGE_GENERATION
+  WORDPRESS
+  GOOGLE_SEARCH_CONSOLE
   // A note on the canvas; never runs
   STICKY_NOTE
 }

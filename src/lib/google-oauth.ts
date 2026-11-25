@@ -20,6 +20,9 @@ export const GOOGLE_OAUTH_SCOPES = [
   // Full Drive access: the Google Drive node finds and downloads files the
   // user already has, which the narrower drive.file scope does not allow
   "https://www.googleapis.com/auth/drive",
+  // Google Search Console node, read-only. Accounts connected before it was
+  // added have to connect again to use that node.
+  "https://www.googleapis.com/auth/webmasters.readonly",
 ];
 
 export const GOOGLE_OAUTH_STATE_COOKIE = "google_oauth_state";

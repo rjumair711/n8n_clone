@@ -1,0 +1,92 @@
+{
+  "key": "instagram_comment_to_dm",
+  "category": "Marketing",
+  "minPlan": "FREE",
+  "nodes": [
+    {
+      "id": "trigger",
+      "type": "INSTAGRAM_TRIGGER",
+      "position": {
+        "x": 0,
+        "y": 0
+      },
+      "data": {
+        "triggerOn": "comments",
+        "keywords": "price, info, details"
+      }
+    },
+    {
+      "id": "dm",
+      "type": "INSTAGRAM",
+      "position": {
+        "x": 320,
+        "y": 0
+      },
+      "data": {
+        "variableName": "dm",
+        "operation": "private_reply",
+        "connection": "facebook",
+        "commentId": "{{instagram.commentId}}",
+        "message": "@text:dmMessage"
+      }
+    },
+    {
+      "id": "publicReply",
+      "type": "INSTAGRAM",
+      "position": {
+        "x": 640,
+        "y": 0
+      },
+      "data": {
+        "variableName": "publicReply",
+        "operation": "reply_comment",
+        "connection": "facebook",
+        "commentId": "{{instagram.commentId}}",
+        "message": "@text:publicReply"
+      }
+    },
+    {
+      "id": "saveLead",
+      "type": "GOOGLE_SHEETS",
+      "position": {
+        "x": 960,
+        "y": 0
+      },
+      "data": {
+        "variableName": "savedLead",
+        "operation": "append",
+        "sheetId": "",
+        "sheetName": "Sheet1",
+        "rowData": "{{ $now }}, {{instagram.fromName}}, {{instagram.from}}, {{instagram.text}}, {{instagram.postId}}"
+      }
+    }
+  ],
+  "connections": [
+    {
+      "fromNodeId": "trigger",
+      "toNodeId": "dm",
+      "fromOutput": "source-1",
+      "toInput": "target-1"
+    },
+    {
+      "fromNodeId": "dm",
+      "toNodeId": "publicReply",
+      "fromOutput": "source-1",
+      "toInput": "target-1"
+    },
+    {
+      "fromNodeId": "publicReply",
+      "toNodeId": "saveLead",
+      "fromOutput": "source-1",
+      "toInput": "target-1"
+    }
+  ],
+  "text": {
+    "en": {
+      "name": "Instagram comment to DM: leads in Google Sheets",
+      "description": "When someone comments a keyword such as PRICE under your post or reel, they get a private message from you at once, a public reply so others see you answered, and a row in your Google Sheet with their user name, comment and the post. Set up: put the Verify Token and App Secret on the Instagram Trigger and subscribe your Meta app's Instagram webhook to comments; change the keywords on the trigger; pick your Instagram credential on both Instagram nodes and write your own message; pick a Google credential and your sheet on Google Sheets (columns: Date, User name, User ID, Comment, Post).",
+      "dmMessage": "Hi {{instagram.fromName}}, thanks for your comment! Here are the prices and details (replace with your own): ... Reply to this message with any question and we will help you.",
+      "publicReply": "Thanks! We have sent you a DM with the details."
+    }
+  }
+}
