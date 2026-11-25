@@ -142,6 +142,8 @@ const credentialLogos: Record<CredentialType, string> = {
     [CredentialType.HUBSPOT]: "/logos/hubspot.svg",
     [CredentialType.SHOPIFY]: "/logos/shopify.svg",
     [CredentialType.WOOCOMMERCE]: "/logos/woocommerce.svg",
+    [CredentialType.WORDPRESS]: "/logos/wordpress.svg",
+    [CredentialType.GOOGLE_SEARCH_CONSOLE]: "/logos/google-search-console.svg",
     [CredentialType.MYSQL]: "/logos/mysql.svg",
     [CredentialType.RESEND]: "/logos/resend.svg",
     [CredentialType.SENDGRID]: "/logos/sendgrid.svg",

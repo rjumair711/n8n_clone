@@ -8758,6 +8758,220 @@ pour()</code></pre>
     assert.throws(() => build({ operation: "delete_order" }), /Unsupported operation "delete_order"/);
   });
 
+  await test("the WordPress node builds REST API requests for posts, pages, categories and tags", async () => {
+    const { readFileSync } = await import("node:fs");
+    const wp = await import("@/features/executions/components/apps/wordpress");
+    const build = (data: Record<string, string>, context: Record<string, unknown> = {}) =>
+      wp.buildWordpressRequest({ siteUrl: "https://blog.example.com", ...data }, context);
+    const api = "https://blog.example.com/wp-json/wp/v2";
+
+    // Create: a draft unless said otherwise, only the fields filled in
+    const created = build(
+      { operation: "create_post", title: "{{article.title}}", content: "<p>{{article.body}}</p>", categories: "3, 7", tags: "12", featuredMediaId: "{{media.id}}" },
+      { article: { title: "Eid sale", body: "50% off" }, media: { id: 99 } }
+    );
+    assert.equal(created.method, "POST");
+    assert.equal(created.url, `${api}/posts`);
+    assert.deepEqual(created.body, {
+      title: "Eid sale",
+      content: "<p>50% off</p>",
+      status: "draft",
+      featured_media: 99,
+      categories: [3, 7],
+      tags: [12],
+    });
+    assert.equal((build({ operation: "create_post", title: "A", status: "publish" }).body as any).status, "publish");
+    assert.throws(() => build({ operation: "create_post" }), /Title is required/);
+    assert.throws(() => build({ operation: "create_post", title: "A", status: "live" }), /Status must be one of/);
+    assert.throws(() => build({ operation: "create_post", title: "A", status: "future" }), /needs a Publish Date/);
+    assert.equal((build({ operation: "create_post", title: "A", status: "future", date: "2026-12-24T09:00:00" }).body as any).date, "2026-12-24T09:00:00");
+    assert.throws(() => build({ operation: "create_post", title: "A", date: "soon" }), /Publish Date must be a date/);
+    assert.throws(() => build({ operation: "create_post", title: "A", categories: "news" }), /Categories must be ids/);
+    assert.throws(() => build({ operation: "create_post", title: "A", featuredMediaId: "pic.jpg" }), /Featured Image ID must be a number/);
+    // Additional fields in WordPress's own names; pages have no categories
+    assert.deepEqual(
+      (build({ operation: "create_post", resource: "pages", title: "About", categories: "3", fieldsJson: '{"parent": 5}' }).body as any),
+      { title: "About", status: "draft", parent: 5 }
+    );
+    assert.equal(build({ operation: "create_post", resource: "pages", title: "About" }).url, `${api}/pages`);
+    assert.throws(() => build({ operation: "create_post", title: "A", fieldsJson: "[1]" }), /must be a JSON object/);
+
+    // Update: only what was filled in; the status stays unless chosen
+    const updated = build({ operation: "update_post", postId: "{{wordpress.id}}", content: "New text", newStatus: "keep" }, { wordpress: { id: 42 } });
+    assert.equal(updated.url, `${api}/posts/42`);
+    assert.deepEqual(updated.body, { content: "New text" });
+    assert.deepEqual(build({ operation: "update_post", postId: "42", newStatus: "publish" }).body, { status: "publish" });
+    assert.throws(() => build({ operation: "update_post", postId: "42", newStatus: "keep" }), /fill in at least one field/);
+    for (const postId of ["abc", "1/../2", "42?x=1"]) {
+      assert.throws(() => build({ operation: "update_post", postId, title: "x" }), /Post ID must be a number/, postId);
+    }
+
+    assert.equal(build({ operation: "get_post", postId: "42" }).url, `${api}/posts/42?context=edit`);
+    const listed = new URL(build({ operation: "list_posts", search: "eid sale", listStatus: "any", limit: "500" }).url);
+    assert.equal(listed.pathname, "/wp-json/wp/v2/posts");
+    assert.deepEqual(Object.fromEntries(listed.searchParams), { per_page: "100", orderby: "date", order: "desc", search: "eid sale", status: "any" });
+    assert.equal(new URL(build({ operation: "list_posts" }).url).searchParams.get("per_page"), "10");
+    assert.equal(new URL(build({ operation: "list_tags", search: "sale" }).url).pathname, "/wp-json/wp/v2/tags");
+    assert.equal(new URL(build({ operation: "list_categories" }).url).pathname, "/wp-json/wp/v2/categories");
+    assert.throws(() => build({ operation: "delete_everything" }), /Unsupported operation/);
+
+    // The site: https only, a folder is fine, /wp-json is cut off
+    assert.equal(build({ siteUrl: "https://example.com/blog/", operation: "list_tags" }).url.startsWith("https://example.com/blog/wp-json/wp/v2/tags"), true);
+    assert.equal(build({ siteUrl: "https://example.com/wp-json/wp/v2", operation: "list_tags" }).url.startsWith("https://example.com/wp-json/wp/v2/tags"), true);
+    for (const siteUrl of ["http://blog.example.com", "blog.example.com", "https://user:pw@blog.example.com", ""]) {
+      assert.throws(() => build({ siteUrl, operation: "list_tags" }), /Site URL/, siteUrl);
+    }
+
+    // What comes back
+    const shaped = wp.shapePost({ id: 42, link: "https://blog.example.com/eid-sale", status: "draft", title: { rendered: "Eid <em>sale</em>" }, excerpt: { rendered: "<p>Half off</p>" }, categories: [3] });
+    assert.equal(shaped.id, 42);
+    assert.equal(shaped.title, "Eid sale");
+    assert.equal(shaped.excerpt, "Half off");
+    assert.deepEqual(shaped.categories, [3]);
+    const list = build({ operation: "list_posts" }).shape([{ id: 1 }, { id: 2 }]) as any;
+    assert.equal(list.count, 2);
+    assert.deepEqual(list.items.map((item: any) => item.id), [1, 2]);
+
+    // The credential: user name and application password, spaces in it removed
+    const basic = (value: string) => Buffer.from(value.replace(/^Basic /, ""), "base64").toString();
+    assert.equal(basic(wp.readWordpressCredential("ali:abcd efgh ijkl mnop qrst uvwx")), "ali:abcdefghijklmnopqrstuvwx");
+    assert.equal(basic(wp.readWordpressCredential("Ali Khan:ab:cd")), "Ali Khan:ab:cd", "only the first colon splits");
+    for (const secret of ["no-colon", ":password", "ali:", "ali:   "]) {
+      assert.throws(() => wp.readWordpressCredential(secret), /user name and an application password/, secret);
+    }
+    assert.equal(wp.safeFileName('ad "photo"\r\n.png'), "ad _photo_.png");
+    assert.equal(wp.safeFileName(""), "upload");
+
+    // Wired in: registry, dialog, credential, agent tool risk, guide
+    assert.match(readFileSync("src/features/executions/lib/executor-registry.ts", "utf8"), /\[NodeType\.WORDPRESS\]: wordpressExecutor/);
+    assert.match(readFileSync("src/config/node-components.ts", "utf8"), /\[NodeType\.WORDPRESS\]: WordpressNode/);
+    assert.match(readFileSync("src/features/credentials/components/credential.tsx", "utf8"), /\[CredentialType\.WORDPRESS\]: \{/);
+    assert.equal(agentTools.getToolRisk("WORDPRESS", { operation: "create_post" }), "write");
+    assert.equal(agentTools.getToolRisk("WORDPRESS", { operation: "update_post" }), "write");
+    assert.equal(agentTools.getToolRisk("WORDPRESS", { operation: "upload_media" }), "write");
+    for (const operation of ["get_post", "list_posts", "list_tags", "list_categories"]) {
+      assert.equal(agentTools.getToolRisk("WORDPRESS", { operation }), "read", operation);
+    }
+    // No empty select values (the Select component cannot show them)
+    const dialog = readFileSync("src/features/executions/components/apps/nodes.tsx", "utf8");
+    const wordpressDialog = dialog.slice(dialog.indexOf("export const wordpressConfig"), dialog.indexOf("export const WordpressNode"));
+    assert.doesNotMatch(wordpressDialog, /value: ""/);
+
+    // The migration: two enum values, nothing else
+    const fs = await import("node:fs");
+    const folder = fs.readdirSync("prisma/migrations").find((name) => name.endsWith("_wordpress_node"));
+    assert.ok(folder, "migration");
+    assert.equal(
+      readFileSync(`prisma/migrations/${folder}/migration.sql`, "utf8").replace(/\r\n/g, "\n").trim(),
+      `-- AlterEnum\nALTER TYPE "CredentialType" ADD VALUE 'WORDPRESS';\n\n-- AlterEnum\nALTER TYPE "NodeType" ADD VALUE 'WORDPRESS';`
+    );
+  });
+
+  await test("Google Search Console: the property, the dates and the query, and what comes back", async () => {
+    const { readFileSync } = await import("node:fs");
+    const sc = await import("@/features/executions/components/apps/search-console");
+    const now = Date.parse("2026-11-25T12:00:00Z");
+    const build = (data: Record<string, string>, context: Record<string, unknown> = {}) =>
+      sc.buildSearchAnalyticsRequest({ siteUrl: "https://example.com", ...data }, context, now);
+
+    // Properties: URL prefix with a trailing slash, or a domain
+    assert.equal(sc.normalizeSiteUrl("https://example.com"), "https://example.com/");
+    assert.equal(sc.normalizeSiteUrl("https://example.com/blog"), "https://example.com/blog/");
+    assert.equal(sc.normalizeSiteUrl("sc-domain:Example.com"), "sc-domain:example.com");
+    assert.equal(sc.normalizeSiteUrl("example.com"), "sc-domain:example.com");
+    for (const site of ["", "not a site", "sc-domain:", "ftp://example.com"]) {
+      assert.throws(() => sc.normalizeSiteUrl(site), /Site/, site);
+    }
+
+    // Defaults: the last 28 days of final data, by query, web, 100 rows
+    assert.deepEqual(build({}), {
+      siteUrl: "https://example.com/",
+      requestBody: { startDate: "2026-10-26", endDate: "2026-11-22", dimensions: ["query"], type: "web", rowLimit: 100 },
+    });
+    const custom = build({
+      startDate: "7 days ago",
+      endDate: "yesterday",
+      dimensions: "Page, query, searchAppearance",
+      searchType: "image",
+      rowLimit: "5000",
+      queryContains: "{{keyword}}",
+      pageContains: "/blog/",
+      country: "PAK",
+      device: "mobile",
+    }, { keyword: "kurta" });
+    assert.deepEqual(custom.requestBody, {
+      startDate: "2026-11-18",
+      endDate: "2026-11-24",
+      dimensions: ["page", "query", "searchAppearance"],
+      type: "image",
+      rowLimit: 1000,
+      dimensionFilterGroups: [{
+        filters: [
+          { dimension: "query", operator: "contains", expression: "kurta" },
+          { dimension: "page", operator: "contains", expression: "/blog/" },
+          { dimension: "country", operator: "equals", expression: "pak" },
+          { dimension: "device", operator: "equals", expression: "MOBILE" },
+        ],
+      }],
+    });
+    assert.equal(build({ startDate: "2026-11-01", endDate: "2026-11-10" }).requestBody.startDate, "2026-11-01");
+    assert.throws(() => build({ startDate: "2026-11-10", endDate: "2026-11-01" }), /Start Date is after End Date/);
+    assert.throws(() => build({ startDate: "last month" }), /Start Date must be a date/);
+    assert.throws(() => build({ dimensions: "keyword" }), /"keyword" is not a dimension/);
+    assert.throws(() => build({ dimensions: "query, Query" }), /there twice/);
+    assert.throws(() => build({ searchType: "maps" }), /not a search type/);
+    assert.throws(() => build({ country: "pakistan" }), /three-letter code/);
+    assert.throws(() => build({ device: "watch" }), /desktop, mobile or tablet/);
+
+    // Rows get a field per dimension; totals weigh position by impressions
+    const shaped = sc.shapeSearchAnalytics(["query", "page"], {
+      rows: [
+        { keys: ["kurta", "https://example.com/a"], clicks: 10, impressions: 100, ctr: 0.1, position: 2.04 },
+        { keys: ["lawn suit", "https://example.com/b"], clicks: 0, impressions: 300, ctr: 0, position: 10 },
+      ],
+    });
+    assert.deepEqual(shaped.rows[0], { query: "kurta", page: "https://example.com/a", clicks: 10, impressions: 100, ctr: 0.1, position: 2 });
+    assert.deepEqual(shaped.totals, { clicks: 10, impressions: 400, ctr: 0.025, position: 8 });
+    assert.deepEqual(sc.shapeSearchAnalytics(["query"], {}), { rows: [], count: 0, totals: { clicks: 0, impressions: 0, ctr: 0, position: 0 } });
+
+    const inspected = sc.shapeInspection({ inspectionResult: { indexStatusResult: { verdict: "PASS", coverageState: "Submitted and indexed", lastCrawlTime: "2026-11-20T10:00:00Z", googleCanonical: "https://example.com/a" }, mobileUsabilityResult: { verdict: "PASS" } } });
+    assert.equal(inspected.indexed, true);
+    assert.equal(inspected.coverageState, "Submitted and indexed");
+    assert.equal(inspected.mobileUsability, "PASS");
+    assert.equal(sc.shapeInspection({}).indexed, false);
+
+    // The executor checks the settings before it reads a credential
+    const run = (data: Record<string, string>) =>
+      sc.searchConsoleExecutor({ ...baseParams, data, context: {} });
+    await assert.rejects(run({ operation: "delete_site" }), /Unsupported operation/);
+    await assert.rejects(run({ operation: "inspect_url", siteUrl: "https://example.com/", inspectionUrl: "example.com/a" }), /Page URL must be the page's full address/);
+    await assert.rejects(run({ operation: "inspect_url", siteUrl: "https://example.com/", inspectionUrl: "https://other.com/a" }), /must be inside the Site/);
+    await assert.rejects(run({ operation: "search_analytics", siteUrl: "https://example.com/" }), /Credential is required/);
+
+    // Read-only everywhere: the scope, and as an agent tool
+    const options = await import("@/features/executions/lib/search-console-options");
+    assert.equal(options.SEARCH_CONSOLE_SCOPE, "https://www.googleapis.com/auth/webmasters.readonly");
+    assert.match(readFileSync("src/lib/google-oauth.ts", "utf8"), /"https:\/\/www\.googleapis\.com\/auth\/webmasters\.readonly",\s*\]/);
+    for (const operation of ["search_analytics", "inspect_url", "list_sites", "list_sitemaps"]) {
+      assert.equal(agentTools.getToolRisk("GOOGLE_SEARCH_CONSOLE", { operation }), "read", operation);
+    }
+    // Either credential: a Google account, or the new service account type
+    const dialog = readFileSync("src/features/executions/components/apps/nodes.tsx", "utf8");
+    assert.match(dialog, /values\.authentication === "service_account"\s+\? CredentialType\.GOOGLE_SEARCH_CONSOLE\s+: CredentialType\.GOOGLE_OAUTH2/);
+    const credentialForm = readFileSync("src/features/credentials/components/credential.tsx", "utf8");
+    assert.match(credentialForm, /CredentialType\.GOOGLE_CALENDAR,\s+CredentialType\.GOOGLE_SEARCH_CONSOLE,\s+\];/);
+    assert.match(readFileSync("src/features/executions/lib/executor-registry.ts", "utf8"), /\[NodeType\.GOOGLE_SEARCH_CONSOLE\]: searchConsoleExecutor/);
+
+    // The migration: two enum values, nothing else
+    const fs = await import("node:fs");
+    const folder = fs.readdirSync("prisma/migrations").find((name) => name.endsWith("_google_search_console"));
+    assert.ok(folder, "migration");
+    assert.equal(
+      readFileSync(`prisma/migrations/${folder}/migration.sql`, "utf8").replace(/\r\n/g, "\n").trim(),
+      `-- AlterEnum\nALTER TYPE "CredentialType" ADD VALUE 'GOOGLE_SEARCH_CONSOLE';\n\n-- AlterEnum\nALTER TYPE "NodeType" ADD VALUE 'GOOGLE_SEARCH_CONSOLE';`
+    );
+  });
+
   await test("a store request is sent with the key, never follows a redirect, and reports the store's error", async () => {
     type Call = { method: string; url: string; headers: Record<string, unknown>; body: string };
     const calls: Call[] = [];

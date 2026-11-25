@@ -157,6 +157,8 @@ const TOOL_LABELS: Record<string, string> = {
   SALESFORCE: "Salesforce",
   SHOPIFY: "Shopify",
   WOOCOMMERCE: "WooCommerce",
+  WORDPRESS: "WordPress",
+  GOOGLE_SEARCH_CONSOLE: "Google Search Console",
   SSH: "SSH Command",
   MYSQL: "MySQL",
   RESEND: "Resend",
@@ -220,6 +222,8 @@ const DANGEROUS_TOOL_TYPES: Record<string, string> = {
 
 // Only compute or look things up, inside the workflow or from a fixed source
 const READ_TOOL_TYPES = new Set([
+  // Read-only API scope: it cannot change anything
+  "GOOGLE_SEARCH_CONSOLE",
   "CALCULATOR",
   "DATE_TIME",
   "TEXT_FORMATTER",
