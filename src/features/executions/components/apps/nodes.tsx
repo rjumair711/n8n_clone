@@ -16,6 +16,7 @@ import {
   MESSENGER_MAX_TEXT,
   MESSENGER_REPLY_TYPES,
 } from "../../lib/meta-options";
+import { META_TRIGGER_ON } from "@/lib/meta-messaging";
 import {
   SHOPIFY_EVENTS,
   WOOCOMMERCE_EVENTS,
@@ -1088,6 +1089,63 @@ const metaImageField = (operations: string[], description: string): IntegrationF
 const META_IMAGE_HELP =
   "A public https address of the picture, or a file variable. Meta fetches a file from this app through its 15-minute download link, so the app has to be on a public https address.";
 
+// The operations both nodes have for a comment from their trigger
+const MESSAGE_OPS = ["send_message", "send_image"];
+const COMMENT_OPS = ["reply_comment", "private_reply", "hide_comment"];
+const commentOperations = (where: string) => [
+  { value: "reply_comment", label: "Reply to Comment (public)" },
+  { value: "private_reply", label: `Send Private Reply (${where} to the commenter)` },
+  { value: "hide_comment", label: "Hide Comment" },
+];
+
+const commentIdField = (channel: "messenger" | "instagram"): IntegrationField => ({
+  name: "commentId",
+  label: "Comment ID",
+  placeholder: `{{${channel}.commentId}}`,
+  description: `The comment from the trigger (Trigger On: Comments on posts): {{${channel}.commentId}}.`,
+  required: true,
+  operations: COMMENT_OPS,
+});
+
+const PRIVATE_REPLY_HELP =
+  "Send Private Reply: one message per comment, within 7 days of it. When the person answers, the conversation continues like any other (and the trigger gets their message).";
+
+// Which events start the workflow, and which comments
+const metaTriggerFilterFields = (postLabel: string, noun: string): IntegrationField[] => [
+  {
+    name: "triggerOn",
+    label: "Trigger On",
+    type: "select",
+    defaultValue: "messages",
+    required: true,
+    options: META_TRIGGER_ON,
+    description:
+      "Comments need the Webhook URL subscribed to comments in your Meta app as well (see above). Meta sends all of an app's events to one address, so one workflow gets both.",
+  },
+  {
+    name: "keywords",
+    label: "Only Comments Containing",
+    placeholder: "price, info, link",
+    description:
+      "Comma-separated words. A comment starts the workflow only when it contains one of them as a whole word, in any case. Empty means every comment.",
+    showWhen: (values) => values.triggerOn === "comments" || values.triggerOn === "both",
+  },
+  {
+    name: "postIds",
+    label: `Only On These ${postLabel}`,
+    placeholder: "17900000000000000, 17900000000000001",
+    description: `Comma-separated ids, as a comment's postId shows them. Empty means comments on every ${noun}.`,
+    showWhen: (values) => values.triggerOn === "comments" || values.triggerOn === "both",
+  },
+];
+
+const metaTriggerSummary = (data: Record<string, unknown>, onMessage: string) => {
+  if (!data.appSecret) return "Not Configured";
+  if (data.triggerOn === "comments") return data.keywords ? `On comment: ${data.keywords}` : "On comment";
+  if (data.triggerOn === "both") return `${onMessage} or comment`;
+  return onMessage;
+};
+
 // Verify token and app secret, as on the WhatsApp Trigger
 const metaTriggerFields: IntegrationField[] = [
   {
@@ -1110,7 +1168,7 @@ const metaTriggerFields: IntegrationField[] = [
 export const messengerConfig: IntegrationConfig = {
   label: "Messenger",
   description:
-    "Send a message to someone who wrote to your Facebook Page. A Page can only write to people who messaged it first.",
+    "Send a message to someone who wrote to your Facebook Page, or answer a comment on one of its posts: in public, with a private message, or by hiding it. A Page can only write to people who messaged it or commented first.",
   logo: "/logos/messenger.svg",
   credentialType: CredentialType.FACEBOOK_PAGE,
   credentialLabel: "Facebook Page Credential",
@@ -1118,8 +1176,10 @@ export const messengerConfig: IntegrationConfig = {
   operations: [
     { value: "send_message", label: "Send Text Message" },
     { value: "send_image", label: "Send Image" },
+    ...commentOperations("Messenger"),
   ],
   fields: [
+    commentIdField("messenger"),
     {
       name: "recipientId",
       label: "Recipient ID",
@@ -1127,15 +1187,16 @@ export const messengerConfig: IntegrationConfig = {
       description:
         "The id Meta gave for this person in the Messenger Trigger. A name or phone number does not work.",
       required: true,
+      operations: MESSAGE_OPS,
     },
     {
       name: "message",
       label: "Message",
       type: "textarea",
       placeholder: "Thanks for your message! {{output}}",
-      description: `Up to ${MESSENGER_MAX_TEXT} characters.`,
+      description: `Up to ${MESSENGER_MAX_TEXT} characters (a public reply up to 8000). ${PRIVATE_REPLY_HELP}`,
       required: true,
-      operations: ["send_message"],
+      operations: ["send_message", "reply_comment", "private_reply"],
     },
     metaImageField(["send_image"], META_IMAGE_HELP),
     {
@@ -1147,35 +1208,41 @@ export const messengerConfig: IntegrationConfig = {
       options: MESSENGER_REPLY_TYPES,
       description:
         "An ordinary reply only arrives within 24 hours of the person's last message. The other types are for the cases Meta allows after that, and must not be used for promotion.",
+      operations: MESSAGE_OPS,
     },
     {
       name: "pageId",
       label: "Page ID",
       placeholder: "{{messenger.accountId}}",
       description: "Leave empty for the Page the credential belongs to.",
+      operations: [...MESSAGE_OPS, "private_reply"],
     },
   ],
 };
 
 export const MessengerNode = createIntegrationNode(messengerConfig, (data) =>
-  data.recipientId ? `To: ${data.recipientId}` : undefined
+  COMMENT_OPS.includes(data.operation as string)
+    ? operationLabel(messengerConfig, data.operation as string)
+    : data.recipientId
+      ? `To: ${data.recipientId}`
+      : undefined
 );
 
 export const messengerTriggerConfig: IntegrationConfig = {
   label: "Messenger Trigger",
   description:
-    "Starts when someone messages your Facebook Page. Activate the workflow first. Then, in your Meta app, add the Messenger product, enter the Webhook URL below and your Verify Token, subscribe the Page to the messages and messaging_postbacks fields, and copy the App Secret here.",
+    "Starts when someone messages your Facebook Page, or comments on one of its posts. Activate the workflow first. Then, in your Meta app, add the Messenger product, enter the Webhook URL below and your Verify Token, subscribe the Page to the messages and messaging_postbacks fields (and feed, for comments), and copy the App Secret here.",
   logo: "/logos/messenger.svg",
   trigger: true,
   webhookPath: "messenger",
   summary: "On message",
-  hint: "Available variables: {{messenger.text}}, {{messenger.from}}, {{messenger.accountId}} (your Page), {{messenger.type}} (message or postback), {{messenger.payload}} for a tapped button or quick reply, and {{json messenger.attachments}} (each with a type and a url), plus {{chatInput}} and {{sessionId}} for an AI Agent. Reply with a Messenger node using Recipient ID {{messenger.from}}.",
-  fields: metaTriggerFields,
+  hint: "Available variables: {{messenger.text}}, {{messenger.from}}, {{messenger.accountId}} (your Page), {{messenger.type}} (message, postback or comment), {{messenger.payload}} for a tapped button or quick reply, and {{json messenger.attachments}} (each with a type and a url), plus {{chatInput}} and {{sessionId}} for an AI Agent. A comment also has {{messenger.commentId}}, {{messenger.postId}}, {{messenger.fromName}} and {{messenger.parentId}} for a reply to another comment. Reply with a Messenger node: Recipient ID {{messenger.from}} for a message, Comment ID {{messenger.commentId}} for a comment.",
+  fields: [...metaTriggerFilterFields("Posts", "post"), ...metaTriggerFields],
 };
 
 export const MessengerTriggerNode = createIntegrationNode(
   messengerTriggerConfig,
-  (data) => (data.appSecret ? "On message" : "Not Configured")
+  (data) => metaTriggerSummary(data, "On message")
 );
 
 const instagramConnectionField: IntegrationField = {
@@ -1197,7 +1264,7 @@ const instagramCredential = (values: { connection?: string }) =>
 export const instagramConfig: IntegrationConfig = {
   label: "Instagram",
   description:
-    "Send a direct message from your Instagram professional account to someone who wrote to it. An account can only write to people who messaged it first.",
+    "Send a direct message from your Instagram professional account to someone who wrote to it, or answer a comment on one of its posts or reels: in public, with a private message, or by hiding it. An account can only write to people who messaged it or commented first.",
   logo: "/logos/instagram.svg",
   credentialTypeFor: instagramCredential,
   credentialLabel: "Credential",
@@ -1205,9 +1272,11 @@ export const instagramConfig: IntegrationConfig = {
   operations: [
     { value: "send_message", label: "Send Direct Message" },
     { value: "send_image", label: "Send Image" },
+    ...commentOperations("direct message"),
   ],
   fields: [
     instagramConnectionField,
+    commentIdField("instagram"),
     {
       name: "recipientId",
       label: "Recipient ID",
@@ -1215,15 +1284,16 @@ export const instagramConfig: IntegrationConfig = {
       description:
         "The id Meta gave for this person in the Instagram Trigger. A user name does not work.",
       required: true,
+      operations: MESSAGE_OPS,
     },
     {
       name: "message",
       label: "Message",
       type: "textarea",
       placeholder: "Thanks for your message! {{output}}",
-      description: `Up to ${INSTAGRAM_MAX_TEXT} characters.`,
+      description: `Up to ${INSTAGRAM_MAX_TEXT} characters (a public reply up to ${INSTAGRAM_MAX_CAPTION}). ${PRIVATE_REPLY_HELP}`,
       required: true,
-      operations: ["send_message"],
+      operations: ["send_message", "reply_comment", "private_reply"],
     },
     metaImageField(["send_image"], META_IMAGE_HELP),
     {
@@ -1235,6 +1305,7 @@ export const instagramConfig: IntegrationConfig = {
       options: INSTAGRAM_REPLY_TYPES,
       description:
         "An ordinary reply only arrives within 24 hours of the person's last message.",
+      operations: MESSAGE_OPS,
     },
     {
       name: "accountId",
@@ -1242,29 +1313,34 @@ export const instagramConfig: IntegrationConfig = {
       placeholder: "{{instagram.accountId}}",
       description:
         "Leave empty for the account (or Page) the credential belongs to.",
+      operations: [...MESSAGE_OPS, "private_reply"],
     },
   ],
 };
 
 export const InstagramNode = createIntegrationNode(instagramConfig, (data) =>
-  data.recipientId ? `To: ${data.recipientId}` : undefined
+  COMMENT_OPS.includes(data.operation as string)
+    ? operationLabel(instagramConfig, data.operation as string)
+    : data.recipientId
+      ? `To: ${data.recipientId}`
+      : undefined
 );
 
 export const instagramTriggerConfig: IntegrationConfig = {
   label: "Instagram Trigger",
   description:
-    "Starts when your Instagram professional account receives a direct message. Activate the workflow first. Then, in your Meta app, open the Instagram product's webhooks, enter the Webhook URL below and your Verify Token, subscribe to the messages field (and messaging_postbacks for buttons), and copy the App Secret here. With Instagram Login it is the Instagram app secret.",
+    "Starts when your Instagram professional account receives a direct message, or a comment on one of its posts or reels. Activate the workflow first. Then, in your Meta app, open the Instagram product's webhooks, enter the Webhook URL below and your Verify Token, subscribe to the messages field (messaging_postbacks for buttons, comments for comments), and copy the App Secret here. With Instagram Login it is the Instagram app secret.",
   logo: "/logos/instagram.svg",
   trigger: true,
   webhookPath: "instagram",
   summary: "On direct message",
-  hint: "Available variables: {{instagram.text}}, {{instagram.from}}, {{instagram.accountId}} (your account), {{instagram.type}}, {{instagram.payload}} for a tapped button or quick reply, and {{json instagram.attachments}} (each with a type and a url), plus {{chatInput}} and {{sessionId}} for an AI Agent. Reply with an Instagram node using Recipient ID {{instagram.from}}.",
-  fields: metaTriggerFields,
+  hint: "Available variables: {{instagram.text}}, {{instagram.from}}, {{instagram.accountId}} (your account), {{instagram.type}} (message, postback or comment), {{instagram.payload}} for a tapped button or quick reply, and {{json instagram.attachments}} (each with a type and a url), plus {{chatInput}} and {{sessionId}} for an AI Agent. A comment also has {{instagram.commentId}}, {{instagram.postId}} (the post or reel), {{instagram.fromName}} (their user name), {{instagram.mediaType}} and {{instagram.parentId}} for a reply to another comment. Reply with an Instagram node: Recipient ID {{instagram.from}} for a message, Comment ID {{instagram.commentId}} for a comment.",
+  fields: [...metaTriggerFilterFields("Posts Or Reels", "post and reel"), ...metaTriggerFields],
 };
 
 export const InstagramTriggerNode = createIntegrationNode(
   instagramTriggerConfig,
-  (data) => (data.appSecret ? "On direct message" : "Not Configured")
+  (data) => metaTriggerSummary(data, "On direct message")
 );
 
 export const socialPostConfig: IntegrationConfig = {

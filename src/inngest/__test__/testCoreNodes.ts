@@ -9346,6 +9346,194 @@ pour()</code></pre>
     assert.throws(() => instagram({ message: "Hi", recipientId: "@ali" }), /for example \{\{instagram\.from\}\}/);
   });
 
+  await test("comments on Facebook and Instagram posts: read from the webhook, filtered per trigger", async () => {
+    const { readFileSync } = await import("node:fs");
+    const page = "100000000000001";
+    const fbChange = (value: Record<string, unknown>) => ({
+      object: "page",
+      entry: [{ id: page, time: 1_700_000_000_000, changes: [{ field: "feed", value }] }],
+    });
+    const fbComment = (extra: Record<string, unknown> = {}) => ({
+      item: "comment",
+      verb: "add",
+      comment_id: `${page}_300000000000003`,
+      post_id: `${page}_400000000000004`,
+      parent_id: `${page}_400000000000004`,
+      message: "PRICE please",
+      from: { id: "200000000000002", name: "Ali Khan" },
+      created_time: 1_700_000_100,
+      ...extra,
+    });
+
+    const [comment] = metaMessaging.parseMetaComments("messenger", fbChange(fbComment()));
+    assert.deepEqual(comment.dedupeKey, `comment:${page}_300000000000003`);
+    assert.equal(comment.chatInput, "PRICE please");
+    assert.equal(comment.sessionId, "messenger-200000000000002");
+    assert.deepEqual(
+      { ...comment.data, comment: undefined },
+      {
+        from: "200000000000002",
+        fromName: "Ali Khan",
+        accountId: page,
+        type: "comment",
+        text: "PRICE please",
+        commentId: `${page}_300000000000003`,
+        postId: `${page}_400000000000004`,
+        timestamp: 1_700_000_100_000,
+        comment: undefined,
+      },
+      "a comment on the post itself has no parentId; seconds become milliseconds"
+    );
+    const [reply] = metaMessaging.parseMetaComments("messenger", fbChange(fbComment({ parent_id: `${page}_300000000000009` })));
+    assert.equal(reply.data.parentId, `${page}_300000000000009`);
+    // Not new comments, or the Page's own: nothing starts
+    for (const value of [
+      fbComment({ verb: "edited" }),
+      fbComment({ verb: "remove" }),
+      fbComment({ item: "like" }),
+      fbComment({ item: "status" }),
+      fbComment({ from: { id: page, name: "My Shop" } }),
+      fbComment({ comment_id: "" }),
+    ]) {
+      assert.deepEqual(metaMessaging.parseMetaComments("messenger", fbChange(value)), []);
+    }
+    assert.deepEqual(metaMessaging.parseMetaComments("instagram", fbChange(fbComment())), [], "another object");
+    // Messages and comments do not mix
+    assert.deepEqual(metaMessaging.parseMetaMessages("messenger", fbChange(fbComment())), []);
+
+    const ig = "17840000000000001";
+    const igDelivery = (value: Record<string, unknown>, field = "comments") => ({
+      object: "instagram",
+      entry: [{ id: ig, time: 1_700_000_000_000, changes: [{ field, value }] }],
+    });
+    const igComment = (extra: Record<string, unknown> = {}) => ({
+      id: "17860000000000003",
+      text: "قیمت کیا ہے؟ info",
+      from: { id: "17850000000000002", username: "ali.khan" },
+      media: { id: "17900000000000004", media_product_type: "REELS" },
+      ...extra,
+    });
+    const [igOne] = metaMessaging.parseMetaComments("instagram", igDelivery(igComment()));
+    assert.equal(igOne.data.commentId, "17860000000000003");
+    assert.equal(igOne.data.postId, "17900000000000004");
+    assert.equal(igOne.data.fromName, "ali.khan");
+    assert.equal(igOne.data.mediaType, "REELS");
+    assert.equal(igOne.data.timestamp, 1_700_000_000_000);
+    assert.equal(igOne.sessionId, "instagram-17850000000000002");
+    assert.deepEqual(metaMessaging.parseMetaComments("instagram", igDelivery(igComment({ from: { id: ig, username: "myshop" } }))), []);
+    assert.deepEqual(metaMessaging.parseMetaComments("instagram", igDelivery(igComment(), "mentions")), []);
+
+    // Keywords: whole words, any case, Urdu too
+    assert.equal(metaMessaging.matchesKeywords("PRICE please", "price, info"), true);
+    assert.equal(metaMessaging.matchesKeywords("What's the price?", "price"), true);
+    assert.equal(metaMessaging.matchesKeywords("priceless!", "price"), false);
+    assert.equal(metaMessaging.matchesKeywords("قیمت کیا ہے؟", "قیمت"), true);
+    assert.equal(metaMessaging.matchesKeywords("anything", ""), true);
+    assert.equal(metaMessaging.matchesKeywords("a+b (c)", "a+b"), true, "regex characters are plain text");
+
+    // Which trigger node takes which event
+    const [message] = metaMessaging.parseMetaMessages("messenger", {
+      object: "page",
+      entry: [{ id: page, messaging: [{ sender: { id: "200000000000002" }, recipient: { id: page }, message: { mid: "m_1", text: "Hi" } }] }],
+    });
+    const accepts = metaMessaging.metaTriggerAccepts;
+    assert.equal(accepts({}, message), true, "a trigger saved before comments existed: messages");
+    assert.equal(accepts(null, message), true);
+    assert.equal(accepts({}, comment), false, "and no comments");
+    assert.equal(accepts({ triggerOn: "comments" }, message), false);
+    assert.equal(accepts({ triggerOn: "comments" }, comment), true);
+    assert.equal(accepts({ triggerOn: "both" }, message), true);
+    assert.equal(accepts({ triggerOn: "both" }, comment), true);
+    assert.equal(accepts({ triggerOn: "comments", keywords: "price" }, comment), true);
+    assert.equal(accepts({ triggerOn: "comments", keywords: "link, menu" }, comment), false);
+    assert.equal(accepts({ triggerOn: "both", keywords: "link" }, message), true, "keywords are for comments only");
+    // Post ids: the whole Facebook id or the part after the Page id
+    assert.equal(accepts({ triggerOn: "comments", postIds: "400000000000004" }, comment), true);
+    assert.equal(accepts({ triggerOn: "comments", postIds: `${page}_400000000000004` }, comment), true);
+    assert.equal(accepts({ triggerOn: "comments", postIds: "400000000000005, 400000000000006" }, comment), false);
+    assert.equal(accepts({ triggerOn: "comments", postIds: "17900000000000004" }, igOne), true);
+
+    // The webhook uses both parsers and the filter
+    const webhook = readFileSync("src/lib/meta-webhook.ts", "utf8");
+    assert.match(webhook, /parseMetaMessages\(channel, body\),\s+\.\.\.parseMetaComments\(channel, body\)/);
+    assert.match(webhook, /triggerNodes\.some\(\(node\) =>\s+metaTriggerAccepts\(/);
+
+    // A test run of a comments trigger starts with a sample comment
+    const { buildTestPayload } = await import("@/features/workflows/server/test-payloads");
+    const sample = buildTestPayload("INSTAGRAM_TRIGGER", { triggerOn: "comments", keywords: "price, info" }) as any;
+    assert.equal(sample.instagram.type, "comment");
+    assert.equal(sample.instagram.text, "price please");
+    assert.equal(sample.chatInput, "price please");
+    assert.equal((buildTestPayload("MESSENGER_TRIGGER", { triggerOn: "comments" }) as any).messenger.commentId.includes("_"), true);
+    assert.equal((buildTestPayload("MESSENGER_TRIGGER", {}) as any).messenger.type, "message");
+  });
+
+  await test("Messenger and Instagram nodes: reply to a comment, send a private reply, hide it", async () => {
+    const { readFileSync } = await import("node:fs");
+    const call = (channel: "messenger" | "instagram", data: Record<string, string>, context: Record<string, unknown> = {}) =>
+      meta.buildCommentCall(channel, data, context);
+    const fbId = "100000000000001_300000000000003";
+    const igId = "17860000000000003";
+
+    assert.deepEqual(call("messenger", { operation: "reply_comment", commentId: "{{messenger.commentId}}", message: "Sent you a DM!" }, { messenger: { commentId: fbId } }), {
+      origin: "https://graph.facebook.com",
+      method: "POST",
+      path: `/${fbId}/comments`,
+      body: { message: "Sent you a DM!" },
+    });
+    assert.deepEqual(call("instagram", { operation: "reply_comment", commentId: igId, message: "Check your DMs" }), {
+      origin: "https://graph.facebook.com",
+      method: "POST",
+      path: `/${igId}/replies`,
+      body: { message: "Check your DMs" },
+    });
+    assert.equal(
+      call("instagram", { operation: "reply_comment", connection: "instagram", commentId: igId, message: "Hi" }).origin,
+      "https://graph.instagram.com",
+      "Instagram Login"
+    );
+
+    // A private reply is addressed by the comment, not by a person's id
+    assert.deepEqual(call("messenger", { operation: "private_reply", commentId: fbId, message: "Our price list: ..." }), {
+      origin: "https://graph.facebook.com",
+      method: "POST",
+      path: "/me/messages",
+      body: { recipient: { comment_id: fbId }, message: { text: "Our price list: ..." } },
+    });
+    assert.equal(call("instagram", { operation: "private_reply", commentId: igId, message: "Hi", accountId: "17840000000000001" }).path, "/17840000000000001/messages");
+    assert.throws(() => call("messenger", { operation: "private_reply", commentId: fbId, message: "Hi", pageId: "../x" }), /Page ID must be the account's numeric ID/);
+
+    assert.deepEqual(call("messenger", { operation: "hide_comment", commentId: fbId }).body, { is_hidden: true });
+    assert.deepEqual(call("instagram", { operation: "hide_comment", commentId: igId }), {
+      origin: "https://graph.facebook.com",
+      method: "POST",
+      path: `/${igId}`,
+      body: { hide: true },
+    });
+
+    // Checked before anything is sent
+    assert.throws(() => call("messenger", { operation: "reply_comment", message: "Hi" }), /Comment ID is required/);
+    for (const commentId of ["abc", "1/../2", "123", "100000000000001_", "1_2_3"]) {
+      assert.throws(() => call("messenger", { operation: "hide_comment", commentId }), /Comment ID must be the id from the trigger/, commentId);
+    }
+    assert.throws(() => call("instagram", { operation: "reply_comment", commentId: igId }), /Message is required/);
+    assert.throws(() => call("instagram", { operation: "reply_comment", commentId: igId, message: "x".repeat(2201) }), /at most 2200/);
+    assert.throws(() => call("instagram", { operation: "private_reply", commentId: igId, message: "x".repeat(1001) }), /at most 1000/);
+    assert.doesNotThrow(() => call("messenger", { operation: "reply_comment", commentId: fbId, message: "x".repeat(8000) }));
+    assert.throws(() => call("messenger", { operation: "send_message", commentId: fbId }), /Unsupported operation/);
+
+    // The dialogs: the new operations, and the fields each needs
+    const nodes = readFileSync("src/features/executions/components/apps/nodes.tsx", "utf8");
+    assert.match(nodes, /\.\.\.commentOperations\("Messenger"\)/);
+    assert.match(nodes, /\.\.\.commentOperations\("direct message"\)/);
+    assert.match(nodes, /metaTriggerFilterFields\("Posts", "post"\), \.\.\.metaTriggerFields/);
+    // As agent tools they change things: write, so approval by default
+    for (const operation of ["reply_comment", "private_reply", "hide_comment"]) {
+      assert.equal(agentTools.getToolRisk("INSTAGRAM", { operation }), "write", operation);
+      assert.equal(agentTools.getToolRisk("MESSENGER", { operation }), "write", operation);
+    }
+  });
+
   await test("a photo post is one call on Facebook and a container plus a publish on Instagram", async () => {
     const image = "https://cdn.example.com/photo.jpg";
 

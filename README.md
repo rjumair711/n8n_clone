@@ -653,8 +653,8 @@ OCR and vision for a file a workflow has: a Form Trigger upload, an image sent t
 | Telegram Trigger    | Runs when your bot receives a message. The bot's webhook is registered when the workflow is activated. A voice message is given as a file at `{{telegram.voice}}`, a photo at `{{telegram.image}}` (its caption is `{{chatInput}}`) |
 | WhatsApp Trigger    | Runs when your WhatsApp Business number receives a message (verify token + signature check). With a WhatsApp credential selected, a voice message is given as a file at `{{whatsapp.voice}}` and an image at `{{whatsapp.image}}`. A tapped reply button or list row gives `{{whatsapp.replyId}}` |
 | Gmail Trigger       | Runs when a new email arrives; polls every 1, 5, 15 or 60 minutes with an optional Gmail search filter. One poll starts at most 10 runs, oldest email first; when more arrived, the rest follow at 10 a minute until none are waiting (a burst of up to 500 emails is kept) |
-| Messenger Trigger   | Runs when someone messages your Facebook Page (verify token + signature check; see "Messenger and Instagram") |
-| Instagram Trigger   | Runs when your Instagram professional account receives a direct message (verify token + signature check)    |
+| Messenger Trigger   | Runs when someone messages your Facebook Page, or comments on one of its posts (**Trigger On**, optional keywords and posts; verify token + signature check; see "Messenger and Instagram") |
+| Instagram Trigger   | Runs when your Instagram professional account receives a direct message, or a comment on a post or reel (verify token + signature check) |
 | Typeform Trigger    | Runs when a typeform is submitted; answers are available by question title                                 |
 | Shopify Trigger     | Runs when an order is created, paid, fulfilled or cancelled, a product is created or updated, a customer is created or a checkout changes (HMAC signature check; see "Shopify and WooCommerce") |
 | WooCommerce Trigger | Runs when an order is created, updated or paid, or a product or customer changes (signature check; optional order status filter) |
@@ -985,8 +985,8 @@ Two store nodes and two triggers. The nodes can also be AI Agent tools: reading 
 | Slack       | Slack notifications |
 | Telegram    | Bot messaging: text, or a file with a caption, and the Telegram Trigger for incoming messages |
 | WhatsApp    | Text, template, file, reply-button and list-menu messages via the WhatsApp Business Cloud API, and the WhatsApp Trigger. See "WhatsApp buttons and list menus" |
-| Messenger   | Text and picture replies to people who wrote to your Facebook Page, and the Messenger Trigger |
-| Instagram   | Text and picture direct messages, the Instagram Trigger, and photo posts (with the Instagram / Facebook Post node) |
+| Messenger   | Text and picture replies to people who wrote to your Facebook Page, answers to comments on its posts (public reply, private reply, hide), and the Messenger Trigger |
+| Instagram   | Text and picture direct messages, answers to comments on posts and reels (public reply, private reply, hide), the Instagram Trigger, and photo posts (with the Instagram / Facebook Post node) |
 | Twilio      | SMS and WhatsApp messages |
 | Email       | SMTP email, with file attachments |
 | Gmail       | Email through a connected Google account, with file attachments |
@@ -999,10 +999,10 @@ Three nodes and two triggers on Meta's Graph API. As AI Agent tools all three no
 
 | Node | What it does |
 | ---- | ------------ |
-| Messenger | Sends a text or a picture to someone who wrote to your Facebook Page |
-| Instagram | Sends a text or a picture as a direct message from your Instagram professional account |
+| Messenger | Sends a text or a picture to someone who wrote to your Facebook Page; replies to, privately answers or hides a comment on its posts |
+| Instagram | Sends a text or a picture as a direct message from your Instagram professional account; replies to, privately answers or hides a comment on its posts and reels |
 | Instagram / Facebook Post | Publishes a photo with a caption on the Instagram account or on the Facebook Page |
-| Messenger Trigger, Instagram Trigger | Start a run for each incoming message, with `chatInput` and `sessionId` for an AI Agent |
+| Messenger Trigger, Instagram Trigger | Start a run for each incoming message, comment, or both (**Trigger On**), with `chatInput` and `sessionId` for an AI Agent |
 
 * **Who can be written to.** A Page or an Instagram account can only message people who wrote to it first, and by their id from the trigger (`{{messenger.from}}`, `{{instagram.from}}`), not by name or phone number. A plain reply arrives within 24 hours of the person's last message. **Message Type** offers Meta's tags for later messages (human agent, post-purchase update and so on); they are not for promotion.
 * **Two ways an Instagram account is connected**, chosen on the node as **Account Connected**: through a Facebook Page (a *Facebook Page* credential, calls go to `graph.facebook.com`) or with Instagram Login (an *Instagram* credential, calls go to `graph.instagram.com`). Messenger and Facebook Page posts always use the Facebook Page credential.
@@ -1011,6 +1011,12 @@ Three nodes and two triggers on Meta's Graph API. As AI Agent tools all three no
 * **Instagram posts** take JPEG only, between 4:5 and 1.91:1 in shape, with a caption of up to 2200 characters. The node makes a container, waits until Instagram has prepared it (up to 20 seconds) and publishes it. With a Facebook Page credential and no Instagram Account ID, the Instagram account connected to the Page is looked up.
 * **A post is public as soon as the node has run** and is not taken back when a later node fails.
 * **Triggers** use the same two checks as the WhatsApp Trigger: Meta's verify token when the webhook is saved, and the `X-Hub-Signature-256` signature (made with the app secret) on every event. Echoes of the account's own messages, deleted messages, read and delivery receipts and reactions start nothing. Button taps and quick replies do, with their payload at `{{messenger.payload}}`. Attachments are given as a list of `{ type, url }`; they are not downloaded.
+* **Comments (comment to DM).** A trigger's **Trigger On** is **Messages** (the default, and what every trigger saved before this means), **Comments on posts**, or **Messages and comments**. Comments come from Meta's `feed` change on a Page (subscribe the Page's webhook to **feed**; it needs `pages_read_engagement` and `pages_manage_metadata`) and the `comments` change on Instagram (needs `instagram_manage_comments`, or `instagram_business_manage_comments` with Instagram Login).
+  * **Which comments:** only new ones (`verb: add`; edits, removals, likes and new posts start nothing) and never the account's own, so the workflow's public reply does not start it again. **Only Comments Containing** takes comma-separated keywords matched as whole words in any case (`price` matches "PRICE?" but not "priceless", Urdu and Arabic words too); **Only On These Posts** takes post or media ids (on Facebook the whole `<page>_<post>` id or the part after the underscore). Both are empty by default: every comment. A delivery starts a run when any of the workflow's trigger nodes of that channel accepts it, at most once per comment (`comment:<id>` duplicate check).
+  * **The run gets** `{{instagram.type}}` = `comment`, `.commentId`, `.postId`, `.text` (also `{{chatInput}}`), `.from`, `.fromName` (Facebook name or Instagram user name), `.accountId`, `.parentId` (a reply to another comment), `.mediaType` (Instagram: FEED, REELS...), `.timestamp`; the same under `{{messenger...}}` for a Page.
+  * **Answering:** the Messenger and Instagram nodes have **Reply to Comment** (a public reply: `POST /{comment}/comments` on Facebook, `/{comment}/replies` on Instagram; 8000 and 2200 characters), **Send Private Reply** (one message to the commenter, addressed by `recipient.comment_id`, so it needs no earlier conversation; Meta allows one per comment, within 7 days of it, and the ordinary 24-hour window starts when the person answers) and **Hide Comment** (`is_hidden` / `hide`). Each takes **Comment ID** `{{instagram.commentId}}`. Results: `{ commentId, replyId }`, `{ commentId, messageId, recipientId }` and `{ commentId, hidden: true }`. As AI Agent tools all three are "write".
+  * A test run from the editor of a trigger set to Comments starts with a sample comment that contains its first keyword.
+  * Not built: a trigger for mentions and story replies, editing or deleting comments, and live-video comments.
 * **One address per Meta app.** Meta sends all of an app's Page (or Instagram) events to one Callback URL, so one app feeds one workflow per channel.
 * Receiving messages from people who are not testers of the app needs Meta's app review (`pages_messaging`, `instagram_manage_messages` or `instagram_business_manage_messages`); posting needs `pages_manage_posts` or `instagram_content_publish` / `instagram_business_content_publish`.
 

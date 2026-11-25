@@ -6,7 +6,13 @@ import type { NodeType } from "@prisma/client";
 import { findTriggerNodes, startWorkflowExecution } from "@/inngest/utils";
 import { secretsMatch } from "@/lib/webhook-security";
 import { rateLimitResponse } from "@/lib/rate-limit";
-import { type MetaChannel, parseMetaMessages } from "@/lib/meta-messaging";
+import {
+    type MetaChannel,
+    type MetaTriggerFilter,
+    metaTriggerAccepts,
+    parseMetaComments,
+    parseMetaMessages,
+} from "@/lib/meta-messaging";
 
 // The webhook of the Messenger and Instagram triggers. Meta uses the same
 // two calls for both, and for WhatsApp:
@@ -15,7 +21,7 @@ import { type MetaChannel, parseMetaMessages } from "@/lib/meta-messaging";
 //         challenge is returned if the verify token is the one typed there
 //   POST  every event, signed with the app secret in X-Hub-Signature-256
 
-type MetaTriggerData = {
+type MetaTriggerData = MetaTriggerFilter & {
     verifyToken?: string;
     appSecret?: string;
 };
@@ -104,9 +110,21 @@ export const createMetaWebhookHandlers = ({
 
         try {
             // Read receipts, echoes of the account's own messages and
-            // events of another kind arrive here too; only messages from
-            // people start the workflow
-            for (const message of parseMetaMessages(channel, JSON.parse(rawBody))) {
+            // events of another kind arrive here too; only messages and new
+            // comments from people start the workflow, and only those a
+            // trigger node of the workflow listens for (Trigger On, keywords
+            // and posts). Meta sends all of an app's events to one address.
+            const body = JSON.parse(rawBody);
+            const events = [
+                ...parseMetaMessages(channel, body),
+                ...parseMetaComments(channel, body),
+            ].filter((event) =>
+                triggerNodes.some((node) =>
+                    metaTriggerAccepts(node.data as MetaTriggerData | null, event)
+                )
+            );
+
+            for (const message of events) {
                 await startWorkflowExecution({
                     workflowId,
                     trigger: nodeType,

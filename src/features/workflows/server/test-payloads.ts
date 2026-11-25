@@ -1,6 +1,6 @@
 import { NodeType } from "@prisma/client";
 import { buildSampleFormValues, parseFormFields } from "@/lib/form-fields";
-import { parseMetaMessages } from "@/lib/meta-messaging";
+import { parseMetaComments, parseMetaMessages } from "@/lib/meta-messaging";
 import { normalizeToolName, readToolSchema } from "@/lib/mcp-server";
 import {
     buildShopifyTriggerData,
@@ -174,6 +174,52 @@ export const buildTestPayload = (
             const channel =
                 trigger === NodeType.MESSENGER_TRIGGER ? "messenger" : "instagram";
             const accountId = "100000000000001";
+
+            // A trigger that only listens for comments is tested with one
+            if (nodeData.triggerOn === "comments") {
+                const keyword = String(nodeData.keywords ?? "").split(",")[0]?.trim();
+                const commentText = keyword ? `${keyword} please` : "Is this still available?";
+                const [comment] = parseMetaComments(channel, {
+                    object: channel === "messenger" ? "page" : "instagram",
+                    entry: [
+                        {
+                            id: accountId,
+                            time: now.getTime(),
+                            changes: [
+                                channel === "messenger"
+                                    ? {
+                                          field: "feed",
+                                          value: {
+                                              item: "comment",
+                                              verb: "add",
+                                              comment_id: `${accountId}_300000000000003`,
+                                              post_id: `${accountId}_400000000000004`,
+                                              parent_id: `${accountId}_400000000000004`,
+                                              message: commentText,
+                                              from: { id: "200000000000002", name: "Test Person" },
+                                              created_time: Math.floor(now.getTime() / 1000),
+                                          },
+                                      }
+                                    : {
+                                          field: "comments",
+                                          value: {
+                                              id: "300000000000003",
+                                              text: commentText,
+                                              from: { id: "200000000000002", username: "test.person" },
+                                              media: { id: "400000000000004", media_product_type: "REELS" },
+                                          },
+                                      },
+                            ],
+                        },
+                    ],
+                });
+
+                return {
+                    [channel]: comment.data,
+                    chatInput: comment.chatInput,
+                    sessionId: comment.sessionId,
+                };
+            }
 
             // Built from a delivery of the shape Meta sends, by the same
             // code that reads a real one
