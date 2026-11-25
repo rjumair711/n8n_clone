@@ -53,6 +53,7 @@ const credentialTypeOptions = [
   { value: CredentialType.SMTP, label: "SMTP (Email)", logo: "/logos/smtp.jfif" },
   { value: CredentialType.GOOGLE_SHEETS, label: "Google Sheets", logo: "/logos/googleSheet.png" },
   { value: CredentialType.GOOGLE_CALENDAR, label: "Google Calendar", logo: "/logos/calender.png" },
+  { value: CredentialType.GOOGLE_SEARCH_CONSOLE, label: "Google Search Console (service account)", logo: "/logos/google-search-console.svg" },
   { value: CredentialType.NOTION, label: "Notion", logo: "/logos/notion.png" }, 
   { value: CredentialType.TELEGRAM, label: "Telegram", logo: "/logos/telegram.jfif" },
   { value: CredentialType.GITHUB, label: "GitHub", logo: "/logos/github.svg" },
@@ -76,6 +77,7 @@ const credentialTypeOptions = [
   { value: CredentialType.HUBSPOT, label: "HubSpot", logo: "/logos/hubspot.svg" },
   { value: CredentialType.SHOPIFY, label: "Shopify", logo: "/logos/shopify.svg" },
   { value: CredentialType.WOOCOMMERCE, label: "WooCommerce", logo: "/logos/woocommerce.svg" },
+  { value: CredentialType.WORDPRESS, label: "WordPress", logo: "/logos/wordpress.svg" },
   { value: CredentialType.SALESFORCE, label: "Salesforce Account", logo: "/logos/salesforce.svg" },
   { value: CredentialType.MYSQL, label: "MySQL", logo: "/logos/mysql.svg" },
   { value: CredentialType.SSH, label: "SSH (Server Login)", logo: "/logos/ssh.svg" },
@@ -87,6 +89,15 @@ const credentialTypeOptions = [
 
 // Everything the form shows for a credential type. Add a type here and the
 // placeholders, labels and help text follow.
+// The credential types entered as a Google service account (project id,
+// client email, private key)
+const GOOGLE_SERVICE_ACCOUNT_TYPES: string[] = [
+  CredentialType.GOOGLE_SHEETS,
+  CredentialType.GOOGLE_CALENDAR,
+  CredentialType.GOOGLE_SEARCH_CONSOLE,
+];
+const isGoogleServiceAccountCredential = (type: string) => GOOGLE_SERVICE_ACCOUNT_TYPES.includes(type);
+
 const credentialFieldConfig: Record<CredentialType, {
   namePlaceholder: string;
   // Used when a saved credential has no name
@@ -152,6 +163,12 @@ const credentialFieldConfig: Record<CredentialType, {
   [CredentialType.GOOGLE_CALENDAR]: {
     namePlaceholder: "My Google Calendar Account",
     defaultName: "Google Calendar credential",
+    secretLabel: "Service Account",
+    secretPlaceholder: "",
+  },
+  [CredentialType.GOOGLE_SEARCH_CONSOLE]: {
+    namePlaceholder: "My Search Console Service Account",
+    defaultName: "Google Search Console credential",
     secretLabel: "Service Account",
     secretPlaceholder: "",
   },
@@ -315,6 +332,13 @@ const credentialFieldConfig: Record<CredentialType, {
     secretPlaceholder: "ck_xxxxxxxx:cs_xxxxxxxx",
     help: "Written as ConsumerKey:ConsumerSecret. Create them in WordPress under WooCommerce > Settings > Advanced > REST API, with Read or Read/Write permission.",
   },
+  [CredentialType.WORDPRESS]: {
+    namePlaceholder: "My WordPress Site",
+    defaultName: "WordPress credential",
+    secretLabel: "User Name and Application Password",
+    secretPlaceholder: "your-username:abcd efgh ijkl mnop qrst uvwx",
+    help: "Written as username:application password. In WordPress open Users > Profile, scroll to Application Passwords, type a name (RXJ) and press Add New Application Password; it is shown once. Not your login password. The user needs the Author or Editor role to create posts. The site must be on https.",
+  },
   [CredentialType.SALESFORCE]: {
     namePlaceholder: "My Salesforce Org",
     defaultName: "Salesforce account",
@@ -461,7 +485,7 @@ export const CredentialForm = ({ initialData }: CredentialFormProps) => {
 
   // Sync Google Service Accounts (Sheets & Calendar) → form value
   React.useEffect(() => {
-    if (selectedType === CredentialType.GOOGLE_SHEETS || selectedType === CredentialType.GOOGLE_CALENDAR) {
+    if (isGoogleServiceAccountCredential(selectedType)) {
       form.setValue("value", JSON.stringify(serviceAccountFields), { shouldValidate: true });
     }
   }, [serviceAccountFields, selectedType, form]);
@@ -474,7 +498,7 @@ export const CredentialForm = ({ initialData }: CredentialFormProps) => {
       return;
     }
 
-    const isGoogleServiceAccount = selectedType === CredentialType.GOOGLE_SHEETS || selectedType === CredentialType.GOOGLE_CALENDAR;
+    const isGoogleServiceAccount = isGoogleServiceAccountCredential(selectedType);
 
     const isSmtp = selectedType === CredentialType.SMTP;
 
@@ -520,7 +544,7 @@ export const CredentialForm = ({ initialData }: CredentialFormProps) => {
     }
   };
 
-  const isGoogleServiceAccountType = selectedType === CredentialType.GOOGLE_SHEETS || selectedType === CredentialType.GOOGLE_CALENDAR;
+  const isGoogleServiceAccountType = isGoogleServiceAccountCredential(selectedType);
 
   return (
     <>
@@ -550,7 +574,7 @@ export const CredentialForm = ({ initialData }: CredentialFormProps) => {
                         field.onChange(value);
                         if (value === CredentialType.SMTP) {
                           form.setValue("value", JSON.stringify(smtpFields));
-                        } else if (value === CredentialType.GOOGLE_SHEETS || value === CredentialType.GOOGLE_CALENDAR) {
+                        } else if (isGoogleServiceAccountCredential(value)) {
                           form.setValue("value", JSON.stringify(serviceAccountFields));
                         } else {
                           form.setValue("value", "");
@@ -652,7 +676,9 @@ export const CredentialForm = ({ initialData }: CredentialFormProps) => {
                       >
                         Google Cloud Console
                       </a>
-                      , enable the {selectedType === CredentialType.GOOGLE_SHEETS ? "Google Sheets" : "Google Calendar"} API, and share your {selectedType === CredentialType.GOOGLE_SHEETS ? "sheet" : "calendar"} with the service account email.
+                      , {selectedType === CredentialType.GOOGLE_SEARCH_CONSOLE
+                        ? "enable the Google Search Console API, and add the service account email as a user of your property in Search Console (Settings > Users and permissions)."
+                        : `enable the ${selectedType === CredentialType.GOOGLE_SHEETS ? "Google Sheets" : "Google Calendar"} API, and share your ${selectedType === CredentialType.GOOGLE_SHEETS ? "sheet" : "calendar"} with the service account email.`}
                     </p>
                     {isEdit && (
                       <p className="text-xs text-muted-foreground">

@@ -1957,6 +1957,338 @@ export const WoocommerceNode = createIntegrationNode(woocommerceConfig, (data) =
   data.storeUrl ? operationLabel(woocommerceConfig, data.operation) : "Not Configured"
 );
 
+// =========================================================================
+// WORDPRESS
+// =========================================================================
+const WP_POST_EDIT = ["create_post", "update_post"];
+const WP_POST_OPS = ["create_post", "update_post", "get_post", "list_posts"];
+
+export const wordpressConfig: IntegrationConfig = {
+  label: "WordPress",
+  description:
+    "Create, update and read posts and pages of a WordPress site, upload pictures to its media library, and list its categories and tags. Signs in with an application password (WordPress 5.6 or newer, on https).",
+  logo: "/logos/wordpress.svg",
+  credentialType: CredentialType.WORDPRESS,
+  credentialLabel: "WordPress Credential",
+  defaultVariableName: "wordpress",
+  hint: "A post's result has {{wordpress.id}}, {{wordpress.link}}, {{wordpress.status}} and {{wordpress.title}}; Upload Media gives {{wordpress.id}} (use it as Featured Image ID) and {{wordpress.url}}. Lists come back as {{json wordpress.items}} and {{wordpress.count}}. As an AI Agent tool, creating and updating are \"write\": keep Require approval on, or create drafts only.",
+  operations: [
+    { value: "create_post", label: "Create Post" },
+    { value: "update_post", label: "Update Post" },
+    { value: "get_post", label: "Get Post" },
+    { value: "list_posts", label: "List Posts" },
+    { value: "upload_media", label: "Upload Media" },
+    { value: "list_categories", label: "List Categories" },
+    { value: "list_tags", label: "List Tags" },
+  ],
+  fields: [
+    {
+      name: "siteUrl",
+      label: "Site URL",
+      placeholder: "https://blog.example.com",
+      description: "The site's https address. A site in a folder works too: https://example.com/blog",
+      required: true,
+    },
+    {
+      name: "resource",
+      label: "Post Type",
+      type: "select",
+      defaultValue: "posts",
+      options: [
+        { value: "posts", label: "Posts" },
+        { value: "pages", label: "Pages" },
+      ],
+      operations: WP_POST_OPS,
+    },
+    {
+      name: "postId",
+      label: "Post ID",
+      placeholder: "{{wordpress.id}}",
+      required: true,
+      operations: ["update_post", "get_post"],
+    },
+    {
+      name: "title",
+      label: "Title",
+      placeholder: "{{article.title}}",
+      description: "Required for Create Post; on Update Post, empty keeps the title.",
+      operations: WP_POST_EDIT,
+    },
+    {
+      name: "content",
+      label: "Content",
+      type: "textarea",
+      placeholder: "<p>{{article.body}}</p>",
+      description: "HTML or plain text. Empty on Update Post keeps the content.",
+      operations: WP_POST_EDIT,
+    },
+    {
+      name: "excerpt",
+      label: "Excerpt",
+      type: "textarea",
+      placeholder: "A short summary for lists and search results",
+      operations: WP_POST_EDIT,
+    },
+    {
+      name: "status",
+      label: "Status",
+      type: "select",
+      defaultValue: "draft",
+      options: [
+        { value: "draft", label: "Draft" },
+        { value: "publish", label: "Publish" },
+        { value: "pending", label: "Pending review" },
+        { value: "private", label: "Private" },
+        { value: "future", label: "Scheduled (needs Publish Date)" },
+      ],
+      description: "Draft is the safe choice for AI-written posts: you publish them yourself in WordPress.",
+      operations: ["create_post"],
+    },
+    {
+      name: "newStatus",
+      label: "New Status",
+      type: "select",
+      defaultValue: "keep",
+      options: [
+        { value: "keep", label: "Leave as it is" },
+        { value: "draft", label: "Draft" },
+        { value: "publish", label: "Publish" },
+        { value: "pending", label: "Pending review" },
+        { value: "private", label: "Private" },
+        { value: "future", label: "Scheduled (needs Publish Date)" },
+      ],
+      operations: ["update_post"],
+    },
+    {
+      name: "date",
+      label: "Publish Date",
+      placeholder: "2026-12-24T09:00:00",
+      description: "Optional; the site's own time zone. Needed for Scheduled.",
+      operations: WP_POST_EDIT,
+    },
+    {
+      name: "slug",
+      label: "Slug",
+      placeholder: "my-first-post",
+      description: "The post's address part. Empty: WordPress makes one from the title.",
+      operations: WP_POST_EDIT,
+    },
+    {
+      name: "categories",
+      label: "Category IDs",
+      placeholder: "3, 7",
+      description: "Comma-separated ids (List Categories shows them). Posts only.",
+      operations: WP_POST_EDIT,
+    },
+    {
+      name: "tags",
+      label: "Tag IDs",
+      placeholder: "12, 15",
+      description: "Comma-separated ids (List Tags shows them). Posts only.",
+      operations: WP_POST_EDIT,
+    },
+    {
+      name: "featuredMediaId",
+      label: "Featured Image ID",
+      placeholder: "{{media.id}}",
+      description: "The id of a picture in the media library, e.g. from an Upload Media node before this one.",
+      operations: WP_POST_EDIT,
+    },
+    {
+      name: "fieldsJson",
+      label: "Additional Fields (JSON)",
+      type: "textarea",
+      placeholder: '{"comment_status": "closed", "meta": {"_yoast_wpseo_metadesc": "..."}}',
+      description: "Anything else, in WordPress's own field names, merged into what is sent.",
+      operations: WP_POST_EDIT,
+    },
+    {
+      name: "search",
+      label: "Search",
+      placeholder: "shipping",
+      description: "Optional: only what contains this text.",
+      operations: ["list_posts", "list_categories", "list_tags"],
+    },
+    {
+      name: "listStatus",
+      label: "Status",
+      type: "select",
+      defaultValue: "publish",
+      options: [
+        { value: "publish", label: "Published" },
+        { value: "any", label: "Any" },
+        { value: "draft", label: "Draft" },
+        { value: "pending", label: "Pending review" },
+        { value: "future", label: "Scheduled" },
+        { value: "private", label: "Private" },
+      ],
+      operations: ["list_posts"],
+    },
+    {
+      name: "limit",
+      label: "Limit",
+      placeholder: "10",
+      description: "At most 100.",
+      operations: ["list_posts", "list_categories", "list_tags"],
+    },
+    {
+      name: "file",
+      label: "File",
+      placeholder: "image.file",
+      description: "A file variable: a picture from Image Generation, an HTTP Request download, a form upload.",
+      required: true,
+      operations: ["upload_media"],
+    },
+    {
+      name: "mediaTitle",
+      label: "Title",
+      placeholder: "Product photo",
+      operations: ["upload_media"],
+    },
+    {
+      name: "altText",
+      label: "Alt Text",
+      placeholder: "A red cotton kurta on a white background",
+      description: "What the picture shows, for screen readers and SEO.",
+      operations: ["upload_media"],
+    },
+  ],
+};
+
+export const WordpressNode = createIntegrationNode(wordpressConfig, (data) =>
+  data.siteUrl ? operationLabel(wordpressConfig, data.operation) : "Not Configured"
+);
+
+// =========================================================================
+// GOOGLE SEARCH CONSOLE
+// =========================================================================
+const SITE_OPS = ["search_analytics", "inspect_url", "list_sitemaps"];
+
+export const searchConsoleConfig: IntegrationConfig = {
+  label: "Google Search Console",
+  description:
+    "How your site does in Google Search: clicks, impressions, CTR and position by query, page, country, device or date; whether a page is indexed; your sites and sitemaps. Read-only.",
+  logo: "/logos/google-search-console.svg",
+  credentialTypeFor: (values) =>
+    values.authentication === "service_account"
+      ? CredentialType.GOOGLE_SEARCH_CONSOLE
+      : CredentialType.GOOGLE_OAUTH2,
+  credentialLabel: "Credential",
+  defaultVariableName: "searchConsole",
+  hint: "Search Analytics gives {{json searchConsole.rows}} (each with its dimensions, clicks, impressions, ctr from 0 to 1, and position), {{searchConsole.count}} and {{searchConsole.totals.clicks}}. Add a Split Out on searchConsole.rows to handle them one by one. Inspect URL gives {{searchConsole.indexed}}, {{searchConsole.coverageState}} and {{searchConsole.lastCrawlTime}}. Search data is about three days behind.",
+  operations: [
+    { value: "search_analytics", label: "Search Analytics (performance)" },
+    { value: "inspect_url", label: "Inspect URL (is it indexed?)" },
+    { value: "list_sites", label: "List Sites" },
+    { value: "list_sitemaps", label: "List Sitemaps" },
+  ],
+  fields: [
+    {
+      name: "authentication",
+      label: "Authentication",
+      type: "select",
+      defaultValue: "oauth",
+      options: [
+        { value: "oauth", label: "Google account (sign in with Google)" },
+        { value: "service_account", label: "Service account" },
+      ],
+      description:
+        "A Google account that can open the property in Search Console, or a service account whose email you added there under Settings > Users and permissions. A Google account connected before this node existed has to be connected again.",
+    },
+    {
+      name: "siteUrl",
+      label: "Site",
+      placeholder: "https://example.com/ or sc-domain:example.com",
+      description: "The property exactly as Search Console shows it. List Sites shows them.",
+      required: true,
+      operations: SITE_OPS,
+    },
+    {
+      name: "startDate",
+      label: "Start Date",
+      placeholder: "28 days ago",
+      description: "2026-11-01, or \"N days ago\". Empty: 28 days before End Date.",
+      operations: ["search_analytics"],
+    },
+    {
+      name: "endDate",
+      label: "End Date",
+      placeholder: "3 days ago",
+      description: "Empty: three days ago, the newest final data.",
+      operations: ["search_analytics"],
+    },
+    {
+      name: "dimensions",
+      label: "Group By",
+      placeholder: "query",
+      description: "Comma-separated: query, page, country, device, date, searchAppearance. Empty: query.",
+      operations: ["search_analytics"],
+    },
+    {
+      name: "searchType",
+      label: "Search Type",
+      type: "select",
+      defaultValue: "web",
+      options: [
+        { value: "web", label: "Web" },
+        { value: "image", label: "Image" },
+        { value: "video", label: "Video" },
+        { value: "news", label: "News" },
+        { value: "discover", label: "Discover" },
+        { value: "googleNews", label: "Google News" },
+      ],
+      operations: ["search_analytics"],
+    },
+    {
+      name: "queryContains",
+      label: "Only Queries Containing",
+      placeholder: "kurta",
+      operations: ["search_analytics"],
+    },
+    {
+      name: "pageContains",
+      label: "Only Pages Containing",
+      placeholder: "/blog/",
+      operations: ["search_analytics"],
+    },
+    {
+      name: "country",
+      label: "Only Country",
+      placeholder: "pak",
+      description: "A three-letter code: pak, are, sau, gbr, usa.",
+      operations: ["search_analytics"],
+    },
+    {
+      name: "device",
+      label: "Only Device",
+      placeholder: "mobile",
+      description: "desktop, mobile or tablet.",
+      operations: ["search_analytics"],
+    },
+    {
+      name: "rowLimit",
+      label: "Rows",
+      placeholder: "100",
+      description: "The top rows by clicks. At most 1000.",
+      operations: ["search_analytics"],
+    },
+    {
+      name: "inspectionUrl",
+      label: "Page URL",
+      placeholder: "https://example.com/blog/my-post",
+      description: "A page of the Site. Google allows about 2,000 inspections a day per property.",
+      required: true,
+      operations: ["inspect_url"],
+    },
+  ],
+};
+
+export const SearchConsoleNode = createIntegrationNode(searchConsoleConfig, (data) =>
+  data.siteUrl || data.operation === "list_sites"
+    ? operationLabel(searchConsoleConfig, data.operation)
+    : "Not Configured"
+);
+
 export const woocommerceTriggerConfig: IntegrationConfig = {
   label: "WooCommerce Trigger",
   description:

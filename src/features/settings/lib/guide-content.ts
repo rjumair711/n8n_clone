@@ -520,6 +520,8 @@ const CHAPTERS = (nodeCount: number): GuideChapter[] => [
           "**Google Sheets:** Append Row, Get Rows, Lookup Row, Update Row and Append or Update Row. Row 1 holds the column names.",
           "**Google Calendar** (List Events tells you if a slot is free), **Google Drive**, **Gmail**.",
           "**Shopify** and **WooCommerce:** orders, products, customers and stock, plus triggers for new and paid orders.",
+          "**WordPress:** create and update posts and pages (as drafts by default), upload pictures for the featured image, and list categories and tags. Make an **application password** in WordPress under Users > Profile and save it as `username:password`.",
+          "**Google Search Console:** clicks, impressions, CTR and position by query, page, country or date; whether a page is indexed; your sitemaps. Sign in with Google (a Google account connected before has to be connected again), or use a service account added as a user of your property. Read-only.",
           "**Notion, Airtable, HubSpot, Salesforce, Jira, GitHub.**",
           "**Postgres** and **MySQL:** put values in **Query Parameters**, never typed into the SQL.",
           "**HTTP Request:** any other API. Private and local addresses are blocked.",

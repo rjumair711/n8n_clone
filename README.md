@@ -938,10 +938,52 @@ Actions: `goto` (url), `click` (selector), `type` (selector, text), `select` (se
 | Salesforce       | Query with SOQL, and create, get, update and delete records of any object |
 | Shopify          | Orders, products, customers, inventory levels and abandoned checkouts (see "Shopify and WooCommerce") |
 | WooCommerce      | Orders, order notes, products and customers through the REST API           |
+| WordPress        | Create, update, get and list posts and pages; upload media; list categories and tags. Application password. See "WordPress" |
+| Google Search Console | Search Analytics (clicks, impressions, CTR, position by query, page, country, device, date), Inspect URL (indexed or not), List Sites, List Sitemaps. Read-only; Google account or service account. See "Google Search Console" |
 | Postgres         | Run parameterised SQL, select rows, insert rows. Expressions go in Query Parameters, not in the query text |
 | MySQL            | Run parameterised SQL, select rows, insert rows (MySQL and MariaDB). Same rule for expressions |
 
 ---
+
+## WordPress
+
+Posts, pages and media of a WordPress site through its REST API (`/wp-json/wp/v2`), for publishing AI-written articles and keeping a blog up to date. Executor: `src/features/executions/components/apps/wordpress.ts`.
+
+| Operation | What it does | Result |
+| --------- | ------------ | ------ |
+| Create Post | A post or a page (**Post Type**) with Title, Content (HTML or text), Excerpt, **Status** (Draft by default; Publish, Pending review, Private, Scheduled with a Publish Date), Slug, Category IDs, Tag IDs and Featured Image ID | `{{wordpress.id}}`, `.link`, `.status`, `.slug`, `.title`, `.excerpt`, `.date`, `.modified`, `.featuredMedia`, `.categories`, `.tags`, and the whole answer at `.post` |
+| Update Post | The same fields, by **Post ID**; only what is filled in is sent. **New Status** is "Leave as it is" by default, so an update never unpublishes a post | the same |
+| Get Post | One post or page, as the editor sees it (`context=edit`) | the same |
+| List Posts | Newest first, with an optional Search and Status (Published by default, or Any, Draft...), up to Limit (10, at most 100) | `{{json wordpress.items}}`, `{{wordpress.count}}` |
+| Upload Media | A workflow file (an Image Generation picture, a download, a form upload) into the media library, with an optional Title and Alt Text | `{{wordpress.id}}` (use it as Featured Image ID), `.url`, `.link`, `.mimeType` |
+| List Categories, List Tags | Their ids and names, with an optional Search | `{ items: [{ id, name, slug, count }], count }` |
+
+* **Credential:** "WordPress": `username:application password`. Make one in WordPress under Users > Profile > **Application Passwords** (WordPress 5.6 or newer); it is not the login password, and it can be revoked there at any time. The spaces WordPress shows in it are optional. The user needs the Author role to write their own posts, Editor for others' posts and pages.
+* **Site URL** is the site's `https` address (a site in a folder works: `https://example.com/blog`); `http` is refused, because the password goes with every request in an `Authorization` header. A redirect is not followed: the error names where the site pointed. Requests go through the SSRF guard, answers are limited to 3 MB and a media upload to the workflow file size limit.
+* **Additional Fields (JSON)** is merged into what Create and Update send, in WordPress's own names (`comment_status`, `parent` for a page, `meta` for fields a plugin registered for the REST API).
+* WordPress's error reason is shown without its HTML, with a hint for the usual ones: no permission (the user's role) and a rejected password (some hosts strip the `Authorization` header; their support has to allow it).
+* As AI Agent tools, Get Post and the lists are "read"; Create, Update and Upload Media are "write", so they ask for approval by default. Keep AI-written posts as Draft, or put a Send and Wait for Approval with Editable Fields before Create Post.
+* Not built: deleting posts, comments, users, custom post types other than posts and pages, and WordPress.com sites without an application password.
+
+## Google Search Console
+
+How a site does in Google Search, for SEO reports and alerts. Read-only: the node asks for `webmasters.readonly` and cannot change a property. Executor: `src/features/executions/components/apps/search-console.ts`.
+
+| Operation | What it gives |
+| --------- | ------------- |
+| Search Analytics | The top rows by clicks for a date range, grouped by **Group By** (query by default; also page, country, device, date, searchAppearance, several comma-separated), with optional filters: Only Queries Containing, Only Pages Containing, Only Country (`pak`), Only Device. `{{json searchConsole.rows}}`: each row has a field per dimension plus `clicks`, `impressions`, `ctr` (0 to 1) and `position`; `{{searchConsole.count}}`; `{{searchConsole.totals}}` (clicks, impressions, ctr and the position weighted by impressions, like Search Console's own) |
+| Inspect URL | For one page of the property: `indexed` (true when Google's verdict is PASS), `verdict`, `coverageState` ("Submitted and indexed", "Crawled - currently not indexed"...), `indexingState`, `lastCrawlTime`, `googleCanonical`, `userCanonical`, `robotsTxtState`, `pageFetchState`, `mobileUsability`, `link` (the report in Search Console) |
+| List Sites | The properties the credential can open, with `permissionLevel` |
+| List Sitemaps | Each sitemap's `path`, `lastSubmitted`, `lastDownloaded`, `isPending`, `errors`, `warnings` |
+
+* **Site** is the property exactly as Search Console names it: `https://example.com/` (a trailing slash is added) or `sc-domain:example.com`; a bare `example.com` is taken as the domain property. Inspect URL's **Page URL** has to be inside it.
+* **Dates:** `2026-11-01`, `N days ago`, `yesterday` or `today`. Empty End Date is three days ago (Google's data is final about three days later), empty Start Date is 28 days before End Date. Rows: 100 by default, at most 1000.
+* **Authentication** (a setting on the node):
+  * **Google account**: the "Google account" credential ("Sign in with Google"). Its scopes now include `webmasters.readonly`, so a credential connected before this node existed gets "insufficient authentication scopes" until it is connected again; the error says so. The Google Cloud OAuth app needs the scope added to its consent screen, and Google's verification for it before people outside the test users can sign in with it.
+  * **Service account**: a new "Google Search Console (service account)" credential, entered like the Sheets one (project id, client email, private key). Enable the Search Console API in that Google Cloud project and add the service account's email as a user of the property (Search Console > Settings > Users and permissions). No consent screen and no verification.
+* Errors name the cause: a missing scope (connect again), no access to the property (add the account or service account as a user, write the Site exactly), an expired sign-in.
+* As an AI Agent tool every operation is "read".
+* Not built: submitting or deleting sitemaps and requesting indexing (they need the full `webmasters` scope), and Google Analytics.
 
 ## Shopify and WooCommerce
 
@@ -1038,7 +1080,7 @@ Supported credential types:
 | QWEN          | Qwen node     |
 | OPENAI_COMPATIBLE | Chat Model node (the API key of whichever provider preset is picked: OpenRouter, Groq, Zhipu, MiniMax, Ollama...) |
 | SMTP          | Email node    |
-| GOOGLE_OAUTH2 | Gmail, Gmail Trigger, Google Drive, Google Sheets, Google Calendar ("Sign in with Google") |
+| GOOGLE_OAUTH2 | Gmail, Gmail Trigger, Google Drive, Google Sheets, Google Calendar, Google Search Console ("Sign in with Google") |
 | GOOGLE_SHEETS | Google Sheets (service account) |
 | GOOGLE_CALENDAR | Google Calendar (service account) |
 | NOTION        | Notion nodes  |
@@ -1061,6 +1103,8 @@ Supported credential types:
 | SALESFORCE    | Salesforce node ("Connect Salesforce", production or sandbox) |
 | SHOPIFY       | Shopify node (a custom app's Admin API access token, `shpat_...`) |
 | WOOCOMMERCE   | WooCommerce node (`consumer_key:consumer_secret`) |
+| WORDPRESS     | WordPress node (`username:application password`) |
+| GOOGLE_SEARCH_CONSOLE | Google Search Console node (service account: project id, client email, private key). A Google account (GOOGLE_OAUTH2) works too |
 | POSTGRES      | Postgres node (connection string) |
 | MYSQL         | MySQL node (`mysql://user:password@host:3306/database`) |
 | SSH           | SSH node (host, port, username, and a private key or password; optional host key fingerprint) |
