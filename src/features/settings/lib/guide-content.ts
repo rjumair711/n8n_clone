@@ -493,9 +493,25 @@ const CHAPTERS = (nodeCount: number): GuideChapter[] => [
         points: [
           "**WhatsApp** (Business Cloud API): text, approved templates, files, reply buttons and list menus. You can only write free text to someone who wrote to you in the last 24 hours; start a conversation with an approved template.",
           "**Telegram:** a bot from @BotFather; text and files, voice notes and photos in.",
-          "**Messenger and Instagram:** replies to people who wrote to your Page or account, and Instagram or Facebook photo posts.",
+          "**Messenger and Instagram:** replies to people who wrote to your Page or account, answers to comments on your posts (see Comment to DM), and Instagram or Facebook photo posts.",
           "**Email:** Gmail, SMTP, Resend or SendGrid, with attachments. **Slack, Discord, Twilio** (SMS and WhatsApp).",
         ],
+      },
+      {
+        id: "comment-to-dm",
+        title: "Comment to DM: leads from your posts",
+        body: [
+          "Turn comments into conversations: someone comments \"PRICE\" under your post or reel, gets a private message from you at once, and a public reply so others see you answered.",
+        ],
+        steps: [
+          "Start a workflow with an **Instagram Trigger** (or **Messenger Trigger** for a Facebook Page) and set **Trigger On** to **Comments on posts**.",
+          "Optionally type keywords in **Only Comments Containing** (`price, info, link`) and limit it to some posts or reels.",
+          "In your Meta app, subscribe the webhook to **comments** (Instagram) or **feed** (Facebook Page) as well as messages, then activate the workflow.",
+          "Add an **Instagram** node with **Send Private Reply**, Comment ID `{{instagram.commentId}}`, and your message: the price list, a link, or a question.",
+          "Add another with **Reply to Comment** (\"Sent you a DM!\"). Use **Hide Comment** for spam.",
+          "When the person answers the DM, the trigger gets their message like any other: set Trigger On to **Messages and comments** and let an AI Agent continue, saving the lead to Google Sheets.",
+        ],
+        tip: "Meta allows one private reply per comment, within 7 days of it. Your own replies never start the workflow again.",
       },
       {
         id: "apps",

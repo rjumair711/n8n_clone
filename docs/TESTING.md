@@ -2485,6 +2485,28 @@ No migration. Sign in with the test account.
 | 16 | Landing page FAQ "Can I self-host RXJ?" | "Yes": install it yourself for free, or the managed private server at the price the Pricing page shows |
 | 17 | Set the workspace's AI budget to $0.01 under Settings → AI budgets, run a workflow with an AI node | the run fails with "Monthly AI budget reached: ... Raise or remove the budget under Settings → AI budgets ..."; **How to fix this** opens "Watching AI spend". Remove the budget afterwards |
 
+## T55. Comment to DM (Instagram and Facebook comments)
+
+No migration. Needs a Meta app with an Instagram professional account (and a Facebook Page) where you are a tester, and a second Instagram / Facebook account to comment from. Sign in with the test account.
+
+Workflow: **Instagram Trigger** (Trigger On **Comments on posts**, Only Comments Containing `price, info`) → **Instagram** (Send Private Reply, Comment ID `{{instagram.commentId}}`, Message `Hi {{instagram.fromName}}, our price list: ...`) → **Instagram** (Reply to Comment, Comment ID `{{instagram.commentId}}`, Message `Sent you a DM!`). In the Meta app, subscribe the Instagram webhook to **comments** as well as messages. Activate.
+
+| # | Do | Expect |
+|---|----|--------|
+| 1 | Open the trigger's settings | Trigger On (Messages, Comments on posts, Messages and comments). The keyword and post fields only show for the last two. The node on the canvas says "On comment: price, info" |
+| 2 | **Execute workflow** in the editor | a test run with a sample comment "price please"; the Instagram nodes fail on the sample comment id (it is not real), which is expected |
+| 3 | From the second account, comment `PRICE?` under a post | within seconds: a DM from your account, and the public reply "Sent you a DM!" under the comment. One execution |
+| 4 | Comment `priceless` | no run (whole words only) |
+| 5 | Your own reply from step 3 | started no second run |
+| 6 | Edit the comment from step 3 | no run |
+| 7 | Comment `price` again on the same post | a new run; the private reply works again (one per comment) |
+| 8 | Change the second node to **Hide Comment** and comment `price` | the comment is hidden for everyone but its author |
+| 9 | Set Only On These Posts to another post's id and comment on this one | no run |
+| 10 | Set Trigger On back to **Messages**, send a DM | runs as before; comments start nothing |
+| 11 | A Messenger Trigger saved before this change (or a new one left on Messages) | DMs work exactly as before |
+| 12 | Facebook Page: the same with a **Messenger Trigger** on Comments (subscribe the Page to **feed**) and the Messenger node | the same results; `{{messenger.postId}}` is `<page>_<post>` |
+| 13 | **Settings → Platform guide**, search `comment` | the "Comment to DM" topic |
+
 # When something fails
 
 Note the node, the exact values you entered, and the error text from the

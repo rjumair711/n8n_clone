@@ -7,6 +7,14 @@ export const GRAPH_API_VERSION = "v21.0";
 export const MESSENGER_MAX_TEXT = 2000;
 export const INSTAGRAM_MAX_TEXT = 1000;
 export const INSTAGRAM_MAX_CAPTION = 2200;
+// A public reply under a comment
+export const FACEBOOK_MAX_COMMENT = 8000;
+export const INSTAGRAM_MAX_COMMENT = 2200;
+
+// What the Messenger and Instagram nodes do with a comment from their
+// trigger: answer it in public, send its author one private message, or
+// hide it from everyone but its author
+export const COMMENT_OPERATIONS = ["reply_comment", "private_reply", "hide_comment"];
 
 // How an Instagram professional account is connected to the Meta app. It
 // decides which host is called and which kind of token is used.

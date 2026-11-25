@@ -8,8 +8,11 @@ import { FILE_RETENTION_DAYS, getOwnedWorkflowFile } from "@/lib/workflow-files"
 import { renderTemplate } from "../../lib/templates";
 import { loadCredentialSecret } from "../../lib/integration";
 import {
+  COMMENT_OPERATIONS,
   DEFAULT_REPLY_TYPE,
+  FACEBOOK_MAX_COMMENT,
   GRAPH_API_VERSION,
+  INSTAGRAM_MAX_COMMENT,
   GRAPH_ORIGINS,
   INSTAGRAM_MAX_CAPTION,
   INSTAGRAM_MAX_TEXT,
@@ -172,6 +175,86 @@ export const buildMessageCall = (
           ? { messaging_type: "RESPONSE" }
           : {}),
       message,
+    },
+  };
+};
+
+// =========================================================================
+// COMMENTS (from the trigger's "Comments on posts")
+// =========================================================================
+const COMMENT_MAX = { messenger: FACEBOOK_MAX_COMMENT, instagram: INSTAGRAM_MAX_COMMENT } as const;
+
+/**
+ * The call that answers a comment:
+ *
+ *   reply_comment  a public reply under it. Facebook: POST /{comment}/comments;
+ *                  Instagram: POST /{comment}/replies
+ *   private_reply  one private message to its author, addressed by the
+ *                  comment (POST /{account}/messages with recipient.comment_id).
+ *                  Meta allows one per comment, within 7 days of it; once the
+ *                  person answers, the ordinary 24-hour window applies
+ *   hide_comment   hidden from everyone but its author and their friends.
+ *                  Facebook: is_hidden; Instagram: hide
+ */
+export const buildCommentCall = (
+  channel: Channel,
+  data: MetaData,
+  context: WorkflowContext
+): GraphCall => {
+  const label = LABELS[channel];
+  const read = createReader(label, data, context);
+  const operation = data.operation || "";
+
+  if (!COMMENT_OPERATIONS.includes(operation)) {
+    throw new NonRetriableError(`${label} node: Unsupported operation "${operation}"`);
+  }
+
+  // Facebook comment ids are "<post>_<comment>", Instagram's a number
+  const commentId = read.required("commentId", "Comment ID");
+  if (!/^\d{5,30}(_\d{5,30})?$/.test(commentId)) {
+    throw new NonRetriableError(
+      `${label} node: Comment ID must be the id from the trigger, for example {{${channel}.commentId}}`
+    );
+  }
+
+  const origin = GRAPH_ORIGINS[channel === "instagram" ? connectionOf(data) : "facebook"];
+
+  if (operation === "hide_comment") {
+    return {
+      origin,
+      method: "POST",
+      path: `/${commentId}`,
+      body: channel === "instagram" ? { hide: true } : { is_hidden: true },
+    };
+  }
+
+  const message = read.required("message", "Message");
+  const max = operation === "private_reply" ? MESSAGE_SETTINGS[channel].maxText : COMMENT_MAX[channel];
+  if (message.length > max) {
+    throw new NonRetriableError(
+      `${label} node: the message has ${message.length} characters; ${label} takes at most ${max} here`
+    );
+  }
+
+  if (operation === "reply_comment") {
+    return {
+      origin,
+      method: "POST",
+      path: `/${commentId}/${channel === "instagram" ? "replies" : "comments"}`,
+      body: { message },
+    };
+  }
+
+  const settings = MESSAGE_SETTINGS[channel];
+  const account = read.account(settings.accountField[0], settings.accountField[1]);
+
+  return {
+    origin,
+    method: "POST",
+    path: `/${account}/messages`,
+    body: {
+      recipient: { comment_id: commentId },
+      message: { text: message },
     },
   };
 };
@@ -424,8 +507,11 @@ const createMessageExecutor =
     const variableName = data.variableName?.trim() || channel;
     const operation = data.operation || "send_message";
 
+    const isComment = COMMENT_OPERATIONS.includes(operation);
+
     // Every check of the fields comes before the credential is read
-    buildMessageCall(channel, data, context);
+    if (isComment) buildCommentCall(channel, data, context);
+    else buildMessageCall(channel, data, context);
 
     const token = await loadCredentialSecret({
       step,
@@ -437,6 +523,23 @@ const createMessageExecutor =
 
     try {
       const result = await step.run(`${channel}-${nodeId}-${operation}`, async () => {
+        if (isComment) {
+          const response = await sendGraphRequest({
+            label,
+            call: buildCommentCall(channel, data, context),
+            token,
+          });
+          const commentId = renderTemplate(data.commentId, context).trim();
+
+          if (operation === "hide_comment") return { commentId, hidden: true };
+          if (operation === "reply_comment") return { commentId, replyId: text(response.id) };
+          return {
+            commentId,
+            messageId: text(response.message_id),
+            recipientId: text(response.recipient_id),
+          };
+        }
+
         const imageUrl =
           operation === "send_image"
             ? await resolveImageUrl({ label, value: data.image, context, userId })
