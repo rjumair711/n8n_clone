@@ -2507,6 +2507,20 @@ Workflow: **Instagram Trigger** (Trigger On **Comments on posts**, Only Comments
 | 12 | Facebook Page: the same with a **Messenger Trigger** on Comments (subscribe the Page to **feed**) and the Messenger node | the same results; `{{messenger.postId}}` is `<page>_<post>` |
 | 13 | **Settings → Platform guide**, search `comment` | the "Comment to DM" topic |
 
+## T56. Template: Instagram comment to DM
+
+Needs the `instagram_comment_to_dm_template` migration applied (it runs on the production deploy after merging). It inserts one row, `tpl_starter_instagram_comment_to_dm_en`; nothing else.
+
+| # | Do | Expect |
+|---|----|--------|
+| 1 | Before the deploy: `select count(*) from workflow_template where id = 'tpl_starter_instagram_comment_to_dm_en'` | 0 |
+| 2 | After the deploy, the same query; `npx prisma migrate status` | 1; up to date |
+| 3 | **Templates**, category Marketing | "Instagram comment to DM: leads in Google Sheets", with its setup steps in the details panel |
+| 4 | **Use template** | a new inactive workflow: Instagram Trigger (Comments on posts, keywords `price, info, details`) → Instagram (Send Private Reply) → Instagram (Reply to Comment) → Google Sheets (Append Row). The Instagram nodes and Google Sheets are Not Configured |
+| 5 | Set it up with the test Meta app and a test sheet, as in T55, and comment `price` | a DM, a public reply, and a row: date, user name, user id, comment, post id |
+| 6 | Run the migration's SQL a second time | inserts 0 rows |
+| 7 | **Build with AI**: "when someone messages my Facebook Page, answer with Gemini" | the workflow is built; a Messenger Trigger without Trigger On is accepted (it means Messages) |
+
 ## T58. WordPress node
 
 Needs the `wordpress_node` migration applied (it runs on the production deploy after merging): two enum values, nothing else. Needs a test WordPress site on https (5.6 or newer) and a user with the Editor role. Create an application password under Users > Profile > Application Passwords and save a **WordPress** credential `username:the password`.

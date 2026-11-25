@@ -1416,7 +1416,7 @@ RXJ includes onboarding UX to improve activation and retention.
 
 * First-time onboarding page
 * Create workflow CTA
-* Workflow templates, with 52 built-in starter templates in English (see below)
+* Workflow templates, with 53 built-in starter templates in English (see below)
 * Build with AI: a workflow from a description (see below)
 * One-click chatbot: documents or website pages in, a website widget, share link and WhatsApp out (see below)
 * Guided product introduction
@@ -1436,7 +1436,7 @@ The **Templates** page is a gallery of ready-made workflows. "Use template" copi
 * **No plans:** every template is open to every account (`canUseTemplate` in `src/features/templates/lib/template-data.ts`), except one with a node only a self-hosted server runs (SSH, on the hosted app). **Use template** checks that on the server, from the nodes that will be copied. The plan an admin once stored on a template row no longer counts.
 * Workflows already made from a template do not change when the template is edited or deleted.
 * **Language.** Templates are English only. The `language` column stays (always `en`), but the gallery has no language filter or badge and the template form no language field. The Urdu and Arabic versions the starters used to have were removed by the `english_only_templates` migration (it deletes only the app's own `tpl_starter_*_ur` / `_ar` rows; workflows made from them are copies and stay).
-* **Starter templates** ship with the app as JSON seed data in `src/features/templates/seed/`, in English: 52 templates. They are built in: the `starter_templates_built_in` migration puts all of them in the gallery, published and open to every account, and there is no admin step. Afterwards an admin can edit, hide or delete each one like any template; running the migration again changes nothing (a template already there, also one edited since, is left alone). A new seed reaches the gallery only through a new migration: print its INSERT statements with `npx tsx scripts/print-builtin-template-sql.ts starters`, keep only the new ones, and put them in a migration (see CLAUDE.md). A changed seed does not change the template already in the gallery.
+* **Starter templates** ship with the app as JSON seed data in `src/features/templates/seed/`, in English: 53 templates. They are built in: the `starter_templates_built_in` migration put the first 52 in the gallery and each later one has a migration of its own (`instagram_comment_to_dm_template`), published and open to every account, and there is no admin step. Afterwards an admin can edit, hide or delete each one like any template; running the migration again changes nothing (a template already there, also one edited since, is left alone). A new seed reaches the gallery only through a new migration: print its INSERT statements with `npx tsx scripts/print-builtin-template-sql.ts starters`, keep only the new ones, and put them in a migration (see CLAUDE.md). A changed seed does not change the template already in the gallery.
 
   | Starter template | What it does | Who |
   | ---------------- | ------------ | ---- |
@@ -1492,11 +1492,12 @@ The **Templates** page is a gallery of ready-made workflows. "Use template" copi
   | Shopify order shipped: WhatsApp tracking update | When an order is fulfilled with a tracking link, the customer gets an approved WhatsApp template with the order, courier and link. | Everyone |
   | Unpaid WooCommerce order reminder on WhatsApp | Once a day, each order still waiting for payment one to two days after it was placed gets one WhatsApp reminder with its payment link. | Everyone |
   | Meeting recording to summary and action items | Upload a recording on a form and get the summary, decisions and action items by email, with the transcript attached (files up to 10 MB). | Everyone |
+  | Instagram comment to DM: leads in Google Sheets | When someone comments a keyword such as PRICE under a post or reel: a private reply with your details, a public reply, and a row in Google Sheets with the user name, comment and post (see "Messenger and Instagram") | Everyone |
 
   Every starter is open to every account. The agent's instructions and example details (clinic, menu, FAQ) are written in the template's language and are meant to be replaced. A seed file holds the workflow once and its texts per language; a setting written `@text:<key>` takes that text. To add a template or a translation, edit the JSON: the tests check that every language has every text.
 
   More about the seeds:
-  * **Open to everyone.** No starter has an SSH node, so all 52 run on every account. The seeds still carry the plan they were written for; it no longer counts, and the tests check that every starter is open.
+  * **Open to everyone.** No starter has an SSH node, so all 53 run on every account. The seeds still carry the plan they were written for; it no longer counts, and the tests check that every starter is open.
   * **Description.** Each one is a summary for the card, then `Set up:` and the steps separated by semicolons; the details panel shows them as a numbered list. At most 600 characters.
   * **Forms.** A form field's name (`{{form.<name>}}`) is made from the Latin letters of its label. The tests check that every `{{form.x}}` a template reads is one of its fields.
   * **Times.** Schedules run in UTC. A starter that runs at a local time is written for Pakistan: 18:00 is `0 13 * * *`. Booking times carry the offset (`+05:00`).
