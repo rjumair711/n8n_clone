@@ -309,6 +309,19 @@ const CHAPTERS = (nodeCount: number): GuideChapter[] => [
         links: [{ label: "Approvals", href: "/approvals" }],
       },
       {
+        id: "approve-with-edits",
+        title: "Approve with edits: fix an AI draft before it goes out",
+        body: [
+          "Let the approver correct the text instead of only saying yes or no: an AI-written email, a quote, a social post.",
+        ],
+        steps: [
+          "In **Send and Wait for Approval**, fill in **Editable Fields**, one per line: `subject: {{draft.subject}}` and `body: {{draft.body}}`.",
+          "The approver sees each field in a text box, already filled in, on the Approve page of the link and on the **Approvals** page. They change what they like and approve.",
+          "In the node after **Approved**, use the final text: `{{approval.fields.body}}`, not the draft. `{{approval.edited}}` is true when something was changed.",
+        ],
+        tip: "Rejecting ignores any changes. Up to 10 fields, 10,000 characters each.",
+      },
+      {
         id: "errors",
         title: "Handling failures",
         points: [

@@ -15,6 +15,9 @@ import { buildFormPage } from "@/lib/form-fields";
 import {
   APPROVAL_DEFAULT_TIMEOUT_AMOUNT,
   APPROVAL_DEFAULT_TIMEOUT_UNIT,
+  type ApprovalField,
+  MAX_APPROVAL_FIELD_CHARS,
+  parseEditableFields,
 } from "@/lib/approvals";
 import {
   WAITING_FOR_TIME,
@@ -573,6 +576,8 @@ type ApprovalData = {
   timeoutUnit?: string;
   // "reject" (default): leave through the Rejected output. "fail": fail.
   onTimeout?: string;
+  // One `name: value` per line: text the approver may change first
+  editableFields?: string;
 };
 
 export const APPROVED_OUTPUT = "approved";
@@ -620,6 +625,25 @@ export const approvalExecutor: NodeExecutor<ApprovalData> = async ({
     );
   }
 
+  // The lines are split before the values are filled in, so a value with a
+  // colon or several lines stays one field
+  let fields: ApprovalField[];
+  try {
+    fields = parseEditableFields(data.editableFields).map((field) => {
+      const value = renderTemplate(field.template, context);
+      if (value.length > MAX_APPROVAL_FIELD_CHARS) {
+        throw new Error(
+          `Editable Fields: "${field.name}" has ${value.length} characters; at most ${MAX_APPROVAL_FIELD_CHARS}`
+        );
+      }
+      return { name: field.name, value };
+    });
+  } catch (error) {
+    throw new NonRetriableError(
+      `${label}: ${error instanceof Error ? error.message : "Editable Fields are not valid"}`
+    );
+  }
+
   const result = await requestApproval({
     step,
     stepId: `approval-${nodeId}`,
@@ -639,6 +663,7 @@ export const approvalExecutor: NodeExecutor<ApprovalData> = async ({
     },
     timeoutMs,
     context,
+    fields,
   });
 
   if (result.outcome === "expired" && data.onTimeout === "fail") {
@@ -656,6 +681,9 @@ export const approvalExecutor: NodeExecutor<ApprovalData> = async ({
       timedOut: result.outcome === "expired",
       decidedVia: result.decidedVia,
       approvalId: result.approvalId,
+      // Editable Fields: the final text (the approver's where they changed
+      // it, the filled-in value otherwise), and whether anything changed
+      ...(fields.length > 0 ? { fields: result.fields, edited: result.edited } : {}),
     },
   };
 };

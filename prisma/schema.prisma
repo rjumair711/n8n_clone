@@ -1047,6 +1047,11 @@ model ApprovalRequest {
   title   String
   // The tool's arguments, or the node's message
   details Json?
+  // Send and Wait for Approval with Editable Fields: [{ name, value }], the
+  // values as the run filled them in. Null for every other request.
+  fields  Json?
+  // What the approver changed them to when approving: { name: value }
+  edits   Json?
   // "in_app", "email", "slack", "telegram" or "whatsapp"
   channel String
 

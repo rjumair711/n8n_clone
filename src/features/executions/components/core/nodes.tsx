@@ -351,7 +351,7 @@ export const approvalConfig: IntegrationConfig = {
     { id: "approved", label: "Approved" },
     { id: "rejected", label: "Rejected" },
   ],
-  hint: "Operation is where the request is sent. Later nodes can read {{<name>.approved}} (true or false), {{<name>.decision}} (approved, rejected or expired) and {{<name>.decidedVia}} (link or app). The execution shows as Waiting meanwhile and can be cancelled.",
+  hint: "Operation is where the request is sent. Later nodes can read {{<name>.approved}} (true or false), {{<name>.decision}} (approved, rejected or expired) and {{<name>.decidedVia}} (link or app). With Editable Fields, {{<name>.fields.<field>}} is the approved text: use it in the next node instead of the draft. The execution shows as Waiting meanwhile and can be cancelled.",
   fields: [
     {
       name: "title",
@@ -366,6 +366,14 @@ export const approvalConfig: IntegrationConfig = {
       type: "textarea",
       placeholder: "Order {{order.id}}\nReason: {{webhook.body.reason}}",
       description: "Shown under the title, as plain text.",
+    },
+    {
+      name: "editableFields",
+      label: "Editable Fields",
+      type: "textarea",
+      placeholder: "subject: {{draft.subject}}\nbody: {{draft.body}}",
+      description:
+        "Optional. Text the approver may change before approving, one `name: value` per line (at most 10). They see it in text boxes on the Approve page and the Approvals page. Later nodes read the final text at {{<name>.fields.<field>}}, for example {{approval.fields.body}}, and {{<name>.edited}} says whether it was changed.",
     },
     {
       name: "recipient",
