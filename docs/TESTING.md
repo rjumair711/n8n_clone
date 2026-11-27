@@ -2581,6 +2581,23 @@ Needs the `google_search_console` migration applied (it runs on the production d
 | 11 | Site `example` (no dot) | fails at once: "Site must be the property as Search Console shows it" |
 | 12 | Connect it to an AI Agent's Tools port | the tool is "Read" and never asks for approval |
 
+## T60. Reels, carousels, Stories and Facebook videos
+
+No migration. Needs the test Meta app with an Instagram professional account connected to a Facebook Page (credential with `instagram_content_publish` and `pages_manage_posts`), a public MP4 (5 to 30 seconds, 9:16) and two public JPEGs. Delete the test posts afterwards.
+
+| # | Do | Expect |
+|---|----|--------|
+| 1 | Instagram / Facebook Post, **Instagram Reel**, Video = the MP4 address, Caption `RXJ test` | the execution waits (shows Running, steps "check" and "wait" in the logs), then the Reel is on the account; `post.url` opens it; `post.type` is `reel` |
+| 2 | The same with Also Show In The Feed off | the Reel is only in the Reels tab |
+| 3 | **Instagram Carousel** with the two JPEGs and the MP4, one per line | one post with three slides in that order |
+| 4 | Carousel with one line | fails at once: "2 to 10 pictures or videos, one per line; 1 were given" |
+| 5 | **Instagram Story** with a JPEG, then with the MP4 | two Story items; no caption field in the dialog |
+| 6 | **Facebook Page Video** with the MP4, Title and Caption | `post.processing: true`; the video appears on the Page a minute later with the title and description |
+| 7 | Reel with a `.png` file variable | fails: "a video has to be MP4 or MOV" |
+| 8 | Reel with an `http://` address | fails at once: "the video address must start with https://" |
+| 9 | An existing Instagram Photo Post node | works exactly as before |
+| 10 | As an AI Agent tool with a Reel | still publishes (waits up to a minute); Require approval is on by default |
+
 # When something fails
 
 Note the node, the exact values you entered, and the error text from the

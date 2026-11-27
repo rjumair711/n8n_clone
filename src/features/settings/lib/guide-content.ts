@@ -506,7 +506,7 @@ const CHAPTERS = (nodeCount: number): GuideChapter[] => [
         points: [
           "**WhatsApp** (Business Cloud API): text, approved templates, files, reply buttons and list menus. You can only write free text to someone who wrote to you in the last 24 hours; start a conversation with an approved template.",
           "**Telegram:** a bot from @BotFather; text and files, voice notes and photos in.",
-          "**Messenger and Instagram:** replies to people who wrote to your Page or account, answers to comments on your posts (see Comment to DM), and Instagram or Facebook photo posts.",
+          "**Messenger and Instagram:** replies to people who wrote to your Page or account, answers to comments on your posts (see Comment to DM), and posts: Instagram photos, Reels, carousels and Stories, Facebook Page photos and videos (the **Instagram / Facebook Post** node; videos as a public .mp4 link or a file).",
           "**Email:** Gmail, SMTP, Resend or SendGrid, with attachments. **Slack, Discord, Twilio** (SMS and WhatsApp).",
         ],
       },
