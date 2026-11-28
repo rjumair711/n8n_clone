@@ -54,6 +54,7 @@ const credentialTypeOptions = [
   { value: CredentialType.GOOGLE_SHEETS, label: "Google Sheets", logo: "/logos/googleSheet.png" },
   { value: CredentialType.GOOGLE_CALENDAR, label: "Google Calendar", logo: "/logos/calender.png" },
   { value: CredentialType.GOOGLE_SEARCH_CONSOLE, label: "Google Search Console (service account)", logo: "/logos/google-search-console.svg" },
+  { value: CredentialType.LINKEDIN, label: "LinkedIn Account", logo: "/logos/linkedin.svg" },
   { value: CredentialType.NOTION, label: "Notion", logo: "/logos/notion.png" }, 
   { value: CredentialType.TELEGRAM, label: "Telegram", logo: "/logos/telegram.jfif" },
   { value: CredentialType.GITHUB, label: "GitHub", logo: "/logos/github.svg" },
@@ -339,6 +340,12 @@ const credentialFieldConfig: Record<CredentialType, {
     secretPlaceholder: "your-username:abcd efgh ijkl mnop qrst uvwx",
     help: "Written as username:application password. In WordPress open Users > Profile, scroll to Application Passwords, type a name (RXJ) and press Add New Application Password; it is shown once. Not your login password. The user needs the Author or Editor role to create posts. The site must be on https.",
   },
+  [CredentialType.LINKEDIN]: {
+    namePlaceholder: "My LinkedIn",
+    defaultName: "LinkedIn account",
+    secretLabel: "LinkedIn Account",
+    secretPlaceholder: "",
+  },
   [CredentialType.SALESFORCE]: {
     namePlaceholder: "My Salesforce Org",
     defaultName: "Salesforce account",
@@ -417,8 +424,9 @@ export const CredentialForm = ({ initialData }: CredentialFormProps) => {
   const selectedType = form.watch("type");
   const isGoogleOAuth = selectedType === CredentialType.GOOGLE_OAUTH2;
   const isSalesforce = selectedType === CredentialType.SALESFORCE;
+  const isLinkedin = selectedType === CredentialType.LINKEDIN;
   // These are connected by signing in, not by pasting a secret
-  const isOAuth = isGoogleOAuth || isSalesforce;
+  const isOAuth = isGoogleOAuth || isSalesforce || isLinkedin;
 
   // The Google sign-in sends the user back here when it fails
   const [oauthError, setOauthError] = React.useState<string | null>(null);
@@ -834,6 +842,32 @@ export const CredentialForm = ({ initialData }: CredentialFormProps) => {
                       {form.formState.errors.value.message}
                     </p>
                   )}
+                </div>
+              )}
+
+              {/* LinkedIn account: connected by signing in; renewed with
+                  Reconnect, because LinkedIn sign-ins last 60 days */}
+              {isLinkedin && (
+                <div className="space-y-3 rounded-md border p-4 bg-muted/20">
+                  <h3 className="text-sm font-medium">LinkedIn Account</h3>
+                  <p className="text-xs text-muted-foreground">
+                    {isEdit
+                      ? "LinkedIn sign-ins last 60 days. Reconnect renews this one; every workflow that uses it keeps working."
+                      : "Sign in to LinkedIn to let your workflows post as you (or, once your app is approved for it, as a Company Page you administer)."}
+                  </p>
+                  <Button type="button" variant="outline" asChild>
+                    <a
+                      href={
+                        isEdit && initialData?.id
+                          ? `/api/oauth/linkedin/start?credentialId=${encodeURIComponent(initialData.id)}`
+                          : `/api/oauth/linkedin/start?name=${encodeURIComponent(form.watch("name") || "")}`
+                      }
+                    >
+                      <Image src="/logos/linkedin.svg" alt="LinkedIn" width={16} height={16} />
+                      {isEdit ? "Reconnect LinkedIn" : "Connect LinkedIn"}
+                    </a>
+                  </Button>
+                  {oauthError && <p className="text-sm text-destructive">{oauthError}</p>}
                 </div>
               )}
 

@@ -33,6 +33,7 @@ export const NODE_LOGOS: Partial<Record<NodeType, string>> = {
   WOOCOMMERCE_TRIGGER: "/logos/woocommerce.svg",
   WORDPRESS: "/logos/wordpress.svg",
   GOOGLE_SEARCH_CONSOLE: "/logos/google-search-console.svg",
+  LINKEDIN: "/logos/linkedin.svg",
   STRIPE_TRIGGER: "/logos/stripe.svg",
   TYPEFORM_TRIGGER: "/logos/typeform.svg",
   POSTGRES: "/logos/postgres.svg",

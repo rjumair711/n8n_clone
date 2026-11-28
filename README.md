@@ -991,6 +991,25 @@ How a site does in Google Search, for SEO reports and alerts. Read-only: the nod
 * As an AI Agent tool every operation is "read".
 * Not built: submitting or deleting sitemaps and requesting indexing (they need the full `webmasters` scope), and Google Analytics.
 
+## LinkedIn
+
+Posts on LinkedIn through the Posts API (`https://api.linkedin.com/rest/posts`), as the member who connected the credential or as a Company Page they administer. Executor: `src/features/executions/components/apps/linkedin.ts`; sign-in: `src/lib/linkedin-oauth.ts` and `src/app/api/oauth/linkedin/`.
+
+| Operation | What it posts |
+| --------- | ------------- |
+| Create Post | Text (required, up to 3000 characters) |
+| Share Link | A link with its preview card (Link, optional Link Title and Link Description), and optional text |
+| Post With Image | A JPEG, PNG or GIF up to 8 MB (a public https address or a file variable) with optional Alt Text and text. The picture is uploaded first (`/rest/images?action=initializeUpload`, then a PUT to the upload address LinkedIn gives, which must be on `linkedin.com`), in a step of its own |
+
+* **Post As:** Me (the default; `urn:li:person:<id>`) or **A Company Page** by its number (`urn:li:organization:<id>`). A page needs the Community Management API scopes on the credential; without them the node says what to do (approval, `LINKEDIN_ORGANIZATION_POSTS=true`, Reconnect). **Visibility:** Anyone, or Connections only for profile posts.
+* **Text is shown as written.** LinkedIn's post text is a small markup language in which `( ) [ ] { } < > @ # * _ ~ | \` mean something; unescaped, they cut a post short or make LinkedIn refuse it. Every one is escaped with a backslash, and a `#word` at the start or after a space becomes a real hashtag (`{hashtag|\#|word}`).
+* **The result** is `{{linkedin.id}}` (the post's urn, from the `x-restli-id` header) and `{{linkedin.url}}` (`https://www.linkedin.com/feed/update/<urn>/`), with `author` and, for a picture, `image`.
+* **Connecting.** Credentials > New credential > **LinkedIn Account** > **Connect LinkedIn** signs in with LinkedIn (OAuth, the state checked against a cookie and the signed-in user, like Salesforce). The callback trades the code for a token, reads the member's id from `/v2/userinfo` and stores the token, its expiry, the id, the name and the granted scopes, encrypted. Only workspace owners and admins can connect.
+* **60 days.** LinkedIn's access tokens last 60 days and refresh tokens are only for LinkedIn's approved partners. After the expiry the node fails before calling LinkedIn with "the LinkedIn sign-in expired on <date> ... press Reconnect". The credential's edit page has **Reconnect LinkedIn**, which renews that same credential (checked: a LinkedIn credential of the workspace), so the workflows that use it keep working. It is in the audit log as "reconnected".
+* **Errors** name the fix: 401 (reconnect), 403 (the app's products, page admin), an unsupported API version (`LINKEDIN_API_VERSION`), and LinkedIn's refusal of the same text twice.
+* As an AI Agent tool every operation is "write": it asks for approval by default.
+* Not built: videos, documents, polls, mentions of people or companies (an `@` is shown as text), scheduled posts, comments, and reading posts or analytics.
+
 ## Shopify and WooCommerce
 
 Two store nodes and two triggers. The nodes can also be AI Agent tools: reading is "read", creating and updating is "write" (so it asks for approval by default).
@@ -1036,6 +1055,7 @@ Two store nodes and two triggers. The nodes can also be AI Agent tools: reading 
 | Messenger   | Text and picture replies to people who wrote to your Facebook Page, answers to comments on its posts (public reply, private reply, hide), and the Messenger Trigger |
 | Instagram   | Text and picture direct messages, answers to comments on posts and reels (public reply, private reply, hide), the Instagram Trigger, and photo posts, Reels, carousels and Stories (with the Instagram / Facebook Post node) |
 | Twilio      | SMS and WhatsApp messages |
+| LinkedIn    | Posts on your profile or a Company Page: text, a link card or a picture. See "LinkedIn" |
 | Email       | SMTP email, with file attachments |
 | Gmail       | Email through a connected Google account, with file attachments |
 | Resend      | Email through the Resend API, with file attachments |
@@ -1118,6 +1138,7 @@ Supported credential types:
 | SHOPIFY       | Shopify node (a custom app's Admin API access token, `shpat_...`) |
 | WOOCOMMERCE   | WooCommerce node (`consumer_key:consumer_secret`) |
 | WORDPRESS     | WordPress node (`username:application password`) |
+| LINKEDIN      | LinkedIn node ("Connect LinkedIn": the access token, its expiry and the member's id; renewed with Reconnect) |
 | GOOGLE_SEARCH_CONSOLE | Google Search Console node (service account: project id, client email, private key). A Google account (GOOGLE_OAUTH2) works too |
 | POSTGRES      | Postgres node (connection string) |
 | MYSQL         | MySQL node (`mysql://user:password@host:3306/database`) |
@@ -1686,6 +1707,9 @@ Anyone can run RXJ on their own VPS with Docker: [`docs/SELF_HOSTING.md`](docs/S
 | `ADMIN_EMAILS` | Who may publish, edit and delete workflow templates, comma-separated. The account's email must also be verified |
 | `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` | Google sign-in and the "Google account" credential. Add `<app URL>/api/oauth/google/callback` as an authorised redirect URI |
 | `GITHUB_CLIENT_ID`, `GITHUB_CLIENT_SECRET` | GitHub sign-in |
+| `LINKEDIN_CLIENT_ID`, `LINKEDIN_CLIENT_SECRET` | The LinkedIn app behind "Connect LinkedIn" (developer.linkedin.com): products "Sign In with LinkedIn using OpenID Connect" and "Share on LinkedIn", redirect URL `<app URL>/api/oauth/linkedin/callback`. Without them the button says LinkedIn sign-in is not set up |
+| `LINKEDIN_ORGANIZATION_POSTS` | `true` once LinkedIn has approved the app for the Community Management API: the sign-in then also asks for `w_organization_social` and `r_organization_admin`, so the node can post as a Company Page. Leave unset before that: LinkedIn refuses a sign-in that asks for scopes the app does not have |
+| `LINKEDIN_API_VERSION` | Optional, `YYYYMM`: the version of LinkedIn's REST API the node sends (default in `src/lib/linkedin-options.ts`). LinkedIn supports each version for about a year |
 | `SALESFORCE_CLIENT_ID`, `SALESFORCE_CLIENT_SECRET` | The Salesforce connected app behind "Connect Salesforce". Its callback URL is `<app URL>/api/oauth/salesforce/callback`, with the `api` and `refresh_token, offline_access` scopes |
 | `RESEND_API_KEY` | Sends verification, password-reset and failure emails. Email verification is only required when this is set |
 | `EMAIL_FROM` | Sender of those emails; must be on a domain verified in Resend |

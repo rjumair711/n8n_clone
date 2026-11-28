@@ -9978,6 +9978,115 @@ pour()</code></pre>
     assert.match(dialog, /const FB_POST_OPS = \["facebook_photo", "facebook_video"\];/);
   });
 
+  await test("LinkedIn: sign-in, post bodies, escaping, and an expired sign-in", async () => {
+    const { readFileSync, readdirSync } = await import("node:fs");
+    const li = await import("@/features/executions/components/apps/linkedin");
+    const oauth = await import("@/lib/linkedin-oauth");
+    const person = { personId: "abc123", scopes: ["openid", "profile", "w_member_social"] };
+    const author = "urn:li:person:abc123";
+
+    // Text as written: markup characters escaped, #words as hashtags
+    assert.equal(li.toLinkedinText("Price (PKR) 5,000 @ shop [new]"), "Price \\(PKR\\) 5,000 \\@ shop \\[new\\]");
+    assert.equal(li.toLinkedinText("New in! #Eid2026 #سیل"), "New in! {hashtag|\\#|Eid2026} {hashtag|\\#|سیل}");
+    assert.equal(li.toLinkedinText("C# and F#"), "C\\# and F\\#", "a # inside a word is no hashtag");
+    assert.equal(li.toLinkedinText("a_b*c~d|e{f}g<h>i\\j"), "a\\_b\\*c\\~d\\|e\\{f\\}g\\<h\\>i\\\\j");
+    assert.equal(li.toLinkedinText("#tag_with_underscore"), "{hashtag|\\#|tag\\_with\\_underscore}");
+
+    // A text post
+    const post = li.buildLinkedinPost({ operation: "create_post", text: "Hiring {{job}} (Lahore)" }, { job: "a designer" }, author);
+    assert.deepEqual(post, {
+      author,
+      commentary: "Hiring a designer \\(Lahore\\)",
+      visibility: "PUBLIC",
+      distribution: { feedDistribution: "MAIN_FEED", targetEntities: [], thirdPartyDistributionChannels: [] },
+      lifecycleState: "PUBLISHED",
+      isReshareDisabledByAuthor: false,
+    });
+    assert.equal(li.buildLinkedinPost({ text: "x", visibility: "CONNECTIONS" }, {}, author).visibility, "CONNECTIONS");
+    assert.throws(() => li.buildLinkedinPost({ operation: "create_post" }, {}, author), /Text is required/);
+    assert.throws(() => li.buildLinkedinPost({ text: "x".repeat(3001) }, {}, author), /at most 3000/);
+    assert.throws(() => li.buildLinkedinPost({ operation: "delete_post", text: "x" }, {}, author), /Unsupported operation/);
+
+    // A link card, and a picture
+    assert.deepEqual(
+      (li.buildLinkedinPost({ operation: "share_link", linkUrl: "https://example.com/a", linkTitle: "New" }, {}, author) as any).content,
+      { article: { source: "https://example.com/a", title: "New" } }
+    );
+    assert.throws(() => li.buildLinkedinPost({ operation: "share_link", linkUrl: "example.com" }, {}, author), /Link must be a web address/);
+    assert.deepEqual(
+      (li.buildLinkedinPost({ operation: "image_post" }, {}, author, { id: "urn:li:image:C4E", altText: "Team" }) as any).content,
+      { media: { id: "urn:li:image:C4E", altText: "Team" } }
+    );
+    assert.throws(() => li.buildLinkedinPost({ operation: "image_post" }, {}, author), /Image is required/);
+
+    // Who posts: the member, or a page only with the Community Management scopes
+    assert.equal(li.linkedinAuthor({}, {}, person), author);
+    assert.throws(() => li.linkedinAuthor({ postAs: "organization", organizationId: "123" }, {}, person), /Community Management API/);
+    const admin = { personId: "abc123", scopes: [...person.scopes, "w_organization_social", "r_organization_admin"] };
+    assert.equal(li.linkedinAuthor({ postAs: "organization", organizationId: "urn:li:organization:123" }, {}, admin), "urn:li:organization:123");
+    assert.throws(() => li.linkedinAuthor({ postAs: "organization", organizationId: "my-company" }, {}, admin), /Company Page ID must be the page's number/);
+    assert.throws(
+      () => li.buildLinkedinPost({ text: "x", visibility: "CONNECTIONS" }, {}, "urn:li:organization:123"),
+      /a Company Page post is always public/
+    );
+    assert.equal(li.linkedinPostUrl("urn:li:share:7000"), "https://www.linkedin.com/feed/update/urn:li:share:7000/");
+
+    // The stored sign-in: 60 days, then a clear message to reconnect
+    const now = Date.parse("2026-11-28T00:00:00Z");
+    const stored = JSON.stringify({ accessToken: "t", personId: "abc123", name: "Ali", scopes: person.scopes, expiresAt: "2027-01-27T00:00:00Z" });
+    assert.equal(oauth.readLinkedinCredential(stored, now).personId, "abc123");
+    assert.throws(
+      () => oauth.readLinkedinCredential(stored, Date.parse("2027-02-01T00:00:00Z")),
+      /expired on 2027-01-27 \(LinkedIn sign-ins last 60 days\)\. Open the credential under Credentials and press Reconnect/
+    );
+    assert.throws(() => oauth.readLinkedinCredential("not json", now), /Invalid credential format/);
+    assert.throws(() => oauth.readLinkedinCredential(JSON.stringify({ accessToken: "t" }), now), /connected again/);
+
+    // The sign-in address: the app's client id and only the scopes it has
+    const before = { ...process.env };
+    process.env.LINKEDIN_CLIENT_ID = "client-id";
+    process.env.LINKEDIN_CLIENT_SECRET = "secret";
+    delete process.env.LINKEDIN_ORGANIZATION_POSTS;
+    try {
+      const url = new URL(oauth.createLinkedinAuthorizationUrl("state-1"));
+      assert.equal(url.origin + url.pathname, "https://www.linkedin.com/oauth/v2/authorization");
+      assert.equal(url.searchParams.get("client_id"), "client-id");
+      assert.equal(url.searchParams.get("state"), "state-1");
+      assert.equal(url.searchParams.get("scope"), "openid profile w_member_social");
+      assert.match(url.searchParams.get("redirect_uri") ?? "", /\/api\/oauth\/linkedin\/callback$/);
+      process.env.LINKEDIN_ORGANIZATION_POSTS = "true";
+      assert.equal(new URL(oauth.createLinkedinAuthorizationUrl("s")).searchParams.get("scope"), "openid profile w_member_social w_organization_social r_organization_admin");
+      delete process.env.LINKEDIN_CLIENT_ID;
+      assert.throws(() => oauth.createLinkedinAuthorizationUrl("s"), /LINKEDIN_CLIENT_ID and LINKEDIN_CLIENT_SECRET are missing/);
+    } finally {
+      for (const key of ["LINKEDIN_CLIENT_ID", "LINKEDIN_CLIENT_SECRET", "LINKEDIN_ORGANIZATION_POSTS"]) {
+        if (before[key] === undefined) delete process.env[key];
+        else process.env[key] = before[key];
+      }
+    }
+
+    // The callback checks the state and the user, and Reconnect only renews a LinkedIn credential of the workspace
+    const callback = readFileSync("src/app/api/oauth/linkedin/callback/route.ts", "utf8");
+    assert.match(callback, /!secretsMatch\(params\.get\("state"\) \|\| "", saved\.state\)/);
+    assert.match(callback, /saved\.userId !== session\.user\.id/);
+    assert.match(callback, /hasRole\(workspace\.role, "ADMIN"\)/);
+    assert.match(callback, /where: \{ id: saved\.credentialId, userId: workspace\.ownerId, type: CredentialType\.LINKEDIN \}/);
+    assert.match(readFileSync("src/features/credentials/components/credential.tsx", "utf8"), /\/api\/oauth\/linkedin\/start\?credentialId=\$\{encodeURIComponent\(initialData\.id\)\}/);
+    // The executor checks the settings before it reads a credential; as a tool it writes
+    await assert.rejects(li.linkedinExecutor({ ...baseParams, data: { operation: "create_post" }, context: {} }), /Text is required/);
+    await assert.rejects(li.linkedinExecutor({ ...baseParams, data: { operation: "image_post", text: "x" }, context: {} }), /Image is required/);
+    assert.equal(agentTools.getToolRisk("LINKEDIN", { operation: "create_post" }), "write");
+    assert.match(readFileSync("src/features/executions/lib/executor-registry.ts", "utf8"), /\[NodeType\.LINKEDIN\]: linkedinExecutor/);
+
+    // The migration: two enum values, nothing else
+    const folder = readdirSync("prisma/migrations").find((name) => name.endsWith("_linkedin_node"));
+    assert.ok(folder, "migration");
+    assert.equal(
+      readFileSync(`prisma/migrations/${folder}/migration.sql`, "utf8").replace(/\r\n/g, "\n").trim(),
+      `-- AlterEnum\nALTER TYPE "CredentialType" ADD VALUE 'LINKEDIN';\n\n-- AlterEnum\nALTER TYPE "NodeType" ADD VALUE 'LINKEDIN';`
+    );
+  });
+
   await test("a photo post is one call on Facebook and a container plus a publish on Instagram", async () => {
     const image = "https://cdn.example.com/photo.jpg";
 

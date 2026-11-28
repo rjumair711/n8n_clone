@@ -105,6 +105,7 @@ import {
     WoocommerceTriggerNode,
     WordpressNode,
     SearchConsoleNode,
+    LinkedinNode,
 } from '@/features/executions/components/apps/nodes';
 import {
     ConvertToFileNode,
@@ -205,6 +206,7 @@ export const nodeComponents: NodeTypes = {
     [NodeType.WOOCOMMERCE_TRIGGER]: WoocommerceTriggerNode,
     [NodeType.WORDPRESS]: WordpressNode,
     [NodeType.GOOGLE_SEARCH_CONSOLE]: SearchConsoleNode,
+    [NodeType.LINKEDIN]: LinkedinNode,
     [NodeType.MESSENGER]: MessengerNode,
     [NodeType.MESSENGER_TRIGGER]: MessengerTriggerNode,
     [NodeType.INSTAGRAM]: InstagramNode,

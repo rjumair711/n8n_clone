@@ -2345,6 +2345,101 @@ export const searchConsoleConfig: IntegrationConfig = {
   ],
 };
 
+// =========================================================================
+// LINKEDIN
+// =========================================================================
+export const linkedinConfig: IntegrationConfig = {
+  label: "LinkedIn",
+  description:
+    "Post on LinkedIn as yourself, or as a Company Page you administer: text, a link with its preview card, or a picture. The post is public as soon as the node has run.",
+  logo: "/logos/linkedin.svg",
+  credentialType: CredentialType.LINKEDIN,
+  credentialLabel: "LinkedIn Account",
+  defaultVariableName: "linkedin",
+  hint: "The result has {{linkedin.id}} (the post's urn) and {{linkedin.url}}. #words become hashtags; every other character is shown as written. A LinkedIn sign-in lasts 60 days: when it expires the node says so, and Reconnect on the credential renews it. As an AI Agent tool this node publishes what the model writes: keep Require approval on.",
+  operations: [
+    { value: "create_post", label: "Create Post (text)" },
+    { value: "share_link", label: "Share Link" },
+    { value: "image_post", label: "Post With Image" },
+  ],
+  fields: [
+    {
+      name: "postAs",
+      label: "Post As",
+      type: "select",
+      defaultValue: "person",
+      options: [
+        { value: "person", label: "Me (my profile)" },
+        { value: "organization", label: "A Company Page" },
+      ],
+      description:
+        "A Company Page needs LinkedIn's approval for your app (Community Management API) and LINKEDIN_ORGANIZATION_POSTS=true on the server.",
+    },
+    {
+      name: "organizationId",
+      label: "Company Page ID",
+      placeholder: "12345678",
+      description: "The number in the page's admin address: linkedin.com/company/12345678/admin",
+      required: true,
+      showWhen: (values) => values.postAs === "organization",
+    },
+    {
+      name: "text",
+      label: "Text",
+      type: "textarea",
+      placeholder: "We are hiring! {{job.title}} in Lahore. #hiring #jobs",
+      description: "Up to 3000 characters. Required for a text post; optional with a link or a picture.",
+    },
+    {
+      name: "linkUrl",
+      label: "Link",
+      placeholder: "https://example.com/blog/new-collection",
+      required: true,
+      operations: ["share_link"],
+    },
+    {
+      name: "linkTitle",
+      label: "Link Title",
+      placeholder: "Our new collection",
+      operations: ["share_link"],
+    },
+    {
+      name: "linkDescription",
+      label: "Link Description",
+      placeholder: "Twenty new designs for winter",
+      operations: ["share_link"],
+    },
+    {
+      name: "image",
+      label: "Image",
+      placeholder: "https://example.com/photo.jpg or image.file",
+      description: "JPEG, PNG or GIF up to 8 MB: a public https address or a file variable.",
+      required: true,
+      operations: ["image_post"],
+    },
+    {
+      name: "altText",
+      label: "Alt Text",
+      placeholder: "Our team at the Lahore office",
+      operations: ["image_post"],
+    },
+    {
+      name: "visibility",
+      label: "Visibility",
+      type: "select",
+      defaultValue: "PUBLIC",
+      options: [
+        { value: "PUBLIC", label: "Anyone" },
+        { value: "CONNECTIONS", label: "Connections only (profile posts)" },
+      ],
+    },
+  ],
+};
+
+export const LinkedinNode = createIntegrationNode(linkedinConfig, (data) =>
+  data.text || data.linkUrl || data.image ? operationLabel(linkedinConfig, data.operation) : "Not Configured"
+);
+
 export const SearchConsoleNode = createIntegrationNode(searchConsoleConfig, (data) =>
   data.siteUrl || data.operation === "list_sites"
     ? operationLabel(searchConsoleConfig, data.operation)

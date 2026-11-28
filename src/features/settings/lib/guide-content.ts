@@ -508,6 +508,7 @@ const CHAPTERS = (nodeCount: number): GuideChapter[] => [
           "**Telegram:** a bot from @BotFather; text and files, voice notes and photos in.",
           "**Messenger and Instagram:** replies to people who wrote to your Page or account, answers to comments on your posts (see Comment to DM), and posts: Instagram photos, Reels, carousels and Stories, Facebook Page photos and videos (the **Instagram / Facebook Post** node; videos as a public .mp4 link or a file).",
           "**Email:** Gmail, SMTP, Resend or SendGrid, with attachments. **Slack, Discord, Twilio** (SMS and WhatsApp).",
+          "**LinkedIn:** post text, a link or a picture on your profile (or a Company Page once your LinkedIn app is approved for it). Connect it under Credentials; LinkedIn sign-ins last 60 days, and **Reconnect** on the credential renews it without touching your workflows.",
         ],
       },
       {

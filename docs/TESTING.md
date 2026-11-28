@@ -2598,6 +2598,25 @@ No migration. Needs the test Meta app with an Instagram professional account con
 | 9 | An existing Instagram Photo Post node | works exactly as before |
 | 10 | As an AI Agent tool with a Reel | still publishes (waits up to a minute); Require approval is on by default |
 
+## T61. LinkedIn node
+
+Needs the `linkedin_node` migration applied (it runs on the production deploy after merging): two enum values, nothing else. Needs a LinkedIn app at developer.linkedin.com with the products "Sign In with LinkedIn using OpenID Connect" and "Share on LinkedIn", the redirect URL `<app URL>/api/oauth/linkedin/callback`, and `LINKEDIN_CLIENT_ID` / `LINKEDIN_CLIENT_SECRET` on the server. Use a test LinkedIn account if you can, and delete the test posts afterwards.
+
+| # | Do | Expect |
+|---|----|--------|
+| 1 | Before the deploy: `npx prisma migrate status` | `..._linkedin_node` not yet applied. After: up to date |
+| 2 | Without the two env vars: Credentials > New credential > LinkedIn Account > **Connect LinkedIn** | back on the form: "LinkedIn sign-in is not set up: LINKEDIN_CLIENT_ID and LINKEDIN_CLIENT_SECRET are missing" |
+| 3 | With them: **Connect LinkedIn**, sign in, allow | a credential "LinkedIn (your name)" in the list; the audit log has "Credential created" |
+| 4 | LinkedIn node, Create Post, Text `RXJ test (please ignore) #automation @ 50% off` | a post on your profile that shows exactly that text, with #automation as a hashtag; `linkedin.url` opens it |
+| 5 | Run step 4 again with the same text | "LinkedIn refuses the same text twice in a row" |
+| 6 | Share Link with a blog address and a title | a post with the link's card |
+| 7 | Post With Image with a JPEG address and Alt Text | a post with the picture |
+| 8 | Post As **A Company Page** without `LINKEDIN_ORGANIZATION_POSTS` | fails at once: "posting as a Company Page needs LinkedIn's Community Management API..." |
+| 9 | Open the credential, **Reconnect LinkedIn** | back in the list, the same credential; the audit log says "reconnected"; the workflow from step 4 still has it selected and works |
+| 10 | As an editor (not admin) of a workspace, Connect LinkedIn | "needs the admin role" (credentials are admins') |
+| 11 | Cancel on LinkedIn's sign-in page | "LinkedIn sign-in was cancelled" |
+| 12 | Connect it to an AI Agent's Tools port | the tool is "Write" and asks for approval |
+
 # When something fails
 
 Note the node, the exact values you entered, and the error text from the
