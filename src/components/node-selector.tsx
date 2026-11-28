@@ -658,6 +658,12 @@ const productivityNodes: NodeTypeOption[] = [
         description: "Post on your profile or a Company Page: text, a link or a picture",
         icon: "/logos/linkedin.svg"
     },
+    {
+        type: NodeType.S3_STORAGE,
+        label: "S3 Storage",
+        description: "Files in your own S3, Cloudflare R2, Backblaze, Wasabi or Spaces bucket, with links",
+        icon: "/logos/s3-storage.svg"
+    },
 ]
 
 const networkNodes: NodeTypeOption[] = [

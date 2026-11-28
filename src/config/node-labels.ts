@@ -33,6 +33,7 @@ const NODE_LABELS: Record<string, string> = {
     WORDPRESS: "WordPress",
     GOOGLE_SEARCH_CONSOLE: "Google Search Console",
     LINKEDIN: "LinkedIn",
+    S3_STORAGE: "S3 Storage",
     SSH: "SSH",
     PDF_GENERATOR: "PDF Generator",
     CONVERT_TO_FILE: "Convert to File",

@@ -817,6 +817,7 @@ Files do not travel inside the workflow data. A node that makes or fetches a fil
 | ----------------- | ------------------------------------------------------------------------ |
 | PDF Generator     | Make a PDF from text with headings (`#`), bullets (`-`) and rules (`---`). Supports Latin, Cyrillic, Greek, Arabic, Urdu and Persian text, including right-to-left layout and mixed lines |
 | Convert to File   | Turn a list into an Excel (XLSX) or CSV spreadsheet, any value into JSON, or text into a text file |
+| S3 Storage        | Files in the customer's own S3-compatible bucket (Amazon S3, Cloudflare R2, Backblaze B2, Wasabi, DigitalOcean Spaces, MinIO): upload, download, list, delete, and links. See "S3 Storage" |
 | Extract from File | Read a file back into workflow data: the rows of an Excel or CSV sheet (which continue as items), the text of a PDF or Word (DOCX) file, JSON, or plain text |
 
 Files come from PDF Generator, Convert to File, Google Drive (Download) and HTTP Request (Response Format: File). They can be:
@@ -1010,6 +1011,25 @@ Posts on LinkedIn through the Posts API (`https://api.linkedin.com/rest/posts`),
 * As an AI Agent tool every operation is "write": it asks for approval by default.
 * Not built: videos, documents, polls, mentions of people or companies (an `@` is shown as text), scheduled posts, comments, and reading posts or analytics.
 
+## S3 Storage
+
+Files in a bucket of the customer's own, for what does not fit a workflow file (10 MB) and for links that other services fetch, such as the video of a Reel. Executor: `src/features/executions/components/apps/s3-storage.ts` (Amazon's `@aws-sdk/client-s3` and `@aws-sdk/s3-request-presigner`); provider presets and checks: `src/lib/s3-options.ts`.
+
+| Operation | What it does | Result |
+| --------- | ------------ | ------ |
+| Upload File | A file variable into the bucket, under **Key** (empty: the file's name; the same key replaces the file) | `{{storage.key}}`, `.size`, `.etag`, and with a Public Base URL `.url` |
+| Get Link | A signed download link for **Link Works For** minutes (60 by default, at most 10080 = 7 days). The file is checked to exist first | `{{storage.url}}`, `.expiresAt`, and with a Public Base URL `.publicUrl` |
+| Download File | A file from the bucket as a workflow file; refused before downloading when it is larger than the workflow file limit | `{{storage.file}}`, `.size` |
+| List Files | Keys with an optional prefix, up to Limit (100, at most 1000) | `{{json storage.items}}` (`key`, `size`, `lastModified`, `url`), `.count`, `.truncated` |
+| Delete File | Removes one key | `{ deleted: true }` |
+
+* **Credential** "S3-compatible Storage": **Provider** (Amazon S3, Cloudflare R2, Backblaze B2, Wasabi, DigitalOcean Spaces, Other S3-compatible), **Endpoint** (filled in from the provider, except for AWS, where the region decides), **Region** (`auto` for R2), **Access Key ID** and **Secret Access Key**, stored together and encrypted. The form tells where each provider makes keys. The endpoint must be `https`, without a placeholder left in it, and is checked by the SSRF guard before every call; a MinIO on a self-hosted server's own network has to be on `PRIVATE_NETWORK_ALLOWLIST`. "Other S3-compatible" uses path-style addresses.
+* **Public Base URL** (optional): the address of a public bucket (an R2 public bucket or custom domain, a CDN). The result then also has a lasting link: the base plus the key, each part encoded.
+* **For Reels and big videos:** upload the video (or put it there yourself), then **Get Link** and use `{{storage.url}}` as the Video of the Instagram / Facebook Post node. The link is signed with the keys; the secret key is never in it.
+* Errors name the cause: no such bucket or key, access denied (the key's permissions), a wrong key or one for another endpoint, a bucket in another region.
+* As AI Agent tools: Download, List and Get Link are "read", Upload "write", Delete "dangerous".
+* Not built: copying and moving, multipart uploads of files larger than a workflow file from a URL, and setting a file's public access.
+
 ## Shopify and WooCommerce
 
 Two store nodes and two triggers. The nodes can also be AI Agent tools: reading is "read", creating and updating is "write" (so it asks for approval by default).
@@ -1138,6 +1158,7 @@ Supported credential types:
 | SHOPIFY       | Shopify node (a custom app's Admin API access token, `shpat_...`) |
 | WOOCOMMERCE   | WooCommerce node (`consumer_key:consumer_secret`) |
 | WORDPRESS     | WordPress node (`username:application password`) |
+| S3            | S3 Storage node (provider, endpoint, region, access key ID and secret access key) |
 | LINKEDIN      | LinkedIn node ("Connect LinkedIn": the access token, its expiry and the member's id; renewed with Reconnect) |
 | GOOGLE_SEARCH_CONSOLE | Google Search Console node (service account: project id, client email, private key). A Google account (GOOGLE_OAUTH2) works too |
 | POSTGRES      | Postgres node (connection string) |

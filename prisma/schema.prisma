@@ -416,6 +416,8 @@ enum CredentialType {
   GOOGLE_SEARCH_CONSOLE
   // "Connect LinkedIn": the access token (60 days) and the member's id
   LINKEDIN
+  // An S3-compatible bucket: provider, endpoint, region and access keys
+  S3
 }
 
 model Workflow {
@@ -923,6 +925,7 @@ enum NodeType {
   WORDPRESS
   GOOGLE_SEARCH_CONSOLE
   LINKEDIN
+  S3_STORAGE
   // A note on the canvas; never runs
   STICKY_NOTE
 }

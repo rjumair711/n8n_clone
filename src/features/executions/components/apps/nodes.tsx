@@ -2440,6 +2440,83 @@ export const LinkedinNode = createIntegrationNode(linkedinConfig, (data) =>
   data.text || data.linkUrl || data.image ? operationLabel(linkedinConfig, data.operation) : "Not Configured"
 );
 
+// =========================================================================
+// S3 STORAGE
+// =========================================================================
+export const s3StorageConfig: IntegrationConfig = {
+  label: "S3 Storage",
+  description:
+    "Files in your own bucket on Amazon S3, Cloudflare R2, Backblaze B2, Wasabi, DigitalOcean Spaces or MinIO: upload, download, list, delete, and links. For files larger than a workflow file, and for videos that Instagram, YouTube or a customer has to fetch.",
+  logo: "/logos/s3-storage.svg",
+  credentialType: CredentialType.S3,
+  credentialLabel: "S3 Credential",
+  defaultVariableName: "storage",
+  hint: "Upload gives {{storage.key}} and, with a Public Base URL, {{storage.url}}. Get Link gives {{storage.url}}, a signed link that works until {{storage.expiresAt}}: use it as the Video of an Instagram / Facebook Post node. Download gives {{storage.file}} (at most the workflow file size). List gives {{json storage.items}}.",
+  operations: [
+    { value: "upload", label: "Upload File" },
+    { value: "get_link", label: "Get Link (temporary)" },
+    { value: "download", label: "Download File" },
+    { value: "list", label: "List Files" },
+    { value: "delete", label: "Delete File" },
+  ],
+  fields: [
+    {
+      name: "bucket",
+      label: "Bucket",
+      placeholder: "my-shop-media",
+      required: true,
+    },
+    {
+      name: "file",
+      label: "File",
+      placeholder: "image.file",
+      description: "A file variable from an earlier node.",
+      required: true,
+      operations: ["upload"],
+    },
+    {
+      name: "key",
+      label: "Key (path in the bucket)",
+      placeholder: "reels/{{ $today }}/video.mp4",
+      description:
+        "Folders are part of the key. Required, except on Upload: empty there uses the file's name, and a file with the same key is replaced.",
+      operations: ["upload", "download", "get_link", "delete"],
+    },
+    {
+      name: "expiresMinutes",
+      label: "Link Works For (minutes)",
+      placeholder: "60",
+      description: "At most 10080 (7 days). Anyone with the link can download the file until then.",
+      operations: ["get_link"],
+    },
+    {
+      name: "prefix",
+      label: "Only Keys Starting With",
+      placeholder: "reels/",
+      operations: ["list"],
+    },
+    {
+      name: "limit",
+      label: "Limit",
+      placeholder: "100",
+      description: "At most 1000.",
+      operations: ["list"],
+    },
+    {
+      name: "publicBaseUrl",
+      label: "Public Base URL",
+      placeholder: "https://media.example.com",
+      description:
+        "Optional: when the bucket is public (an R2 public bucket or custom domain, a CDN), its address. The result's url is then this plus the key, a link that never expires.",
+      operations: ["upload", "list", "get_link"],
+    },
+  ],
+};
+
+export const S3StorageNode = createIntegrationNode(s3StorageConfig, (data) =>
+  data.bucket ? operationLabel(s3StorageConfig, data.operation) : "Not Configured"
+);
+
 export const SearchConsoleNode = createIntegrationNode(searchConsoleConfig, (data) =>
   data.siteUrl || data.operation === "list_sites"
     ? operationLabel(searchConsoleConfig, data.operation)

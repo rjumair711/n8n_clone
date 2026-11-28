@@ -160,6 +160,7 @@ const TOOL_LABELS: Record<string, string> = {
   WORDPRESS: "WordPress",
   GOOGLE_SEARCH_CONSOLE: "Google Search Console",
   LINKEDIN: "LinkedIn Post",
+  S3_STORAGE: "S3 Storage",
   SSH: "SSH Command",
   MYSQL: "MySQL",
   RESEND: "Resend",

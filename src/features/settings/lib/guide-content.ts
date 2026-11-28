@@ -270,7 +270,7 @@ const CHAPTERS = (nodeCount: number): GuideChapter[] => [
         body: [
           "Files are passed by reference. A node that makes or downloads a file (PDF Generator, Convert to File, HTTP Request, Google Drive, a form upload, a WhatsApp photo) gives a file variable such as `pdf.file`; type that variable into another node's **File** or **Attachments** field to send or read it.",
           "**PDF Generator** writes Urdu and Arabic correctly, right to left. **Extract from File** reads Excel, CSV, PDF and Word files back into data.",
-          "A file can be up to 10 MB, you can store up to 200 MB, and files are deleted after 7 days.",
+          "A file can be up to 10 MB, you can store up to 200 MB, and files are deleted after 7 days. For bigger files (videos for Reels) and lasting links, use the **S3 Storage** node with your own bucket (Amazon S3, Cloudflare R2, Backblaze, Wasabi, DigitalOcean Spaces): upload, then **Get Link** to hand the file to Instagram or a customer.",
         ],
       },
     ],
