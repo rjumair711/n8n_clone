@@ -2657,6 +2657,25 @@ Needs the `youtube_node` migration applied (it runs on the production deploy aft
 | 13 | Remove the app under myaccount.google.com/permissions, run a node | "press Reconnect on the credential"; **Reconnect YouTube** fixes it and the workflow keeps the credential |
 | 14 | As an AI Agent tool | Upload, Update, Thumbnail and Reply are "Write"; Get and the lists "Read" |
 
+## T64. Render Video (Creatomate and JSON2Video)
+
+Needs the `render_video_node` migration applied (it runs on the production deploy after merging, after `youtube_node`): three enum values, nothing else. Needs trial accounts at creatomate.com and json2video.com (renders use their credits).
+
+| # | Do | Expect |
+|---|----|--------|
+| 1 | Credentials > New credential: **Creatomate** and **JSON2Video**, each with its API key | both saved; the help says where each key is |
+| 2 | In Creatomate, a template with a text element `Title` and an image `Photo`. Render Video: Creatomate, A template, its Template ID, Template Values `Title.text: RXJ test` and `Photo.source: <a public JPEG>` | the execution waits (steps "start", "wait", "check" in the logs), then `video.url` plays the video with that title and photo |
+| 3 | The same with Template ID `my-template` | fails at once: "Template ID must be the template's id from Creatomate" |
+| 4 | Creatomate, A JSON description, a small source with `output_format: mp4` | a video |
+| 5 | JSON2Video, A JSON description: `{"resolution": "instagram-story", "scenes": [{"elements": [{"type": "text", "text": {{json title}}}]}]}` after a Set Variable `title` = `He said "hi"` | a video showing the text with its quotes |
+| 6 | JSON2Video with a template that has a variable `headline` | the video shows the value |
+| 7 | Save As File on, a short video | `video.file` opens it; a video over 10 MB fails with "use {{video.url}}" |
+| 8 | Render Video → Instagram / Facebook Post, Instagram Reel, Video `{{video.url}}` | the Reel is published |
+| 9 | Render Video → YouTube Upload Video, Video `{{video.url}}` | the video is on the channel (private) |
+| 10 | A wrong API key | "the API key was refused ... Check the credential" |
+| 11 | **Settings → Platform guide → Videos and social media automation** | the overview, both setups, the recipes, YouTube and LinkedIn; the book button on a Render Video node opens "Render a video" |
+| 12 | As an AI Agent tool | "Write": asks for approval |
+
 # When something fails
 
 Note the node, the exact values you entered, and the error text from the

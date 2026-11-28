@@ -162,6 +162,7 @@ const TOOL_LABELS: Record<string, string> = {
   LINKEDIN: "LinkedIn Post",
   S3_STORAGE: "S3 Storage",
   YOUTUBE: "YouTube",
+  RENDER_VIDEO: "Render Video",
   SSH: "SSH Command",
   MYSQL: "MySQL",
   RESEND: "Resend",

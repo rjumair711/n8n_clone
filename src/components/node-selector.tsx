@@ -670,6 +670,12 @@ const productivityNodes: NodeTypeOption[] = [
         description: "Upload videos, change their details and thumbnail, list videos, reply to comments",
         icon: "/logos/youtube.svg"
     },
+    {
+        type: NodeType.RENDER_VIDEO,
+        label: "Render Video",
+        description: "A finished video from a template or JSON, with Creatomate or JSON2Video",
+        icon: "/logos/render-video.svg"
+    },
 ]
 
 const networkNodes: NodeTypeOption[] = [

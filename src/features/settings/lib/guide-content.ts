@@ -485,6 +485,92 @@ const CHAPTERS = (nodeCount: number): GuideChapter[] => [
     ],
   },
   {
+    id: "videos-social",
+    title: "Videos and social media automation",
+    summary: "Make videos automatically, and post them as Reels, Shorts, YouTube videos and LinkedIn posts.",
+    topics: [
+      {
+        id: "video-overview",
+        title: "What you can build",
+        points: [
+          "**Render Video:** a finished video from a template or a JSON description, with **Creatomate** or **JSON2Video** (your own account and API key).",
+          "**Instagram / Facebook Post:** Reels, carousels and Stories on Instagram; photos and videos on a Facebook Page.",
+          "**YouTube:** upload, change titles and thumbnails, list your videos, reply to comments.",
+          "**LinkedIn:** text, link and picture posts on your profile or Company Page.",
+          "**S3 Storage:** keep big videos in your own bucket and hand them on with a link.",
+          "**Comment to DM:** answer comments on your posts with a private message (see Apps, messaging and credentials).",
+        ],
+        tip: "Videos are not stored inside the workflow (a workflow file is at most 10 MB). They travel as links: the render's link, or an S3 Storage link.",
+      },
+      {
+        id: "render-video",
+        title: "Render a video: choose Creatomate or JSON2Video",
+        body: [
+          "Both are paid services with a free trial; every render uses your credits there. Pick the one that fits how you work:",
+        ],
+        points: [
+          "**Creatomate** if you like designing visually: build a template in its editor (a title, your logo, a photo, music, a voice-over slot), then the workflow fills in the texts and pictures. Best for branded Reels and Shorts that look the same every time.",
+          "**JSON2Video** if your videos are made from a script: scenes with pictures or clips, built-in AI voices and automatic subtitles. Good for \"faceless\" YouTube videos and explainers.",
+        ],
+        links: [{ label: "Credentials", href: "/credentials" }],
+      },
+      {
+        id: "render-creatomate",
+        title: "Set up Creatomate",
+        steps: [
+          "Make an account at creatomate.com and design a template (or start from one of theirs). Give the elements you want to change clear names, such as Title, Photo and Voiceover.",
+          "In Creatomate open **Project settings > API Key** and copy it. In RXJ: Credentials > New credential > **Creatomate**, paste it, save.",
+          "Open the template, press **Use template > API Integration** and copy the **template_id**.",
+          "Add a **Render Video** node: Provider **Creatomate**, Make It From **A template**, your credential, the Template ID.",
+          "In **Template Values** write one line per change, as element name and property: `Title.text: {{article.title}}` and `Photo.source: {{image.url}}`. Pictures, videos and sounds are public https addresses.",
+          "Run it. The node waits until the video is ready (usually 1 to 5 minutes) and gives `{{video.url}}`.",
+        ],
+      },
+      {
+        id: "render-json2video",
+        title: "Set up JSON2Video",
+        steps: [
+          "Make an account at json2video.com and copy the primary key from the dashboard's **API Keys** page. In RXJ: Credentials > New credential > **JSON2Video**.",
+          "Easiest: create a template in JSON2Video with variables (for example `headline` and `script`), and copy its id.",
+          "Add a **Render Video** node: Provider **JSON2Video**, Make It From **A template**, the Template ID, and in Template Values `headline: {{article.title}}` and `script: {{article.script}}`.",
+          "Advanced: Make It From **A JSON description** and write the whole movie (scenes, texts, voice, subtitles) as JSON. Put workflow text in with `{{json article.script}}`, so quotes in it cannot break the JSON.",
+          "Run it and use `{{video.url}}` in the next node.",
+        ],
+      },
+      {
+        id: "video-recipes",
+        title: "Recipes: from an idea to a posted video",
+        points: [
+          "**Daily Reel:** Schedule Trigger (every morning) → Google Sheets Get Rows (today's topic) → AI Agent (writes a 30-second script and a caption) → Render Video (Creatomate template, 1080 x 1920) → Send and Wait for Approval with Editable Fields (caption) → Instagram / Facebook Post, **Instagram Reel**, Video `{{video.url}}`, Caption `{{approval.fields.caption}}`.",
+          "**Faceless YouTube video:** Form Trigger (a topic) → AI Agent (script, title, description, tags) → Render Video (JSON2Video, AI voice and subtitles) → YouTube **Upload Video**, Video `{{video.url}}`, Privacy Private → a Telegram message to you with `{{youtube.url}}` to check it before you publish.",
+          "**One video, everywhere:** after Render Video, run the Instagram Reel, YouTube Upload and LinkedIn **Share Link** (to the YouTube video) nodes one after the other.",
+          "**Keep your videos:** S3 Storage cannot take a link directly, so turn on **Save As File** on Render Video (videos up to 10 MB), then S3 Storage **Upload File** with File `video.file`, and **Get Link** whenever a node needs the video again.",
+          "**Answer every comment:** YouTube **List Comments** (Schedule Trigger, hourly) → Split Out → AI Agent (a short friendly reply) → YouTube **Reply to Comment** with Comment ID `{{item.commentId}}`. For Instagram, use the Instagram Trigger on comments (Comment to DM).",
+        ],
+        tip: "Start with Privacy Private on YouTube and an approval step before posting. When the results look right every time, remove the approval.",
+      },
+      {
+        id: "youtube-setup",
+        title: "Connect YouTube",
+        steps: [
+          "Credentials > New credential > **YouTube Channel** > **Connect YouTube**, and sign in with the Google account of the channel (pick the Brand Account if the channel is one).",
+          "Allow both YouTube permissions. Your Gmail and Sheets credential is separate and does not change.",
+          "Until RXJ's Google app has passed Google's YouTube audit, YouTube keeps uploaded videos private: publish them yourself in YouTube Studio.",
+          "Uploads are at most 512 MB. Each upload uses a big part of the daily YouTube quota, so a few uploads a day is the comfortable limit.",
+        ],
+      },
+      {
+        id: "linkedin-setup",
+        title: "Connect LinkedIn",
+        steps: [
+          "Credentials > New credential > **LinkedIn Account** > **Connect LinkedIn**, and sign in.",
+          "Add a **LinkedIn** node: Create Post, Share Link or Post With Image. `#words` become hashtags.",
+          "LinkedIn sign-ins last 60 days. When a node says the sign-in expired, open the credential and press **Reconnect LinkedIn**; your workflows keep working.",
+        ],
+      },
+    ],
+  },
+  {
     id: "integrations",
     title: "Apps, messaging and credentials",
     summary: "Connecting RXJ to the services you use, and what each one needs.",

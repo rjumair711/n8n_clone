@@ -420,6 +420,9 @@ enum CredentialType {
   S3
   // "Connect YouTube": a Google refresh token with YouTube's scopes, and the channel
   YOUTUBE
+  // Render Video node: the customer's API key of each service
+  CREATOMATE
+  JSON2VIDEO
 }
 
 model Workflow {
@@ -929,6 +932,7 @@ enum NodeType {
   LINKEDIN
   S3_STORAGE
   YOUTUBE
+  RENDER_VIDEO
   // A note on the canvas; never runs
   STICKY_NOTE
 }
