@@ -748,6 +748,7 @@ Every execution also keeps the trigger and the data it started with, so it can b
 | Browser          | Open a page in a real browser: Get Page Content (pages that need JavaScript), Take Screenshot, or Run Steps (click, type, select, submit). A hosted browser with your own key, or the self-hosted server's own. Every account |
 | Transcribe Audio | Turn a voice message or audio file into text with OpenAI Whisper, Groq Whisper or any OpenAI-compatible server. See "Audio" |
 | Text to Speech   | Turn text into spoken audio with OpenAI TTS or an OpenAI-compatible server; the result is a file |
+| Render Video     | A finished video (Reel, Short, YouTube) from a template or a JSON description, rendered by Creatomate or JSON2Video with the customer's own API key; waits until it is ready. See "Render Video" |
 | Image Generation | Create a picture from a prompt with OpenAI (gpt-image-1, DALL·E 3) or an OpenAI-compatible server; the result is a file. See "Image Generation" |
 | Data Table       | Built-in storage: rows by key in a named table, for "already contacted" lists and agent state. No credential. See "Data Table" |
 | Respond to Webhook | Answer the HTTP request that started the workflow (JSON, text, redirect, status code, headers) |
@@ -1053,6 +1054,24 @@ The connected channel's videos and comments through the YouTube Data API v3 (`go
 * As AI Agent tools: Get Video and the lists are "read"; Upload, Update, Set Thumbnail and Reply are "write".
 * Not built: a trigger for new comments (the RSS Feed Trigger with `https://www.youtube.com/feeds/videos.xml?channel_id=<id>` sees new videos), playlists, captions, deleting videos or comments, and analytics.
 
+## Render Video
+
+A finished MP4 from a template or a JSON description, for Reels, Shorts and YouTube. One node with two providers (the node's Operation), each with the customer's own account and an API key credential. Executor: `src/features/executions/components/apps/render-video.ts`.
+
+| Provider | Make It From: a template | Make It From: a JSON description |
+| -------- | ------------------------ | -------------------------------- |
+| **Creatomate** (`POST https://api.creatomate.com/v1/renders`, `Authorization: Bearer`) | **Template ID** (the template's UUID, from Use template > API Integration) and **Template Values**, one `Element.property: value` per line (`Title.text: {{article.title}}`, `Photo.source: {{image.url}}`), sent as `modifications` | **Video JSON**: a Creatomate `source` object |
+| **JSON2Video** (`POST https://api.json2video.com/v2/movies`, `x-api-key`) | **Template ID** and **Template Values**, one `variable: value` per line, sent as `variables` | **Movie JSON**: a movie with `scenes` (and resolution, voices, subtitles) |
+
+* **Template Values** lines are split at the first colon before the values are filled in, so a value may hold colons or come from an expression. In the JSON modes, put workflow text in with `{{json variable}}`: quotes in it cannot break the JSON.
+* **Waiting.** The render is started in a step of its own (a retry never pays for a second render), then its status is read every 15 seconds in steps of their own, sleeping in between (`step.sleep`), for up to 20 minutes. Both services' answers are read into one state: working, done (with the video's address) or failed (with the service's reason). As an AI Agent tool there are no steps to sleep in, so it waits in place for a minute at most. When the 20 minutes pass, the error gives the render's id: it goes on at the service.
+* **The result** is `{{video.url}}` (the MP4 at the service; https only), `.id` and `.provider`. **Save As File** (off by default) also downloads it as a workflow file, `{{video.file}}`, when it is at most the workflow file size (10 MB); a bigger video fails with advice to use the link.
+* Use `{{video.url}}` as the Video of an Instagram / Facebook Post (Reel) or a YouTube Upload. The services keep rendered files for a limited time: to keep a video, save it as a file and upload it with S3 Storage.
+* Errors name the fix: a refused API key, no render credits left, the service's own message for a bad template or source.
+* As an AI Agent tool it is "write": a render costs money, so it asks for approval by default.
+* The Platform guide's chapter **Videos and social media automation** walks a customer through both providers and has ready recipes (daily Reel, faceless YouTube video, one video everywhere, answering comments).
+* Not built: Shotstack, rendering on the server itself with FFmpeg, and webhooks from the services instead of checking.
+
 ## Shopify and WooCommerce
 
 Two store nodes and two triggers. The nodes can also be AI Agent tools: reading is "read", creating and updating is "write" (so it asks for approval by default).
@@ -1182,6 +1201,8 @@ Supported credential types:
 | SHOPIFY       | Shopify node (a custom app's Admin API access token, `shpat_...`) |
 | WOOCOMMERCE   | WooCommerce node (`consumer_key:consumer_secret`) |
 | WORDPRESS     | WordPress node (`username:application password`) |
+| CREATOMATE    | Render Video node with Creatomate (API key) |
+| JSON2VIDEO    | Render Video node with JSON2Video (API key) |
 | YOUTUBE       | YouTube node ("Connect YouTube": a Google refresh token with the two YouTube scopes, and the channel's id and title) |
 | S3            | S3 Storage node (provider, endpoint, region, access key ID and secret access key) |
 | LINKEDIN      | LinkedIn node ("Connect LinkedIn": the access token, its expiry and the member's id; renewed with Reconnect) |

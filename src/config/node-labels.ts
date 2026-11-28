@@ -35,6 +35,7 @@ const NODE_LABELS: Record<string, string> = {
     LINKEDIN: "LinkedIn",
     S3_STORAGE: "S3 Storage",
     YOUTUBE: "YouTube",
+    RENDER_VIDEO: "Render Video",
     SSH: "SSH",
     PDF_GENERATOR: "PDF Generator",
     CONVERT_TO_FILE: "Convert to File",

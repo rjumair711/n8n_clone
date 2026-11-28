@@ -10252,6 +10252,82 @@ pour()</code></pre>
     );
   });
 
+  await test("Render Video: Creatomate and JSON2Video requests, their answers, and the wait", async () => {
+    const { readFileSync, readdirSync } = await import("node:fs");
+    const rv = await import("@/features/executions/components/apps/render-video");
+    const build = (data: Record<string, string>, context: Record<string, unknown> = {}) => rv.buildRenderRequest(data, context);
+    const templateId = "8a4b2c1d-1111-2222-3333-444455556666";
+
+    // Creatomate: a template with values, or a source
+    assert.deepEqual(
+      build({ operation: "creatomate", templateId, values: "Title.text: {{t}}\n\nPhoto.source: https://cdn.example.com/a.jpg?x=1:2" }, { t: "Eid sale: 50% off" }),
+      {
+        url: "https://api.creatomate.com/v1/renders",
+        body: { template_id: templateId, modifications: { "Title.text": "Eid sale: 50% off", "Photo.source": "https://cdn.example.com/a.jpg?x=1:2" } },
+      }
+    );
+    assert.deepEqual(build({ operation: "creatomate", mode: "json", sourceJson: '{"output_format": "mp4", "elements": []}' }).body, {
+      source: { output_format: "mp4", elements: [] },
+    });
+    assert.throws(() => build({ operation: "creatomate", templateId: "my-template" }), /Template ID must be the template's id from Creatomate/);
+    assert.throws(() => build({ operation: "creatomate", templateId, values: "no colon here" }), /must be "name: value"/);
+    assert.throws(() => build({ operation: "creatomate", mode: "json" }), /Video JSON is required/);
+    assert.throws(() => build({ operation: "creatomate", mode: "json", sourceJson: "[1]" }), /must be a JSON object/);
+
+    // JSON2Video: a template with variables, or a movie with scenes
+    assert.deepEqual(build({ operation: "json2video", templateId: "tmplA1b2", values: "headline: {{h}}" }, { h: "Top 5 tips" }), {
+      url: "https://api.json2video.com/v2/movies",
+      body: { template: "tmplA1b2", variables: { headline: "Top 5 tips" } },
+    });
+    assert.deepEqual(
+      build({ operation: "json2video", mode: "json", sourceJson: '{"resolution": "instagram-story", "scenes": [{"elements": []}]}' }).body,
+      { resolution: "instagram-story", scenes: [{ elements: [] }] }
+    );
+    assert.throws(() => build({ operation: "json2video", mode: "json", sourceJson: '{"resolution": "hd"}' }), /needs a "scenes" list/);
+    assert.throws(() => build({ operation: "json2video", templateId: "a b" }), /Template ID must be the template's id from JSON2Video/);
+    assert.throws(() => build({ operation: "runway" }), /Unsupported provider/);
+    // {{json x}} keeps quotes in text from breaking the JSON
+    const quoted = build({ operation: "json2video", mode: "json", sourceJson: '{"scenes": [{"elements": [{"type": "text", "text": {{json s}}}]}]}' }, { s: 'He said "hi"' });
+    assert.equal((quoted.body as any).scenes[0].elements[0].text, 'He said "hi"');
+
+    // The answers, the same shape for both
+    assert.deepEqual(rv.readRenderState("creatomate", [{ id: "r1", status: "planned" }]), { id: "r1", status: "working", url: "", detail: "" });
+    assert.deepEqual(rv.readRenderState("creatomate", { id: "r1", status: "succeeded", url: "https://f.creatomate.com/r1.mp4" }), { id: "r1", status: "done", url: "https://f.creatomate.com/r1.mp4", detail: "" });
+    assert.equal(rv.readRenderState("creatomate", { id: "r1", status: "failed", error_message: "Bad source" }).detail, "Bad source");
+    assert.deepEqual(rv.readRenderState("json2video", { success: true, project: "p1" }), { id: "p1", status: "working", url: "", detail: "" });
+    assert.deepEqual(rv.readRenderState("json2video", { success: true, movie: { project: "p1", status: "done", url: "https://assets.json2video.com/p1.mp4" } }), { id: "p1", status: "done", url: "https://assets.json2video.com/p1.mp4", detail: "" });
+    assert.equal(rv.readRenderState("json2video", { success: true, movie: { status: "error", message: "Scene 2 has no elements" } }).status, "failed");
+    assert.equal(rv.readRenderState("json2video", { success: false, message: "Invalid key" }).status, "failed");
+
+    // The executor checks the settings before it reads a credential
+    await assert.rejects(rv.renderVideoExecutor({ ...baseParams, data: { operation: "creatomate" }, context: {} }), /Template ID must be/);
+    // The render is started once; checks sleep in between (20 minutes), in place as an agent tool
+    const source = readFileSync("src/features/executions/components/apps/render-video.ts", "utf8");
+    assert.match(source, /step\.run\(`render-\$\{nodeId\}-start`/);
+    assert.match(source, /if \(inline\) await wait\(INLINE_CHECK_MS\);\s+else await step\.sleep\(`render-\$\{nodeId\}-wait-\$\{check\}`, RENDER_CHECK_SLEEP\);/);
+    assert.equal(rv.RENDER_CHECKS, 80);
+    // Each provider has its own credential type; as an agent tool it writes (renders cost money)
+    assert.match(readFileSync("src/features/executions/components/apps/nodes.tsx", "utf8"), /values\.operation === "json2video" \? CredentialType\.JSON2VIDEO : CredentialType\.CREATOMATE/);
+    assert.equal(agentTools.getToolRisk("RENDER_VIDEO", { operation: "creatomate" }), "write");
+    assert.match(readFileSync("src/features/executions/lib/executor-registry.ts", "utf8"), /\[NodeType\.RENDER_VIDEO\]: renderVideoExecutor/);
+
+    // The platform guide explains both, with recipes
+    const { buildGuide } = await import("@/features/settings/lib/guide-content");
+    const chapter = buildGuide({ nodeCount: 1, selfHosted: false }).find((item) => item.id === "videos-social");
+    assert.deepEqual(chapter?.topics.map((topic) => topic.id), ["video-overview", "render-video", "render-creatomate", "render-json2video", "video-recipes", "youtube-setup", "linkedin-setup"]);
+
+    // The migration: three enum values, nothing else
+    const folder = readdirSync("prisma/migrations").find((name) => name.endsWith("_render_video_node"));
+    assert.ok(folder, "migration");
+    const sql = readFileSync(`prisma/migrations/${folder}/migration.sql`, "utf8").replace(/\r\n/g, "\n");
+    assert.deepEqual(sql.match(/^ALTER TYPE .*$/gm), [
+      `ALTER TYPE "CredentialType" ADD VALUE 'CREATOMATE';`,
+      `ALTER TYPE "CredentialType" ADD VALUE 'JSON2VIDEO';`,
+      `ALTER TYPE "NodeType" ADD VALUE 'RENDER_VIDEO';`,
+    ]);
+    assert.equal(/\b(DROP|DELETE|UPDATE|INSERT)\b/.test(sql.replace(/^--.*$/gm, "")), false);
+  });
+
   await test("a photo post is one call on Facebook and a container plus a publish on Instagram", async () => {
     const image = "https://cdn.example.com/photo.jpg";
 

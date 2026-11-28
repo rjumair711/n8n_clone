@@ -2685,6 +2685,76 @@ export const youtubeConfig: IntegrationConfig = {
 
 export const YoutubeNode = createIntegrationNode(youtubeConfig, (data) => operationLabel(youtubeConfig, data.operation));
 
+// =========================================================================
+// RENDER VIDEO (Creatomate, JSON2Video)
+// =========================================================================
+export const renderVideoConfig: IntegrationConfig = {
+  label: "Render Video",
+  description:
+    "Make a finished video (a Reel, a Short, a YouTube video) from a template you designed, or from a JSON description: texts, pictures, music, AI voice-over and subtitles. Rendered by Creatomate or JSON2Video with your own API key; the workflow waits until the video is ready.",
+  logo: "/logos/render-video.svg",
+  credentialTypeFor: (values) =>
+    values.operation === "json2video" ? CredentialType.JSON2VIDEO : CredentialType.CREATOMATE,
+  credentialLabel: "API Key",
+  defaultVariableName: "video",
+  hint: "The result has {{video.url}}, the finished MP4 at the service: use it as the Video of an Instagram / Facebook Post (Reel) or a YouTube Upload, or upload it to S3 Storage to keep it. With Save As File also {{video.file}} (up to 10 MB). Rendering usually takes 1 to 5 minutes; the run waits up to 20, sleeping in between. Every render is paid at the service.",
+  operations: [
+    { value: "creatomate", label: "Creatomate" },
+    { value: "json2video", label: "JSON2Video" },
+  ],
+  fields: [
+    {
+      name: "mode",
+      label: "Make It From",
+      type: "select",
+      defaultValue: "template",
+      options: [
+        { value: "template", label: "A template (designed at the service)" },
+        { value: "json", label: "A JSON description (advanced)" },
+      ],
+    },
+    {
+      name: "templateId",
+      label: "Template ID",
+      placeholder: "Creatomate: 8a4b2c1d-... JSON2Video: the template's id",
+      description:
+        "Creatomate: open the template, Use template > API Integration, copy the template_id. JSON2Video: the id shown with the template in your dashboard.",
+      required: true,
+      showWhen: (values) => values.mode !== "json",
+    },
+    {
+      name: "values",
+      label: "Template Values",
+      type: "textarea",
+      placeholder: "Title.text: {{article.title}}\nVoiceover.source: {{article.script}}\nPhoto.source: {{image.url}}",
+      description:
+        "One \"name: value\" per line. Creatomate: the element's name and property (Title.text, Photo.source). JSON2Video: the template's variable names. Pictures and sounds are public https addresses.",
+      showWhen: (values) => values.mode !== "json",
+    },
+    {
+      name: "sourceJson",
+      label: "Video JSON",
+      type: "textarea",
+      placeholder: '{"output_format": "mp4", "width": 1080, "height": 1920, "elements": [...]}',
+      description:
+        "Creatomate: a source object (creatomate.com/docs). JSON2Video: a movie with \"scenes\" (json2video.com/docs). Use {{json variable}} to put text in safely.",
+      required: true,
+      showWhen: (values) => values.mode === "json",
+    },
+    {
+      name: "saveAsFile",
+      label: "Save As File",
+      type: "switch",
+      defaultValue: "false",
+      description: "Also keep the video as a workflow file (only when it is at most 10 MB), for an email attachment or Telegram.",
+    },
+  ],
+};
+
+export const RenderVideoNode = createIntegrationNode(renderVideoConfig, (data) =>
+  data.templateId || data.sourceJson ? operationLabel(renderVideoConfig, data.operation) : "Not Configured"
+);
+
 export const SearchConsoleNode = createIntegrationNode(searchConsoleConfig, (data) =>
   data.siteUrl || data.operation === "list_sites"
     ? operationLabel(searchConsoleConfig, data.operation)
