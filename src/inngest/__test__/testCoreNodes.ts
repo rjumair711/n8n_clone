@@ -10087,6 +10087,83 @@ pour()</code></pre>
     );
   });
 
+  await test("S3 Storage: the credential, the settings, links, and what each operation may do", async () => {
+    const { readFileSync, readdirSync } = await import("node:fs");
+    const s3 = await import("@/features/executions/components/apps/s3-storage");
+    const options = await import("@/lib/s3-options");
+
+    // The credential: keys always; an https endpoint for every provider but AWS
+    assert.deepEqual(options.readS3Credential({ provider: "aws", accessKeyId: " AK ", secretAccessKey: "SK" }), {
+      provider: "aws", endpoint: "", region: "us-east-1", accessKeyId: "AK", secretAccessKey: "SK",
+    });
+    assert.deepEqual(
+      options.readS3Credential({ provider: "r2", endpoint: "https://abc.r2.cloudflarestorage.com/", accessKeyId: "AK", secretAccessKey: "SK", region: "" }),
+      { provider: "r2", endpoint: "https://abc.r2.cloudflarestorage.com", region: "auto", accessKeyId: "AK", secretAccessKey: "SK" }
+    );
+    assert.throws(() => options.readS3Credential({ provider: "aws", accessKeyId: "AK" }), /access key ID and secret access key are required/);
+    assert.throws(() => options.readS3Credential({ provider: "r2", accessKeyId: "AK", secretAccessKey: "SK" }), /endpoint is required/);
+    assert.throws(() => options.readS3Credential({ provider: "custom", endpoint: "http://minio.local", accessKeyId: "AK", secretAccessKey: "SK" }), /must start with https/);
+    assert.throws(() => options.readS3Credential({ provider: "r2", endpoint: "https://<ACCOUNT_ID>.r2.cloudflarestorage.com", accessKeyId: "AK", secretAccessKey: "SK" }), /placeholder/);
+    assert.throws(() => options.readS3Credential({ provider: "aws", region: "us east", accessKeyId: "AK", secretAccessKey: "SK" }), /region is not valid/);
+    assert.equal(options.readS3Credential({ provider: "nope", accessKeyId: "AK", secretAccessKey: "SK" }).provider, "aws");
+
+    // The settings
+    const read = (data: Record<string, string>, context: Record<string, unknown> = {}) => s3.readS3Request({ bucket: "my-media", ...data }, context);
+    assert.deepEqual(read({ operation: "upload", key: "/reels/{{day}}/a.mp4" }, { day: "2026-11-28" }), {
+      operation: "upload", bucket: "my-media", key: "reels/2026-11-28/a.mp4", prefix: "", limit: 100, minutes: 60, publicBaseUrl: "",
+    });
+    assert.equal(read({ operation: "upload" }).key, "", "upload may use the file's own name");
+    for (const operation of ["download", "get_link", "delete"]) {
+      assert.throws(() => read({ operation }), /Key is required/, operation);
+    }
+    assert.throws(() => read({ operation: "list", bucket: "My_Bucket" }), /not a bucket name/);
+    assert.throws(() => read({ operation: "list", bucket: "" }), /Bucket is required/);
+    assert.equal(read({ operation: "list", limit: "5000" }).limit, 1000);
+    assert.equal(read({ operation: "get_link", key: "a", expiresMinutes: "10080" }).minutes, 10080);
+    assert.throws(() => read({ operation: "get_link", key: "a", expiresMinutes: "10081" }), /at most 10080 minutes \(7 days\)/);
+    assert.throws(() => read({ operation: "upload", publicBaseUrl: "http://cdn" }), /Public Base URL must start with https/);
+    assert.throws(() => read({ operation: "rename" }), /Unsupported operation/);
+
+    // A public base gives a lasting address, each part of the key encoded
+    assert.equal(s3.publicObjectUrl("https://media.example.com", "reels/eid sale/a#1.mp4"), "https://media.example.com/reels/eid%20sale/a%231.mp4");
+    assert.equal(s3.publicObjectUrl("", "a.mp4"), "");
+
+    // A signed link is made locally, with the keys, for the endpoint
+    const { getSignedUrl } = await import("@aws-sdk/s3-request-presigner");
+    const { GetObjectCommand } = await import("@aws-sdk/client-s3");
+    const client = s3.createS3Client(options.readS3Credential({ provider: "r2", endpoint: "https://abc.r2.cloudflarestorage.com", accessKeyId: "AKID", secretAccessKey: "SECRET" }));
+    const link = new URL(await getSignedUrl(client, new GetObjectCommand({ Bucket: "my-media", Key: "reels/a.mp4" }), { expiresIn: 600 }));
+    assert.equal(link.origin, "https://my-media.abc.r2.cloudflarestorage.com");
+    assert.equal(link.pathname, "/reels/a.mp4");
+    assert.equal(link.searchParams.get("X-Amz-Expires"), "600");
+    assert.match(link.searchParams.get("X-Amz-Credential") ?? "", /^AKID\//);
+    assert.equal(link.toString().includes("SECRET"), false, "the secret key is never in a link");
+    const minio = s3.createS3Client(options.readS3Credential({ provider: "custom", endpoint: "https://minio.example.com", accessKeyId: "A", secretAccessKey: "S" }));
+    assert.equal(new URL(await getSignedUrl(minio, new GetObjectCommand({ Bucket: "b1", Key: "k" }), { expiresIn: 60 })).pathname, "/b1/k", "custom servers: path-style");
+
+    // The executor checks the settings before it reads a credential
+    await assert.rejects(s3.s3StorageExecutor({ ...baseParams, data: { operation: "delete", bucket: "my-media" }, context: {} }), /Key is required/);
+    // As agent tools: delete is dangerous, upload writes, the rest read
+    assert.equal(agentTools.getToolRisk("S3_STORAGE", { operation: "delete" }), "dangerous");
+    assert.equal(agentTools.getToolRisk("S3_STORAGE", { operation: "upload" }), "write");
+    for (const operation of ["download", "list", "get_link"]) {
+      assert.equal(agentTools.getToolRisk("S3_STORAGE", { operation }), "read", operation);
+    }
+    // The endpoint is checked by the SSRF guard before any call, and the dialog's credential form has the fields
+    const source = readFileSync("src/features/executions/components/apps/s3-storage.ts", "utf8");
+    assert.match(source, /if \(credential\.endpoint\) await assertPublicUrl\(credential\.endpoint\);\s+const client = createS3Client\(credential\);/);
+    assert.match(readFileSync("src/features/credentials/components/credential.tsx", "utf8"), /isS3\s+\? JSON\.stringify\(s3Fields\)/);
+    assert.match(readFileSync("src/features/executions/lib/executor-registry.ts", "utf8"), /\[NodeType\.S3_STORAGE\]: s3StorageExecutor/);
+
+    // The migration: two enum values, nothing else
+    const folder = readdirSync("prisma/migrations").find((name) => name.endsWith("_s3_storage_node"));
+    assert.ok(folder, "migration");
+    assert.equal(
+      readFileSync(`prisma/migrations/${folder}/migration.sql`, "utf8").replace(/\r\n/g, "\n").trim(),
+      `-- AlterEnum\nALTER TYPE "CredentialType" ADD VALUE 'S3';\n\n-- AlterEnum\nALTER TYPE "NodeType" ADD VALUE 'S3_STORAGE';`
+    );
+  });
+
   await test("a photo post is one call on Facebook and a container plus a publish on Instagram", async () => {
     const image = "https://cdn.example.com/photo.jpg";
 

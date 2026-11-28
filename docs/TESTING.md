@@ -2617,6 +2617,25 @@ Needs the `linkedin_node` migration applied (it runs on the production deploy af
 | 11 | Cancel on LinkedIn's sign-in page | "LinkedIn sign-in was cancelled" |
 | 12 | Connect it to an AI Agent's Tools port | the tool is "Write" and asks for approval |
 
+## T62. S3 Storage node
+
+Needs the `s3_storage_node` migration applied (it runs on the production deploy after merging, after `linkedin_node`): two enum values, nothing else. Needs a test bucket, for example a free Cloudflare R2 bucket with an API token (Object Read & Write) for it.
+
+| # | Do | Expect |
+|---|----|--------|
+| 1 | Credentials > New credential > **S3-compatible Storage**, Provider Cloudflare R2 | Endpoint and Region (`auto`) are filled in with the placeholder; the help says where tokens are made. Saving with `<ACCOUNT_ID>` still in the endpoint, then running a node, fails: "replace the <ACCOUNT_ID> placeholder" |
+| 2 | Fill in the real endpoint and keys, save | saved; the edit page does not show them again |
+| 3 | Image Generation → S3 Storage **Upload File** (Bucket, File `image.file`, Key `rxj-test/{{ $today }}.png`) | `storage.key` and `size`; the file is in the bucket |
+| 4 | **Get Link** for that key, 10 minutes | `storage.url` downloads the picture in a browser; after 10 minutes it is refused |
+| 5 | **List Files** with prefix `rxj-test/` | the file, with size and date |
+| 6 | **Download File** of it | `storage.file` opens the picture |
+| 7 | Download a file larger than 10 MB | fails before downloading: "is N MB; a workflow file is at most 10 MB. Use Get Link" |
+| 8 | Upload a short MP4, Get Link, then an Instagram / Facebook Post node, Instagram Reel, Video `{{storage.url}}` | the Reel is published from the bucket's link |
+| 9 | A wrong secret key | "the access key ID or secret access key is wrong" |
+| 10 | Bucket `My_Bucket` | fails at once: "is not a bucket name" |
+| 11 | **Delete File** | `deleted: true`; the file is gone. As an AI Agent tool, Delete is "Dangerous" |
+| 12 | Delete the test files and the token afterwards | |
+
 # When something fails
 
 Note the node, the exact values you entered, and the error text from the

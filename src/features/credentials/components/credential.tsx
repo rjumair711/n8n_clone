@@ -1,5 +1,6 @@
 "use client";
 
+import { S3_PROVIDERS } from "@/lib/s3-options";
 import { CredentialType } from "@prisma/client";
 import { useRouter } from "next/navigation";
 import {
@@ -55,6 +56,7 @@ const credentialTypeOptions = [
   { value: CredentialType.GOOGLE_CALENDAR, label: "Google Calendar", logo: "/logos/calender.png" },
   { value: CredentialType.GOOGLE_SEARCH_CONSOLE, label: "Google Search Console (service account)", logo: "/logos/google-search-console.svg" },
   { value: CredentialType.LINKEDIN, label: "LinkedIn Account", logo: "/logos/linkedin.svg" },
+  { value: CredentialType.S3, label: "S3-compatible Storage", logo: "/logos/s3-storage.svg" },
   { value: CredentialType.NOTION, label: "Notion", logo: "/logos/notion.png" }, 
   { value: CredentialType.TELEGRAM, label: "Telegram", logo: "/logos/telegram.jfif" },
   { value: CredentialType.GITHUB, label: "GitHub", logo: "/logos/github.svg" },
@@ -340,6 +342,12 @@ const credentialFieldConfig: Record<CredentialType, {
     secretPlaceholder: "your-username:abcd efgh ijkl mnop qrst uvwx",
     help: "Written as username:application password. In WordPress open Users > Profile, scroll to Application Passwords, type a name (RXJ) and press Add New Application Password; it is shown once. Not your login password. The user needs the Author or Editor role to create posts. The site must be on https.",
   },
+  [CredentialType.S3]: {
+    namePlaceholder: "My R2 bucket",
+    defaultName: "S3 storage credential",
+    secretLabel: "Storage Settings",
+    secretPlaceholder: "",
+  },
   [CredentialType.LINKEDIN]: {
     namePlaceholder: "My LinkedIn",
     defaultName: "LinkedIn account",
@@ -458,6 +466,21 @@ export const CredentialForm = ({ initialData }: CredentialFormProps) => {
     hostFingerprint: "",
   });
   const isSsh = selectedType === CredentialType.SSH;
+
+  // S3-compatible storage: provider, endpoint, region and keys together
+  const [s3Fields, setS3Fields] = React.useState({
+    provider: "aws",
+    endpoint: "",
+    region: "us-east-1",
+    accessKeyId: "",
+    secretAccessKey: "",
+  });
+  const isS3 = selectedType === CredentialType.S3;
+  const s3Complete =
+    !!s3Fields.accessKeyId.trim() && !!s3Fields.secretAccessKey.trim() &&
+    (s3Fields.provider === "aws" || !!s3Fields.endpoint.trim());
+  const s3Touched = !!s3Fields.endpoint || !!s3Fields.accessKeyId || !!s3Fields.secretAccessKey;
+  const s3Preset = S3_PROVIDERS.find((provider) => provider.value === s3Fields.provider) ?? S3_PROVIDERS[0];
   const smtpComplete =
     !!smtpFields.host.trim() && !!smtpFields.user.trim() && !!smtpFields.pass;
   const smtpTouched =
@@ -514,6 +537,8 @@ export const CredentialForm = ({ initialData }: CredentialFormProps) => {
     // completely, and whether anything was typed at all
     const [complete, touched, missing] = isSsh
       ? [sshComplete, sshTouched, "Host, username and a password or private key are required"]
+      : isS3
+        ? [s3Complete, s3Touched, "Access key ID, secret access key and (except for Amazon S3) the endpoint are required"]
       : isSmtp
         ? [smtpComplete, smtpTouched, "Host, user email and password are required"]
         : isGoogleServiceAccount
@@ -532,6 +557,8 @@ export const CredentialForm = ({ initialData }: CredentialFormProps) => {
       ? ""
       : isSsh
         ? JSON.stringify(sshFields)
+        : isS3
+          ? JSON.stringify(s3Fields)
         : isSmtp
           ? JSON.stringify(smtpFields)
           : isGoogleServiceAccount
@@ -629,6 +656,65 @@ export const CredentialForm = ({ initialData }: CredentialFormProps) => {
                   </FormItem>
                 )}
               />
+
+              {/* S3-compatible storage fields */}
+              {isS3 && (
+                <div className="space-y-4 rounded-md border p-4 bg-muted/20">
+                  <h3 className="text-sm font-medium">Storage Settings</h3>
+                  {isEdit && (
+                    <p className="text-xs text-muted-foreground">
+                      The saved settings are not shown. Fill the fields in again to replace them, or leave them empty to only rename the credential.
+                    </p>
+                  )}
+                  <div className="space-y-2">
+                    <label className="text-xs font-medium">Provider</label>
+                    <Select
+                      value={s3Fields.provider}
+                      onValueChange={(value) => {
+                        const preset = S3_PROVIDERS.find((provider) => provider.value === value) ?? S3_PROVIDERS[0];
+                        setS3Fields({ ...s3Fields, provider: value, endpoint: preset.endpoint, region: preset.region });
+                      }}
+                    >
+                      <SelectTrigger className="w-full">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {S3_PROVIDERS.map((provider) => (
+                          <SelectItem key={provider.value} value={provider.value}>
+                            {provider.label}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    <p className="text-xs text-muted-foreground">{s3Preset.help}</p>
+                  </div>
+                  {s3Fields.provider !== "aws" && (
+                    <div className="space-y-2">
+                      <label className="text-xs font-medium">Endpoint</label>
+                      <Input placeholder={s3Preset.endpoint} value={s3Fields.endpoint}
+                        onChange={(e) => setS3Fields({ ...s3Fields, endpoint: e.target.value })} />
+                    </div>
+                  )}
+                  <div className="space-y-2">
+                    <label className="text-xs font-medium">Region</label>
+                    <Input placeholder={s3Preset.region} value={s3Fields.region}
+                      onChange={(e) => setS3Fields({ ...s3Fields, region: e.target.value })} />
+                  </div>
+                  <div className="space-y-2">
+                    <label className="text-xs font-medium">Access Key ID</label>
+                    <Input value={s3Fields.accessKeyId}
+                      onChange={(e) => setS3Fields({ ...s3Fields, accessKeyId: e.target.value })} />
+                  </div>
+                  <div className="space-y-2">
+                    <label className="text-xs font-medium">Secret Access Key</label>
+                    <Input type="password" value={s3Fields.secretAccessKey}
+                      onChange={(e) => setS3Fields({ ...s3Fields, secretAccessKey: e.target.value })} />
+                  </div>
+                  {form.formState.errors.value && (
+                    <p className="text-sm text-destructive">{form.formState.errors.value.message}</p>
+                  )}
+                </div>
+              )}
 
               {/* SMTP fields */}
               {selectedType === CredentialType.SMTP && (
@@ -908,7 +994,7 @@ export const CredentialForm = ({ initialData }: CredentialFormProps) => {
                 </div>
               )}
 
-              {selectedType !== CredentialType.SMTP && !isGoogleServiceAccountType && !isOAuth && !isSsh && (
+              {selectedType !== CredentialType.SMTP && !isGoogleServiceAccountType && !isOAuth && !isSsh && !isS3 && (
                 <FormField
                   control={form.control}
                   name="value"
