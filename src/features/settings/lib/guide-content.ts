@@ -509,6 +509,7 @@ const CHAPTERS = (nodeCount: number): GuideChapter[] => [
           "**Messenger and Instagram:** replies to people who wrote to your Page or account, answers to comments on your posts (see Comment to DM), and posts: Instagram photos, Reels, carousels and Stories, Facebook Page photos and videos (the **Instagram / Facebook Post** node; videos as a public .mp4 link or a file).",
           "**Email:** Gmail, SMTP, Resend or SendGrid, with attachments. **Slack, Discord, Twilio** (SMS and WhatsApp).",
           "**LinkedIn:** post text, a link or a picture on your profile (or a Company Page once your LinkedIn app is approved for it). Connect it under Credentials; LinkedIn sign-ins last 60 days, and **Reconnect** on the credential renews it without touching your workflows.",
+          "**YouTube:** upload videos (from a link or an S3 Storage file, up to 512 MB), change titles, descriptions, tags, privacy and thumbnails, list your videos with views, and reply to comments. Connect the channel under Credentials > YouTube Channel. Until RXJ's Google app has passed Google's YouTube audit, uploaded videos stay private.",
         ],
       },
       {

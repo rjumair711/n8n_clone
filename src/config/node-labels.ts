@@ -34,6 +34,7 @@ const NODE_LABELS: Record<string, string> = {
     GOOGLE_SEARCH_CONSOLE: "Google Search Console",
     LINKEDIN: "LinkedIn",
     S3_STORAGE: "S3 Storage",
+    YOUTUBE: "YouTube",
     SSH: "SSH",
     PDF_GENERATOR: "PDF Generator",
     CONVERT_TO_FILE: "Convert to File",

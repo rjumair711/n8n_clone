@@ -146,6 +146,7 @@ const credentialLogos: Record<CredentialType, string> = {
     [CredentialType.GOOGLE_SEARCH_CONSOLE]: "/logos/google-search-console.svg",
     [CredentialType.LINKEDIN]: "/logos/linkedin.svg",
     [CredentialType.S3]: "/logos/s3-storage.svg",
+    [CredentialType.YOUTUBE]: "/logos/youtube.svg",
     [CredentialType.MYSQL]: "/logos/mysql.svg",
     [CredentialType.RESEND]: "/logos/resend.svg",
     [CredentialType.SENDGRID]: "/logos/sendgrid.svg",

@@ -161,6 +161,7 @@ const TOOL_LABELS: Record<string, string> = {
   GOOGLE_SEARCH_CONSOLE: "Google Search Console",
   LINKEDIN: "LinkedIn Post",
   S3_STORAGE: "S3 Storage",
+  YOUTUBE: "YouTube",
   SSH: "SSH Command",
   MYSQL: "MySQL",
   RESEND: "Resend",

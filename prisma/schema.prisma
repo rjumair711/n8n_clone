@@ -418,6 +418,8 @@ enum CredentialType {
   LINKEDIN
   // An S3-compatible bucket: provider, endpoint, region and access keys
   S3
+  // "Connect YouTube": a Google refresh token with YouTube's scopes, and the channel
+  YOUTUBE
 }
 
 model Workflow {
@@ -926,6 +928,7 @@ enum NodeType {
   GOOGLE_SEARCH_CONSOLE
   LINKEDIN
   S3_STORAGE
+  YOUTUBE
   // A note on the canvas; never runs
   STICKY_NOTE
 }

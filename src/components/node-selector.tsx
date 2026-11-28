@@ -664,6 +664,12 @@ const productivityNodes: NodeTypeOption[] = [
         description: "Files in your own S3, Cloudflare R2, Backblaze, Wasabi or Spaces bucket, with links",
         icon: "/logos/s3-storage.svg"
     },
+    {
+        type: NodeType.YOUTUBE,
+        label: "YouTube",
+        description: "Upload videos, change their details and thumbnail, list videos, reply to comments",
+        icon: "/logos/youtube.svg"
+    },
 ]
 
 const networkNodes: NodeTypeOption[] = [
