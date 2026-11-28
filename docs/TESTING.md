@@ -2581,6 +2581,42 @@ Needs the `google_search_console` migration applied (it runs on the production d
 | 11 | Site `example` (no dot) | fails at once: "Site must be the property as Search Console shows it" |
 | 12 | Connect it to an AI Agent's Tools port | the tool is "Read" and never asks for approval |
 
+## T60. Reels, carousels, Stories and Facebook videos
+
+No migration. Needs the test Meta app with an Instagram professional account connected to a Facebook Page (credential with `instagram_content_publish` and `pages_manage_posts`), a public MP4 (5 to 30 seconds, 9:16) and two public JPEGs. Delete the test posts afterwards.
+
+| # | Do | Expect |
+|---|----|--------|
+| 1 | Instagram / Facebook Post, **Instagram Reel**, Video = the MP4 address, Caption `RXJ test` | the execution waits (shows Running, steps "check" and "wait" in the logs), then the Reel is on the account; `post.url` opens it; `post.type` is `reel` |
+| 2 | The same with Also Show In The Feed off | the Reel is only in the Reels tab |
+| 3 | **Instagram Carousel** with the two JPEGs and the MP4, one per line | one post with three slides in that order |
+| 4 | Carousel with one line | fails at once: "2 to 10 pictures or videos, one per line; 1 were given" |
+| 5 | **Instagram Story** with a JPEG, then with the MP4 | two Story items; no caption field in the dialog |
+| 6 | **Facebook Page Video** with the MP4, Title and Caption | `post.processing: true`; the video appears on the Page a minute later with the title and description |
+| 7 | Reel with a `.png` file variable | fails: "a video has to be MP4 or MOV" |
+| 8 | Reel with an `http://` address | fails at once: "the video address must start with https://" |
+| 9 | An existing Instagram Photo Post node | works exactly as before |
+| 10 | As an AI Agent tool with a Reel | still publishes (waits up to a minute); Require approval is on by default |
+
+## T61. LinkedIn node
+
+Needs the `linkedin_node` migration applied (it runs on the production deploy after merging): two enum values, nothing else. Needs a LinkedIn app at developer.linkedin.com with the products "Sign In with LinkedIn using OpenID Connect" and "Share on LinkedIn", the redirect URL `<app URL>/api/oauth/linkedin/callback`, and `LINKEDIN_CLIENT_ID` / `LINKEDIN_CLIENT_SECRET` on the server. Use a test LinkedIn account if you can, and delete the test posts afterwards.
+
+| # | Do | Expect |
+|---|----|--------|
+| 1 | Before the deploy: `npx prisma migrate status` | `..._linkedin_node` not yet applied. After: up to date |
+| 2 | Without the two env vars: Credentials > New credential > LinkedIn Account > **Connect LinkedIn** | back on the form: "LinkedIn sign-in is not set up: LINKEDIN_CLIENT_ID and LINKEDIN_CLIENT_SECRET are missing" |
+| 3 | With them: **Connect LinkedIn**, sign in, allow | a credential "LinkedIn (your name)" in the list; the audit log has "Credential created" |
+| 4 | LinkedIn node, Create Post, Text `RXJ test (please ignore) #automation @ 50% off` | a post on your profile that shows exactly that text, with #automation as a hashtag; `linkedin.url` opens it |
+| 5 | Run step 4 again with the same text | "LinkedIn refuses the same text twice in a row" |
+| 6 | Share Link with a blog address and a title | a post with the link's card |
+| 7 | Post With Image with a JPEG address and Alt Text | a post with the picture |
+| 8 | Post As **A Company Page** without `LINKEDIN_ORGANIZATION_POSTS` | fails at once: "posting as a Company Page needs LinkedIn's Community Management API..." |
+| 9 | Open the credential, **Reconnect LinkedIn** | back in the list, the same credential; the audit log says "reconnected"; the workflow from step 4 still has it selected and works |
+| 10 | As an editor (not admin) of a workspace, Connect LinkedIn | "needs the admin role" (credentials are admins') |
+| 11 | Cancel on LinkedIn's sign-in page | "LinkedIn sign-in was cancelled" |
+| 12 | Connect it to an AI Agent's Tools port | the tool is "Write" and asks for approval |
+
 # When something fails
 
 Note the node, the exact values you entered, and the error text from the

@@ -1344,35 +1344,94 @@ export const InstagramTriggerNode = createIntegrationNode(
   (data) => metaTriggerSummary(data, "On direct message")
 );
 
+const IG_POST_OPS = ["instagram_photo", "instagram_reel", "instagram_carousel", "instagram_story"];
+const FB_POST_OPS = ["facebook_photo", "facebook_video"];
+
+const META_VIDEO_HELP =
+  "A public https address of an MP4 or MOV video (a link that ends in .mp4 works best), or a file variable. Meta downloads it from there; a file goes through its 15-minute download link, so the app has to be on a public https address. Workflow files are at most 10 MB: put larger videos on a public address.";
+
 export const socialPostConfig: IntegrationConfig = {
   label: "Instagram / Facebook Post",
   description:
-    "Publish a photo with a caption on your Instagram professional account or your Facebook Page. The post is public as soon as the node has run.",
+    "Publish on your Instagram professional account (a photo, a Reel, a carousel or a Story) or your Facebook Page (a photo or a video). The post is public as soon as the node has run.",
   logo: "/logos/social-post.svg",
   credentialTypeFor: (values) =>
-    values.operation === "facebook_photo"
+    FB_POST_OPS.includes(values.operation ?? "")
       ? CredentialType.FACEBOOK_PAGE
       : instagramCredential(values),
   credentialLabel: "Credential",
   defaultVariableName: "post",
-  hint: "The result has {{post.id}} and {{post.url}}, the link to the post. Fields support {{variables}}. As an AI Agent tool this node publishes what the model writes: keep Require approval on.",
+  hint: "The result has {{post.id}} and {{post.url}}, the link to the post. A Reel, a video Story or a carousel with videos waits until Instagram has prepared it (up to 5 minutes; the run sleeps meanwhile). A Facebook video appears on the Page when Facebook has processed it. Fields support {{variables}}. As an AI Agent tool this node publishes what the model writes: keep Require approval on.",
   operations: [
     { value: "instagram_photo", label: "Instagram Photo Post" },
+    { value: "instagram_reel", label: "Instagram Reel" },
+    { value: "instagram_carousel", label: "Instagram Carousel (2 to 10 pictures or videos)" },
+    { value: "instagram_story", label: "Instagram Story" },
     { value: "facebook_photo", label: "Facebook Page Photo Post" },
+    { value: "facebook_video", label: "Facebook Page Video" },
   ],
   fields: [
-    { ...instagramConnectionField, operations: ["instagram_photo"] },
+    { ...instagramConnectionField, operations: IG_POST_OPS },
     metaImageField(
       ["instagram_photo"],
       `${META_IMAGE_HELP} Instagram takes JPEG only, between 4:5 and 1.91:1 in shape.`
     ),
     metaImageField(["facebook_photo"], META_IMAGE_HELP),
     {
+      name: "video",
+      label: "Video",
+      placeholder: "https://example.com/reel.mp4 or video.file",
+      description: META_VIDEO_HELP,
+      required: true,
+      operations: ["instagram_reel", "facebook_video"],
+    },
+    {
+      name: "carouselMedia",
+      label: "Pictures and Videos",
+      type: "textarea",
+      placeholder: "https://example.com/1.jpg\nhttps://example.com/2.jpg\nhttps://example.com/clip.mp4",
+      description:
+        "2 to 10, one per line, in the order they are shown: public https addresses or file variables. Pictures JPEG; videos MP4 or MOV.",
+      required: true,
+      operations: ["instagram_carousel"],
+    },
+    {
+      name: "storyMedia",
+      label: "Picture or Video",
+      placeholder: "https://example.com/story.jpg or image.file",
+      description:
+        "One JPEG picture or MP4/MOV video, 9:16 looks best. Stories have no caption and disappear after 24 hours.",
+      required: true,
+      operations: ["instagram_story"],
+    },
+    {
       name: "caption",
       label: "Caption",
       type: "textarea",
       placeholder: "New arrivals this week. #newin",
-      description: `Up to ${INSTAGRAM_MAX_CAPTION} characters on Instagram.`,
+      description: `Up to ${INSTAGRAM_MAX_CAPTION} characters on Instagram. For a Facebook video it is the description.`,
+      operations: ["instagram_photo", "instagram_reel", "instagram_carousel", ...FB_POST_OPS],
+    },
+    {
+      name: "videoTitle",
+      label: "Title",
+      placeholder: "Eid collection 2026",
+      operations: ["facebook_video"],
+    },
+    {
+      name: "shareToFeed",
+      label: "Also Show In The Feed",
+      type: "switch",
+      defaultValue: "true",
+      description: "On: the Reel also appears in the feed and on the profile grid. Off: only in the Reels tab.",
+      operations: ["instagram_reel"],
+    },
+    {
+      name: "coverUrl",
+      label: "Cover Image URL",
+      placeholder: "https://example.com/cover.jpg",
+      description: "Optional: a public JPEG for the Reel's cover. Empty: Instagram picks a frame.",
+      operations: ["instagram_reel"],
     },
     {
       name: "accountId",
@@ -1380,20 +1439,22 @@ export const socialPostConfig: IntegrationConfig = {
       placeholder: "17841400000000000",
       description:
         "Leave empty: with a Facebook Page credential the Instagram account connected to the Page is used.",
-      operations: ["instagram_photo"],
+      operations: IG_POST_OPS,
     },
     {
       name: "pageId",
       label: "Page ID",
       placeholder: "100000000000000",
       description: "Leave empty for the Page the credential belongs to.",
-      operations: ["facebook_photo"],
+      operations: FB_POST_OPS,
     },
   ],
 };
 
 export const SocialPostNode = createIntegrationNode(socialPostConfig, (data) =>
-  data.image ? operationLabel(socialPostConfig, data.operation) : "Not Configured"
+  data.image || data.video || data.carouselMedia || data.storyMedia
+    ? operationLabel(socialPostConfig, data.operation)
+    : "Not Configured"
 );
 
 // =========================================================================
@@ -2283,6 +2344,101 @@ export const searchConsoleConfig: IntegrationConfig = {
     },
   ],
 };
+
+// =========================================================================
+// LINKEDIN
+// =========================================================================
+export const linkedinConfig: IntegrationConfig = {
+  label: "LinkedIn",
+  description:
+    "Post on LinkedIn as yourself, or as a Company Page you administer: text, a link with its preview card, or a picture. The post is public as soon as the node has run.",
+  logo: "/logos/linkedin.svg",
+  credentialType: CredentialType.LINKEDIN,
+  credentialLabel: "LinkedIn Account",
+  defaultVariableName: "linkedin",
+  hint: "The result has {{linkedin.id}} (the post's urn) and {{linkedin.url}}. #words become hashtags; every other character is shown as written. A LinkedIn sign-in lasts 60 days: when it expires the node says so, and Reconnect on the credential renews it. As an AI Agent tool this node publishes what the model writes: keep Require approval on.",
+  operations: [
+    { value: "create_post", label: "Create Post (text)" },
+    { value: "share_link", label: "Share Link" },
+    { value: "image_post", label: "Post With Image" },
+  ],
+  fields: [
+    {
+      name: "postAs",
+      label: "Post As",
+      type: "select",
+      defaultValue: "person",
+      options: [
+        { value: "person", label: "Me (my profile)" },
+        { value: "organization", label: "A Company Page" },
+      ],
+      description:
+        "A Company Page needs LinkedIn's approval for your app (Community Management API) and LINKEDIN_ORGANIZATION_POSTS=true on the server.",
+    },
+    {
+      name: "organizationId",
+      label: "Company Page ID",
+      placeholder: "12345678",
+      description: "The number in the page's admin address: linkedin.com/company/12345678/admin",
+      required: true,
+      showWhen: (values) => values.postAs === "organization",
+    },
+    {
+      name: "text",
+      label: "Text",
+      type: "textarea",
+      placeholder: "We are hiring! {{job.title}} in Lahore. #hiring #jobs",
+      description: "Up to 3000 characters. Required for a text post; optional with a link or a picture.",
+    },
+    {
+      name: "linkUrl",
+      label: "Link",
+      placeholder: "https://example.com/blog/new-collection",
+      required: true,
+      operations: ["share_link"],
+    },
+    {
+      name: "linkTitle",
+      label: "Link Title",
+      placeholder: "Our new collection",
+      operations: ["share_link"],
+    },
+    {
+      name: "linkDescription",
+      label: "Link Description",
+      placeholder: "Twenty new designs for winter",
+      operations: ["share_link"],
+    },
+    {
+      name: "image",
+      label: "Image",
+      placeholder: "https://example.com/photo.jpg or image.file",
+      description: "JPEG, PNG or GIF up to 8 MB: a public https address or a file variable.",
+      required: true,
+      operations: ["image_post"],
+    },
+    {
+      name: "altText",
+      label: "Alt Text",
+      placeholder: "Our team at the Lahore office",
+      operations: ["image_post"],
+    },
+    {
+      name: "visibility",
+      label: "Visibility",
+      type: "select",
+      defaultValue: "PUBLIC",
+      options: [
+        { value: "PUBLIC", label: "Anyone" },
+        { value: "CONNECTIONS", label: "Connections only (profile posts)" },
+      ],
+    },
+  ],
+};
+
+export const LinkedinNode = createIntegrationNode(linkedinConfig, (data) =>
+  data.text || data.linkUrl || data.image ? operationLabel(linkedinConfig, data.operation) : "Not Configured"
+);
 
 export const SearchConsoleNode = createIntegrationNode(searchConsoleConfig, (data) =>
   data.siteUrl || data.operation === "list_sites"

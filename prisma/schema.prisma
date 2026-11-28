@@ -414,6 +414,8 @@ enum CredentialType {
   // Google Search Console through a service account (the other way is a
   // Google account, GOOGLE_OAUTH2)
   GOOGLE_SEARCH_CONSOLE
+  // "Connect LinkedIn": the access token (60 days) and the member's id
+  LINKEDIN
 }
 
 model Workflow {
@@ -920,6 +922,7 @@ enum NodeType {
   IMAGE_GENERATION
   WORDPRESS
   GOOGLE_SEARCH_CONSOLE
+  LINKEDIN
   // A note on the canvas; never runs
   STICKY_NOTE
 }

@@ -652,6 +652,12 @@ const productivityNodes: NodeTypeOption[] = [
         description: "Clicks, impressions and positions in Google Search; is a page indexed; sitemaps",
         icon: "/logos/google-search-console.svg"
     },
+    {
+        type: NodeType.LINKEDIN,
+        label: "LinkedIn",
+        description: "Post on your profile or a Company Page: text, a link or a picture",
+        icon: "/logos/linkedin.svg"
+    },
 ]
 
 const networkNodes: NodeTypeOption[] = [

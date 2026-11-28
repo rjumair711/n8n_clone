@@ -991,6 +991,25 @@ How a site does in Google Search, for SEO reports and alerts. Read-only: the nod
 * As an AI Agent tool every operation is "read".
 * Not built: submitting or deleting sitemaps and requesting indexing (they need the full `webmasters` scope), and Google Analytics.
 
+## LinkedIn
+
+Posts on LinkedIn through the Posts API (`https://api.linkedin.com/rest/posts`), as the member who connected the credential or as a Company Page they administer. Executor: `src/features/executions/components/apps/linkedin.ts`; sign-in: `src/lib/linkedin-oauth.ts` and `src/app/api/oauth/linkedin/`.
+
+| Operation | What it posts |
+| --------- | ------------- |
+| Create Post | Text (required, up to 3000 characters) |
+| Share Link | A link with its preview card (Link, optional Link Title and Link Description), and optional text |
+| Post With Image | A JPEG, PNG or GIF up to 8 MB (a public https address or a file variable) with optional Alt Text and text. The picture is uploaded first (`/rest/images?action=initializeUpload`, then a PUT to the upload address LinkedIn gives, which must be on `linkedin.com`), in a step of its own |
+
+* **Post As:** Me (the default; `urn:li:person:<id>`) or **A Company Page** by its number (`urn:li:organization:<id>`). A page needs the Community Management API scopes on the credential; without them the node says what to do (approval, `LINKEDIN_ORGANIZATION_POSTS=true`, Reconnect). **Visibility:** Anyone, or Connections only for profile posts.
+* **Text is shown as written.** LinkedIn's post text is a small markup language in which `( ) [ ] { } < > @ # * _ ~ | \` mean something; unescaped, they cut a post short or make LinkedIn refuse it. Every one is escaped with a backslash, and a `#word` at the start or after a space becomes a real hashtag (`{hashtag|\#|word}`).
+* **The result** is `{{linkedin.id}}` (the post's urn, from the `x-restli-id` header) and `{{linkedin.url}}` (`https://www.linkedin.com/feed/update/<urn>/`), with `author` and, for a picture, `image`.
+* **Connecting.** Credentials > New credential > **LinkedIn Account** > **Connect LinkedIn** signs in with LinkedIn (OAuth, the state checked against a cookie and the signed-in user, like Salesforce). The callback trades the code for a token, reads the member's id from `/v2/userinfo` and stores the token, its expiry, the id, the name and the granted scopes, encrypted. Only workspace owners and admins can connect.
+* **60 days.** LinkedIn's access tokens last 60 days and refresh tokens are only for LinkedIn's approved partners. After the expiry the node fails before calling LinkedIn with "the LinkedIn sign-in expired on <date> ... press Reconnect". The credential's edit page has **Reconnect LinkedIn**, which renews that same credential (checked: a LinkedIn credential of the workspace), so the workflows that use it keep working. It is in the audit log as "reconnected".
+* **Errors** name the fix: 401 (reconnect), 403 (the app's products, page admin), an unsupported API version (`LINKEDIN_API_VERSION`), and LinkedIn's refusal of the same text twice.
+* As an AI Agent tool every operation is "write": it asks for approval by default.
+* Not built: videos, documents, polls, mentions of people or companies (an `@` is shown as text), scheduled posts, comments, and reading posts or analytics.
+
 ## Shopify and WooCommerce
 
 Two store nodes and two triggers. The nodes can also be AI Agent tools: reading is "read", creating and updating is "write" (so it asks for approval by default).
@@ -1034,8 +1053,9 @@ Two store nodes and two triggers. The nodes can also be AI Agent tools: reading 
 | Telegram    | Bot messaging: text, or a file with a caption, and the Telegram Trigger for incoming messages |
 | WhatsApp    | Text, template, file, reply-button and list-menu messages via the WhatsApp Business Cloud API, and the WhatsApp Trigger. See "WhatsApp buttons and list menus" |
 | Messenger   | Text and picture replies to people who wrote to your Facebook Page, answers to comments on its posts (public reply, private reply, hide), and the Messenger Trigger |
-| Instagram   | Text and picture direct messages, answers to comments on posts and reels (public reply, private reply, hide), the Instagram Trigger, and photo posts (with the Instagram / Facebook Post node) |
+| Instagram   | Text and picture direct messages, answers to comments on posts and reels (public reply, private reply, hide), the Instagram Trigger, and photo posts, Reels, carousels and Stories (with the Instagram / Facebook Post node) |
 | Twilio      | SMS and WhatsApp messages |
+| LinkedIn    | Posts on your profile or a Company Page: text, a link card or a picture. See "LinkedIn" |
 | Email       | SMTP email, with file attachments |
 | Gmail       | Email through a connected Google account, with file attachments |
 | Resend      | Email through the Resend API, with file attachments |
@@ -1049,7 +1069,7 @@ Three nodes and two triggers on Meta's Graph API. As AI Agent tools all three no
 | ---- | ------------ |
 | Messenger | Sends a text or a picture to someone who wrote to your Facebook Page; replies to, privately answers or hides a comment on its posts |
 | Instagram | Sends a text or a picture as a direct message from your Instagram professional account; replies to, privately answers or hides a comment on its posts and reels |
-| Instagram / Facebook Post | Publishes a photo with a caption on the Instagram account or on the Facebook Page |
+| Instagram / Facebook Post | Publishes on the Instagram account (a photo, a Reel, a carousel of 2 to 10 pictures and videos, a Story) or on the Facebook Page (a photo or a video) |
 | Messenger Trigger, Instagram Trigger | Start a run for each incoming message, comment, or both (**Trigger On**), with `chatInput` and `sessionId` for an AI Agent |
 
 * **Who can be written to.** A Page or an Instagram account can only message people who wrote to it first, and by their id from the trigger (`{{messenger.from}}`, `{{instagram.from}}`), not by name or phone number. A plain reply arrives within 24 hours of the person's last message. **Message Type** offers Meta's tags for later messages (human agent, post-purchase update and so on); they are not for promotion.
@@ -1057,6 +1077,14 @@ Three nodes and two triggers on Meta's Graph API. As AI Agent tools all three no
 * **The token** is sent in an `Authorization` header to those two hosts only, never in an address.
 * **Pictures.** Meta does not take an upload for these calls: it downloads the picture from a web address. The **Image** field takes a public `https` address, or a file variable. A file is handed over as its signed download link (valid 15 minutes), so the app has to run on a public `https` address for that. An address on a private network is refused.
 * **Instagram posts** take JPEG only, between 4:5 and 1.91:1 in shape, with a caption of up to 2200 characters. The node makes a container, waits until Instagram has prepared it (up to 20 seconds) and publishes it. With a Facebook Page credential and no Instagram Account ID, the Instagram account connected to the Page is looked up.
+* **Reels, carousels, Stories and Facebook videos.** Meta fetches the media from an address, like the pictures: a public `https` address, or a file variable (handed over as its 15-minute signed link, so the app has to be on a public `https` address; workflow files are at most 10 MB, so larger videos need a public address). A web address is a video when it ends in `.mp4`, `.mov` or `.m4v`; a file by its type (`video/mp4`, `video/quicktime`). Pictures in carousels and Stories are JPEG, like feed photos.
+  * **Instagram Reel:** a container with `media_type: REELS`, the video, the caption, **Also Show In The Feed** (`share_to_feed`, on by default) and an optional **Cover Image URL**.
+  * **Instagram Carousel:** **Pictures and Videos**, 2 to 10, one per line in the order shown. One container per item (`is_carousel_item`, videos as `VIDEO`), then the carousel container with the items' ids and the caption.
+  * **Instagram Story:** one picture or video (`media_type: STORIES`), no caption.
+  * **Facebook Page Video:** `POST /{page}/videos` with the address, the caption as description and an optional Title. Facebook answers at once and processes the video afterwards (`processing: true` in the result); it shows on the Page when that is done.
+  * **Waiting for Instagram.** A video takes Instagram a while to prepare, so the run checks the container's `status_code` in steps of their own, 10 seconds apart, at most 30 times (5 minutes), sleeping in between (`step.sleep`: nothing runs and no request is held open). A carousel's videos are waited for before the carousel is made, and the carousel itself before it is published. `ERROR` or `EXPIRED` fails the node with Instagram's reason and the video rules. As an AI Agent tool there are no steps to sleep in, so it waits in place for a minute at most.
+  * Every call that creates something is its own step, so a retry never publishes twice. The result is `{ platform, type, id, accountId, url }` (`type`: reel, carousel or story).
+  * Not built: Facebook Reels (their upload API is separate), scheduled posts, product tags and collaborators.
 * **A post is public as soon as the node has run** and is not taken back when a later node fails.
 * **Triggers** use the same two checks as the WhatsApp Trigger: Meta's verify token when the webhook is saved, and the `X-Hub-Signature-256` signature (made with the app secret) on every event. Echoes of the account's own messages, deleted messages, read and delivery receipts and reactions start nothing. Button taps and quick replies do, with their payload at `{{messenger.payload}}`. Attachments are given as a list of `{ type, url }`; they are not downloaded.
 * **Comments (comment to DM).** A trigger's **Trigger On** is **Messages** (the default, and what every trigger saved before this means), **Comments on posts**, or **Messages and comments**. Comments come from Meta's `feed` change on a Page (subscribe the Page's webhook to **feed**; it needs `pages_read_engagement` and `pages_manage_metadata`) and the `comments` change on Instagram (needs `instagram_manage_comments`, or `instagram_business_manage_comments` with Instagram Login).
@@ -1110,6 +1138,7 @@ Supported credential types:
 | SHOPIFY       | Shopify node (a custom app's Admin API access token, `shpat_...`) |
 | WOOCOMMERCE   | WooCommerce node (`consumer_key:consumer_secret`) |
 | WORDPRESS     | WordPress node (`username:application password`) |
+| LINKEDIN      | LinkedIn node ("Connect LinkedIn": the access token, its expiry and the member's id; renewed with Reconnect) |
 | GOOGLE_SEARCH_CONSOLE | Google Search Console node (service account: project id, client email, private key). A Google account (GOOGLE_OAUTH2) works too |
 | POSTGRES      | Postgres node (connection string) |
 | MYSQL         | MySQL node (`mysql://user:password@host:3306/database`) |
@@ -1678,6 +1707,9 @@ Anyone can run RXJ on their own VPS with Docker: [`docs/SELF_HOSTING.md`](docs/S
 | `ADMIN_EMAILS` | Who may publish, edit and delete workflow templates, comma-separated. The account's email must also be verified |
 | `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` | Google sign-in and the "Google account" credential. Add `<app URL>/api/oauth/google/callback` as an authorised redirect URI |
 | `GITHUB_CLIENT_ID`, `GITHUB_CLIENT_SECRET` | GitHub sign-in |
+| `LINKEDIN_CLIENT_ID`, `LINKEDIN_CLIENT_SECRET` | The LinkedIn app behind "Connect LinkedIn" (developer.linkedin.com): products "Sign In with LinkedIn using OpenID Connect" and "Share on LinkedIn", redirect URL `<app URL>/api/oauth/linkedin/callback`. Without them the button says LinkedIn sign-in is not set up |
+| `LINKEDIN_ORGANIZATION_POSTS` | `true` once LinkedIn has approved the app for the Community Management API: the sign-in then also asks for `w_organization_social` and `r_organization_admin`, so the node can post as a Company Page. Leave unset before that: LinkedIn refuses a sign-in that asks for scopes the app does not have |
+| `LINKEDIN_API_VERSION` | Optional, `YYYYMM`: the version of LinkedIn's REST API the node sends (default in `src/lib/linkedin-options.ts`). LinkedIn supports each version for about a year |
 | `SALESFORCE_CLIENT_ID`, `SALESFORCE_CLIENT_SECRET` | The Salesforce connected app behind "Connect Salesforce". Its callback URL is `<app URL>/api/oauth/salesforce/callback`, with the `api` and `refresh_token, offline_access` scopes |
 | `RESEND_API_KEY` | Sends verification, password-reset and failure emails. Email verification is only required when this is set |
 | `EMAIL_FROM` | Sender of those emails; must be on a domain verified in Resend |

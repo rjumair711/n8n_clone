@@ -262,7 +262,130 @@ export const buildCommentCall = (
 // =========================================================================
 // PHOTO POSTS
 // =========================================================================
-export const POST_OPERATIONS = ["instagram_photo", "facebook_photo"];
+export const POST_OPERATIONS = [
+  "instagram_photo",
+  "facebook_photo",
+  "instagram_reel",
+  "instagram_carousel",
+  "instagram_story",
+  "facebook_video",
+];
+
+// The new post types: built and published by postInstagramMedia below; the
+// photo operations keep their own, older code path
+export const INSTAGRAM_MEDIA_OPERATIONS = ["instagram_reel", "instagram_carousel", "instagram_story"];
+
+export const CAROUSEL_MIN_ITEMS = 2;
+export const CAROUSEL_MAX_ITEMS = 10;
+
+/** Something Meta fetches by its address: a picture or a video. */
+export type MediaSource = { url: string; isVideo: boolean };
+
+/**
+ * The calls for a Reel, a carousel or a Story on Instagram. A carousel is
+ * one container per item, then a container of those, then the publish.
+ * Pure: the addresses come in already resolved.
+ */
+export const buildInstagramMediaCalls = (
+  operation: string,
+  data: MetaData,
+  context: WorkflowContext,
+  { accountId, media }: { accountId: string; media: MediaSource[] }
+) => {
+  const origin = GRAPH_ORIGINS[connectionOf(data)];
+  const caption = operation === "instagram_story" ? "" : readCaption(data, context, INSTAGRAM_MAX_CAPTION);
+  const containerCall = (body: Record<string, unknown>): GraphCall => ({
+    origin,
+    method: "POST",
+    path: `/${accountId}/media`,
+    body,
+  });
+  const withCaption = caption ? { caption } : {};
+
+  if (operation === "instagram_reel") {
+    const [video] = media;
+    if (!video?.isVideo) {
+      throw new NonRetriableError(`${POST_LABEL} node: a Reel needs a video (MP4 or MOV)`);
+    }
+    const coverUrl = renderTemplate(data.coverUrl, context).trim();
+    return {
+      children: [] as GraphCall[],
+      container: () =>
+        containerCall({
+          media_type: "REELS",
+          video_url: video.url,
+          ...withCaption,
+          // Shown in the feed and on the profile grid too, unless switched off
+          share_to_feed: data.shareToFeed !== "false",
+          ...(coverUrl ? { cover_url: coverUrl } : {}),
+        }),
+    };
+  }
+
+  if (operation === "instagram_story") {
+    const [item] = media;
+    return {
+      children: [] as GraphCall[],
+      container: () =>
+        containerCall({
+          media_type: "STORIES",
+          ...(item.isVideo ? { video_url: item.url } : { image_url: item.url }),
+        }),
+    };
+  }
+
+  if (operation === "instagram_carousel") {
+    if (media.length < CAROUSEL_MIN_ITEMS || media.length > CAROUSEL_MAX_ITEMS) {
+      throw new NonRetriableError(
+        `${POST_LABEL} node: a carousel has ${CAROUSEL_MIN_ITEMS} to ${CAROUSEL_MAX_ITEMS} pictures or videos; ${media.length} were given`
+      );
+    }
+    return {
+      children: media.map((item) =>
+        containerCall({
+          is_carousel_item: true,
+          ...(item.isVideo ? { media_type: "VIDEO", video_url: item.url } : { image_url: item.url }),
+        })
+      ),
+      container: (childIds: string[]) =>
+        containerCall({ media_type: "CAROUSEL", children: childIds.join(","), ...withCaption }),
+    };
+  }
+
+  throw new NonRetriableError(`${POST_LABEL} node: Unsupported operation "${operation}"`);
+};
+
+/**
+ * A video on a Facebook Page: one call with the video's address. Facebook
+ * downloads and processes it after answering.
+ */
+export const buildFacebookVideoCall = (
+  data: MetaData,
+  context: WorkflowContext,
+  videoUrl: string
+): GraphCall => {
+  const read = createReader(POST_LABEL, data, context);
+  const description = readCaption(data, context);
+  const title = read.field("videoTitle");
+
+  return {
+    origin: GRAPH_ORIGINS.facebook,
+    method: "POST",
+    path: `/${read.account("pageId", "Page ID")}/videos`,
+    body: {
+      file_url: videoUrl,
+      ...(description ? { description } : {}),
+      ...(title ? { title } : {}),
+    },
+  };
+};
+
+/** The carousel's items: one per line or comma, at most CAROUSEL_MAX_ITEMS + a few to report. */
+export const splitMediaList = (value: string | undefined) =>
+  (value ?? "")
+    .split(/[\n,]/)
+    .map((entry) => entry.trim())
+    .filter(Boolean);
 
 const POST_LABEL = "Instagram / Facebook Post";
 
@@ -372,12 +495,36 @@ export const resolveImageUrl = async ({
   context: WorkflowContext;
   userId: string;
   jpegOnly?: boolean;
-}): Promise<string> => {
+}): Promise<string> =>
+  (await resolveMediaUrl({ label, value, context, userId, accept: jpegOnly ? "jpeg" : "image" })).url;
+
+// A web address that ends in a video file's extension is a video
+const VIDEO_ADDRESS = /\.(mp4|mov|m4v)(\?|#|$)/i;
+
+/**
+ * The same for every kind of media Meta fetches: a picture ("image", or
+ * "jpeg" for Instagram feed posts), a video, or either. A web address is
+ * taken as a video when it ends in .mp4, .mov or .m4v; a file by its type.
+ */
+export const resolveMediaUrl = async ({
+  label,
+  value,
+  context,
+  userId,
+  accept,
+}: {
+  label: string;
+  value: string | undefined;
+  context: WorkflowContext;
+  userId: string;
+  accept: "image" | "jpeg" | "video" | "any";
+}): Promise<MediaSource> => {
   const rendered = renderTemplate(value, context).trim();
+  const noun = accept === "video" ? "video" : accept === "any" ? "media" : "image";
 
   if (/^[a-z][a-z0-9+.-]*:\/\//i.test(rendered)) {
     if (!/^https:\/\//i.test(rendered)) {
-      throw new NonRetriableError(`${label} node: the image address must start with https://`);
+      throw new NonRetriableError(`${label} node: the ${noun} address must start with https://`);
     }
 
     // Meta fetches it, not this server. It is checked all the same: a
@@ -385,9 +532,58 @@ export const resolveImageUrl = async ({
     // private address.
     await assertPublicUrl(rendered);
 
-    return rendered;
+    return { url: rendered, isVideo: accept === "video" || (accept === "any" && VIDEO_ADDRESS.test(rendered)) };
   }
 
+  if (accept === "video" || accept === "any") {
+    const fileId = resolveFileId(label, context, value);
+    let file: Awaited<ReturnType<typeof getOwnedWorkflowFile>>;
+    try {
+      file = await getOwnedWorkflowFile(fileId, userId);
+    } catch (error) {
+      if (!(error instanceof NotFoundError)) throw error;
+      throw new NonRetriableError(
+        `${label} node: the file was not found. Files are removed after ${FILE_RETENTION_DAYS} days.`
+      );
+    }
+    const mimeType = file.mimeType.split(";")[0].trim().toLowerCase();
+    const isVideo = mimeType === "video/mp4" || mimeType === "video/quicktime";
+    if (accept === "video" ? !isVideo : !isVideo && !mimeType.startsWith("image/")) {
+      throw new NonRetriableError(
+        `${label} node: "${file.fileName}" is ${mimeType || "of an unknown type"}; ${accept === "video" ? "a video has to be MP4 or MOV" : "use a picture, or an MP4 or MOV video"}`
+      );
+    }
+    return { url: publicFileUrl(label, file.id), isVideo };
+  }
+
+  return { url: await resolvePictureFile({ label, value, context, userId, jpegOnly: accept === "jpeg" }), isVideo: false };
+};
+
+// The signed link Meta downloads a stored file from
+const publicFileUrl = (label: string, fileId: string) => {
+  const appUrl = getAppUrl();
+  if (!/^https:\/\//i.test(appUrl) || /^https:\/\/(localhost|127\.|\[::1\])/i.test(appUrl)) {
+    throw new NonRetriableError(
+      `${label} node: Meta fetches the file from this app, so NEXT_PUBLIC_APP_URL has to be a public https address. Use a public address instead, or run the workflow on the deployed app.`
+    );
+  }
+  return buildFileDownloadUrl(appUrl, fileId);
+};
+
+// A picture that is a workflow file (the code that was resolveImageUrl's)
+const resolvePictureFile = async ({
+  label,
+  value,
+  context,
+  userId,
+  jpegOnly,
+}: {
+  label: string;
+  value: string | undefined;
+  context: WorkflowContext;
+  userId: string;
+  jpegOnly: boolean;
+}): Promise<string> => {
   const fileId = resolveFileId(label, context, value);
 
   let file: Awaited<ReturnType<typeof getOwnedWorkflowFile>>;
@@ -580,6 +776,223 @@ const CONTAINER_CHECK_MS = 2000;
 
 const wait = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
+// A video takes Instagram a while to prepare. In a workflow the run sleeps
+// between checks (nothing runs meanwhile): up to 30 checks 10 seconds apart.
+// As an AI Agent's tool there are no steps to sleep in, so it waits here,
+// for a minute at most.
+export const VIDEO_CHECKS = 30;
+const VIDEO_CHECK_SLEEP = "10s";
+const INLINE_VIDEO_CHECKS = 20;
+const INLINE_VIDEO_CHECK_MS = 3000;
+
+/**
+ * Waits until an Instagram container is ready (FINISHED), checking in
+ * steps of their own so a long wait is a pause, not a running request.
+ */
+const waitForContainer = async ({
+  label,
+  token,
+  step,
+  inline,
+  stepPrefix,
+  statusCall,
+  what,
+}: {
+  label: string;
+  token: string;
+  step: Parameters<NodeExecutor<MetaData>>[0]["step"];
+  inline: boolean;
+  stepPrefix: string;
+  statusCall: GraphCall;
+  what: string;
+}) => {
+  const checks = inline ? INLINE_VIDEO_CHECKS : VIDEO_CHECKS;
+
+  for (let check = 0; check < checks; check++) {
+    const status = await step.run(`${stepPrefix}-check-${check}`, async () => {
+      const state = await sendGraphRequest({ label, call: statusCall, token });
+      return { code: text(state.status_code), detail: text(state.status) };
+    });
+
+    if (status.code === "ERROR" || status.code === "EXPIRED") {
+      throw new NonRetriableError(
+        `${label} node: Instagram could not use the ${what}${status.detail ? ` (${status.detail})` : ""}. A video has to be MP4 or MOV, 3 seconds to 15 minutes long (Reels up to 90 seconds for most accounts), and downloadable from its address.`
+      );
+    }
+    if (status.code !== "IN_PROGRESS") return;
+
+    if (inline) await wait(INLINE_VIDEO_CHECK_MS);
+    else await step.sleep(`${stepPrefix}-wait-${check}`, VIDEO_CHECK_SLEEP);
+  }
+
+  throw new NonRetriableError(
+    `${label} node: Instagram was still preparing the ${what} after ${inline ? "a minute" : "5 minutes"}. Try a shorter or smaller video.`
+  );
+};
+
+/**
+ * Reels, carousels and Stories on Instagram, and videos on a Facebook Page.
+ * Each call that creates something is a step of its own, so a retry never
+ * publishes twice.
+ */
+const postVideoOrAlbum = async ({
+  data,
+  nodeId,
+  userId,
+  context,
+  step,
+  inline,
+  operation,
+  variableName,
+}: {
+  data: MetaData;
+  nodeId: string;
+  userId: string;
+  context: WorkflowContext;
+  step: Parameters<NodeExecutor<MetaData>>[0]["step"];
+  inline: boolean;
+  operation: string;
+  variableName: string;
+}) => {
+  const label = POST_LABEL;
+  const read = createReader(label, data, context);
+  const prefix = `social-post-${nodeId}`;
+
+  // The settings, checked before the credential is read
+  const sources =
+    operation === "instagram_carousel"
+      ? splitMediaList(renderTemplate(data.carouselMedia, context))
+      : [read.required(operation === "instagram_story" ? "storyMedia" : "video", operation === "instagram_story" ? "Picture or Video" : "Video")];
+  if (operation === "instagram_carousel" && (sources.length < CAROUSEL_MIN_ITEMS || sources.length > CAROUSEL_MAX_ITEMS)) {
+    throw new NonRetriableError(
+      `${label} node: a carousel has ${CAROUSEL_MIN_ITEMS} to ${CAROUSEL_MAX_ITEMS} pictures or videos, one per line; ${sources.length} were given`
+    );
+  }
+  if (operation === "facebook_video") buildFacebookVideoCall(data, context, "");
+  else {
+    read.account("accountId", "Instagram Account ID");
+    readCaption(data, context, INSTAGRAM_MAX_CAPTION);
+  }
+
+  const token = await loadCredentialSecret({
+    step,
+    stepId: `${prefix}-get-credential`,
+    credentialId: data.credentialId,
+    userId,
+    label,
+  });
+
+  try {
+    if (operation === "facebook_video") {
+      const result = await step.run(`${prefix}-facebook-video`, async () => {
+        const video = await resolveMediaUrl({ label, value: data.video, context, userId, accept: "video" });
+        const response = await sendGraphRequest({ label, call: buildFacebookVideoCall(data, context, video.url), token });
+        const id = text(response.id);
+        return {
+          platform: "facebook",
+          id,
+          url: id ? `https://www.facebook.com/watch/?v=${id}` : "",
+          // Facebook processes the video after answering; it appears on the Page when that is done
+          processing: true,
+        };
+      });
+      return { ...context, [variableName]: result };
+    }
+
+    // Instagram: the account, then every item's container
+    const prepared = await step.run(`${prefix}-media-items`, async () => {
+      let accountId = read.account("accountId", "Instagram Account ID");
+      if (accountId === "me" && connectionOf(data) === "facebook") {
+        const page = await sendGraphRequest({ label, call: instagramAccountLookup, token });
+        accountId = isRecord(page.instagram_business_account) ? text(page.instagram_business_account.id) : "";
+        if (!/^\d{5,30}$/.test(accountId)) {
+          throw new NonRetriableError(
+            `${label} node: this Page has no Instagram professional account connected to it (or the token lacks the instagram_basic permission). Connect one in the Page's settings, or type the Instagram Account ID.`
+          );
+        }
+      }
+
+      const accept = operation === "instagram_reel" ? "video" : "any";
+      const media: MediaSource[] = [];
+      for (const source of sources) {
+        const item = await resolveMediaUrl({ label, value: source, context, userId, accept });
+        // Carousel and Story pictures follow the feed rule: JPEG only
+        if (!item.isVideo && operation !== "instagram_reel") {
+          media.push({ url: await resolveImageUrl({ label, value: source, context, userId, jpegOnly: true }), isVideo: false });
+        } else {
+          media.push(item);
+        }
+      }
+
+      const calls = buildInstagramMediaCalls(operation, data, context, { accountId, media });
+      const childIds: string[] = [];
+      for (const child of calls.children) {
+        const created = await sendGraphRequest({ label, call: child, token });
+        const id = text(created.id);
+        if (!/^\d{5,30}$/.test(id)) throw new NonRetriableError(`${label} node: Instagram did not accept a carousel item`);
+        childIds.push(id);
+      }
+      return { accountId, media, childIds };
+    });
+
+    const origin = GRAPH_ORIGINS[connectionOf(data)];
+    const statusOf = (containerId: string): GraphCall => ({
+      origin,
+      method: "GET",
+      path: `/${containerId}`,
+      query: { fields: "status_code,status" },
+    });
+
+    // A carousel's videos have to be ready before the carousel is made
+    for (const [index, childId] of prepared.childIds.entries()) {
+      if (!prepared.media[index]?.isVideo) continue;
+      await waitForContainer({ label, token, step, inline, stepPrefix: `${prefix}-item-${index}`, statusCall: statusOf(childId), what: `video ${index + 1}` });
+    }
+
+    const container = await step.run(`${prefix}-media-container`, async () => {
+      const calls = buildInstagramMediaCalls(operation, data, context, { accountId: prepared.accountId, media: prepared.media });
+      const created = await sendGraphRequest({ label, call: calls.container(prepared.childIds), token });
+      const id = text(created.id);
+      if (!/^\d{5,30}$/.test(id)) throw new NonRetriableError(`${label} node: Instagram did not accept the post`);
+      return id;
+    });
+
+    // Everything Instagram has to prepare: a Reel, a video Story, a carousel
+    await waitForContainer({
+      label,
+      token,
+      step,
+      inline,
+      stepPrefix: `${prefix}-container`,
+      statusCall: statusOf(container),
+      what: operation === "instagram_reel" ? "video" : operation === "instagram_story" ? "story" : "carousel",
+    });
+
+    const result = await step.run(`${prefix}-media-publish`, async () => {
+      const published = await sendGraphRequest({
+        label,
+        call: { origin, method: "POST", path: `/${prepared.accountId}/media_publish`, body: { creation_id: container } },
+        token,
+      });
+      const id = text(published.id);
+      const media = id
+        ? await sendGraphRequest({ label, call: { origin, method: "GET", path: `/${id}`, query: { fields: "permalink" } }, token }).catch(() => ({}))
+        : {};
+      return {
+        platform: "instagram",
+        type: operation.replace("instagram_", ""),
+        id,
+        accountId: prepared.accountId,
+        url: text((media as Record<string, unknown>).permalink),
+      };
+    });
+
+    return { ...context, [variableName]: result };
+  } catch (error) {
+    throw toMetaError(label, error);
+  }
+};
+
 /**
  * Publishes a photo with a caption on an Instagram account or a Facebook
  * Page.
@@ -590,6 +1003,7 @@ export const socialPostExecutor: NodeExecutor<MetaData> = async ({
   userId,
   context,
   step,
+  inline,
 }) => {
   const label = POST_LABEL;
   const variableName = data.variableName?.trim() || "post";
@@ -597,6 +1011,10 @@ export const socialPostExecutor: NodeExecutor<MetaData> = async ({
 
   if (!POST_OPERATIONS.includes(operation)) {
     throw new NonRetriableError(`${label} node: Unsupported operation "${operation}"`);
+  }
+
+  if (INSTAGRAM_MEDIA_OPERATIONS.includes(operation) || operation === "facebook_video") {
+    return postVideoOrAlbum({ data, nodeId, userId, context, step, inline: !!inline, operation, variableName });
   }
 
   const read = createReader(label, data, context);

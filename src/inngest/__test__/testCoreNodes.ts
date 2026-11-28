@@ -9889,6 +9889,204 @@ pour()</code></pre>
     }
   });
 
+  await test("Reels, carousels, Stories and Facebook videos are built the way the Graph API takes them", async () => {
+    const { readFileSync } = await import("node:fs");
+    const account = "17840000000000001";
+    const video = { url: "https://cdn.example.com/reel.mp4", isVideo: true };
+    const picture = (n: number) => ({ url: `https://cdn.example.com/${n}.jpg`, isVideo: false });
+    const calls = (operation: string, data: Record<string, string>, media: { url: string; isVideo: boolean }[], context: Record<string, unknown> = {}) =>
+      meta.buildInstagramMediaCalls(operation, data, context, { accountId: account, media });
+
+    // Reel: one container with the video, shown in the feed unless switched off
+    const reel = calls("instagram_reel", { caption: "New in {{season}}", coverUrl: "https://cdn.example.com/cover.jpg" }, [video], { season: "winter" });
+    assert.deepEqual(reel.children, []);
+    assert.deepEqual(reel.container([]), {
+      origin: "https://graph.facebook.com",
+      method: "POST",
+      path: `/${account}/media`,
+      body: { media_type: "REELS", video_url: video.url, caption: "New in winter", share_to_feed: true, cover_url: "https://cdn.example.com/cover.jpg" },
+    });
+    assert.equal((calls("instagram_reel", { shareToFeed: "false" }, [video]).container([]).body as any).share_to_feed, false);
+    assert.equal(calls("instagram_reel", { connection: "instagram" }, [video]).container([]).origin, "https://graph.instagram.com");
+    assert.throws(() => calls("instagram_reel", {}, [picture(1)]), /a Reel needs a video/);
+    assert.throws(() => calls("instagram_reel", { caption: "x".repeat(2201) }, [video]), /at most 2200/);
+
+    // Carousel: a container per item (videos as VIDEO), then one of those
+    const carousel = calls("instagram_carousel", { caption: "Swipe" }, [picture(1), video, picture(2)]);
+    assert.deepEqual(carousel.children.map((call) => call.body), [
+      { is_carousel_item: true, image_url: picture(1).url },
+      { is_carousel_item: true, media_type: "VIDEO", video_url: video.url },
+      { is_carousel_item: true, image_url: picture(2).url },
+    ]);
+    assert.deepEqual(carousel.container(["1001", "1002", "1003"]).body, { media_type: "CAROUSEL", children: "1001,1002,1003", caption: "Swipe" });
+    assert.throws(() => calls("instagram_carousel", {}, [picture(1)]), /2 to 10/);
+    assert.throws(() => calls("instagram_carousel", {}, Array.from({ length: 11 }, (_, n) => picture(n))), /2 to 10/);
+
+    // Story: a picture or a video, never a caption
+    assert.deepEqual(calls("instagram_story", { caption: "ignored" }, [picture(1)]).container([]).body, { media_type: "STORIES", image_url: picture(1).url });
+    assert.deepEqual(calls("instagram_story", {}, [video]).container([]).body, { media_type: "STORIES", video_url: video.url });
+    assert.throws(() => calls("instagram_photo", {}, [picture(1)]), /Unsupported operation/);
+
+    // Facebook video: one call with the address
+    assert.deepEqual(meta.buildFacebookVideoCall({ caption: "Our new shop", videoTitle: "Opening" }, {}, video.url), {
+      origin: "https://graph.facebook.com",
+      method: "POST",
+      path: "/me/videos",
+      body: { file_url: video.url, description: "Our new shop", title: "Opening" },
+    });
+    assert.equal(meta.buildFacebookVideoCall({ pageId: "100000000000001" }, {}, video.url).path, "/100000000000001/videos");
+
+    // The list of carousel items: one per line (or comma)
+    assert.deepEqual(meta.splitMediaList(" https://a/1.jpg\n\nhttps://a/2.jpg, image.file "), ["https://a/1.jpg", "https://a/2.jpg", "image.file"]);
+
+    // A video address by its extension; http and private addresses refused
+    const resolve = (value: string, accept: "video" | "any") =>
+      meta.resolveMediaUrl({ label: "Instagram / Facebook Post", value, context: {}, userId: "user-1", accept });
+    // (an address, not a name, so no DNS lookup is needed)
+    assert.deepEqual(await resolve("https://93.184.216.34/a.MP4?sig=1", "any"), { url: "https://93.184.216.34/a.MP4?sig=1", isVideo: true });
+    assert.deepEqual(await resolve("https://93.184.216.34/a.jpg", "any"), { url: "https://93.184.216.34/a.jpg", isVideo: false });
+    assert.deepEqual(await resolve("https://93.184.216.34/stream", "video"), { url: "https://93.184.216.34/stream", isVideo: true });
+    await assert.rejects(resolve("http://93.184.216.34/a.mp4", "video"), /the video address must start with https:\/\//);
+    const allowPrivate = process.env.ALLOW_PRIVATE_NETWORK_REQUESTS;
+    delete process.env.ALLOW_PRIVATE_NETWORK_REQUESTS;
+    try {
+      await assert.rejects(resolve("https://10.0.0.5/a.mp4", "video"));
+    } finally {
+      if (allowPrivate !== undefined) process.env.ALLOW_PRIVATE_NETWORK_REQUESTS = allowPrivate;
+    }
+
+    // The executor checks the settings before it reads a credential
+    const run = (data: Record<string, string>) => meta.socialPostExecutor({ ...baseParams, data, context: {} });
+    await assert.rejects(run({ operation: "instagram_carousel", carouselMedia: "https://a/1.jpg" }), /2 to 10 pictures or videos, one per line; 1 were given/);
+    await assert.rejects(run({ operation: "instagram_reel" }), /Video is required/);
+    await assert.rejects(run({ operation: "instagram_story" }), /Picture or Video is required/);
+    await assert.rejects(run({ operation: "facebook_video", video: "https://a/v.mp4", pageId: "my-page" }), /Page ID must be the account's numeric ID/);
+
+    // Waiting for a video: steps that sleep in a workflow, a short wait as an agent's tool
+    const source = readFileSync("src/features/executions/components/apps/meta.ts", "utf8");
+    assert.match(source, /if \(inline\) await wait\(INLINE_VIDEO_CHECK_MS\);\s+else await step\.sleep\(`\$\{stepPrefix\}-wait-\$\{check\}`, VIDEO_CHECK_SLEEP\);/);
+    assert.equal(meta.VIDEO_CHECKS, 30);
+    // A carousel's videos are ready before the carousel is made, then the carousel itself
+    assert.ok(source.indexOf("`${prefix}-item-${index}`") < source.indexOf("`${prefix}-media-container`"));
+    assert.ok(source.indexOf("`${prefix}-media-container`") < source.indexOf("stepPrefix: `${prefix}-container`"));
+    // The dialog: every new operation, Facebook ones on the Page credential
+    const dialog = readFileSync("src/features/executions/components/apps/nodes.tsx", "utf8");
+    for (const operation of ["instagram_reel", "instagram_carousel", "instagram_story", "facebook_video"]) {
+      assert.ok(dialog.includes(`{ value: "${operation}", label:`), operation);
+      assert.ok(meta.POST_OPERATIONS.includes(operation), operation);
+    }
+    assert.match(dialog, /const FB_POST_OPS = \["facebook_photo", "facebook_video"\];/);
+  });
+
+  await test("LinkedIn: sign-in, post bodies, escaping, and an expired sign-in", async () => {
+    const { readFileSync, readdirSync } = await import("node:fs");
+    const li = await import("@/features/executions/components/apps/linkedin");
+    const oauth = await import("@/lib/linkedin-oauth");
+    const person = { personId: "abc123", scopes: ["openid", "profile", "w_member_social"] };
+    const author = "urn:li:person:abc123";
+
+    // Text as written: markup characters escaped, #words as hashtags
+    assert.equal(li.toLinkedinText("Price (PKR) 5,000 @ shop [new]"), "Price \\(PKR\\) 5,000 \\@ shop \\[new\\]");
+    assert.equal(li.toLinkedinText("New in! #Eid2026 #سیل"), "New in! {hashtag|\\#|Eid2026} {hashtag|\\#|سیل}");
+    assert.equal(li.toLinkedinText("C# and F#"), "C\\# and F\\#", "a # inside a word is no hashtag");
+    assert.equal(li.toLinkedinText("a_b*c~d|e{f}g<h>i\\j"), "a\\_b\\*c\\~d\\|e\\{f\\}g\\<h\\>i\\\\j");
+    assert.equal(li.toLinkedinText("#tag_with_underscore"), "{hashtag|\\#|tag\\_with\\_underscore}");
+
+    // A text post
+    const post = li.buildLinkedinPost({ operation: "create_post", text: "Hiring {{job}} (Lahore)" }, { job: "a designer" }, author);
+    assert.deepEqual(post, {
+      author,
+      commentary: "Hiring a designer \\(Lahore\\)",
+      visibility: "PUBLIC",
+      distribution: { feedDistribution: "MAIN_FEED", targetEntities: [], thirdPartyDistributionChannels: [] },
+      lifecycleState: "PUBLISHED",
+      isReshareDisabledByAuthor: false,
+    });
+    assert.equal(li.buildLinkedinPost({ text: "x", visibility: "CONNECTIONS" }, {}, author).visibility, "CONNECTIONS");
+    assert.throws(() => li.buildLinkedinPost({ operation: "create_post" }, {}, author), /Text is required/);
+    assert.throws(() => li.buildLinkedinPost({ text: "x".repeat(3001) }, {}, author), /at most 3000/);
+    assert.throws(() => li.buildLinkedinPost({ operation: "delete_post", text: "x" }, {}, author), /Unsupported operation/);
+
+    // A link card, and a picture
+    assert.deepEqual(
+      (li.buildLinkedinPost({ operation: "share_link", linkUrl: "https://example.com/a", linkTitle: "New" }, {}, author) as any).content,
+      { article: { source: "https://example.com/a", title: "New" } }
+    );
+    assert.throws(() => li.buildLinkedinPost({ operation: "share_link", linkUrl: "example.com" }, {}, author), /Link must be a web address/);
+    assert.deepEqual(
+      (li.buildLinkedinPost({ operation: "image_post" }, {}, author, { id: "urn:li:image:C4E", altText: "Team" }) as any).content,
+      { media: { id: "urn:li:image:C4E", altText: "Team" } }
+    );
+    assert.throws(() => li.buildLinkedinPost({ operation: "image_post" }, {}, author), /Image is required/);
+
+    // Who posts: the member, or a page only with the Community Management scopes
+    assert.equal(li.linkedinAuthor({}, {}, person), author);
+    assert.throws(() => li.linkedinAuthor({ postAs: "organization", organizationId: "123" }, {}, person), /Community Management API/);
+    const admin = { personId: "abc123", scopes: [...person.scopes, "w_organization_social", "r_organization_admin"] };
+    assert.equal(li.linkedinAuthor({ postAs: "organization", organizationId: "urn:li:organization:123" }, {}, admin), "urn:li:organization:123");
+    assert.throws(() => li.linkedinAuthor({ postAs: "organization", organizationId: "my-company" }, {}, admin), /Company Page ID must be the page's number/);
+    assert.throws(
+      () => li.buildLinkedinPost({ text: "x", visibility: "CONNECTIONS" }, {}, "urn:li:organization:123"),
+      /a Company Page post is always public/
+    );
+    assert.equal(li.linkedinPostUrl("urn:li:share:7000"), "https://www.linkedin.com/feed/update/urn:li:share:7000/");
+
+    // The stored sign-in: 60 days, then a clear message to reconnect
+    const now = Date.parse("2026-11-28T00:00:00Z");
+    const stored = JSON.stringify({ accessToken: "t", personId: "abc123", name: "Ali", scopes: person.scopes, expiresAt: "2027-01-27T00:00:00Z" });
+    assert.equal(oauth.readLinkedinCredential(stored, now).personId, "abc123");
+    assert.throws(
+      () => oauth.readLinkedinCredential(stored, Date.parse("2027-02-01T00:00:00Z")),
+      /expired on 2027-01-27 \(LinkedIn sign-ins last 60 days\)\. Open the credential under Credentials and press Reconnect/
+    );
+    assert.throws(() => oauth.readLinkedinCredential("not json", now), /Invalid credential format/);
+    assert.throws(() => oauth.readLinkedinCredential(JSON.stringify({ accessToken: "t" }), now), /connected again/);
+
+    // The sign-in address: the app's client id and only the scopes it has
+    const before = { ...process.env };
+    process.env.LINKEDIN_CLIENT_ID = "client-id";
+    process.env.LINKEDIN_CLIENT_SECRET = "secret";
+    delete process.env.LINKEDIN_ORGANIZATION_POSTS;
+    try {
+      const url = new URL(oauth.createLinkedinAuthorizationUrl("state-1"));
+      assert.equal(url.origin + url.pathname, "https://www.linkedin.com/oauth/v2/authorization");
+      assert.equal(url.searchParams.get("client_id"), "client-id");
+      assert.equal(url.searchParams.get("state"), "state-1");
+      assert.equal(url.searchParams.get("scope"), "openid profile w_member_social");
+      assert.match(url.searchParams.get("redirect_uri") ?? "", /\/api\/oauth\/linkedin\/callback$/);
+      process.env.LINKEDIN_ORGANIZATION_POSTS = "true";
+      assert.equal(new URL(oauth.createLinkedinAuthorizationUrl("s")).searchParams.get("scope"), "openid profile w_member_social w_organization_social r_organization_admin");
+      delete process.env.LINKEDIN_CLIENT_ID;
+      assert.throws(() => oauth.createLinkedinAuthorizationUrl("s"), /LINKEDIN_CLIENT_ID and LINKEDIN_CLIENT_SECRET are missing/);
+    } finally {
+      for (const key of ["LINKEDIN_CLIENT_ID", "LINKEDIN_CLIENT_SECRET", "LINKEDIN_ORGANIZATION_POSTS"]) {
+        if (before[key] === undefined) delete process.env[key];
+        else process.env[key] = before[key];
+      }
+    }
+
+    // The callback checks the state and the user, and Reconnect only renews a LinkedIn credential of the workspace
+    const callback = readFileSync("src/app/api/oauth/linkedin/callback/route.ts", "utf8");
+    assert.match(callback, /!secretsMatch\(params\.get\("state"\) \|\| "", saved\.state\)/);
+    assert.match(callback, /saved\.userId !== session\.user\.id/);
+    assert.match(callback, /hasRole\(workspace\.role, "ADMIN"\)/);
+    assert.match(callback, /where: \{ id: saved\.credentialId, userId: workspace\.ownerId, type: CredentialType\.LINKEDIN \}/);
+    assert.match(readFileSync("src/features/credentials/components/credential.tsx", "utf8"), /\/api\/oauth\/linkedin\/start\?credentialId=\$\{encodeURIComponent\(initialData\.id\)\}/);
+    // The executor checks the settings before it reads a credential; as a tool it writes
+    await assert.rejects(li.linkedinExecutor({ ...baseParams, data: { operation: "create_post" }, context: {} }), /Text is required/);
+    await assert.rejects(li.linkedinExecutor({ ...baseParams, data: { operation: "image_post", text: "x" }, context: {} }), /Image is required/);
+    assert.equal(agentTools.getToolRisk("LINKEDIN", { operation: "create_post" }), "write");
+    assert.match(readFileSync("src/features/executions/lib/executor-registry.ts", "utf8"), /\[NodeType\.LINKEDIN\]: linkedinExecutor/);
+
+    // The migration: two enum values, nothing else
+    const folder = readdirSync("prisma/migrations").find((name) => name.endsWith("_linkedin_node"));
+    assert.ok(folder, "migration");
+    assert.equal(
+      readFileSync(`prisma/migrations/${folder}/migration.sql`, "utf8").replace(/\r\n/g, "\n").trim(),
+      `-- AlterEnum\nALTER TYPE "CredentialType" ADD VALUE 'LINKEDIN';\n\n-- AlterEnum\nALTER TYPE "NodeType" ADD VALUE 'LINKEDIN';`
+    );
+  });
+
   await test("a photo post is one call on Facebook and a container plus a publish on Instagram", async () => {
     const image = "https://cdn.example.com/photo.jpg";
 
@@ -10132,11 +10330,16 @@ pour()</code></pre>
     // Which credential a node asks for
     const nodes = read("src/features/executions/components/apps/nodes.tsx");
     assert.match(nodes, /values\.connection === "instagram"\s*\? CredentialType\.INSTAGRAM\s*: CredentialType\.FACEBOOK_PAGE;/);
-    assert.match(nodes, /values\.operation === "facebook_photo"\s*\? CredentialType\.FACEBOOK_PAGE\s*: instagramCredential\(values\),/);
+    assert.match(nodes, /FB_POST_OPS\.includes\(values\.operation \?\? ""\)\s*\? CredentialType\.FACEBOOK_PAGE\s*: instagramCredential\(values\),/);
     assert.match(nodes, /webhookPath: "messenger",/);
     assert.match(nodes, /webhookPath: "instagram",/);
     // The dialogs offer exactly what the executors take
-    assert.deepEqual([...nodes.slice(nodes.indexOf("export const socialPostConfig")).matchAll(/\{ value: "(\w+_photo)", label:/g)].map((found) => found[1]), meta.POST_OPERATIONS);
+    const socialConfig = nodes.slice(nodes.indexOf("export const socialPostConfig"));
+    const socialOperations = socialConfig.slice(socialConfig.indexOf("operations: ["), socialConfig.indexOf("fields: ["));
+    assert.deepEqual(
+      [...socialOperations.matchAll(/\{ value: "(\w+)", label:/g)].map((found) => found[1]).sort(),
+      [...meta.POST_OPERATIONS].sort()
+    );
 
     const credentialForm = read("src/features/credentials/components/credential.tsx");
     for (const type of ["FACEBOOK_PAGE", "INSTAGRAM"]) {

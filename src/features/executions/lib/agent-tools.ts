@@ -159,6 +159,7 @@ const TOOL_LABELS: Record<string, string> = {
   WOOCOMMERCE: "WooCommerce",
   WORDPRESS: "WordPress",
   GOOGLE_SEARCH_CONSOLE: "Google Search Console",
+  LINKEDIN: "LinkedIn Post",
   SSH: "SSH Command",
   MYSQL: "MySQL",
   RESEND: "Resend",
