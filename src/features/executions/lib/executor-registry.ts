@@ -57,6 +57,7 @@ import { wordpressExecutor } from '../components/apps/wordpress';
 import { searchConsoleExecutor } from '../components/apps/search-console';
 import { linkedinExecutor } from '../components/apps/linkedin';
 import { s3StorageExecutor } from '../components/apps/s3-storage';
+import { youtubeExecutor } from '../components/apps/youtube';
 import {
   instagramExecutor,
   messengerExecutor,
@@ -223,6 +224,7 @@ const baseExecutors: Record<NodeType, NodeExecutor<any>> = {
   [NodeType.GOOGLE_SEARCH_CONSOLE]: searchConsoleExecutor,
   [NodeType.LINKEDIN]: linkedinExecutor,
   [NodeType.S3_STORAGE]: s3StorageExecutor,
+  [NodeType.YOUTUBE]: youtubeExecutor,
   [NodeType.MESSENGER]: messengerExecutor,
   [NodeType.INSTAGRAM]: instagramExecutor,
   [NodeType.SOCIAL_POST]: socialPostExecutor,

@@ -10164,6 +10164,94 @@ pour()</code></pre>
     );
   });
 
+  await test("YouTube: video details, ids, the sign-in, and what each operation may do", async () => {
+    const { readFileSync, readdirSync } = await import("node:fs");
+    const yt = await import("@/features/executions/components/apps/youtube");
+    const now = Date.parse("2026-11-28T00:00:00Z");
+    const details = (data: Record<string, string>, creating: boolean, context: Record<string, unknown> = {}) =>
+      yt.readVideoDetails(data, context, creating, now);
+
+    // An upload: a title, and safe defaults (private, People & Blogs, not for kids)
+    assert.deepEqual(details({ title: "{{t}}", description: "Steps", tags: "recipe, lahore ,, food" }, true, { t: "Biryani at home" }), {
+      snippet: { title: "Biryani at home", description: "Steps", tags: ["recipe", "lahore", "food"], categoryId: "22" },
+      status: { privacyStatus: "private", selfDeclaredMadeForKids: false },
+    });
+    assert.deepEqual(details({ title: "A", privacyStatus: "public", categoryId: "27", madeForKids: "true" }, true).status, { privacyStatus: "public", selfDeclaredMadeForKids: true });
+    assert.throws(() => details({}, true), /Title is required/);
+    assert.throws(() => details({ title: "x".repeat(101) }, true), /at most 100/);
+    assert.throws(() => details({ title: "A", description: "x".repeat(5001) }, true), /at most 5000/);
+    assert.throws(() => details({ title: "<b>A</b>" }, true), /does not allow < or >/);
+    assert.throws(() => details({ title: "A", tags: Array.from({ length: 60 }, (_, n) => `longer-tag-${n}`).join(",") }, true), /more than 500 characters/);
+    assert.throws(() => details({ title: "A", privacyStatus: "friends" }, true), /Privacy must be private, unlisted, public/);
+    assert.throws(() => details({ title: "A", categoryId: "food" }, true), /category number/);
+
+    // Scheduled: in the future, uploaded as private
+    assert.deepEqual(details({ title: "A", publishAt: "2026-12-24T09:00:00+05:00" }, true).status, {
+      privacyStatus: "private", publishAt: "2026-12-24T04:00:00.000Z", selfDeclaredMadeForKids: false,
+    });
+    assert.throws(() => details({ title: "A", publishAt: "2026-11-01T00:00:00Z" }, true), /must be in the future/);
+    assert.throws(() => details({ title: "A", privacyStatus: "public", publishAt: "2026-12-24T09:00:00Z" }, true), /has to be uploaded as Private/);
+    assert.throws(() => details({ title: "A", publishAt: "soon" }, true), /must be a date and time/);
+
+    // An update: only what was filled in; privacy, category and made-for-kids stay as they are
+    assert.deepEqual(details({ description: "New text", privacyStatus: "private", categoryId: "22", madeForKids: "false" }, false), {
+      snippet: { description: "New text" },
+      status: {},
+    });
+    assert.deepEqual(details({ newPrivacy: "keep", title: "B" }, false), { snippet: { title: "B" }, status: {} });
+    assert.deepEqual(details({ newPrivacy: "public" }, false).status, { privacyStatus: "public" });
+
+    // Video ids from ids and addresses
+    for (const value of ["dQw4w9WgXcQ", "https://www.youtube.com/watch?v=dQw4w9WgXcQ&t=10", "https://youtu.be/dQw4w9WgXcQ", "https://www.youtube.com/shorts/dQw4w9WgXcQ", "https://youtube.com/watch?feature=x&v=dQw4w9WgXcQ"]) {
+      assert.equal(yt.readVideoId(value), "dQw4w9WgXcQ", value);
+    }
+    for (const value of ["abc", "https://vimeo.com/123", "dQw4w9WgXcQ?x"]) {
+      assert.throws(() => yt.readVideoId(value), /11-character id/, value);
+    }
+
+    // The executor checks the settings before it reads a credential
+    const run = (data: Record<string, string>) => yt.youtubeExecutor({ ...baseParams, data, context: {} });
+    await assert.rejects(run({ operation: "upload_video", title: "A" }), /Video is required/);
+    await assert.rejects(run({ operation: "update_video", videoId: "dQw4w9WgXcQ", newPrivacy: "keep" }), /fill in at least one field/);
+    await assert.rejects(run({ operation: "set_thumbnail", videoId: "dQw4w9WgXcQ" }), /Thumbnail is required/);
+    await assert.rejects(run({ operation: "reply_comment", commentId: "Ugx" }), /Reply is required/);
+    await assert.rejects(run({ operation: "delete_video" }), /Unsupported operation/);
+
+    // As agent tools: reading is read, everything that changes the channel writes
+    for (const operation of ["upload_video", "update_video", "set_thumbnail", "reply_comment"]) {
+      assert.equal(agentTools.getToolRisk("YOUTUBE", { operation }), "write", operation);
+    }
+    for (const operation of ["get_video", "list_videos", "list_comments"]) {
+      assert.equal(agentTools.getToolRisk("YOUTUBE", { operation }), "read", operation);
+    }
+
+    // The sign-in: YouTube's two scopes only, its own redirect, state and user checked; both permissions required
+    const oauth = await import("@/lib/youtube-oauth");
+    assert.deepEqual(oauth.YOUTUBE_SCOPES, ["openid", "email", "https://www.googleapis.com/auth/youtube.upload", "https://www.googleapis.com/auth/youtube.force-ssl"]);
+    assert.match(oauth.getYoutubeRedirectUri(), /\/api\/oauth\/youtube\/callback$/);
+    const google = await import("@/lib/google-oauth");
+    assert.equal(google.GOOGLE_OAUTH_SCOPES.some((scope: string) => scope.includes("youtube")), false, "the Google account credential is unchanged");
+    const callback = readFileSync("src/app/api/oauth/youtube/callback/route.ts", "utf8");
+    assert.match(callback, /!secretsMatch\(params\.get\("state"\) \|\| "", saved\.state\)/);
+    assert.match(callback, /saved\.userId !== session\.user\.id/);
+    assert.match(callback, /scope\.endsWith\("\/youtube\.upload"\)\) \|\| !granted\.some\(\(scope\) => scope\.endsWith\("\/youtube\.force-ssl"\)\)/);
+    assert.match(callback, /where: \{ id: saved\.credentialId, userId: workspace\.ownerId, type: CredentialType\.YOUTUBE \}/);
+    // An update keeps what it does not change; listing uses the uploads playlist (1 unit, not a 100-unit search)
+    const source = readFileSync("src/features/executions/components/apps/youtube.ts", "utf8");
+    assert.match(source, /title: video\.snippet\?\.title,[\s\S]+\.\.\.details!\.snippet,/);
+    assert.match(source, /youtube\.playlistItems\.list/);
+    assert.doesNotMatch(source, /youtube\.search\.list/);
+    assert.match(readFileSync("src/features/executions/lib/executor-registry.ts", "utf8"), /\[NodeType\.YOUTUBE\]: youtubeExecutor/);
+
+    // The migration: two enum values, nothing else
+    const folder = readdirSync("prisma/migrations").find((name) => name.endsWith("_youtube_node"));
+    assert.ok(folder, "migration");
+    assert.equal(
+      readFileSync(`prisma/migrations/${folder}/migration.sql`, "utf8").replace(/\r\n/g, "\n").trim(),
+      `-- AlterEnum\nALTER TYPE "CredentialType" ADD VALUE 'YOUTUBE';\n\n-- AlterEnum\nALTER TYPE "NodeType" ADD VALUE 'YOUTUBE';`
+    );
+  });
+
   await test("a photo post is one call on Facebook and a container plus a publish on Instagram", async () => {
     const image = "https://cdn.example.com/photo.jpg";
 

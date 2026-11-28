@@ -57,6 +57,7 @@ const credentialTypeOptions = [
   { value: CredentialType.GOOGLE_SEARCH_CONSOLE, label: "Google Search Console (service account)", logo: "/logos/google-search-console.svg" },
   { value: CredentialType.LINKEDIN, label: "LinkedIn Account", logo: "/logos/linkedin.svg" },
   { value: CredentialType.S3, label: "S3-compatible Storage", logo: "/logos/s3-storage.svg" },
+  { value: CredentialType.YOUTUBE, label: "YouTube Channel", logo: "/logos/youtube.svg" },
   { value: CredentialType.NOTION, label: "Notion", logo: "/logos/notion.png" }, 
   { value: CredentialType.TELEGRAM, label: "Telegram", logo: "/logos/telegram.jfif" },
   { value: CredentialType.GITHUB, label: "GitHub", logo: "/logos/github.svg" },
@@ -342,6 +343,12 @@ const credentialFieldConfig: Record<CredentialType, {
     secretPlaceholder: "your-username:abcd efgh ijkl mnop qrst uvwx",
     help: "Written as username:application password. In WordPress open Users > Profile, scroll to Application Passwords, type a name (RXJ) and press Add New Application Password; it is shown once. Not your login password. The user needs the Author or Editor role to create posts. The site must be on https.",
   },
+  [CredentialType.YOUTUBE]: {
+    namePlaceholder: "My YouTube channel",
+    defaultName: "YouTube channel",
+    secretLabel: "YouTube Channel",
+    secretPlaceholder: "",
+  },
   [CredentialType.S3]: {
     namePlaceholder: "My R2 bucket",
     defaultName: "S3 storage credential",
@@ -433,8 +440,9 @@ export const CredentialForm = ({ initialData }: CredentialFormProps) => {
   const isGoogleOAuth = selectedType === CredentialType.GOOGLE_OAUTH2;
   const isSalesforce = selectedType === CredentialType.SALESFORCE;
   const isLinkedin = selectedType === CredentialType.LINKEDIN;
+  const isYoutube = selectedType === CredentialType.YOUTUBE;
   // These are connected by signing in, not by pasting a secret
-  const isOAuth = isGoogleOAuth || isSalesforce || isLinkedin;
+  const isOAuth = isGoogleOAuth || isSalesforce || isLinkedin || isYoutube;
 
   // The Google sign-in sends the user back here when it fails
   const [oauthError, setOauthError] = React.useState<string | null>(null);
@@ -928,6 +936,31 @@ export const CredentialForm = ({ initialData }: CredentialFormProps) => {
                       {form.formState.errors.value.message}
                     </p>
                   )}
+                </div>
+              )}
+
+              {/* YouTube channel: its own Google sign-in, with YouTube's permissions only */}
+              {isYoutube && (
+                <div className="space-y-3 rounded-md border p-4 bg-muted/20">
+                  <h3 className="text-sm font-medium">YouTube Channel</h3>
+                  <p className="text-xs text-muted-foreground">
+                    {isEdit
+                      ? "Reconnect when the channel's access was removed or a node says so; every workflow that uses this credential keeps working."
+                      : "Sign in with the Google account of your channel (pick the Brand Account on Google's screen if the channel is one) and allow both YouTube permissions."}
+                  </p>
+                  <Button type="button" variant="outline" asChild>
+                    <a
+                      href={
+                        isEdit && initialData?.id
+                          ? `/api/oauth/youtube/start?credentialId=${encodeURIComponent(initialData.id)}`
+                          : `/api/oauth/youtube/start?name=${encodeURIComponent(form.watch("name") || "")}`
+                      }
+                    >
+                      <Image src="/logos/youtube.svg" alt="YouTube" width={16} height={16} />
+                      {isEdit ? "Reconnect YouTube" : "Connect YouTube"}
+                    </a>
+                  </Button>
+                  {oauthError && <p className="text-sm text-destructive">{oauthError}</p>}
                 </div>
               )}
 

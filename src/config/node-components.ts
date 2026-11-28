@@ -107,6 +107,7 @@ import {
     SearchConsoleNode,
     LinkedinNode,
     S3StorageNode,
+    YoutubeNode,
 } from '@/features/executions/components/apps/nodes';
 import {
     ConvertToFileNode,
@@ -209,6 +210,7 @@ export const nodeComponents: NodeTypes = {
     [NodeType.GOOGLE_SEARCH_CONSOLE]: SearchConsoleNode,
     [NodeType.LINKEDIN]: LinkedinNode,
     [NodeType.S3_STORAGE]: S3StorageNode,
+    [NodeType.YOUTUBE]: YoutubeNode,
     [NodeType.MESSENGER]: MessengerNode,
     [NodeType.MESSENGER_TRIGGER]: MessengerTriggerNode,
     [NodeType.INSTAGRAM]: InstagramNode,

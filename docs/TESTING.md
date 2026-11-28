@@ -2636,6 +2636,27 @@ Needs the `s3_storage_node` migration applied (it runs on the production deploy 
 | 11 | **Delete File** | `deleted: true`; the file is gone. As an AI Agent tool, Delete is "Dangerous" |
 | 12 | Delete the test files and the token afterwards | |
 
+## T63. YouTube node
+
+Needs the `youtube_node` migration applied (it runs on the production deploy after merging, after `s3_storage_node`): two enum values, nothing else. In Google Cloud: enable the **YouTube Data API v3**, add `<app URL>/api/oauth/youtube/callback` to the OAuth client's redirect URIs and the scopes `youtube.upload` and `youtube.force-ssl` to the consent screen (and your test account as a test user). Use a test channel; delete the test video afterwards.
+
+| # | Do | Expect |
+|---|----|--------|
+| 1 | Credentials > New credential > **YouTube Channel** > **Connect YouTube** | Google asks only for YouTube (not Gmail or Drive); afterwards a credential "YouTube (channel name)" |
+| 2 | Untick one of the two YouTube permissions on Google's screen | "Please allow both YouTube permissions" |
+| 3 | A Google account without a channel | "This Google account has no YouTube channel" |
+| 4 | YouTube node, **Upload Video**: Video = a public link to a short MP4 (or an S3 Storage Get Link), Title `RXJ test`, Privacy Private | `youtube.url` opens the video in YouTube Studio, private |
+| 5 | Upload with Privacy Public, before Google's audit | YouTube still locks it private (expected until the audit) |
+| 6 | Upload with Publish At tomorrow | scheduled in Studio; uploaded as private |
+| 7 | **Update Video Details** of that video with only a new Description, New Privacy left as it is | the description changes; title, tags, category and privacy stay |
+| 8 | **Set Thumbnail** with a 1280 x 720 JPEG (verified channel) | the thumbnail changes; on an unverified channel the error says to verify |
+| 9 | **List My Videos** | the newest uploads with views and likes |
+| 10 | Comment on the video from another account, then **List Comments** with the Video ID, then **Reply to Comment** with `{{item.commentId}}` after a Split Out | the reply is under the comment |
+| 11 | Video ID `https://youtu.be/<id>` | the same as the bare id |
+| 12 | Title with `<` | fails at once: "does not allow < or >" |
+| 13 | Remove the app under myaccount.google.com/permissions, run a node | "press Reconnect on the credential"; **Reconnect YouTube** fixes it and the workflow keeps the credential |
+| 14 | As an AI Agent tool | Upload, Update, Thumbnail and Reply are "Write"; Get and the lists "Read" |
+
 # When something fails
 
 Note the node, the exact values you entered, and the error text from the

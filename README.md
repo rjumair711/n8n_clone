@@ -1030,6 +1030,29 @@ Files in a bucket of the customer's own, for what does not fit a workflow file (
 * As AI Agent tools: Download, List and Get Link are "read", Upload "write", Delete "dangerous".
 * Not built: copying and moving, multipart uploads of files larger than a workflow file from a URL, and setting a file's public access.
 
+## YouTube
+
+The connected channel's videos and comments through the YouTube Data API v3 (`googleapis`). Executor: `src/features/executions/components/apps/youtube.ts`; sign-in: `src/lib/youtube-oauth.ts` and `src/app/api/oauth/youtube/`.
+
+| Operation | What it does | Result |
+| --------- | ------------ | ------ |
+| Upload Video | A video from a public https link (an S3 Storage Get Link, a CDN) or a file variable, up to 512 MB, with Title (required, 100 characters), Description (5000), Tags (500 together), **Privacy** (Private by default, Unlisted, Public), optional **Publish At** (scheduled: uploaded as Private, YouTube makes it public then), Category (People & Blogs by default), Made For Kids (YouTube requires the answer) and Notify Subscribers | `{{youtube.id}}`, `.url`, `.title`, `.privacyStatus`, `.uploadStatus`, `.channelId` |
+| Update Video Details | Title, Description, Tags, **New Privacy** ("Leave as it is" by default) and Publish At of a video. YouTube replaces the whole snippet, so the video is read first and what is not filled in is sent as it was; category and made-for-kids are kept | the video |
+| Set Thumbnail | A JPEG or PNG up to 2 MB as the video's thumbnail (needs a verified channel) | `.thumbnail` |
+| Get Video | One video with its details and `views`, `likes`, `comments` | the video |
+| List My Videos | The channel's newest uploads, up to Limit (25, at most 50), with the same fields. Read from the channel's uploads playlist (1 quota unit) rather than a search (100) | `{{json youtube.items}}`, `.count` |
+| List Comments | The newest comment threads of one video, or of the whole channel when Video ID is empty | `{{json youtube.items}}`: `commentId`, `videoId`, `author`, `authorChannelId`, `text`, `likes`, `replies`, `publishedAt` |
+| Reply to Comment | A reply under a comment, by its `commentId` | `.replyId` |
+
+* **Video ID** takes the 11-character id or any of YouTube's addresses (`watch?v=`, `youtu.be/`, `shorts/`, `embed/`, `live/`).
+* **Credential** "YouTube Channel": **Connect YouTube** is a Google sign-in of its own, asking only for `youtube.upload` and `youtube.force-ssl` (with `openid email`), so the "Google account" credential for Gmail, Sheets and Drive does not change and its users are never asked for YouTube. It uses the same Google OAuth client; add `<app URL>/api/oauth/youtube/callback` to its authorised redirect URIs and enable the **YouTube Data API v3** in the project. The callback checks the state and the user, refuses a sign-in where either YouTube permission was unticked, and stores the refresh token with the channel's id and title (a Brand Account channel is picked on Google's screen; an account without a channel is told to make one). Admins only. **Reconnect YouTube** on the credential renews it in place.
+* **Google's audit.** Until the Google Cloud project has passed Google's audit for the YouTube API, YouTube locks every video it uploads as private. Everything else works at once.
+* **Quota.** A project has 10,000 units a day; an upload costs 1,600, most reads 1. The error says so when it is used up.
+* **Size and time.** One upload is one step, which may take 300 seconds on the hosted app: at most 512 MB, streamed from the link to YouTube without being stored. A self-hosted server has no such step limit, but the 512 MB limit is the same.
+* Errors name the fix: a removed sign-in (Reconnect), a missing permission, the quota, the daily upload limit, an unverified channel's thumbnail.
+* As AI Agent tools: Get Video and the lists are "read"; Upload, Update, Set Thumbnail and Reply are "write".
+* Not built: a trigger for new comments (the RSS Feed Trigger with `https://www.youtube.com/feeds/videos.xml?channel_id=<id>` sees new videos), playlists, captions, deleting videos or comments, and analytics.
+
 ## Shopify and WooCommerce
 
 Two store nodes and two triggers. The nodes can also be AI Agent tools: reading is "read", creating and updating is "write" (so it asks for approval by default).
@@ -1076,6 +1099,7 @@ Two store nodes and two triggers. The nodes can also be AI Agent tools: reading 
 | Instagram   | Text and picture direct messages, answers to comments on posts and reels (public reply, private reply, hide), the Instagram Trigger, and photo posts, Reels, carousels and Stories (with the Instagram / Facebook Post node) |
 | Twilio      | SMS and WhatsApp messages |
 | LinkedIn    | Posts on your profile or a Company Page: text, a link card or a picture. See "LinkedIn" |
+| YouTube     | Upload videos, change their details and thumbnail, list the channel's videos, read and reply to comments. See "YouTube" |
 | Email       | SMTP email, with file attachments |
 | Gmail       | Email through a connected Google account, with file attachments |
 | Resend      | Email through the Resend API, with file attachments |
@@ -1158,6 +1182,7 @@ Supported credential types:
 | SHOPIFY       | Shopify node (a custom app's Admin API access token, `shpat_...`) |
 | WOOCOMMERCE   | WooCommerce node (`consumer_key:consumer_secret`) |
 | WORDPRESS     | WordPress node (`username:application password`) |
+| YOUTUBE       | YouTube node ("Connect YouTube": a Google refresh token with the two YouTube scopes, and the channel's id and title) |
 | S3            | S3 Storage node (provider, endpoint, region, access key ID and secret access key) |
 | LINKEDIN      | LinkedIn node ("Connect LinkedIn": the access token, its expiry and the member's id; renewed with Reconnect) |
 | GOOGLE_SEARCH_CONSOLE | Google Search Console node (service account: project id, client email, private key). A Google account (GOOGLE_OAUTH2) works too |
@@ -1728,6 +1753,7 @@ Anyone can run RXJ on their own VPS with Docker: [`docs/SELF_HOSTING.md`](docs/S
 | `ADMIN_EMAILS` | Who may publish, edit and delete workflow templates, comma-separated. The account's email must also be verified |
 | `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` | Google sign-in and the "Google account" credential. Add `<app URL>/api/oauth/google/callback` as an authorised redirect URI |
 | `GITHUB_CLIENT_ID`, `GITHUB_CLIENT_SECRET` | GitHub sign-in |
+| `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` (YouTube) | Also used by "Connect YouTube": add `<app URL>/api/oauth/youtube/callback` to the OAuth client's authorised redirect URIs, the two YouTube scopes to its consent screen, and enable the YouTube Data API v3 |
 | `LINKEDIN_CLIENT_ID`, `LINKEDIN_CLIENT_SECRET` | The LinkedIn app behind "Connect LinkedIn" (developer.linkedin.com): products "Sign In with LinkedIn using OpenID Connect" and "Share on LinkedIn", redirect URL `<app URL>/api/oauth/linkedin/callback`. Without them the button says LinkedIn sign-in is not set up |
 | `LINKEDIN_ORGANIZATION_POSTS` | `true` once LinkedIn has approved the app for the Community Management API: the sign-in then also asks for `w_organization_social` and `r_organization_admin`, so the node can post as a Company Page. Leave unset before that: LinkedIn refuses a sign-in that asks for scopes the app does not have |
 | `LINKEDIN_API_VERSION` | Optional, `YYYYMM`: the version of LinkedIn's REST API the node sends (default in `src/lib/linkedin-options.ts`). LinkedIn supports each version for about a year |

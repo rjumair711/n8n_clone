@@ -2517,6 +2517,174 @@ export const S3StorageNode = createIntegrationNode(s3StorageConfig, (data) =>
   data.bucket ? operationLabel(s3StorageConfig, data.operation) : "Not Configured"
 );
 
+// =========================================================================
+// YOUTUBE
+// =========================================================================
+const YT_EDIT = ["upload_video", "update_video"];
+
+export const youtubeConfig: IntegrationConfig = {
+  label: "YouTube",
+  description:
+    "Upload videos to your channel, change their title, description, tags, privacy and thumbnail, list your videos with their views, and read and reply to comments.",
+  logo: "/logos/youtube.svg",
+  credentialType: CredentialType.YOUTUBE,
+  credentialLabel: "YouTube Channel",
+  defaultVariableName: "youtube",
+  hint: "Upload Video gives {{youtube.id}} and {{youtube.url}}. Until your Google app has passed Google's YouTube audit, YouTube keeps uploaded videos private. A video up to 512 MB: a public https link (an S3 Storage Get Link) or a file variable. List Comments gives {{json youtube.items}}, each with a commentId for Reply to Comment. Each upload uses 1,600 of the project's 10,000 daily quota units. As an AI Agent tool, uploads, changes and replies ask for approval by default.",
+  operations: [
+    { value: "upload_video", label: "Upload Video" },
+    { value: "update_video", label: "Update Video Details" },
+    { value: "set_thumbnail", label: "Set Thumbnail" },
+    { value: "get_video", label: "Get Video" },
+    { value: "list_videos", label: "List My Videos" },
+    { value: "list_comments", label: "List Comments" },
+    { value: "reply_comment", label: "Reply to Comment" },
+  ],
+  fields: [
+    {
+      name: "video",
+      label: "Video",
+      placeholder: "{{storage.url}} or video.file",
+      description: "A public https link to an MP4 or MOV (up to 512 MB), or a file variable.",
+      required: true,
+      operations: ["upload_video"],
+    },
+    {
+      name: "videoId",
+      label: "Video ID",
+      placeholder: "dQw4w9WgXcQ or https://youtu.be/...",
+      description: "The 11-character id, or the video's address. List Comments: empty means every video of the channel.",
+      operations: ["update_video", "set_thumbnail", "get_video", "list_comments"],
+    },
+    {
+      name: "title",
+      label: "Title",
+      placeholder: "{{article.title}}",
+      description: "Up to 100 characters, no < or >. Required for an upload; on Update, empty keeps it.",
+      operations: YT_EDIT,
+    },
+    {
+      name: "description",
+      label: "Description",
+      type: "textarea",
+      placeholder: "{{article.summary}}",
+      description: "Up to 5000 characters, no < or >.",
+      operations: YT_EDIT,
+    },
+    {
+      name: "tags",
+      label: "Tags",
+      placeholder: "recipe, lahore, street food",
+      description: "Comma-separated; 500 characters together at most.",
+      operations: YT_EDIT,
+    },
+    {
+      name: "privacyStatus",
+      label: "Privacy",
+      type: "select",
+      defaultValue: "private",
+      options: [
+        { value: "private", label: "Private" },
+        { value: "unlisted", label: "Unlisted" },
+        { value: "public", label: "Public" },
+      ],
+      description: "Private is the safe default for videos a workflow made. Unverified apps' uploads stay private anyway.",
+      operations: ["upload_video"],
+    },
+    {
+      name: "newPrivacy",
+      label: "New Privacy",
+      type: "select",
+      defaultValue: "keep",
+      options: [
+        { value: "keep", label: "Leave as it is" },
+        { value: "private", label: "Private" },
+        { value: "unlisted", label: "Unlisted" },
+        { value: "public", label: "Public" },
+      ],
+      operations: ["update_video"],
+    },
+    {
+      name: "publishAt",
+      label: "Publish At",
+      placeholder: "2026-12-24T09:00:00+05:00",
+      description: "Optional: YouTube makes the video public then. It is uploaded as Private until that time.",
+      operations: YT_EDIT,
+    },
+    {
+      name: "categoryId",
+      label: "Category",
+      type: "select",
+      defaultValue: "22",
+      options: [
+        { value: "22", label: "People & Blogs" },
+        { value: "26", label: "Howto & Style" },
+        { value: "27", label: "Education" },
+        { value: "28", label: "Science & Technology" },
+        { value: "24", label: "Entertainment" },
+        { value: "25", label: "News & Politics" },
+        { value: "19", label: "Travel & Events" },
+        { value: "17", label: "Sports" },
+        { value: "10", label: "Music" },
+        { value: "20", label: "Gaming" },
+        { value: "2", label: "Autos & Vehicles" },
+        { value: "15", label: "Pets & Animals" },
+        { value: "1", label: "Film & Animation" },
+        { value: "23", label: "Comedy" },
+        { value: "29", label: "Nonprofits & Activism" },
+      ],
+      operations: ["upload_video"],
+    },
+    {
+      name: "madeForKids",
+      label: "Made For Kids",
+      type: "switch",
+      defaultValue: "false",
+      description: "YouTube requires the answer. On: comments and some features are off for the video.",
+      operations: ["upload_video"],
+    },
+    {
+      name: "notifySubscribers",
+      label: "Notify Subscribers",
+      type: "switch",
+      defaultValue: "true",
+      operations: ["upload_video"],
+    },
+    {
+      name: "thumbnail",
+      label: "Thumbnail",
+      placeholder: "https://example.com/thumb.jpg or image.file",
+      description: "JPEG or PNG up to 2 MB, 1280 x 720 looks best. Needs a verified channel (youtube.com/verify).",
+      required: true,
+      operations: ["set_thumbnail"],
+    },
+    {
+      name: "commentId",
+      label: "Comment ID",
+      placeholder: "{{item.commentId}}",
+      required: true,
+      operations: ["reply_comment"],
+    },
+    {
+      name: "replyText",
+      label: "Reply",
+      type: "textarea",
+      placeholder: "Thanks for watching, {{item.author}}!",
+      required: true,
+      operations: ["reply_comment"],
+    },
+    {
+      name: "limit",
+      label: "Limit",
+      placeholder: "25",
+      description: "At most 50.",
+      operations: ["list_videos", "list_comments"],
+    },
+  ],
+};
+
+export const YoutubeNode = createIntegrationNode(youtubeConfig, (data) => operationLabel(youtubeConfig, data.operation));
+
 export const SearchConsoleNode = createIntegrationNode(searchConsoleConfig, (data) =>
   data.siteUrl || data.operation === "list_sites"
     ? operationLabel(searchConsoleConfig, data.operation)

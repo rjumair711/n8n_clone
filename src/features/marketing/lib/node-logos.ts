@@ -35,6 +35,7 @@ export const NODE_LOGOS: Partial<Record<NodeType, string>> = {
   GOOGLE_SEARCH_CONSOLE: "/logos/google-search-console.svg",
   LINKEDIN: "/logos/linkedin.svg",
   S3_STORAGE: "/logos/s3-storage.svg",
+  YOUTUBE: "/logos/youtube.svg",
   STRIPE_TRIGGER: "/logos/stripe.svg",
   TYPEFORM_TRIGGER: "/logos/typeform.svg",
   POSTGRES: "/logos/postgres.svg",
